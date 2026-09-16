@@ -20,7 +20,15 @@ def test_torch_module_import_reload() -> None:
     Returns:
         None.
     """
+    from torch_mock import ensure_torch
+
+    ensure_torch()
     from ml_framework_snapshots.frameworks import torch as torch_fw
+
+    importlib.reload(torch_fw)
+    assert torch_fw.nn is not None
+    assert torch_fw.optim is not None
+    assert torch_fw.data is not None
 
     real_import = __import__
 
@@ -50,10 +58,7 @@ def test_torch_module_import_reload() -> None:
 
     # Restore clean reload
     importlib.reload(torch_fw)
-    if getattr(torch_fw, "torch", None) is not None:
-        assert torch_fw.nn is not None
-    else:
-        assert torch_fw.nn is None
+    assert torch_fw.nn is not None
 
 
 def test_torch_scan_metrics_inspect_exception(mocker: Any) -> None:
@@ -155,6 +160,7 @@ def test_torch_scan_array_api_inspect_exceptions(mocker: Any) -> None:
             """Mock aten namespace."""
 
             add = staticmethod(lambda x, y: x)
+            dummy_noncallable = 42
 
         aten = MockAten()
 

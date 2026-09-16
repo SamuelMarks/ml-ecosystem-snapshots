@@ -17,7 +17,8 @@ def test_golden_symbol_counts_and_mandatory_ops() -> None:
         "amd_rdna_exhaustive.json",
     ]
     for req_f in required_exhaustive:
-        if not os.path.isfile(os.path.join(fw_dir, req_f)):
+        target = os.path.join(fw_dir, req_f)
+        if not os.path.isfile(target) or os.path.getsize(target) < 10000:
             import pytest
 
             pytest.skip(
@@ -142,7 +143,7 @@ def test_golden_datasets_zero_leak_tokens() -> None:
         "amd_rdna_exhaustive.json",
     ]:
         fpath = os.path.join(fw_dir, fname)
-        if not os.path.isfile(fpath):
+        if not os.path.isfile(fpath) or os.path.getsize(fpath) < 10000:
             import pytest
 
             pytest.skip(

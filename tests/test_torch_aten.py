@@ -203,9 +203,9 @@ def test_infer_torch_dtype_and_rank() -> None:
 
 def test_get_aten_op_schema_real() -> None:
     """Test get_aten_op_schema querying real PyTorch runtime ATen schemas."""
-    import pytest
+    from torch_mock import ensure_torch
 
-    pytest.importorskip("torch")
+    ensure_torch()
 
     # torch.ops.aten.add has overloads: Tensor, Scalar, out, etc.
     schemas_add = get_aten_op_schema("add")
@@ -239,9 +239,9 @@ def test_get_aten_op_schema_real() -> None:
 
 def test_extract_aten_c_extension_signature_real() -> None:
     """Test extract_aten_c_extension_signature extracting full signature and overloads."""
-    import pytest
+    from torch_mock import ensure_torch
 
-    torch = pytest.importorskip("torch")
+    torch = ensure_torch()
 
     sig = extract_aten_c_extension_signature(torch.add, "torch.add")
     assert sig is not None
@@ -332,9 +332,9 @@ def test_parse_native_functions_yaml(tmp_path: Any) -> None:
 
 def test_ghost_inspector_aten_torch_no_decay() -> None:
     """Test that GhostInspector inspects PyTorch ATen operators without decaying to (*args, **kwargs)."""
-    import pytest
+    from torch_mock import ensure_torch
 
-    torch = pytest.importorskip("torch")
+    torch = ensure_torch()
 
     # Inspect torch.add
     ref_add = GhostInspector.inspect(torch.add, "torch.add")
@@ -555,9 +555,9 @@ def test_aten_edge_cases_and_mocks(mocker: Any) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
-    import pytest
+    from torch_mock import ensure_torch
 
-    torch = pytest.importorskip("torch")
+    torch = ensure_torch()
 
     # 1. Test get_aten_op_schema when schema is None on an overload
     class DummyOp:
@@ -620,9 +620,9 @@ def test_torch_collect_api_array_api_aten(mocker: Any) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
-    import pytest
+    from torch_mock import ensure_torch
 
-    torch = pytest.importorskip("torch")
+    torch = ensure_torch()
     from ml_framework_snapshots.frameworks import torch as torch_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
@@ -649,15 +649,42 @@ def test_torch_collect_api_array_api_aten(mocker: Any) -> None:
 
 
 def test_get_jit_schemas_for_op(monkeypatch: Any) -> None:
-    """Test get_jit_schemas_for_op including when torch._C lacks _jit_get_all_schemas.
+    """Test get_jit_schemas_for_op parsing and when torch._C lacks _jit_get_all_schemas.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    import pytest
+    from torch_mock import ensure_torch
 
-    torch = pytest.importorskip("torch")
+    torch = ensure_torch()
+    from ml_framework_snapshots.frameworks import torch as torch_fw
     from ml_framework_snapshots.frameworks.torch import get_jit_schemas_for_op
 
+    # Reset cache to test parsing
+    monkeypatch.setattr(torch_fw, "_JIT_SCHEMAS_CACHE", None)
+    res = get_jit_schemas_for_op("add")
+    assert len(res) >= 1
+    assert res[0]["params"][0]["name"] == "input"
+
     monkeypatch.delattr(torch._C, "_jit_get_all_schemas", raising=False)
+    monkeypatch.setattr(torch_fw, "_JIT_SCHEMAS_CACHE", None)
     assert get_jit_schemas_for_op("add") == []
+
+
+def test_ghost_inspector_aten_fallback_branches() -> None:
+    """Test GhostInspector ATen branches when C-extension docstring is absent or has varargs."""
+    from torch_mock import MockTorchOp, ensure_torch
+
+    ensure_torch()
+
+    # 1. Target with empty docstring (c_ext_params is None -> c_ext_params = aten_sig)
+    op_no_doc = MockTorchOp("relu", "")
+    ref_no_doc = GhostInspector.inspect(op_no_doc, "torch.relu")
+    assert ref_no_doc.name == "relu"
+    assert ref_no_doc.signature_completeness == "exact"
+    assert len(ref_no_doc.params) >= 1
+
+    # 2. Target with varargs in docstring (pk == VAR_POSITIONAL)
+    op_varargs = MockTorchOp("varargs_op", "varargs_op(*args, **kwargs) -> Tensor\n")
+    ref_varargs = GhostInspector.inspect(op_varargs, "torch.varargs_op")
+    assert any(p.kind == ParameterKind.VAR_POSITIONAL for p in ref_varargs.params)

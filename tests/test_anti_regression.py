@@ -83,9 +83,9 @@ def test_zero_unparsed_regex_tokens_in_bundled_snapshots() -> None:
 
 def test_no_decay_to_varargs_for_top_pytorch_ops() -> None:
     """Verify top PyTorch functions do not decay to (*args, **kwargs)."""
-    import pytest
+    from torch_mock import ensure_torch
 
-    torch = pytest.importorskip("torch")
+    torch = ensure_torch()
     from ml_framework_snapshots.models import GhostInspector
 
     top_ops = [

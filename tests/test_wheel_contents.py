@@ -5,6 +5,7 @@ contain 0 database files, and can be queried in clean isolated environments.
 """
 
 import os
+import shutil
 import zipfile
 from hatchling.build import build_wheel
 
@@ -16,8 +17,24 @@ def test_wheel_packaging_and_data_assets(tmp_path: os.PathLike[str]) -> None:
         tmp_path: Pytest temporary directory fixture.
     """
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    fw_dir = os.path.join(root_dir, "src", "ml_framework_snapshots", "frameworks")
-    pkg_dir = os.path.join(root_dir, "src", "ml_framework_snapshots")
+    proj_dir = os.path.join(str(tmp_path), "proj")
+    shutil.copytree(
+        root_dir,
+        proj_dir,
+        ignore=shutil.ignore_patterns(
+            ".git",
+            ".venv*",
+            "dist",
+            "__pycache__",
+            ".pytest_cache",
+            ".ruff_cache",
+            ".mypy_cache",
+            "*.whl",
+            ".coverage*",
+        ),
+    )
+    fw_dir = os.path.join(proj_dir, "src", "ml_framework_snapshots", "frameworks")
+    pkg_dir = os.path.join(proj_dir, "src", "ml_framework_snapshots")
 
     required_exhaustive_jsons = [
         "amd_rdna_exhaustive.json",
@@ -27,71 +44,71 @@ def test_wheel_packaging_and_data_assets(tmp_path: os.PathLike[str]) -> None:
         "stablehlo_exhaustive.json",
         "concept_map.json",
     ]
-    created_fixtures: list[str] = []
+    for req in required_exhaustive_jsons:
+        target_file = (
+            os.path.join(pkg_dir, req)
+            if req == "concept_map.json"
+            else os.path.join(fw_dir, req)
+        )
+        if not os.path.exists(target_file):
+            import json
+
+            if req == "concept_map.json":
+                from ml_framework_snapshots.mcp_server import DEFAULT_CONCEPT_MAP
+
+                with open(target_file, "w", encoding="utf-8") as f:
+                    json.dump(DEFAULT_CONCEPT_MAP, f, indent=2)
+            elif req == "nvidia_sass_exhaustive.json":
+                from ml_framework_snapshots.frameworks.nvidia_sass import (
+                    _get_canonical_fallback_sass,
+                )
+
+                with open(target_file, "w", encoding="utf-8") as f:
+                    json.dump(_get_canonical_fallback_sass(), f, indent=2)
+            elif req == "amd_rdna_exhaustive.json":
+                from ml_framework_snapshots.frameworks.amd_rdna import (
+                    _get_canonical_fallback_rdna,
+                )
+
+                rdna_data = _get_canonical_fallback_rdna()
+                with open(target_file, "w", encoding="utf-8") as f:
+                    json.dump(rdna_data + rdna_data, f, indent=2)
+            elif req == "mlir_exhaustive.json":
+                from ml_framework_snapshots.frameworks.mlir import (
+                    _get_canonical_mlir_records,
+                )
+
+                with open(target_file, "w", encoding="utf-8") as f:
+                    json.dump(_get_canonical_mlir_records(), f, indent=2)
+            elif req == "stablehlo_exhaustive.json":
+                from ml_framework_snapshots.frameworks.stablehlo import (
+                    _get_canonical_stablehlo_records,
+                )
+
+                with open(target_file, "w", encoding="utf-8") as f:
+                    json.dump(_get_canonical_stablehlo_records(), f, indent=2)
+            elif req == "nvidia_ptx_exhaustive.json":
+                from ml_framework_snapshots.frameworks.nvidia_ptx import (
+                    _get_canonical_fallback_ptx,
+                )
+
+                with open(target_file, "w", encoding="utf-8") as f:
+                    json.dump(_get_canonical_fallback_ptx(), f, indent=2)
+            else:
+                dummy_entries = [
+                    {
+                        "name": f"test_op_{i}",
+                        "mnemonic": f"test_op_{i}",
+                        "docstring": "Detailed test operation description for size threshold.",
+                    }
+                    for i in range(120)
+                ]
+                with open(target_file, "w", encoding="utf-8") as f:
+                    json.dump(dummy_entries, f, indent=2)
+
+    old_cwd = os.getcwd()
+    os.chdir(proj_dir)
     try:
-        for req in required_exhaustive_jsons:
-            target_file = (
-                os.path.join(pkg_dir, req)
-                if req == "concept_map.json"
-                else os.path.join(fw_dir, req)
-            )
-            if not os.path.exists(target_file):
-                import json
-
-                if req == "concept_map.json":
-                    from ml_framework_snapshots.mcp_server import DEFAULT_CONCEPT_MAP
-
-                    with open(target_file, "w", encoding="utf-8") as f:
-                        json.dump(DEFAULT_CONCEPT_MAP, f, indent=2)
-                elif req == "nvidia_sass_exhaustive.json":
-                    from ml_framework_snapshots.frameworks.nvidia_sass import (
-                        _get_canonical_fallback_sass,
-                    )
-
-                    with open(target_file, "w", encoding="utf-8") as f:
-                        json.dump(_get_canonical_fallback_sass(), f, indent=2)
-                elif req == "amd_rdna_exhaustive.json":
-                    from ml_framework_snapshots.frameworks.amd_rdna import (
-                        _get_canonical_fallback_rdna,
-                    )
-
-                    rdna_data = _get_canonical_fallback_rdna()
-                    with open(target_file, "w", encoding="utf-8") as f:
-                        json.dump(rdna_data + rdna_data, f, indent=2)
-                elif req == "mlir_exhaustive.json":
-                    from ml_framework_snapshots.frameworks.mlir import (
-                        _get_canonical_mlir_records,
-                    )
-
-                    with open(target_file, "w", encoding="utf-8") as f:
-                        json.dump(_get_canonical_mlir_records(), f, indent=2)
-                elif req == "stablehlo_exhaustive.json":
-                    from ml_framework_snapshots.frameworks.stablehlo import (
-                        _get_canonical_stablehlo_records,
-                    )
-
-                    with open(target_file, "w", encoding="utf-8") as f:
-                        json.dump(_get_canonical_stablehlo_records(), f, indent=2)
-                elif req == "nvidia_ptx_exhaustive.json":
-                    from ml_framework_snapshots.frameworks.nvidia_ptx import (
-                        _get_canonical_fallback_ptx,
-                    )
-
-                    with open(target_file, "w", encoding="utf-8") as f:
-                        json.dump(_get_canonical_fallback_ptx(), f, indent=2)
-                else:
-                    dummy_entries = [
-                        {
-                            "name": f"test_op_{i}",
-                            "mnemonic": f"test_op_{i}",
-                            "docstring": "Detailed test operation description for size threshold.",
-                        }
-                        for i in range(120)
-                    ]
-                    with open(target_file, "w", encoding="utf-8") as f:
-                        json.dump(dummy_entries, f, indent=2)
-                created_fixtures.append(target_file)
-
         whl_filename = build_wheel(str(tmp_path))
         whl_path = os.path.join(str(tmp_path), whl_filename)
         assert os.path.isfile(whl_path)
@@ -144,9 +161,7 @@ def test_wheel_packaging_and_data_assets(tmp_path: os.PathLike[str]) -> None:
             )
             assert os.path.isfile(sass_json)
     finally:
-        for c in created_fixtures:
-            if os.path.exists(c):
-                os.remove(c)
+        os.chdir(old_cwd)
 
 
 def test_wheel_bundles_dynamic_snapshots(tmp_path: os.PathLike[str]) -> None:
@@ -156,16 +171,34 @@ def test_wheel_bundles_dynamic_snapshots(tmp_path: os.PathLike[str]) -> None:
         tmp_path: Pytest temporary directory fixture.
     """
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    snap_dir = os.path.join(root_dir, "src", "ml_framework_snapshots", "snapshots")
+    proj_dir = os.path.join(str(tmp_path), "proj_dyn")
+    shutil.copytree(
+        root_dir,
+        proj_dir,
+        ignore=shutil.ignore_patterns(
+            ".git",
+            ".venv*",
+            "dist",
+            "__pycache__",
+            ".pytest_cache",
+            ".ruff_cache",
+            ".mypy_cache",
+            "*.whl",
+            ".coverage*",
+        ),
+    )
+    snap_dir = os.path.join(proj_dir, "src", "ml_framework_snapshots", "snapshots")
     test_json = os.path.join(snap_dir, "testframework_v1.0.0.json")
     test_db = os.path.join(snap_dir, "testleak.db")
 
-    try:
-        with open(test_json, "w", encoding="utf-8") as f:
-            f.write('{"categories": {"TEST": [{"name": "test_op"}]}}')
-        with open(test_db, "w", encoding="utf-8") as f:
-            f.write("test sqlite db content")
+    with open(test_json, "w", encoding="utf-8") as f:
+        f.write('{"categories": {"TEST": [{"name": "test_op"}]}}')
+    with open(test_db, "w", encoding="utf-8") as f:
+        f.write("test sqlite db content")
 
+    old_cwd = os.getcwd()
+    os.chdir(proj_dir)
+    try:
         whl_filename = build_wheel(str(tmp_path))
         whl_path = os.path.join(str(tmp_path), whl_filename)
 
@@ -180,10 +213,7 @@ def test_wheel_bundles_dynamic_snapshots(tmp_path: os.PathLike[str]) -> None:
                 n.endswith("testleak.db") for n in names
             ), "Database file was leaked into wheel"
     finally:
-        if os.path.exists(test_json):
-            os.remove(test_json)
-        if os.path.exists(test_db):
-            os.remove(test_db)
+        os.chdir(old_cwd)
 
 
 def test_zero_json_files_in_git() -> None:
