@@ -2337,6 +2337,8 @@ def test_tensor_instance_methods_extraction() -> None:
     try:
         import torch
 
+        if not hasattr(torch, "Tensor") or not hasattr(torch.Tensor, "view"):
+            raise ImportError("torch has no Tensor.view")
         torch_mod: Any = torch
     except ImportError:
 

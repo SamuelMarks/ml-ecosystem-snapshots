@@ -11,10 +11,15 @@ import re
 import sys
 from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Tuple, Union, cast
 
-from ml_framework_snapshots.api import (
-    FRAMEWORK_COLLECTORS,
-    extract_snapshot,
-)
+try:
+    from ml_framework_snapshots.api import (
+        FRAMEWORK_COLLECTORS as FRAMEWORK_COLLECTORS,
+        extract_snapshot as extract_snapshot,
+    )
+except ImportError:
+    FRAMEWORK_COLLECTORS = {}
+    extract_snapshot = None  # type: ignore[assignment]
+
 from ml_framework_snapshots.utils import get_custom_snapshots_paths, is_offline_mode
 
 _SNAPSHOT_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -586,6 +591,21 @@ def search_apis(
     return matches
 
 
+DTYPE_CANONICAL_ALIASES: Dict[str, str] = {
+    "str": "string",
+    "str_": "string",
+    "object_": "object",
+    "fp8": "float8_e4m3fn",
+    "fp16": "float16",
+    "bf16": "bfloat16",
+    "fp32": "float32",
+    "fp64": "float64",
+    "int": "int64",
+    "float": "float32",
+    "qint4x2": "qint4",
+}
+
+
 def normalize_dtype_name(raw_dt: str) -> str:
     """Normalize framework-specific dtype representations into canonical dtype names.
 
@@ -593,7 +613,7 @@ def normalize_dtype_name(raw_dt: str) -> str:
         raw_dt: Raw dtype representation (e.g. 'torch.float32', 'jnp.float32', 'tf.float32').
 
     Returns:
-        Canonical dtype name (e.g. 'float32', 'int64').
+        Canonical dtype name (e.g. 'float32', 'int64', 'qint8', 'float8_e4m3b11fnuz').
     """
     clean = str(raw_dt).lower().strip()
     for prefix in (
@@ -609,7 +629,35 @@ def normalize_dtype_name(raw_dt: str) -> str:
     ):
         if clean.startswith(prefix):
             clean = clean[len(prefix) :]
-    return clean
+            break
+    return DTYPE_CANONICAL_ALIASES.get(clean, clean)
+
+
+def _matches_rank_constraint(passed_rk: int, constraint: Union[int, str]) -> bool:
+    """Check whether a passed tensor rank satisfies a rank constraint specification.
+
+    Args:
+        passed_rk: Integer tensor rank passed by the user.
+        constraint: Rank constraint (e.g. 2, '==2', '>=2', '2D', '2').
+
+    Returns:
+        True if valid, False if constraint is violated.
+    """
+    if isinstance(constraint, int):
+        return passed_rk == constraint
+    cstr = str(constraint).strip()
+    if cstr.startswith("=="):
+        target = int(cstr[2:])
+        return passed_rk == target
+    if cstr.startswith(">="):
+        target = int(cstr[2:])
+        return passed_rk >= target
+    if cstr.endswith(("D", "d")):
+        target = int(cstr[:-1])
+        return passed_rk == target
+    if cstr.isdigit():
+        return passed_rk == int(cstr)
+    return True
 
 
 def check_hallucination(
@@ -884,21 +932,26 @@ def check_hallucination(
 
             if p_name in passed_ranks and p_rank is not None:
                 passed_rk = passed_ranks[p_name]
-                if isinstance(p_rank, int) and isinstance(passed_rk, int):
-                    if passed_rk != p_rank:
-                        rank_errors.append(
-                            f"Rank {passed_rk} is not supported for parameter '{p_name}' of '{api_path}'. Expected rank: {p_rank}"
-                        )
-                elif str(p_rank).startswith(">="):
-                    min_rk = int(str(p_rank)[2:])
-                    if isinstance(passed_rk, int) and passed_rk < min_rk:
+                if isinstance(passed_rk, int):
+                    if not _matches_rank_constraint(passed_rk, p_rank):
                         rank_errors.append(
                             f"Rank {passed_rk} is not supported for parameter '{p_name}' of '{api_path}'. Expected rank: {p_rank}"
                         )
 
         if is_float_complex_api and passed_dtypes:
             for p_k, dt in passed_dtypes.items():
-                if any(bad in dt.lower() for bad in ("int", "bool", "uint")):
+                if any(
+                    bad in dt.lower()
+                    for bad in (
+                        "int",
+                        "bool",
+                        "uint",
+                        "qint",
+                        "quint",
+                        "string",
+                        "object",
+                    )
+                ):
                     if not any(f"Dtype '{dt}'" in err for err in dtype_errors):
                         dtype_errors.append(
                             f"Dtype '{dt}' is not supported for '{api_path}'. Floating-point or complex dtype required."
@@ -1928,6 +1981,66 @@ def check_stablehlo_op(
         structured_attributes=structured_attributes,
         regions=regions,
     )
+
+
+def check_wgsl_op(
+    op_name: str,
+    inputs_count: Optional[int] = None,
+    attributes: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Validate a WebGPU WGSL operation against grounded schema specifications.
+
+    Args:
+        op_name: Name of the WGSL operation (e.g. 'storageStore', 'wgsl.atomicAdd').
+        inputs_count: Optional expected number of input operands.
+        attributes: Optional list of attribute names to verify.
+
+    Returns:
+        Validation report dictionary with is_valid, expected_inputs, expected_attributes, and errors.
+    """
+    from .frameworks.wgsl import _load_wgsl_ops
+
+    clean_name = op_name.split(".")[-1]
+    ops = _load_wgsl_ops()
+    op_map = {op["name"]: op for op in ops}
+
+    if clean_name not in op_map:
+        return {
+            "is_valid": False,
+            "op_exists": False,
+            "expected_inputs": [],
+            "expected_attributes": [],
+            "errors": [f"Unknown WGSL operation: '{op_name}'"],
+        }
+
+    matched = op_map[clean_name]
+    exp_inputs = matched.get("inputs", [])
+    exp_attrs = [
+        a.get("name")
+        for a in matched.get("attributes", [])
+        if isinstance(a, dict) and a.get("name")
+    ]
+
+    errors: List[str] = []
+    if inputs_count is not None and inputs_count != len(exp_inputs):
+        errors.append(
+            f"Operation '{clean_name}' expects {len(exp_inputs)} inputs, but got {inputs_count}."
+        )
+
+    if attributes:
+        for attr in attributes:
+            if attr not in exp_attrs:
+                errors.append(
+                    f"Attribute '{attr}' is not valid for WGSL operation '{clean_name}'."
+                )
+
+    return {
+        "is_valid": len(errors) == 0,
+        "op_exists": True,
+        "expected_inputs": exp_inputs,
+        "expected_attributes": exp_attrs,
+        "errors": errors,
+    }
 
 
 def translate_concept_arguments(

@@ -15,18 +15,27 @@ Updates:
 
 import ast
 import contextlib
-from enum import Enum
 import inspect
 import io
 import logging
 import re
 from typing import Any, Callable, Dict, List, Literal, Optional, Set, Tuple, Union
 
-from pydantic import BaseModel, Field, ConfigDict
 from ml_switcheroo_ir.schema.ghost import (
+    ExtendedGhostParam as ExtendedGhostParam,
+    ExtendedGhostRef as ExtendedGhostRef,
+    GhostInstructionRef as GhostInstructionRef,
+    GhostIsaRef as GhostIsaRef,
+    GhostMlirRef as GhostMlirRef,
+    GhostOperationRef as GhostOperationRef,
     GhostParam as GhostParam,
+    GhostPythonRef as GhostPythonRef,
     GhostRef as GhostRef,
-    ParameterKind,
+    GhostResult as GhostResult,
+    IRParameterRole as IRParameterRole,
+    OperandDirection as OperandDirection,
+    ParameterKind as ParameterKind,
+    SnapshotEnvelope as SnapshotEnvelope,
 )
 
 from .utils import (
@@ -87,6 +96,8 @@ FRAMEWORK_CAPABILITIES: Dict[str, List[str]] = {
     "amd_rdna": ["rocm"],
     "mlir": ["cpu", "cuda", "rocm", "tpu"],
     "stablehlo": ["cpu", "cuda", "rocm", "tpu"],
+    "ir": ["cpu", "cuda", "rocm", "tpu", "metal", "webgpu"],
+    "wgsl": ["webgpu"],
 }
 
 STANDARD_ENUM_MAP: Dict[str, List[str]] = {
@@ -110,92 +121,6 @@ STANDARD_ENUM_MAP: Dict[str, List[str]] = {
     ],
     "layout": ["NCHW", "NHWC", "NCDHW", "NDHWC"],
 }
-
-
-class OperandDirection(str, Enum):
-    """Structured operand directionality for assembly and low-level instructions."""
-
-    READ = "READ"
-    WRITE = "WRITE"
-    READ_WRITE = "READ_WRITE"
-    PREDICATE = "PREDICATE"
-
-
-class IRParameterRole(str, Enum):
-    """Distinguishes parameter roles for compiler intermediate representations."""
-
-    OPERAND = "OPERAND"
-    ATTRIBUTE = "ATTRIBUTE"
-    RESULT = "RESULT"
-    SUCCESSOR = "SUCCESSOR"
-    REGION = "REGION"
-
-
-class GhostResult(BaseModel):
-    """Structured SSA return or result for compiler IR operations."""
-
-    model_config = ConfigDict(extra="allow")
-
-    name: Optional[str] = Field(
-        default=None, description="Result SSA name or output identifier."
-    )
-    type: Optional[str] = Field(
-        default=None, description="Result type (e.g. tensor<?x?xf32>)."
-    )
-    description: Optional[str] = Field(
-        default=None, description="Description of the result."
-    )
-
-
-class ExtendedGhostParam(GhostParam):
-    """Extended GhostParam supporting operand directionality, IR roles, dtypes, rank, and factory defaults."""
-
-    model_config = ConfigDict(extra="allow")
-
-    default: Optional[Union[str, Any]] = Field(
-        default=None,
-        description="Default value representation.",
-    )
-    direction: Optional[OperandDirection] = Field(
-        default=None,
-        description="Operand directionality (READ, WRITE, READ_WRITE, PREDICATE).",
-    )
-    role: Optional[IRParameterRole] = Field(
-        default=None,
-        description="IR parameter role (OPERAND, ATTRIBUTE, RESULT, etc.).",
-    )
-    dtypes: Optional[List[str]] = Field(
-        default=None,
-        description="Allowed tensor dtypes (e.g. ['float32', 'bfloat16', 'float16']).",
-    )
-    allowed_dtypes: Optional[List[str]] = Field(
-        default=None,
-        description="Canonical allowed tensor dtypes (e.g. ['float32', 'bfloat16']).",
-    )
-    allowed_values: Optional[List[str]] = Field(
-        default=None,
-        description="Allowed enum or literal string values (e.g. ['none', 'mean', 'sum']).",
-    )
-    rank: Optional[Union[int, str]] = Field(
-        default=None,
-        description="Allowed tensor rank (e.g. 0 for scalar, 1, 2, 'N-D').",
-    )
-    rank_constraint: Optional[str] = Field(
-        default=None,
-        description="Allowed tensor rank constraint (e.g. '==2', '>=2', 'scalar').",
-    )
-    is_contracting_dim: Optional[bool] = Field(
-        default=None,
-        description="Whether this parameter represents a contracting tensor dimension.",
-    )
-    default_factory: Optional[str] = Field(
-        default=None,
-        description="Name or representation of factory function producing default value.",
-    )
-    is_mandatory: Optional[bool] = Field(
-        default=None,
-        description="Whether parameter is mandatory (no default value).",
-    )
 
 
 def sanitize_param_default(
@@ -257,161 +182,6 @@ def sanitize_param_default(
         return (val_str, None, False)
     except Exception:
         return ("<unrepresentable>", None, False)
-
-
-class ExtendedGhostRef(GhostRef):
-    """Extended GhostRef with support for domain metadata, multiple SSA returns, and IR operands."""
-
-    model_config = ConfigDict(extra="allow")
-
-    returns: Optional[List[GhostResult]] = Field(
-        default=None, description="Multiple SSA returns or results."
-    )
-    domain_metadata: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Structured domain metadata for ISAs and compilers.",
-    )
-    signature_completeness: Optional[Literal["exact", "heuristic", "opaque"]] = Field(
-        default="exact",
-        description="Completeness of signature resolution: exact, heuristic, or opaque.",
-    )
-    is_c_extension: Optional[bool] = Field(
-        default=False,
-        description="Whether the symbol originates from a compiled C/C++ extension.",
-    )
-    accepted_kwargs: Optional[List[str]] = Field(
-        default=None,
-        description="Explicit list of accepted keyword arguments when **kwargs is present.",
-    )
-
-
-class SnapshotEnvelope(BaseModel):
-    """Structured provenance envelope for framework and ISA/IR snapshots."""
-
-    model_config = ConfigDict(extra="allow")
-
-    schema_version: str = Field(default="2.0.0", description="Snapshot schema version.")
-    target: str = Field(..., description="Target framework, dialect, or hardware ISA.")
-    version: Optional[str] = Field(
-        default=None,
-        description="Upstream framework version or toolkit release.",
-    )
-    upstream_version: Optional[str] = Field(
-        default=None,
-        description="Upstream hardware specification or compiler version.",
-    )
-    source_type: Optional[str] = Field(
-        default=None,
-        description="Extraction source (tablegen, binary_disassembly, python_ast).",
-    )
-    upstream_commit: Optional[str] = Field(
-        default=None, description="Upstream git commit hash or release tag."
-    )
-    supported_microarchitectures: Optional[List[str]] = Field(
-        default=None,
-        description="Explicit list of supported GPU compute capabilities or target architectures.",
-    )
-    generated_at: Optional[str] = Field(
-        default=None, description="ISO-8601 generation timestamp."
-    )
-    environment: Optional[Dict[str, Any]] = Field(
-        default=None, description="Build host environment metadata."
-    )
-    categories: Dict[str, List[Any]] = Field(
-        default_factory=dict, description="Categorized symbol dictionaries."
-    )
-    operations: Optional[List[Any]] = Field(
-        default=None, description="Flat list of IR or dialect operations."
-    )
-    instructions: Optional[List[Any]] = Field(
-        default=None, description="Flat list of hardware ISA instructions."
-    )
-
-
-class GhostPythonRef(ExtendedGhostRef):
-    """GhostRef specialized for high-level Python ML frameworks (PyTorch, JAX, TF, Keras)."""
-
-    model_config = ConfigDict(extra="allow")
-    domain_type: Literal["python"] = "python"
-
-
-class GhostIsaRef(ExtendedGhostRef):
-    """GhostRef specialized for GPU assembly ISAs (NVIDIA SASS, AMD RDNA/CDNA)."""
-
-    model_config = ConfigDict(extra="allow")
-    domain_type: Literal["isa", "instruction"] = "isa"
-    predicate_guards: Optional[List[str]] = Field(
-        default=None,
-        description="Allowed predicate guard registers (e.g. ['@P0', '@!P1', '@PT']).",
-    )
-    register_classes: Optional[Dict[str, str]] = Field(
-        default=None,
-        description="Register classes for operands (e.g. {'op0': 'VGPR_32', 'op1': 'VReg_64'}).",
-    )
-    control_codes: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Instruction control code and scheduling schema.",
-    )
-    instruction_modifiers: Optional[List[str]] = Field(
-        default=None,
-        description="Valid instruction modifiers (e.g. ['.SAT', '.FTZ', 'omod:2']).",
-    )
-    structured_modifiers: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Structured modifier bitfields (e.g. rounding, cache, saturation).",
-    )
-    structured_operands: Optional[List[Dict[str, Any]]] = Field(
-        default=None,
-        description="Detailed operand records with roles, register classes, and immediate constraints.",
-    )
-    vopd_profile: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="VOPD dual-issue profile and pairing rules for RDNA3/GFX11.",
-    )
-    condition_codes: Optional[List[str]] = Field(
-        default=None,
-        description="Allowed condition codes or flags (e.g. ['CC.EQ', 'CC.LT', 'vcc']).",
-    )
-    supported_architectures: Optional[List[str]] = Field(
-        default=None,
-        description="Microarchitectures supporting this instruction.",
-    )
-
-
-class GhostMlirRef(ExtendedGhostRef):
-    """GhostRef specialized for compiler IR dialects (Core MLIR and StableHLO)."""
-
-    model_config = ConfigDict(extra="allow")
-    domain_type: Literal["mlir", "operation"] = "mlir"
-    traits: Optional[List[str]] = Field(
-        default=None,
-        description="Dialect verification traits (e.g. ['SameOperandsAndResultType', 'Commutative']).",
-    )
-    operands: Optional[List[GhostParam]] = Field(
-        default=None,
-        description="Strictly decoupled SSA value arguments (operands).",
-    )
-    attributes: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Structured attribute specifications and schemas.",
-    )
-    regions: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Region definitions with block arguments and yield types.",
-    )
-    successors: Optional[List[str]] = Field(
-        default=None,
-        description="Successor block identifiers for control flow operations.",
-    )
-    type_constraints: Optional[Dict[str, str]] = Field(
-        default=None,
-        description="Type constraints for operands and results (e.g. RankedTensorOf, AnyFloat).",
-    )
-
-
-# First-class domain IR and ISA schema aliases
-GhostInstructionRef = GhostIsaRef
-GhostOperationRef = GhostMlirRef
 
 
 _GRIFFE_CACHE: Dict[str, Any] = {}
@@ -1267,8 +1037,8 @@ class GhostInspector:
                     default=p_default,
                     annotation=p_anno,
                     description=p_desc,
-                    dtypes=p_dtypes,
-                    rank=p_rank,
+                    allowed_dtypes=p_dtypes,
+                    rank_constraint=p_rank,
                     allowed_values=p_allowed_values,
                     default_factory=p_factory,
                     is_mandatory=p_default is None,
@@ -1407,8 +1177,8 @@ class GhostInspector:
                             default=pd,
                             annotation=sanitized_pa,
                             description=None,
-                            dtypes=ov_dtypes,
-                            rank=ov_rank,
+                            allowed_dtypes=ov_dtypes,
+                            rank_constraint=ov_rank,
                             allowed_values=ov_allowed_values,
                             default_factory=ov_factory,
                             is_mandatory=pd is None,

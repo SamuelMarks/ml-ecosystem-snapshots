@@ -459,6 +459,72 @@ def check_mlir_text_compliance(mlir_text: str) -> Dict[str, Any]:
     }
 
 
+def check_wgsl_shader_compliance(shader_text: str) -> Dict[str, Any]:
+    """Verify that a WebGPU WGSL shader snippet uses valid builtin operations.
+
+    Args:
+        shader_text: Text snippet of WebGPU WGSL shader code.
+
+    Returns:
+        Compliance dictionary with is_compliant, total_ops, verified_ops, and errors.
+    """
+    import re
+    from ml_framework_snapshots.mcp_server import check_wgsl_op
+
+    errors: List[str] = []
+    total_ops = 0
+    verified_ops = 0
+
+    call_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)")
+
+    # Standard WGSL control and reserved keywords to ignore
+    ignored_keywords = {
+        "fn",
+        "if",
+        "for",
+        "while",
+        "loop",
+        "switch",
+        "var",
+        "let",
+        "const",
+        "return",
+        "vec2",
+        "vec3",
+        "vec4",
+        "mat2x2",
+        "mat3x3",
+        "mat4x4",
+        "array",
+        "ptr",
+    }
+
+    for line in shader_text.splitlines():
+        cleaned = line.strip()
+        if not cleaned or cleaned.startswith("//"):
+            continue
+
+        for match in call_pattern.finditer(cleaned):
+            op_name = match.group(1)
+            if op_name in ignored_keywords:
+                continue
+
+            res = check_wgsl_op(op_name)
+            if res.get("op_exists"):
+                total_ops += 1
+                if res.get("is_valid"):
+                    verified_ops += 1
+                else:
+                    errors.extend(res.get("errors", []))
+
+    return {
+        "is_compliant": len(errors) == 0,
+        "total_ops": total_ops,
+        "verified_ops": verified_ops,
+        "errors": errors,
+    }
+
+
 def check_sass_assembly_compliance(
     assembly_text: str, sm_arch: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -697,3 +763,122 @@ def validate_matmul_shapes(
         ]
 
     return True, out_shape, None
+
+
+DTYPE_BITWIDTHS: Dict[str, int] = {
+    "float64": 64,
+    "int64": 64,
+    "uint64": 64,
+    "complex128": 128,
+    "float32": 32,
+    "int32": 32,
+    "uint32": 32,
+    "complex64": 64,
+    "float16": 16,
+    "bfloat16": 16,
+    "int16": 16,
+    "uint16": 16,
+    "float8_e4m3fn": 8,
+    "float8_e4m3b11fnuz": 8,
+    "float8_e5m2": 8,
+    "fp8_e4m3fn": 8,
+    "fp8_e4m3fnuz": 8,
+    "fp8_e5m2": 8,
+    "fp8_e5m2fnuz": 8,
+    "int8": 8,
+    "uint8": 8,
+    "qint8": 8,
+    "quint8": 8,
+    "bool": 8,
+    "int4": 4,
+    "uint4": 4,
+    "qint4": 4,
+    "int2": 2,
+    "string": 64,
+    "object": 64,
+}
+
+
+def get_dtype_bitwidth(dtype_name: str) -> int:
+    """Return bitwidth for canonical, sub-byte, and quantized data types.
+
+    Args:
+        dtype_name: Canonical or normalized dtype name.
+
+    Returns:
+        Bitwidth in bits (e.g. 8 for qint8, 4 for qint4/int4, 2 for int2, 32 for float32).
+    """
+    from .mcp_server import normalize_dtype_name
+
+    clean = normalize_dtype_name(dtype_name)
+    return DTYPE_BITWIDTHS.get(clean, 32)
+
+
+def estimate_tensor_memory_bytes(shape: Sequence[int], dtype_name: str) -> float:
+    """Estimate memory footprint in bytes supporting sub-byte and quantized bitwidths.
+
+    Args:
+        shape: Tensor dimensions sequence.
+        dtype_name: Canonical or normalized data type name.
+
+    Returns:
+        Total estimated memory footprint in bytes.
+    """
+    import math
+
+    bits = get_dtype_bitwidth(dtype_name)
+    num_elements = math.prod(shape) if shape else 1
+    total_bits = num_elements * bits
+    return total_bits / 8.0
+
+
+def validate_dtype_for_op(op_name: str, dtype_name: str) -> Tuple[bool, Optional[str]]:
+    """Validate that a data type is legally applicable to a mathematical operator.
+
+    Rejects quantized, integer, boolean, and non-numeric types for transcendental
+    operations (e.g., 'sin', 'exp', 'log', 'cos', 'sqrt', 'cholesky', 'linalg_inv').
+
+    Args:
+        op_name: Operation or function name.
+        dtype_name: Data type name to validate.
+
+    Returns:
+        A tuple of (is_valid, error_message_or_None).
+    """
+    from .mcp_server import normalize_dtype_name
+
+    clean_op = op_name.split(".")[-1].lower()
+    clean_dt = normalize_dtype_name(dtype_name)
+
+    transcendental_ops = {
+        "sin",
+        "cos",
+        "tan",
+        "exp",
+        "log",
+        "sqrt",
+        "rsqrt",
+        "sigmoid",
+        "tanh",
+        "cholesky",
+        "linalg_inv",
+        "inv",
+    }
+
+    if clean_op in transcendental_ops:
+        non_float_prefixes = (
+            "int",
+            "uint",
+            "qint",
+            "quint",
+            "bool",
+            "string",
+            "object",
+        )
+        if any(clean_dt.startswith(p) for p in non_float_prefixes):
+            return False, (
+                f"Data type '{dtype_name}' is not supported for transcendental "
+                f"operation '{op_name}'. Floating-point or complex dtype required."
+            )
+
+    return True, None

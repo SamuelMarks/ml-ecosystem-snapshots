@@ -404,10 +404,14 @@ def export_llm_prompt_context(refs: List[GhostRef]) -> str:
             desc = f" - {p.description}" if p.description else ""
 
             constraints: List[str] = []
-            p_dtypes = getattr(p, "dtypes", None)
+            p_dtypes = getattr(p, "allowed_dtypes", None) or getattr(p, "dtypes", None)
             if p_dtypes:
                 constraints.append(f"dtypes: {p_dtypes}")
-            p_rank = getattr(p, "rank", None)
+            p_rank = (
+                getattr(p, "rank_constraint", None)
+                if getattr(p, "rank_constraint", None) is not None
+                else getattr(p, "rank", None)
+            )
             if p_rank is not None:
                 constraints.append(f"rank: {p_rank}")
             constr_str = f" [{', '.join(constraints)}]" if constraints else ""

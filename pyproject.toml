@@ -38,6 +38,8 @@ disallow_subclassing_any = false
 
 [tool.hatch.build.targets.sdist]
 artifacts = [
+    "src/ml_framework_snapshots/*.json",
+    "src/ml_framework_snapshots/*.json.gz",
     "src/ml_framework_snapshots/**/*.json",
     "src/ml_framework_snapshots/**/*.json.gz",
 ]
@@ -60,10 +62,14 @@ exclude = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/ml_framework_snapshots"]
 include = [
+    "src/ml_framework_snapshots/*.json",
+    "src/ml_framework_snapshots/*.json.gz",
     "src/ml_framework_snapshots/**/*.json",
     "src/ml_framework_snapshots/**/*.json.gz",
 ]
 artifacts = [
+    "src/ml_framework_snapshots/*.json",
+    "src/ml_framework_snapshots/*.json.gz",
     "src/ml_framework_snapshots/**/*.json",
     "src/ml_framework_snapshots/**/*.json.gz",
 ]

@@ -244,3 +244,25 @@ def test_get_aten_op_schema_import_error() -> None:
     with patch.dict("sys.modules", {"torch": None}):
         res = get_aten_op_schema("add")
         assert res is None
+
+
+def test_torch_numpy_warning_ignored() -> None:
+    """Test that Failed to initialize NumPy UserWarning is filtered out.
+
+    Returns:
+        None.
+    """
+    import importlib
+    import warnings
+    from ml_framework_snapshots.frameworks import torch as torch_fw
+
+    importlib.reload(torch_fw)
+    matching = [
+        f
+        for f in warnings.filters
+        if f[0] == "ignore"
+        and f[2] is UserWarning
+        and f[1] is not None
+        and "Failed to initialize NumPy" in getattr(f[1], "pattern", "")
+    ]
+    assert len(matching) > 0

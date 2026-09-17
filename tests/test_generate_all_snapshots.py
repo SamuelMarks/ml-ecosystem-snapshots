@@ -67,6 +67,7 @@ def test_main_success(
         "nvidia_sass",
         "nvidia_ptx",
         "amd_rdna",
+        "ir",
     ]
 
     assert mock_extract.call_count == len(frameworks)
@@ -136,6 +137,7 @@ def test_main_failure(
         "nvidia_sass",
         "nvidia_ptx",
         "amd_rdna",
+        "ir",
     ]
 
     assert mock_extract.call_count == len(frameworks)

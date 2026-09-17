@@ -506,6 +506,9 @@ def test_pytorch_modules_kwargs_promotion() -> None:
     """Test parameter extraction and kwargs promotion on PyTorch nn.Linear and nn.Conv2d."""
     try:
         import torch.nn as nn
+
+        if not hasattr(nn, "Linear") or not hasattr(nn, "Conv2d"):
+            raise ImportError("torch.nn has no Linear or Conv2d")
     except ImportError:
         import types
 

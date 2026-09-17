@@ -88,8 +88,14 @@ def cmd_capture(args: argparse.Namespace) -> None:
         args: Parsed arguments
     """
     import logging
+    import warnings
     from rich.progress import Progress
 
+    warnings.filterwarnings(
+        "ignore",
+        message=".*Failed to initialize NumPy.*",
+        category=UserWarning,
+    )
     logging.getLogger("griffe").setLevel(logging.CRITICAL)
 
     from ml_framework_snapshots.api import get_available_frameworks
@@ -907,6 +913,61 @@ def cmd_check_stablehlo(args: argparse.Namespace) -> None:
     print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
 
 
+def cmd_check_wgsl(args: argparse.Namespace) -> None:
+    """Validate WebGPU WGSL shader code or individual operation from the CLI.
+
+    Args:
+        args: Parsed command line arguments containing op_name, inputs_count, attributes, or file.
+    """
+    from .compliance import check_wgsl_shader_compliance
+    from .mcp_server import check_wgsl_op
+
+    if args.file:
+        if not os.path.exists(args.file):
+            print(f"Error: WGSL file not found: {args.file}")
+            sys.exit(1)
+        with open(args.file, "r", encoding="utf-8") as f:
+            content = f.read()
+        res = check_wgsl_shader_compliance(content)
+        if not res.get("is_compliant"):
+            print(
+                f"WGSL Compliance Check Failed ({len(res.get('errors', []))} errors):"
+            )
+            for err in res.get("errors", []):
+                print(f"  - {err}")
+            sys.exit(1)
+        print(
+            f"WGSL shader verified compliant: {res.get('verified_ops', 0)} operations recognized."
+        )
+        return
+
+    if not args.op_name:
+        print("Error: Either an op_name or --file must be specified.")
+        sys.exit(1)
+
+    attrs = (
+        [a.strip() for a in args.attributes.split(",") if a.strip()]
+        if args.attributes
+        else None
+    )
+
+    res = check_wgsl_op(
+        op_name=args.op_name,
+        inputs_count=args.inputs_count,
+        attributes=attrs,
+    )
+
+    if not res.get("is_valid"):
+        print(f"WGSL Operation '{args.op_name}' Invalid:")
+        for err in res.get("errors", []):
+            print(f"  - {err}")
+        sys.exit(1)
+
+    print(f"WGSL Operation '{args.op_name}' is valid.")
+    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
+    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
+
+
 def main() -> None:
     """Parse arguments and route to subcommands."""
     parser = argparse.ArgumentParser(description="ML Framework Snapshots CLI")
@@ -1256,6 +1317,38 @@ def main() -> None:
         help="Path to StableHLO text file to validate",
     )
     parser_check_stablehlo.set_defaults(func=cmd_check_stablehlo)
+
+    # check-wgsl
+    parser_check_wgsl = subparsers.add_parser(
+        "check-wgsl",
+        help="Validate WGSL shader or operation against specification",
+    )
+    parser_check_wgsl.add_argument(
+        "op_name",
+        type=str,
+        nargs="?",
+        default=None,
+        help="Name of the WGSL operation (e.g. storageStore, atomicAdd)",
+    )
+    parser_check_wgsl.add_argument(
+        "--inputs-count",
+        type=int,
+        default=None,
+        help="Expected number of input operands",
+    )
+    parser_check_wgsl.add_argument(
+        "--attributes",
+        type=str,
+        default=None,
+        help="Comma-separated attribute names",
+    )
+    parser_check_wgsl.add_argument(
+        "--file",
+        type=str,
+        default=None,
+        help="Path to WGSL shader file to validate",
+    )
+    parser_check_wgsl.set_defaults(func=cmd_check_wgsl)
 
     args = parser.parse_args()
     if getattr(args, "offline", False):

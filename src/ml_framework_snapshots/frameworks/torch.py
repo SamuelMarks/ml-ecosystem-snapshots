@@ -8,12 +8,20 @@ import inspect
 import os
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
+import warnings
+
 from ml_framework_snapshots.utils import CExtensionSignature, get_all_members
 from ml_framework_snapshots.models import GhostInspector
 from ml_switcheroo_ir.schema.ghost import GhostRef
 from ml_switcheroo_ir.schema.ghost import SemanticTier
 
 import typing
+
+warnings.filterwarnings(
+    "ignore",
+    message=".*Failed to initialize NumPy.*",
+    category=UserWarning,
+)
 
 try:
     import torch  # noqa: F401
@@ -497,7 +505,7 @@ RANK_RULES: Dict[str, Dict[str, Union[int, str]]] = {
 
 def infer_torch_dtype_and_rank(
     op_name: str, param_name: str, type_str: str = ""
-) -> Tuple[Optional[List[str]], Optional[Union[int, str]]]:
+) -> Tuple[Optional[List[str]], Optional[str]]:
     """Infer allowed PyTorch tensor dtypes and rank constraints for an operator parameter.
 
     Args:
@@ -506,13 +514,13 @@ def infer_torch_dtype_and_rank(
         type_str: Optional type annotation string.
 
     Returns:
-        A tuple of (allowed_dtypes_list_or_None, rank_or_None).
+        A tuple of (allowed_dtypes_list_or_None, rank_constraint_or_None).
     """
     clean_op = op_name.split(".")[-1].lower()
     clean_param = param_name.lower()
 
     dtypes: Optional[List[str]] = None
-    rank: Optional[Union[int, str]] = None
+    rank: Optional[str] = None
 
     normalized_op = clean_op.replace("linalg.", "linalg_")
     if clean_op in FLOAT_COMPLEX_OPS or normalized_op in FLOAT_COMPLEX_OPS:
@@ -526,10 +534,17 @@ def infer_torch_dtype_and_rank(
 
     rank_dict = RANK_RULES.get(clean_op) or RANK_RULES.get(normalized_op)
     if rank_dict:
+        raw_rank: Optional[Union[int, str]] = None
         if clean_param in rank_dict:
-            rank = rank_dict[clean_param]
+            raw_rank = rank_dict[clean_param]
         elif "input" in rank_dict and clean_param in ("self", "a"):
-            rank = rank_dict["input"]
+            raw_rank = rank_dict["input"]
+
+        if raw_rank is not None:
+            if isinstance(raw_rank, int):
+                rank = f"=={raw_rank}"
+            else:
+                rank = str(raw_rank)
 
     return dtypes, rank
 
@@ -611,6 +626,8 @@ def parse_native_functions_yaml(
                     "default": default_val,
                     "annotation": clean_type,
                     "is_out": is_out,
+                    "allowed_dtypes": dtypes,
+                    "rank_constraint": rank,
                     "dtypes": dtypes,
                     "rank": rank,
                 }
@@ -700,6 +717,8 @@ def get_jit_schemas_for_op(op_name: str) -> List[Dict[str, Any]]:
                     "default": p_default,
                     "annotation": p_anno,
                     "is_out": is_out,
+                    "allowed_dtypes": dtypes,
+                    "rank_constraint": rank,
                     "dtypes": dtypes,
                     "rank": rank,
                 }
@@ -762,6 +781,8 @@ def get_aten_op_schema(op_name: str) -> Optional[List[Dict[str, Any]]]:
                         "default": p_default,
                         "annotation": p_anno,
                         "is_out": is_out,
+                        "allowed_dtypes": dtypes,
+                        "rank_constraint": rank,
                         "dtypes": dtypes,
                         "rank": rank,
                     }

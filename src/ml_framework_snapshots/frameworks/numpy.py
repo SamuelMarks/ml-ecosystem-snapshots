@@ -45,53 +45,10 @@ def collect_api(
                     except Exception:
                         pass
     elif category == SemanticTier.ARRAY_API:
-        array_ops = [
-            "abs",
-            "add",
-            "all",
-            "any",
-            "arange",
-            "argmax",
-            "argmin",
-            "clip",
-            "concatenate",
-            "cos",
-            "divide",
-            "dot",
-            "empty",
-            "exp",
-            "eye",
-            "full",
-            "linspace",
-            "log",
-            "matmul",
-            "max",
-            "maximum",
-            "mean",
-            "min",
-            "minimum",
-            "multiply",
-            "ones",
-            "prod",
-            "reshape",
-            "round",
-            "sin",
-            "split",
-            "sqrt",
-            "squeeze",
-            "stack",
-            "subtract",
-            "sum",
-            "tan",
-            "tanh",
-            "transpose",
-            "where",
-            "zeros",
-        ]
-        for name in array_ops:
-            if hasattr(np, name):
-                obj = getattr(np, name)
-                if callable(obj):
+        for name in dir(np):
+            if not name.startswith("_"):
+                obj = getattr(np, name, None)
+                if callable(obj) and not inspect.isclass(obj):
                     try:
                         res = GhostInspector.inspect(
                             obj, f"numpy.{name}", is_public=True

@@ -1444,3 +1444,147 @@ def test_get_framework_snapshot_list_file(tmp_path: Any, monkeypatch: Any) -> No
     assert "categories" in snap_ops
     assert "UTIL" in snap_ops["categories"]
     assert snap_ops["categories"]["UTIL"][0]["name"] == "op1"
+
+
+def test_mcp_server_import_error(monkeypatch: Any) -> None:
+    """Test fallback when importing api in mcp_server raises ImportError.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    import builtins
+    import importlib
+    import ml_framework_snapshots.mcp_server as mcp_mod
+
+    orig_import = builtins.__import__
+
+    def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Simulate missing ml_framework_snapshots.api.
+
+        Args:
+            name: Module name.
+            *args: Positional arguments.
+            **kwargs: Keyword arguments.
+
+        Returns:
+            Imported module.
+        """
+        if name == "ml_framework_snapshots.api":
+            raise ImportError("simulated missing api")
+        return orig_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    try:
+        importlib.reload(mcp_mod)
+        assert mcp_mod.FRAMEWORK_COLLECTORS == {}
+        assert mcp_mod.extract_snapshot is None
+        assert len(mcp_mod.DEFAULT_CONCEPT_MAP) > 0
+    finally:
+        monkeypatch.undo()
+        importlib.reload(mcp_mod)
+        assert mcp_mod.extract_snapshot is not None
+
+
+def test_extended_dtypes_normalization() -> None:
+    """Test normalization of newly introduced quantized, sub-byte, and generic dtypes."""
+    from ml_framework_snapshots.mcp_server import normalize_dtype_name
+    from ml_framework_snapshots.compliance import (
+        estimate_tensor_memory_bytes,
+        get_dtype_bitwidth,
+        validate_dtype_for_op,
+    )
+
+    # Quantized types
+    assert normalize_dtype_name("torch.qint8") == "qint8"
+    assert normalize_dtype_name("torch.quint8") == "quint8"
+    assert normalize_dtype_name("torch.qint4x2") == "qint4"
+
+    # FP8 and sub-byte
+    assert normalize_dtype_name("torch.float8_e4m3fn") == "float8_e4m3fn"
+    assert normalize_dtype_name("float8_e4m3b11fnuz") == "float8_e4m3b11fnuz"
+    assert normalize_dtype_name("int4") == "int4"
+    assert normalize_dtype_name("int2") == "int2"
+
+    # Generic types
+    assert normalize_dtype_name("np.str_") == "string"
+    assert normalize_dtype_name("np.object_") == "object"
+    assert normalize_dtype_name("str") == "string"
+
+    # Bitwidths
+    assert get_dtype_bitwidth("qint8") == 8
+    assert get_dtype_bitwidth("qint4") == 4
+    assert get_dtype_bitwidth("int2") == 2
+    assert get_dtype_bitwidth("float8_e4m3b11fnuz") == 8
+    assert get_dtype_bitwidth("float32") == 32
+
+    # Memory estimation
+    assert estimate_tensor_memory_bytes([2, 4], "int4") == 4.0
+    assert estimate_tensor_memory_bytes([10], "int2") == 2.5
+    assert estimate_tensor_memory_bytes([10], "float32") == 40.0
+
+    # Operator dtype validation
+    ok, err = validate_dtype_for_op("sin", "float32")
+    assert ok is True
+    assert err is None
+
+    ok_q, err_q = validate_dtype_for_op("sin", "qint8")
+    assert ok_q is False
+    assert "not supported for transcendental" in (err_q or "")
+
+    ok_c, err_c = validate_dtype_for_op("cholesky", "int32")
+    assert ok_c is False
+    assert "not supported for transcendental" in (err_c or "")
+
+    ok_b, err_b = validate_dtype_for_op("bitwise_and", "int32")
+    assert ok_b is True
+    assert err_b is None
+
+
+def test_matches_rank_constraint_variants() -> None:
+    """Test _matches_rank_constraint for int, ==, >=, D suffix, digits, and unknown strings."""
+    from ml_framework_snapshots.mcp_server import _matches_rank_constraint
+
+    assert _matches_rank_constraint(2, 2) is True
+    assert _matches_rank_constraint(3, 2) is False
+
+    assert _matches_rank_constraint(2, "==2") is True
+    assert _matches_rank_constraint(3, "==2") is False
+
+    assert _matches_rank_constraint(3, ">=2") is True
+    assert _matches_rank_constraint(1, ">=2") is False
+
+    assert _matches_rank_constraint(2, "2D") is True
+    assert _matches_rank_constraint(1, "2D") is False
+
+    assert _matches_rank_constraint(2, "2") is True
+    assert _matches_rank_constraint(1, "2") is False
+
+    assert _matches_rank_constraint(2, "unknown_constraint") is True
+
+
+def test_check_hallucination_non_int_rank() -> None:
+    """Test check_hallucination handles non-integer passed rank gracefully."""
+    from unittest.mock import patch
+    from ml_framework_snapshots.mcp_server import check_hallucination
+
+    mock_snap = {
+        "categories": {
+            "all": [
+                {
+                    "api_path": "torch.mm",
+                    "params": [
+                        {"name": "input", "kind": "POSITIONAL_OR_KEYWORD", "rank": 2}
+                    ],
+                }
+            ]
+        }
+    }
+    with patch(
+        "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+        return_value=mock_snap,
+    ):
+        res = check_hallucination(
+            "torch", "torch.mm", kwarg_ranks={"input": "non_int_val"}
+        )
+        assert res["api_exists"] is True
+        assert res["is_hallucinated"] is False

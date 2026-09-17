@@ -120,25 +120,26 @@ def test_sanitize_param_default_callables_and_memory_addresses() -> None:
 
 
 def test_extended_ghost_param_fields() -> None:
-    """Test ExtendedGhostParam fields: dtypes, rank, default_factory, is_mandatory."""
+    """Test ExtendedGhostParam fields: allowed_dtypes, rank_constraint, default_factory, is_mandatory."""
     param = ExtendedGhostParam(
         name="input",
         kind=ParameterKind.POSITIONAL_OR_KEYWORD,
         default="None",
         annotation="Tensor",
-        dtypes=["float32", "bfloat16", "float16"],
-        rank=2,
+        allowed_dtypes=["float32", "bfloat16", "float16"],
+        rank_constraint="==2",
         default_factory=None,
         is_mandatory=False,
     )
     assert param.name == "input"
+    assert param.allowed_dtypes == ["float32", "bfloat16", "float16"]
     assert param.dtypes == ["float32", "bfloat16", "float16"]
-    assert param.rank == 2
+    assert param.rank_constraint == "==2"
     assert param.is_mandatory is False
 
     dumped = param.model_dump()
-    assert dumped["dtypes"] == ["float32", "bfloat16", "float16"]
-    assert dumped["rank"] == 2
+    assert dumped["allowed_dtypes"] == ["float32", "bfloat16", "float16"]
+    assert dumped["rank_constraint"] == "==2"
     assert dumped["is_mandatory"] is False
 
 
@@ -162,21 +163,21 @@ def test_infer_torch_dtype_and_rank() -> None:
 
     # mm: 2D matrix multiplication
     dtypes_mm, rank_mm = infer_torch_dtype_and_rank("mm", "mat2", "Tensor")
-    assert rank_mm == 2
+    assert rank_mm == "==2"
 
     # bmm: 3D batch matrix multiplication
     dtypes_bmm, rank_bmm = infer_torch_dtype_and_rank("bmm", "mat2", "Tensor")
-    assert rank_bmm == 3
+    assert rank_bmm == "==3"
 
     # mv: matrix-vector
     _, rank_mat = infer_torch_dtype_and_rank("mv", "mat", "Tensor")
     _, rank_vec = infer_torch_dtype_and_rank("mv", "vec", "Tensor")
-    assert rank_mat == 2
-    assert rank_vec == 1
+    assert rank_mat == "==2"
+    assert rank_vec == "==1"
 
     # dot / vdot: 1D vectors
     _, rank_dot = infer_torch_dtype_and_rank("dot", "input", "Tensor")
-    assert rank_dot == 1
+    assert rank_dot == "==1"
 
     # Floating point ops (sin, cos, exp)
     dtypes_sin, _ = infer_torch_dtype_and_rank("sin", "input", "Tensor")

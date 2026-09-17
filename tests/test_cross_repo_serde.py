@@ -115,3 +115,30 @@ def test_exhaustive_snapshot_loading_serde() -> None:
             # Re-serialize to verify schema integrity
             dumped = ref.model_dump()
             assert isinstance(dumped, dict)
+
+
+def test_cross_repo_dtype_coverage() -> None:
+    """Verify all ml_switcheroo_ir DType variants are supported and roundtrip serialized."""
+    import ml_switcheroo_ir as ir
+    from ml_framework_snapshots.compliance import DTYPE_BITWIDTHS, get_dtype_bitwidth
+    from ml_framework_snapshots.mcp_server import normalize_dtype_name
+
+    all_ir_dtypes = [dt.value for dt in ir.DType]
+    assert len(all_ir_dtypes) >= 30
+
+    for dt_str in all_ir_dtypes:
+        norm = normalize_dtype_name(dt_str)
+        assert norm in DTYPE_BITWIDTHS, f"DType {dt_str} missing from DTYPE_BITWIDTHS"
+        bitwidth = get_dtype_bitwidth(norm)
+        assert bitwidth in (2, 4, 8, 16, 32, 64, 128)
+
+    # Roundtrip param with all dtypes
+    param = ExtendedGhostParam(
+        name="input",
+        kind=ParameterKind.POSITIONAL_OR_KEYWORD,
+        allowed_dtypes=all_ir_dtypes,
+        rank_constraint=">=2",
+    )
+    dumped = param.model_dump()
+    assert dumped["allowed_dtypes"] == all_ir_dtypes
+    assert dumped["rank_constraint"] == ">=2"

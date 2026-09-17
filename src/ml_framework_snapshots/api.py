@@ -128,6 +128,15 @@ def get_pkg_version(package_name: str) -> str:
             package_name = "paxml"
         elif package_name == "optax_shim":
             package_name = "optax"
+        elif package_name in ("ir", "ml_switcheroo_ir"):
+            try:
+                import ml_switcheroo_ir
+
+                return str(getattr(ml_switcheroo_ir, "__version__", "0.0.3"))
+            except Exception:
+                package_name = "ml-switcheroo-ir"
+        elif package_name == "wgsl":
+            return "draft-2024"
         elif package_name == "huggingface":
             package_name = "transformers"
         elif package_name == "keras":
@@ -274,7 +283,7 @@ def _consolidate_aliases(refs: List[GhostRef]) -> List[GhostRef]:
     consolidated = {}
     for ref in refs:
         # Use name, kind, params, and docstring to identify identical references.
-        # Convert params to a comparable tuple including direction, role, dtypes, and rank.
+        # Convert params to a comparable tuple including direction, role, allowed_dtypes, and rank_constraint.
         param_sigs = tuple(
             (
                 p.name,
@@ -283,8 +292,14 @@ def _consolidate_aliases(refs: List[GhostRef]) -> List[GhostRef]:
                 p.annotation,
                 getattr(p, "direction", None),
                 getattr(p, "role", None),
-                tuple(getattr(p, "dtypes", None) or ()),
-                getattr(p, "rank", None),
+                tuple(
+                    getattr(p, "allowed_dtypes", None)
+                    or getattr(p, "dtypes", None)
+                    or ()
+                ),
+                getattr(p, "rank_constraint", None)
+                if getattr(p, "rank_constraint", None) is not None
+                else getattr(p, "rank", None),
             )
             for p in ref.params
         )

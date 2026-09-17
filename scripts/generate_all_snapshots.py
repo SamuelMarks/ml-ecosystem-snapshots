@@ -2,6 +2,13 @@
 
 import os
 import sys
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message=".*Failed to initialize NumPy.*",
+    category=UserWarning,
+)
 
 _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 if _src_dir not in sys.path:
@@ -48,6 +55,7 @@ def main() -> None:
         "nvidia_sass",
         "nvidia_ptx",
         "amd_rdna",
+        "ir",
     ]
     frameworks = sys.argv[1:] if len(sys.argv) > 1 else all_frameworks
     use_isolated = os.environ.get("ISOLATE_EXTRACTION", "0") == "1"
