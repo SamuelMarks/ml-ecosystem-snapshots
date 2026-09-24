@@ -619,3 +619,85 @@ def test_validate_scf_for_region() -> None:
         yield_types=[],
     )
     assert len(errs) == 0
+
+
+def test_validate_stablehlo_op_attributes() -> None:
+    """Verify validate_stablehlo_op_attributes validates structured attributes and regions."""
+    # 1. Non-dict attributes for dimension numbers
+    bad_attrs = {
+        "dot_dimension_numbers": "not_a_dict",
+        "conv_dimension_numbers": "not_a_dict",
+        "scatter_dimension_numbers": "not_a_dict",
+        "gather_dimension_numbers": "not_a_dict",
+    }
+    errs = stablehlo_fw.validate_stablehlo_op(
+        op_name="test.op",
+        attributes=bad_attrs,
+    )
+    assert len(errs) == 4
+    assert any("DotDimensionNumbersAttr" in e for e in errs)
+    assert any("ConvDimensionNumbersAttr" in e for e in errs)
+    assert any("ScatterDimensionNumbersAttr" in e for e in errs)
+    assert any("GatherDimensionNumbersAttr" in e for e in errs)
+
+    # 2. Valid structured attributes
+    valid_attrs = {
+        "dot_dimension_numbers": {
+            "lhs_contracting_dimensions": [1],
+            "rhs_contracting_dimensions": [0],
+        },
+        "conv_dimension_numbers": {
+            "input_batch_dimension": 0,
+            "input_feature_dimension": 1,
+            "input_spatial_dimensions": [2, 3],
+            "kernel_input_feature_dimension": 0,
+            "kernel_output_feature_dimension": 1,
+            "kernel_spatial_dimensions": [2, 3],
+            "output_batch_dimension": 0,
+            "output_feature_dimension": 1,
+            "output_spatial_dimensions": [2, 3],
+        },
+        "scatter_dimension_numbers": {
+            "update_window_dims": [1],
+            "inserted_window_dims": [0],
+            "scatter_dims_to_operand_dims": [0],
+            "index_vector_dim": 1,
+        },
+        "gather_dimension_numbers": {
+            "offset_dims": [1],
+            "collapsed_slice_dims": [0],
+            "start_index_map": [0],
+            "index_vector_dim": 1,
+        },
+    }
+    errs_valid = stablehlo_fw.validate_stablehlo_op(
+        op_name="test.op",
+        attributes=valid_attrs,
+        operand_ranks=[2, 2],
+    )
+    assert errs_valid == []
+
+    # 3. Valid and invalid regions attached to op
+    regions = {
+        "body": {
+            "block_arguments": ["index", "tensor<4xf32>"],
+            "yield_types": ["tensor<4xf32>"],
+        }
+    }
+    assert (
+        stablehlo_fw.validate_stablehlo_op(
+            op_name="scf.for",
+            regions=regions,
+        )
+        == []
+    )
+
+    # 4. Unrecognized attribute key and non-dict region value
+    misc_attrs = {"unknown_attr": "value"}
+    non_dict_regions = {"body": "not_a_dict"}
+    errs_misc = stablehlo_fw.validate_stablehlo_op(
+        op_name="test.op",
+        attributes=misc_attrs,
+        regions=non_dict_regions,
+    )
+    assert isinstance(errs_misc, list)

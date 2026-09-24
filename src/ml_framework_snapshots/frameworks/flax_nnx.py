@@ -16,12 +16,25 @@ from ml_framework_snapshots.frameworks.jax import collect_api as jax_collect_api
 
 import typing
 
-try:
-    import flax.nnx as _nnx
+nnx: typing.Any = None
 
-    nnx: typing.Any = _nnx
-except ImportError:
-    nnx = None
+
+def _get_nnx() -> typing.Any:
+    """Lazily load flax.nnx to avoid circular import issues with jax.
+
+    Returns:
+        flax.nnx module or None if not installed.
+    """
+    global nnx
+    if nnx is not None:
+        return nnx
+    try:
+        import flax.nnx as _nnx
+
+        nnx = _nnx
+        return nnx
+    except (ImportError, Exception):
+        return None
 
 
 def _scan_nnx_layers(include_nonpublic: bool) -> List[GhostRef]:
@@ -36,10 +49,10 @@ def _scan_nnx_layers(include_nonpublic: bool) -> List[GhostRef]:
         A list of GhostRef objects representing found NNX layers.
 
     """
-    if not nnx:
-        return []
-
     found: List[GhostRef] = []
+    nnx = _get_nnx()
+    if not nnx:
+        return found
     try:
         for name, obj in get_all_members(nnx):
             if not include_nonpublic and name.startswith("_"):

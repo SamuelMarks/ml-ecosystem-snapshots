@@ -40,6 +40,18 @@ jobs:
           - nvidia_sass
           - nvidia_ptx
           - amd_rdna
+          - wgsl
+          - onnx
+          - metal
+          - numba
+          - sparse
+          - dpnp
+          - awkward
+          - pyarrow_compute
+          - bohrium
+          - wasm_simd
+          - webgl
+          - cpp_runtime
     steps:
     - uses: actions/checkout@v7
 

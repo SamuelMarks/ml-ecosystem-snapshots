@@ -711,12 +711,35 @@ def test_tensorflow_import_reload() -> None:
     Returns:
         None.
     """
+    import builtins
     import importlib
+    import types
     from ml_framework_snapshots.frameworks import tensorflow as tf_fw
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     with patch.dict("sys.modules", {"tensorflow": None}):
         importlib.reload(tf_fw)
         assert getattr(tf_fw, "tf") is None
+
+    # Test _get_tf exception handler
+    tf_fw.tf = None
+    real_import = builtins.__import__
+
+    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "tensorflow":
+            raise ImportError("simulated tf error")
+        return real_import(name, *args, **kwargs)
+
+    with patch("builtins.__import__", side_effect=mock_import):
+        assert tf_fw._get_tf() is None
+        assert tf_fw.collect_api(SemanticTier.ACTIVATION) == []
+
+    # Test tf without nn attribute
+    fake_tf_no_nn = types.ModuleType("tensorflow")
+    with patch.object(tf_fw, "tf", fake_tf_no_nn):
+        assert (
+            tf_fw._collect_live(SemanticTier.ACTIVATION, include_nonpublic=False) == []
+        )
 
     # Restore clean reload
     importlib.reload(tf_fw)

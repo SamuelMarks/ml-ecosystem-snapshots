@@ -723,6 +723,27 @@ def test_cmd_pull_latest_and_failure(capsys: Any, mocker: Any, tmp_path: Any) ->
     assert "Failed to download snapshot: Network error" in captured.out
 
 
+def test_cmd_pull_offline(capsys: Any) -> None:
+    """Test cmd_pull exits with error when offline flag is enabled.
+
+    Args:
+        capsys: Pytest capsys fixture.
+    """
+    import argparse
+    import pytest
+    from ml_framework_snapshots.cli import cmd_pull
+
+    args = argparse.Namespace(target="torch", out_dir=None, offline=True)
+    with pytest.raises(SystemExit) as exc_info:
+        cmd_pull(args)
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert (
+        "Network access disabled: pull command cannot be executed in offline mode."
+        in captured.out
+    )
+
+
 def test_cmd_index_clear(capsys: Any, mocker: Any) -> None:
     """Test cmd_index with --clear flag.
 

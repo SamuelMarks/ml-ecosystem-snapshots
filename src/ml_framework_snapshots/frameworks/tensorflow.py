@@ -5,17 +5,33 @@ GhostRefs for layers, losses, optimizers, and activations.
 """
 
 import inspect
+from typing import Any, List
+
 from ml_framework_snapshots.utils import get_all_members
-from typing import List
 
 from ml_framework_snapshots.models import GhostInspector
 from ml_switcheroo_ir.schema.ghost import GhostRef
 from ml_switcheroo_ir.schema.ghost import SemanticTier
 
-try:
-    import tensorflow as tf
-except ImportError:
-    tf = None
+tf: Any = None
+
+
+def _get_tf() -> Any:
+    """Lazily import TensorFlow to prevent static C++ registry conflict on worker fork.
+
+    Returns:
+        TensorFlow module or None if not installed or fails to initialize.
+    """
+    global tf
+    if tf is not None:
+        return tf
+    try:
+        import tensorflow as tf_mod
+
+        tf = tf_mod
+        return tf
+    except (ImportError, Exception):
+        return None
 
 
 def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[GhostRef]:
@@ -30,6 +46,7 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
 
     """
     results: list[GhostRef] = []
+    tf = _get_tf()
     if not tf:
         return results
 

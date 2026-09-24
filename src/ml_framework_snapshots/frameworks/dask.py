@@ -5,13 +5,13 @@ from ml_switcheroo_ir.schema.ghost import SemanticTier
 from ml_switcheroo_ir.schema.ghost import GhostRef
 from ..models import GhostInspector
 
-import typing
+from typing import Any
 
 try:
     import dask.array as _da
 
-    da: typing.Any = _da
-except ImportError:
+    da: Any = _da
+except (ImportError, Exception):
     da = None
 
 
@@ -28,10 +28,10 @@ def collect_api(
         List of gathered API references.
     """
     results: List[GhostRef] = []
-    if not da:
-        return results
 
     if category == SemanticTier.ARRAY_API:
+        if not da:
+            return results
         for name in dir(da):
             if not include_nonpublic and name.startswith("_"):
                 continue
@@ -44,5 +44,24 @@ def collect_api(
                     results.append(res)
                 except Exception:
                     pass
+
+    elif category == SemanticTier.UTIL:
+        try:
+            import dask as _dask_top
+
+            for name in dir(_dask_top):
+                if not include_nonpublic and name.startswith("_"):
+                    continue
+                obj = getattr(_dask_top, name)
+                if callable(obj):
+                    try:
+                        res = GhostInspector.inspect(
+                            obj, f"dask.{name}", is_public=not name.startswith("_")
+                        )
+                        results.append(res)
+                    except Exception:
+                        pass
+        except (ImportError, Exception):
+            pass
 
     return results

@@ -11,33 +11,66 @@ import concurrent.futures
 import importlib.metadata
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Tuple, cast
+from typing import Any, Callable, Dict, List, Tuple, cast
 
 from ml_switcheroo_ir.schema.ghost import SemanticTier
 from ml_framework_snapshots.models import SnapshotEnvelope
-from ml_framework_snapshots.frameworks.torch import collect_api as torch_collect
-from ml_framework_snapshots.frameworks.jax import collect_api as jax_collect
-from ml_framework_snapshots.frameworks.keras import collect_api as keras_collect
-from ml_framework_snapshots.frameworks.tensorflow import collect_api as tf_collect
-from ml_framework_snapshots.frameworks.mlx import collect_api as mlx_collect
-from ml_framework_snapshots.frameworks.cupy import collect_api as cupy_collect
-from ml_framework_snapshots.frameworks.dask import collect_api as dask_collect
-from ml_framework_snapshots.frameworks.flax_nnx import collect_api as flax_collect
-from ml_framework_snapshots.frameworks.sklearn import collect_api as sklearn_collect
-from ml_framework_snapshots.frameworks.huggingface import (
-    collect_transformers,
-    collect_diffusers,
-    collect_tokenizers,
-)
-from ml_framework_snapshots.frameworks.triton import collect_api as triton_collect
-from ml_framework_snapshots.frameworks.onnxruntime import (
-    collect_api as onnxruntime_collect,
-)
-from ml_framework_snapshots.frameworks.deepspeed import collect_api as deepspeed_collect
-from ml_framework_snapshots.frameworks.stablehlo import (
-    collect_api as stablehlo_collect,
-)
 from ml_switcheroo_ir.schema.ghost import GhostRef
+
+
+def _make_lazy_collector(
+    module_name: str, func_name: str = "collect_api"
+) -> Callable[..., Any]:
+    """Create a lazy loader for a framework collection function to defer heavy C runtime imports.
+
+    Args:
+        module_name: Submodule name under ml_framework_snapshots.frameworks or absolute module path.
+        func_name: Target collection function name.
+
+    Returns:
+        Callable function forwarding arguments to the dynamically loaded collector.
+    """
+
+    def _collector(*args: Any, **kwargs: Any) -> Any:
+        """Dynamically load module and execute target collection function.
+
+        Args:
+            *args: Positional arguments forwarded to target collector.
+            **kwargs: Keyword arguments forwarded to target collector.
+
+        Returns:
+            Output from target collection function.
+        """
+        import importlib
+
+        if "." not in module_name:
+            full_mod = f"ml_framework_snapshots.frameworks.{module_name}"
+        else:
+            full_mod = module_name
+        mod = importlib.import_module(full_mod)
+        func = getattr(mod, func_name)
+        return func(*args, **kwargs)
+
+    return _collector
+
+
+torch_collect = _make_lazy_collector("torch")
+jax_collect = _make_lazy_collector("jax")
+keras_collect = _make_lazy_collector("keras")
+tf_collect = _make_lazy_collector("tensorflow")
+mlx_collect = _make_lazy_collector("mlx")
+cupy_collect = _make_lazy_collector("cupy")
+dask_collect = _make_lazy_collector("dask")
+flax_collect = _make_lazy_collector("flax_nnx")
+sklearn_collect = _make_lazy_collector("sklearn")
+collect_transformers = _make_lazy_collector("huggingface", "collect_transformers")
+collect_diffusers = _make_lazy_collector("huggingface", "collect_diffusers")
+collect_tokenizers = _make_lazy_collector("huggingface", "collect_tokenizers")
+triton_collect = _make_lazy_collector("triton")
+onnxruntime_collect = _make_lazy_collector("onnxruntime")
+deepspeed_collect = _make_lazy_collector("deepspeed")
+stablehlo_collect = _make_lazy_collector("stablehlo")
+onnx_collect = _make_lazy_collector("onnx_spec")
 
 
 def get_available_frameworks() -> Dict[str, Any]:
@@ -47,7 +80,6 @@ def get_available_frameworks() -> Dict[str, Any]:
         A dictionary mapping framework identifiers to their collection functions.
     """
     import pkgutil
-    import importlib
     import ml_framework_snapshots.frameworks
 
     collectors = {}
@@ -55,23 +87,29 @@ def get_available_frameworks() -> Dict[str, Any]:
     # Iterate over modules in the frameworks package
     package = ml_framework_snapshots.frameworks
     for _, module_name, _ in pkgutil.iter_modules(package.__path__):
+        if module_name.startswith("_"):
+            continue
         try:
+            import importlib
+
             mod = importlib.import_module(
                 f"ml_framework_snapshots.frameworks.{module_name}"
             )
-
-            # Find all functions starting with 'collect_'
+            found_any = False
             for name, obj in vars(mod).items():
                 if callable(obj) and name.startswith("collect_"):
-                    # Derive a reasonable identifier based on the module or function name
+                    found_any = True
                     if name == "collect_api":
                         identifier = module_name
                     else:
                         identifier = f"{module_name}_{name[8:]}"
-
                     collectors[identifier] = obj
+            if not found_any:
+                collectors[module_name] = _make_lazy_collector(
+                    module_name, "collect_api"
+                )
         except Exception:
-            pass
+            collectors[module_name] = _make_lazy_collector(module_name, "collect_api")
 
     # Legacy mapping mapping shortnames to correct functions
     legacy = {
@@ -92,9 +130,20 @@ def get_available_frameworks() -> Dict[str, Any]:
         "deepspeed": deepspeed_collect,
         "stablehlo": stablehlo_collect,
         "huggingface": collect_transformers,
-        "orbax": __import__(
-            "ml_framework_snapshots.frameworks.orbax_checkpoint"
-        ).frameworks.orbax_checkpoint.collect_api,
+        "onnx": onnx_collect,
+        "metal": _make_lazy_collector("metal"),
+        "numba": _make_lazy_collector("numba"),
+        "sparse": _make_lazy_collector("sparse"),
+        "dpnp": _make_lazy_collector("dpnp"),
+        "awkward": _make_lazy_collector("awkward"),
+        "pyarrow_compute": _make_lazy_collector("pyarrow_compute"),
+        "bohrium": _make_lazy_collector("bohrium"),
+        "wasm_simd": _make_lazy_collector("wasm_simd"),
+        "wasm": _make_lazy_collector("wasm_simd"),
+        "webgl": _make_lazy_collector("webgl"),
+        "cpp_runtime": _make_lazy_collector("cpp_runtime"),
+        "cpp": _make_lazy_collector("cpp_runtime"),
+        "orbax": _make_lazy_collector("orbax_checkpoint"),
     }
 
     collectors.update(legacy)
@@ -137,6 +186,63 @@ def get_pkg_version(package_name: str) -> str:
                 package_name = "ml-switcheroo-ir"
         elif package_name == "wgsl":
             return "draft-2024"
+        elif package_name == "metal":
+            return "3.2"
+        elif package_name in ("wasm_simd", "wasm"):
+            return "2.0"
+        elif package_name == "webgl":
+            return "2.0"
+        elif package_name in ("cpp_runtime", "cpp"):
+            return "17"
+        elif package_name == "numba":
+            try:
+                import numba
+
+                return str(getattr(numba, "__version__", "0.60.0"))
+            except Exception:
+                package_name = "numba"
+        elif package_name == "sparse":
+            try:
+                import sparse
+
+                return str(getattr(sparse, "__version__", "0.15.4"))
+            except Exception:
+                package_name = "sparse"
+        elif package_name == "dpnp":
+            try:
+                import dpnp
+
+                return str(getattr(dpnp, "__version__", "0.15.0"))
+            except Exception:
+                return "0.15.0"
+        elif package_name == "awkward":
+            try:
+                import awkward
+
+                return str(getattr(awkward, "__version__", "2.6.8"))
+            except Exception:
+                return "2.6.8"
+        elif package_name == "pyarrow_compute":
+            try:
+                import pyarrow
+
+                return str(getattr(pyarrow, "__version__", "17.0.0"))
+            except Exception:
+                return "17.0.0"
+        elif package_name == "bohrium":
+            try:
+                import bohrium
+
+                return str(getattr(bohrium, "__version__", "0.13.0"))
+            except Exception:
+                return "0.13.0"
+        elif package_name in ("onnx", "onnx_spec"):
+            try:
+                import onnx
+
+                return str(getattr(onnx, "__version__", "1.17.0"))
+            except Exception:
+                package_name = "onnx"
         elif package_name == "huggingface":
             package_name = "transformers"
         elif package_name == "keras":

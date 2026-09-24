@@ -2043,6 +2043,331 @@ def check_wgsl_op(
     }
 
 
+def check_onnx_op(
+    op_name: str,
+    domain: str = "",
+    inputs_count: Optional[int] = None,
+    attributes: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Validate an ONNX operation against grounded operator specification.
+
+    Args:
+        op_name: Name of the ONNX operation (e.g. 'Conv', 'onnx.Add').
+        domain: Optional operator domain (e.g. '', 'ai.onnx.ml').
+        inputs_count: Optional expected number of input operands.
+        attributes: Optional list of attribute names to verify.
+
+    Returns:
+        Validation report dictionary with is_valid, expected_inputs, expected_attributes, and errors.
+    """
+    from .frameworks.onnx_spec import _load_onnx_ops
+
+    clean_name = op_name.split(".")[-1]
+    ops = _load_onnx_ops()
+    op_map = {(op.get("domain", ""), op["name"]): op for op in ops}
+
+    matched = op_map.get((domain, clean_name))
+    if matched is None and domain == "":
+        # Fallback to any domain match
+        for (d, n), op in op_map.items():
+            if n == clean_name:
+                matched = op
+                break
+
+    if matched is None:
+        return {
+            "is_valid": False,
+            "op_exists": False,
+            "expected_inputs": [],
+            "expected_attributes": [],
+            "errors": [f"Unknown ONNX operation: '{op_name}' in domain '{domain}'"],
+        }
+
+    exp_inputs = matched.get("inputs", [])
+    exp_attrs = [
+        a.get("name")
+        for a in matched.get("attributes", [])
+        if isinstance(a, dict) and a.get("name")
+    ]
+
+    errors: List[str] = []
+    if inputs_count is not None and inputs_count != len(exp_inputs):
+        errors.append(
+            f"Operation '{clean_name}' expects {len(exp_inputs)} inputs, but got {inputs_count}."
+        )
+
+    if attributes:
+        for attr in attributes:
+            if attr not in exp_attrs:
+                errors.append(
+                    f"Attribute '{attr}' is not valid for ONNX operation '{clean_name}'."
+                )
+
+    return {
+        "is_valid": len(errors) == 0,
+        "op_exists": True,
+        "expected_inputs": exp_inputs,
+        "expected_attributes": exp_attrs,
+        "errors": errors,
+    }
+
+
+def check_metal_op(
+    op_name: str,
+    address_space: Optional[str] = None,
+    inputs_count: Optional[int] = None,
+    attributes: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Validate an Apple Metal MSL compute operation against grounded specification.
+
+    Args:
+        op_name: Name of the MSL operation (e.g. 'simdgroup_multiply_accumulate', 'metal.fma').
+        address_space: Optional expected address space (e.g. 'device', 'threadgroup').
+        inputs_count: Optional expected number of input operands.
+        attributes: Optional list of attribute names to verify.
+
+    Returns:
+        Validation report dictionary with is_valid, expected_inputs, expected_attributes, and errors.
+    """
+    from .frameworks.metal import _load_metal_ops
+
+    clean_name = op_name.split(".")[-1]
+    ops = _load_metal_ops()
+    op_map = {op["name"]: op for op in ops}
+
+    if clean_name not in op_map:
+        return {
+            "is_valid": False,
+            "op_exists": False,
+            "expected_inputs": [],
+            "expected_attributes": [],
+            "errors": [f"Unknown Metal MSL operation: '{op_name}'"],
+        }
+
+    matched = op_map[clean_name]
+    exp_inputs = matched.get("inputs", [])
+    exp_attrs = [
+        a.get("name")
+        for a in matched.get("attributes", [])
+        if isinstance(a, dict) and a.get("name")
+    ]
+
+    errors: List[str] = []
+    if inputs_count is not None and inputs_count != len(exp_inputs):
+        errors.append(
+            f"Operation '{clean_name}' expects {len(exp_inputs)} inputs, but got {inputs_count}."
+        )
+
+    if address_space is not None and matched.get("address_space") != address_space:
+        errors.append(
+            f"Operation '{clean_name}' operates in '{matched.get('address_space')}' address space, expected '{address_space}'."
+        )
+
+    if attributes:
+        for attr in attributes:
+            if attr not in exp_attrs:
+                errors.append(
+                    f"Attribute '{attr}' is not valid for Metal operation '{clean_name}'."
+                )
+
+    return {
+        "is_valid": len(errors) == 0,
+        "op_exists": True,
+        "expected_inputs": exp_inputs,
+        "expected_attributes": exp_attrs,
+        "errors": errors,
+    }
+
+
+def check_wasm_instruction(
+    mnemonic: str,
+    operands_count: Optional[int] = None,
+    attributes: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Validate a WebAssembly 2.0 / SIMD instruction against grounded specification.
+
+    Args:
+        mnemonic: Name of the instruction (e.g. 'f32x4.add', 'v128.load').
+        operands_count: Optional expected number of input operands.
+        attributes: Optional list of attribute names to verify.
+
+    Returns:
+        Validation report dictionary with is_valid, expected_inputs, expected_attributes, and errors.
+    """
+    from .frameworks.wasm_simd import _load_wasm_simd_ops
+
+    clean_name = mnemonic.strip().lower()
+    if clean_name.startswith("wasm."):
+        clean_name = clean_name[5:]
+
+    ops = _load_wasm_simd_ops()
+    op_map = {op["mnemonic"]: op for op in ops}
+
+    if clean_name not in op_map:
+        return {
+            "is_valid": False,
+            "op_exists": False,
+            "expected_inputs": [],
+            "expected_attributes": [],
+            "errors": [f"Unknown WebAssembly SIMD instruction: '{mnemonic}'"],
+        }
+
+    matched = op_map[clean_name]
+    exp_inputs = matched.get("inputs", [])
+    exp_attrs = [
+        a.get("name")
+        for a in matched.get("attributes", [])
+        if isinstance(a, dict) and a.get("name")
+    ]
+
+    errors: List[str] = []
+    if operands_count is not None and operands_count != len(exp_inputs):
+        errors.append(
+            f"Instruction '{clean_name}' expects {len(exp_inputs)} inputs, but got {operands_count}."
+        )
+
+    if attributes:
+        for attr in attributes:
+            if attr not in exp_attrs:
+                errors.append(
+                    f"Attribute '{attr}' is not valid for instruction '{clean_name}'."
+                )
+
+    return {
+        "is_valid": len(errors) == 0,
+        "op_exists": True,
+        "expected_inputs": exp_inputs,
+        "expected_attributes": exp_attrs,
+        "errors": errors,
+    }
+
+
+def check_webgl_op(
+    op_name: str,
+    inputs_count: Optional[int] = None,
+    attributes: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Validate a WebGL 2.0 / GLSL ES 3.00 operation against grounded specification.
+
+    Args:
+        op_name: Name of the WebGL operation (e.g. 'texelFetch', 'webgl.fma').
+        inputs_count: Optional expected number of input operands.
+        attributes: Optional list of attribute names to verify.
+
+    Returns:
+        Validation report dictionary with is_valid, expected_inputs, expected_attributes, and errors.
+    """
+    from .frameworks.webgl import _load_webgl_ops
+
+    clean_name = op_name.strip()
+    if clean_name.startswith("webgl."):
+        clean_name = clean_name[6:]
+
+    ops = _load_webgl_ops()
+    op_map = {op["name"]: op for op in ops}
+
+    if clean_name not in op_map:
+        return {
+            "is_valid": False,
+            "op_exists": False,
+            "expected_inputs": [],
+            "expected_attributes": [],
+            "errors": [f"Unknown WebGL operation: '{op_name}'"],
+        }
+
+    matched = op_map[clean_name]
+    exp_inputs = matched.get("inputs", [])
+    exp_attrs = [
+        a.get("name")
+        for a in matched.get("attributes", [])
+        if isinstance(a, dict) and a.get("name")
+    ]
+
+    errors: List[str] = []
+    if inputs_count is not None and inputs_count != len(exp_inputs):
+        errors.append(
+            f"Operation '{clean_name}' expects {len(exp_inputs)} inputs, but got {inputs_count}."
+        )
+
+    if attributes:
+        for attr in attributes:
+            if attr not in exp_attrs:
+                errors.append(
+                    f"Attribute '{attr}' is not valid for WebGL operation '{clean_name}'."
+                )
+
+    return {
+        "is_valid": len(errors) == 0,
+        "op_exists": True,
+        "expected_inputs": exp_inputs,
+        "expected_attributes": exp_attrs,
+        "errors": errors,
+    }
+
+
+def check_cpp_op(
+    op_name: str,
+    inputs_count: Optional[int] = None,
+    attributes: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Validate a C++17 / PyBind11 operation against grounded specification.
+
+    Args:
+        op_name: Name of the C++ operation (e.g. 'clamp', 'from_blob', 'cpp.sqrt').
+        inputs_count: Optional expected number of input operands.
+        attributes: Optional list of attribute names to verify.
+
+    Returns:
+        Validation report dictionary with is_valid, expected_inputs, expected_attributes, and errors.
+    """
+    from .frameworks.cpp_runtime import _load_cpp_runtime_ops
+
+    clean_name = op_name.strip()
+    if clean_name.startswith("cpp."):
+        clean_name = clean_name[4:]
+
+    ops = _load_cpp_runtime_ops()
+    op_map = {op["name"]: op for op in ops}
+
+    if clean_name not in op_map:
+        return {
+            "is_valid": False,
+            "op_exists": False,
+            "expected_inputs": [],
+            "expected_attributes": [],
+            "errors": [f"Unknown C++ operation: '{op_name}'"],
+        }
+
+    matched = op_map[clean_name]
+    exp_inputs = matched.get("inputs", [])
+    exp_attrs = [
+        a.get("name")
+        for a in matched.get("attributes", [])
+        if isinstance(a, dict) and a.get("name")
+    ]
+
+    errors: List[str] = []
+    if inputs_count is not None and inputs_count != len(exp_inputs):
+        errors.append(
+            f"Operation '{clean_name}' expects {len(exp_inputs)} inputs, but got {inputs_count}."
+        )
+
+    if attributes:
+        for attr in attributes:
+            if attr not in exp_attrs:
+                errors.append(
+                    f"Attribute '{attr}' is not valid for C++ operation '{clean_name}'."
+                )
+
+    return {
+        "is_valid": len(errors) == 0,
+        "op_exists": True,
+        "expected_inputs": exp_inputs,
+        "expected_attributes": exp_attrs,
+        "errors": errors,
+    }
+
+
 def translate_concept_arguments(
     concept: str,
     source_framework: str,

@@ -1,9 +1,7 @@
 """Module docstring."""
 
 from pathlib import Path
-
-from typing import Any
-
+from typing import Any, Dict
 
 import os
 from ml_framework_snapshots.utils import get_all_members
@@ -781,9 +779,329 @@ def test_init_import_error(monkeypatch: Any) -> None:
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
     importlib.reload(ml_framework_snapshots)
-    assert ml_framework_snapshots.__all__ == []
+    assert ml_framework_snapshots.__all__ == ["__version__"]
+    assert ml_framework_snapshots.__version__ == "0.0.3"
 
     # Restore normal import
     monkeypatch.undo()
     importlib.reload(ml_framework_snapshots)
     assert "extract_snapshot" in ml_framework_snapshots.__all__
+    assert ml_framework_snapshots.__version__ == "0.0.3"
+
+
+def test_package_version_exposed() -> None:
+    """Test that ml_framework_snapshots.__version__ matches hatch metadata."""
+    import ml_framework_snapshots
+    from hatchling.metadata.core import ProjectMetadata
+    from hatchling.plugin.manager import PluginManager
+
+    assert ml_framework_snapshots.__version__ == "0.0.3"
+    assert "__version__" in ml_framework_snapshots.__all__
+
+    pm = PluginManager()
+    project_metadata = ProjectMetadata(".", pm)
+    assert project_metadata.version == ml_framework_snapshots.__version__
+
+
+def test_get_pkg_version_new_dialects() -> None:
+    """Verify get_pkg_version resolves all newly added target versions."""
+    from ml_framework_snapshots.api import get_pkg_version
+
+    assert get_pkg_version("metal") == "3.2"
+    assert get_pkg_version("wasm_simd") == "2.0"
+    assert get_pkg_version("wasm") == "2.0"
+    assert get_pkg_version("webgl") == "2.0"
+    assert get_pkg_version("cpp_runtime") == "17"
+    assert get_pkg_version("cpp") == "17"
+    assert get_pkg_version("dpnp") == "0.15.0"
+    assert get_pkg_version("awkward") != "unknown"
+    assert get_pkg_version("pyarrow_compute") != "unknown"
+    assert get_pkg_version("bohrium") == "0.13.0"
+    assert get_pkg_version("onnx") != "unknown"
+    assert get_pkg_version("onnx_spec") != "unknown"
+
+
+def test_make_lazy_collector_execution() -> None:
+    """Verify _make_lazy_collector forwards execution dynamically."""
+    from ml_framework_snapshots.api import _make_lazy_collector
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    collector = _make_lazy_collector("metal", "collect_api")
+    refs = collector(SemanticTier.ARRAY_API)
+    assert len(refs) > 0
+
+    collector_abs = _make_lazy_collector(
+        "ml_framework_snapshots.frameworks.metal", "collect_api"
+    )
+    refs_abs = collector_abs(SemanticTier.ARRAY_API)
+    assert len(refs_abs) > 0
+
+
+def test_get_available_frameworks_import_exception() -> None:
+    """Verify get_available_frameworks falls back to lazy collector when import raises."""
+    from ml_framework_snapshots.api import get_available_frameworks
+    import unittest.mock as mock
+
+    with mock.patch("pkgutil.iter_modules", return_value=[(None, "broken_mod", False)]):
+        with mock.patch("importlib.import_module", side_effect=ImportError("broken")):
+            res = get_available_frameworks()
+            assert "broken_mod" in res
+
+
+def test_get_pkg_version_import_fallbacks(monkeypatch: Any) -> None:
+    """Verify get_pkg_version exception handlers for new dialects."""
+    import builtins
+    from ml_framework_snapshots.api import get_pkg_version
+
+    real_import = builtins.__import__
+
+    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name in (
+            "numba",
+            "sparse",
+            "onnx",
+            "awkward",
+            "pyarrow",
+            "bohrium",
+            "dpnp",
+        ):
+            raise ImportError(f"simulated {name} error")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import)
+    assert get_pkg_version("dpnp") == "0.15.0"
+    assert get_pkg_version("awkward") == "2.6.8"
+    assert get_pkg_version("pyarrow_compute") == "17.0.0"
+    assert get_pkg_version("bohrium") == "0.13.0"
+
+
+def test_get_available_frameworks_discovery_branches() -> None:
+    """Verify get_available_frameworks skips underscored modules and handles empty collectors."""
+    import types
+    import unittest.mock as mock
+    from ml_framework_snapshots.api import get_available_frameworks
+
+    fake_modules = [
+        (None, "_private_mod", False),
+        (None, "no_collect_mod", False),
+    ]
+    empty_module = types.SimpleNamespace(some_var=123)
+
+    with mock.patch("pkgutil.iter_modules", return_value=fake_modules):
+        with mock.patch("importlib.import_module", return_value=empty_module):
+            collectors = get_available_frameworks()
+            assert "_private_mod" not in collectors
+            assert "no_collect_mod" in collectors
+
+
+def test_get_pkg_version_ir_package(monkeypatch: Any, mocker: Any) -> None:
+    """Verify get_pkg_version handles ir and ml_switcheroo_ir branches.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        mocker: Pytest mocker fixture.
+    """
+    import builtins
+    import types
+    from ml_framework_snapshots.api import get_pkg_version
+
+    mock_ir = types.SimpleNamespace(__version__="0.0.9")
+    real_import = builtins.__import__
+
+    def mock_import_success(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "ml_switcheroo_ir":
+            return mock_ir
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import_success)
+    assert get_pkg_version("ir") == "0.0.9"
+
+    def mock_import_fail(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "ml_switcheroo_ir":
+            raise ImportError("no ml_switcheroo_ir")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import_fail)
+    mocker.patch("importlib.metadata.version", return_value="0.0.3")
+    assert get_pkg_version("ml_switcheroo_ir") == "0.0.3"
+
+
+def test_get_pkg_version_dialects_and_aliases(mocker: Any) -> None:
+    """Verify static dialect versions and alias conversions in get_pkg_version.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    from ml_framework_snapshots.api import get_pkg_version
+
+    assert get_pkg_version("wgsl") == "draft-2024"
+    assert get_pkg_version("metal") == "3.2"
+    assert get_pkg_version("wasm_simd") == "2.0"
+    assert get_pkg_version("wasm") == "2.0"
+    assert get_pkg_version("webgl") == "2.0"
+    assert get_pkg_version("cpp_runtime") == "17"
+    assert get_pkg_version("cpp") == "17"
+
+    mock_version = mocker.patch("importlib.metadata.version", return_value="4.42.0")
+    assert get_pkg_version("huggingface") == "4.42.0"
+    mock_version.assert_called_with("transformers")
+
+
+def test_get_pkg_version_modules_installed_and_fallbacks(
+    monkeypatch: Any, mocker: Any
+) -> None:
+    """Verify get_pkg_version for numba, sparse, dpnp, awkward, pyarrow, bohrium, onnx.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        mocker: Pytest mocker fixture.
+    """
+    import builtins
+    import importlib.metadata
+    import types
+    from ml_framework_snapshots.api import get_pkg_version
+
+    mock_modules: Dict[str, Any] = {
+        "numba": types.SimpleNamespace(__version__="0.60.2"),
+        "sparse": types.SimpleNamespace(__version__="0.15.9"),
+        "dpnp": types.SimpleNamespace(__version__="0.15.2"),
+        "awkward": types.SimpleNamespace(__version__="2.6.9"),
+        "pyarrow": types.SimpleNamespace(__version__="17.0.2"),
+        "bohrium": types.SimpleNamespace(__version__="0.13.2"),
+        "onnx": types.SimpleNamespace(__version__="1.17.2"),
+    }
+    real_import = builtins.__import__
+
+    def mock_import_success(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name in mock_modules:
+            return mock_modules[name]
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import_success)
+    assert get_pkg_version("numba") == "0.60.2"
+    assert get_pkg_version("sparse") == "0.15.9"
+    assert get_pkg_version("dpnp") == "0.15.2"
+    assert get_pkg_version("awkward") == "2.6.9"
+    assert get_pkg_version("pyarrow_compute") == "17.0.2"
+    assert get_pkg_version("bohrium") == "0.13.2"
+    assert get_pkg_version("onnx") == "1.17.2"
+    assert get_pkg_version("onnx_spec") == "1.17.2"
+
+    def mock_import_fail(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name in mock_modules:
+            raise ImportError(f"simulated import error for {name}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import_fail)
+
+    def mock_metadata_version(pkg: str) -> str:
+        versions = {
+            "numba": "0.60.0",
+            "sparse": "0.15.4",
+            "onnx": "1.17.0",
+        }
+        if pkg in versions:
+            return versions[pkg]
+        raise importlib.metadata.PackageNotFoundError(pkg)
+
+    mocker.patch("importlib.metadata.version", side_effect=mock_metadata_version)
+    assert get_pkg_version("numba") == "0.60.0"
+    assert get_pkg_version("sparse") == "0.15.4"
+    assert get_pkg_version("onnx") == "1.17.0"
+    assert get_pkg_version("onnx_spec") == "1.17.0"
+
+
+def test_get_pkg_version_pip_freeze_url_format(mocker: Any) -> None:
+    """Verify get_pkg_version handles direct URL editable install syntax in pip freeze.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    import subprocess
+    from ml_framework_snapshots.api import get_pkg_version
+
+    mocker.patch("importlib.metadata.version", side_effect=Exception("not in metadata"))
+    mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            args=["pip", "freeze"],
+            returncode=0,
+            stdout="my-custom-pkg @ git+https://github.com/org/repo.git@v1.0.0\n",
+        ),
+    )
+    assert get_pkg_version("my_custom_pkg") == "unknown"
+
+
+def test_extract_snapshot_hardware_and_dsl_metadata() -> None:
+    """Verify extract_snapshot metadata population for ptx, mlir, and dsl targets."""
+    from ml_framework_snapshots.api import extract_snapshot
+
+    ptx_snap = extract_snapshot("nvidia_ptx")
+    assert ptx_snap["target"] == "nvidia_ptx"
+    assert ptx_snap["source_type"] == "tablegen"
+    assert ptx_snap["upstream_version"] == "8.5"
+    assert "sm_70" in ptx_snap["supported_microarchitectures"]
+
+    mlir_snap = extract_snapshot("mlir")
+    assert mlir_snap["target"] == "mlir"
+    assert mlir_snap["source_type"] == "tablegen"
+    assert mlir_snap["upstream_version"] == "19.1.0"
+
+    for dsl in ("html_dsl", "latex_dsl", "tikz"):
+        dsl_snap = extract_snapshot(dsl)
+        assert dsl_snap["target"] == dsl
+        assert dsl_snap["source_type"] == "python_dsl"
+        assert dsl_snap["upstream_version"] == "0.0.2"
+
+
+def test_validate_snapshot_envelope_empty_target_and_time() -> None:
+    """Verify validate_snapshot_envelope fallback behavior for missing/empty target and timestamp."""
+    from ml_framework_snapshots.api import validate_snapshot_envelope
+
+    env_empty = validate_snapshot_envelope({})
+    assert env_empty.target == "unknown"
+    assert env_empty.schema_version == "1.0.0"
+    assert env_empty.generated_at
+
+    env_blank = validate_snapshot_envelope({"target": "", "generated_at": ""})
+    assert env_blank.target == ""
+    assert env_blank.generated_at != ""
+
+
+def test_write_snapshot_special_chars(tmp_path: Path) -> None:
+    """Verify write_snapshot replaces plus signs and whitespace with underscores.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
+    from ml_framework_snapshots.api import write_snapshot
+
+    snap_data = {
+        "schema_version": "1.0.0",
+        "target": "special_fw",
+        "version": "1.0.0+cu120 debug",
+        "categories": {},
+    }
+    file_path = write_snapshot("special_fw", snap_data, str(tmp_path))
+    assert file_path.endswith("special_fw_v1.0.0_cu120_debug.json")
+    assert Path(file_path).exists()
+
+
+def test_extract_snapshot_isolated_empty_output(mocker: Any) -> None:
+    """Verify extract_snapshot_isolated returns empty dict when stdout is blank.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    import subprocess
+    from ml_framework_snapshots.api import extract_snapshot_isolated
+
+    mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            args=["python"],
+            returncode=0,
+            stdout="   \n",
+        ),
+    )
+    assert extract_snapshot_isolated("html_dsl") == {}

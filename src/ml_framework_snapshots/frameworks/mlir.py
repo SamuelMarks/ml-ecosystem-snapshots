@@ -139,16 +139,43 @@ def validate_mlir_type(type_str: str, constraint: Optional[str] = None) -> List[
                 errors.append(
                     f"Type '{type_str}' does not satisfy MemRefOf constraint '{constraint}'."
                 )
-        elif "anyinteger" in c_low or "anysignlessinteger" in c_low:
-            if cat not in (
+        elif (
+            "anyinteger" in c_low
+            or "anysignlessinteger" in c_low
+            or "integerlike" in c_low
+        ):
+            if cat in (
+                MLIRTypeCategory.TENSOR.value,
+                MLIRTypeCategory.VECTOR.value,
+                MLIRTypeCategory.MEMREF.value,
+            ):
+                inner = cleaned.rstrip(">").split("x")[-1].strip()
+                if classify_mlir_type(inner) not in (
+                    MLIRTypeCategory.INTEGER.value,
+                    MLIRTypeCategory.INDEX.value,
+                ):
+                    errors.append(
+                        f"Type '{type_str}' does not satisfy integer constraint '{constraint}': element type '{inner}' is not integer."
+                    )
+            elif cat not in (
                 MLIRTypeCategory.INTEGER.value,
                 MLIRTypeCategory.INDEX.value,
             ):
                 errors.append(
                     f"Type '{type_str}' does not satisfy integer constraint '{constraint}': expected integer type."
                 )
-        elif "anyfloat" in c_low:
-            if cat != MLIRTypeCategory.FLOAT.value:
+        elif "anyfloat" in c_low or "floatlike" in c_low:
+            if cat in (
+                MLIRTypeCategory.TENSOR.value,
+                MLIRTypeCategory.VECTOR.value,
+                MLIRTypeCategory.MEMREF.value,
+            ):
+                inner = cleaned.rstrip(">").split("x")[-1].strip()
+                if classify_mlir_type(inner) != MLIRTypeCategory.FLOAT.value:
+                    errors.append(
+                        f"Type '{type_str}' does not satisfy float constraint '{constraint}': element type '{inner}' is not float."
+                    )
+            elif cat != MLIRTypeCategory.FLOAT.value:
                 errors.append(
                     f"Type '{type_str}' does not satisfy float constraint '{constraint}': expected float type."
                 )

@@ -38,37 +38,7 @@ def test_main_success(
         os.path.join("src", "ml_framework_snapshots", "snapshots"), exist_ok=True
     )
 
-    frameworks = [
-        "torch",
-        "jax",
-        "tensorflow",
-        "keras",
-        "mlx",
-        "numpy",
-        "cupy",
-        "dask",
-        "flax_nnx",
-        "deepspeed",
-        "optax_shim",
-        "orbax_checkpoint",
-        "huggingface",
-        "diffusers",
-        "tokenizers",
-        "triton",
-        "sklearn",
-        "onnxruntime",
-        "pax",
-        "maxtext",
-        "mlir",
-        "stablehlo",
-        "html_dsl",
-        "latex_dsl",
-        "tikz",
-        "nvidia_sass",
-        "nvidia_ptx",
-        "amd_rdna",
-        "ir",
-    ]
+    frameworks = generate_all_snapshots.all_frameworks
 
     assert mock_extract.call_count == len(frameworks)
     assert mock_write.call_count == len(frameworks)
@@ -108,37 +78,7 @@ def test_main_failure(
     with pytest.raises(SystemExit):
         generate_all_snapshots.main()
 
-    frameworks = [
-        "torch",
-        "jax",
-        "tensorflow",
-        "keras",
-        "mlx",
-        "numpy",
-        "cupy",
-        "dask",
-        "flax_nnx",
-        "deepspeed",
-        "optax_shim",
-        "orbax_checkpoint",
-        "huggingface",
-        "diffusers",
-        "tokenizers",
-        "triton",
-        "sklearn",
-        "onnxruntime",
-        "pax",
-        "maxtext",
-        "mlir",
-        "stablehlo",
-        "html_dsl",
-        "latex_dsl",
-        "tikz",
-        "nvidia_sass",
-        "nvidia_ptx",
-        "amd_rdna",
-        "ir",
-    ]
+    frameworks = generate_all_snapshots.all_frameworks
 
     assert mock_extract.call_count == len(frameworks)
     assert mock_write.call_count == 0

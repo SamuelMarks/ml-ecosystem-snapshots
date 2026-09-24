@@ -1,10 +1,9 @@
 [project]
 name = "ml_framework_snapshots"
-version = "0.0.2"
 description = "Extracts API snapshots from ML frameworks for Ghost Mode operation"
 readme = "README.md"
 requires-python = ">=3.10"
-dynamic = ["dependencies", "optional-dependencies"]
+dynamic = ["version", "dependencies", "optional-dependencies"]
 
 [project.scripts]
 ml_framework_snapshots = "ml_framework_snapshots.cli:main"
@@ -12,6 +11,9 @@ ml_framework_snapshots = "ml_framework_snapshots.cli:main"
 [build-system]
 requires = ["hatchling", "hatch-requirements-txt"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/ml_framework_snapshots/__init__.py"
 
 [tool.hatch.metadata.hooks.requirements_txt]
 files = ["requirements.txt"]

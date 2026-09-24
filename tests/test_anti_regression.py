@@ -179,3 +179,55 @@ def test_separation_of_ssa_operands_from_attributes_in_dialects() -> None:
         assert (
             len(overlap) == 0
         ), f"Overlap between SSA operands and attributes in StableHLO op {op.get('name')}: {overlap}"
+
+
+def test_dask_minimum_symbol_threshold() -> None:
+    """Verify Dask snapshot contains valid endpoints above threshold."""
+    from ml_framework_snapshots.frameworks.dask import collect_api
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    arr_refs = collect_api(SemanticTier.ARRAY_API)
+    util_refs = collect_api(SemanticTier.UTIL)
+    total_count = len(arr_refs) + len(util_refs)
+    assert (
+        total_count >= 200
+    ), f"Dask symbol count too low: {total_count} endpoints found"
+
+
+def test_all_new_snapshots_exist_and_nonempty() -> None:
+    """Verify that all target snapshots exist, are valid JSON, and exceed size thresholds."""
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    snap_dir = os.path.join(repo_root, "src", "ml_framework_snapshots", "snapshots")
+
+    expected_prefixes = [
+        "wgsl",
+        "ir",
+        "onnx",
+        "metal",
+        "numba",
+        "sparse",
+        "dpnp",
+        "awkward",
+        "pyarrow_compute",
+        "bohrium",
+        "wasm_simd",
+        "webgl",
+        "cpp_runtime",
+    ]
+
+    for prefix in expected_prefixes:
+        matching = [
+            f
+            for f in os.listdir(snap_dir)
+            if f.startswith(f"{prefix}_") and f.endswith(".json")
+        ]
+        assert len(matching) > 0, f"Missing snapshot for target: {prefix}"
+        for fname in matching:
+            fpath = os.path.join(snap_dir, fname)
+            size = os.path.getsize(fpath)
+            assert size > 500, f"Snapshot {fname} is too small ({size} bytes)"
+            with open(fpath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                assert (
+                    "categories" in data
+                ), f"Snapshot {fname} missing 'categories' envelope key"

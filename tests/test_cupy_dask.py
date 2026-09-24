@@ -167,6 +167,27 @@ def test_dask_collect(mocker: Any) -> None:
     # Test other tier
     assert dask_fw.collect_api(SemanticTier.OPTIMIZER) == []
 
+    # Test UTIL tier
+    res_util = dask_fw.collect_api(SemanticTier.UTIL, include_nonpublic=False)
+    assert len(res_util) > 0
+    res_util_nonpublic = dask_fw.collect_api(SemanticTier.UTIL, include_nonpublic=True)
+    assert len(res_util_nonpublic) >= len(res_util)
+
+    # Test UTIL tier when dask import raises
+    def mock_import_raise(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("Simulated dask error")
+
+    mocker.patch("builtins.__import__", side_effect=mock_import_raise)
+    assert dask_fw.collect_api(SemanticTier.UTIL) == []
+
+    # Test UTIL tier when inspect raises
+    mocker.stopall()
+    mocker.patch(
+        "ml_framework_snapshots.frameworks.dask.GhostInspector.inspect",
+        side_effect=ValueError("simulated util error"),
+    )
+    assert dask_fw.collect_api(SemanticTier.UTIL) == []
+
 
 def test_cupy_import_success(mocker: Any) -> None:
     """Test cupy import logic when module is available.

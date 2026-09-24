@@ -7,6 +7,7 @@ from typing import Any
 from unittest import mock
 import pytest
 
+from ml_switcheroo_ir.schema.ghost import SemanticTier
 from ml_framework_snapshots.frameworks import mlir
 from ml_framework_snapshots.mcp_server import check_mlir_op
 from ml_framework_snapshots.cli import cmd_check_mlir
@@ -99,6 +100,16 @@ def test_validate_mlir_type() -> None:
         "i32", constraint="HLO_StaticShapeTensorOrPerAxisQuantizedTensor"
     )
     assert any("tensor constraint" in e for e in err_not_tensor)
+
+    assert mlir.validate_mlir_type("index", constraint="index") == []
+    assert any(
+        "expected 'index' type" in e
+        for e in mlir.validate_mlir_type("f32", constraint="index")
+    )
+    assert (
+        mlir.validate_mlir_type("f32", constraint="custom_unrecognized_constraint")
+        == []
+    )
 
 
 def test_validate_mlir_traits() -> None:
@@ -430,3 +441,118 @@ def test_mlir_collect_api_variants() -> None:
             refs = mlir.collect_api(SemanticTier.UTIL)
             assert len(refs) == 1
             assert refs[0].api_path == "test.op3"
+
+
+def test_validate_mlir_region() -> None:
+    """Verify validate_mlir_region enforces structural constraints for scf loops."""
+    # 1. Valid scf.for
+    errs_for_valid = mlir.validate_mlir_region(
+        op_name="scf.for",
+        region_name="body",
+        block_args=["index", "f32"],
+        yield_types=["f32"],
+    )
+    assert errs_for_valid == []
+
+    # 2. Invalid scf.for induction variable
+    errs_for_bad_iv = mlir.validate_mlir_region(
+        op_name="scf.for",
+        region_name="body",
+        block_args=["i32"],
+        yield_types=[],
+    )
+    assert any("must be 'index' type" in e for e in errs_for_bad_iv)
+
+    # 3. Invalid scf.for mismatched yield types
+    errs_for_bad_yield = mlir.validate_mlir_region(
+        op_name="scf.for",
+        region_name="body",
+        block_args=["index", "f32"],
+        yield_types=["i32"],
+    )
+    assert any("must match loop-carried iter_args" in e for e in errs_for_bad_yield)
+
+    # 4. Valid scf.while before region
+    errs_while_valid = mlir.validate_mlir_region(
+        op_name="scf.while",
+        region_name="before",
+        block_args=[],
+        yield_types=["i1"],
+    )
+    assert errs_while_valid == []
+
+    # 5. Invalid scf.while before region without boolean
+    errs_while_bad = mlir.validate_mlir_region(
+        op_name="scf.while",
+        region_name="before",
+        block_args=[],
+        yield_types=["f32"],
+    )
+    assert any("must yield a condition boolean i1" in e for e in errs_while_bad)
+
+    # 6. Non-body region in scf.for
+    assert mlir.validate_mlir_region("scf.for", "other_region", [], []) == []
+
+    # 7. Non-before region in scf.while
+    assert mlir.validate_mlir_region("scf.while", "after", [], []) == []
+
+    # 8. Unrelated operation in validate_mlir_region
+    assert mlir.validate_mlir_region("func.func", "body", [], []) == []
+
+
+def test_validate_mlir_successors() -> None:
+    """Verify validate_mlir_successors enforces label format and branch counts."""
+    # 1. Valid cf.br
+    assert mlir.validate_mlir_successors("cf.br", ["^bb1"]) == []
+
+    # 2. Malformed successor block label
+    errs_malformed = mlir.validate_mlir_successors("cf.br", ["invalid_label"])
+    assert any("Malformed successor block label" in e for e in errs_malformed)
+
+    # 3. Expected count mismatch
+    errs_count = mlir.validate_mlir_successors("cf.br", ["^bb1"], expected_count=2)
+    assert any("Successor count mismatch" in e for e in errs_count)
+
+    # 4. Invalid cf.br count
+    errs_br = mlir.validate_mlir_successors("cf.br", ["^bb1", "^bb2"])
+    assert any("requires exactly 1 successor block" in e for e in errs_br)
+
+    # 5. Valid cf.cond_br
+    assert mlir.validate_mlir_successors("cf.cond_br", ["^bb1", "^bb2"]) == []
+
+    # 6. Invalid cf.cond_br count
+    errs_cond_br = mlir.validate_mlir_successors("cf.cond_br", ["^bb1"])
+    assert any("requires exactly 2 successor blocks" in e for e in errs_cond_br)
+
+
+def test_validate_mlir_type_container_constraints() -> None:
+    """Verify container type constraints with element type validation."""
+    assert mlir.validate_mlir_type("tensor<4xi32>", constraint="AnyInteger") == []
+    err_int_mismatch = mlir.validate_mlir_type("tensor<4xf32>", constraint="AnyInteger")
+    assert any("element type 'f32' is not integer" in e for e in err_int_mismatch)
+
+    assert mlir.validate_mlir_type("vector<4xf32>", constraint="FloatLike") == []
+    err_flt_mismatch = mlir.validate_mlir_type("vector<4xi32>", constraint="FloatLike")
+    assert any("element type 'i32' is not float" in e for e in err_flt_mismatch)
+
+
+def test_mlir_collect_api_with_regions() -> None:
+    """Verify collect_api processes operations with regions properly."""
+    mock_envelope = {
+        "categories": {
+            "UTIL": [
+                {
+                    "api_path": "scf.execute_region",
+                    "name": "scf.execute_region",
+                    "regions": [{"name": "body"}],
+                }
+            ]
+        }
+    }
+    with mock.patch("os.path.exists", return_value=True):
+        with mock.patch(
+            "builtins.open", mock.mock_open(read_data=json.dumps(mock_envelope))
+        ):
+            refs = mlir.collect_api(SemanticTier.UTIL)
+            assert len(refs) == 1
+            assert any(p.name == "body" for p in refs[0].params)

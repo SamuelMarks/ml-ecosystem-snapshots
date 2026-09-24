@@ -379,3 +379,20 @@ def test_parse_docstring_with_griffe_parse_exception() -> None:
     with patch("griffe.parse", side_effect=ValueError("simulated parse error")):
         res = parse_docstring_with_griffe("some docstring text")
         assert res == []
+
+
+def test_is_offline_mode_env_vars(monkeypatch: Any) -> None:
+    """Test is_offline_mode across all truthy and falsey environment values."""
+    from ml_framework_snapshots.utils import is_offline_mode
+
+    monkeypatch.delenv("ML_SNAPSHOTS_OFFLINE", raising=False)
+    monkeypatch.delenv("ML_FRAMEWORK_SNAPSHOTS_OFFLINE", raising=False)
+    assert is_offline_mode() is False
+
+    for var in ("ML_SNAPSHOTS_OFFLINE", "ML_FRAMEWORK_SNAPSHOTS_OFFLINE"):
+        for val in ("1", "true", "yes", "on", "enable", "enabled"):
+            monkeypatch.setenv(var, val)
+            assert is_offline_mode() is True
+        monkeypatch.setenv(var, "0")
+        assert is_offline_mode() is False
+        monkeypatch.delenv(var, raising=False)

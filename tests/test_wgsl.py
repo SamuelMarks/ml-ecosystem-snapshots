@@ -253,3 +253,24 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("importlib.resources.files", mock_files_raise)
     ops_err = _load_wgsl_ops()
     assert ops_err == CANONICAL_WGSL_OPS
+
+
+def test_wgsl_roundtrip_serialization() -> None:
+    """Verify 100% roundtrip serialization through GhostOperationRef and Pydantic models."""
+    from ml_framework_snapshots.frameworks.wgsl import collect_api
+    from ml_switcheroo_ir.schema.ghost import GhostOperationRef, SemanticTier
+
+    refs = collect_api(SemanticTier.ARRAY_API)
+    assert len(refs) > 0
+    for ref in refs:
+        assert isinstance(ref, GhostOperationRef)
+        serialized = ref.model_dump()
+        reconstructed = GhostOperationRef.model_validate(serialized)
+        assert reconstructed.name == ref.name
+        assert reconstructed.api_path == ref.api_path
+        assert reconstructed.operands is not None
+        assert ref.operands is not None
+        assert len(reconstructed.operands) == len(ref.operands)
+        assert reconstructed.params is not None
+        assert ref.params is not None
+        assert len(reconstructed.params) == len(ref.params)

@@ -20,43 +20,56 @@ from ml_framework_snapshots.api import (  # noqa: E402
     write_snapshot,
 )
 
+all_frameworks = [
+    "torch",
+    "jax",
+    "tensorflow",
+    "keras",
+    "mlx",
+    "numpy",
+    "cupy",
+    "dask",
+    "flax_nnx",
+    "deepspeed",
+    "optax_shim",
+    "orbax_checkpoint",
+    "huggingface",
+    "diffusers",
+    "tokenizers",
+    "triton",
+    "sklearn",
+    "onnxruntime",
+    "pax",
+    "maxtext",
+    "mlir",
+    "stablehlo",
+    "html_dsl",
+    "latex_dsl",
+    "tikz",
+    "nvidia_sass",
+    "nvidia_ptx",
+    "amd_rdna",
+    "ir",
+    "wgsl",
+    "onnx",
+    "metal",
+    "numba",
+    "sparse",
+    "dpnp",
+    "awkward",
+    "pyarrow_compute",
+    "bohrium",
+    "wasm_simd",
+    "webgl",
+    "cpp_runtime",
+]
+
 
 def main() -> None:
     """Generate and save API snapshots for supported ML frameworks."""
     os.makedirs(
         os.path.join("src", "ml_framework_snapshots", "snapshots"), exist_ok=True
     )
-    all_frameworks = [
-        "torch",
-        "jax",
-        "tensorflow",
-        "keras",
-        "mlx",
-        "numpy",
-        "cupy",
-        "dask",
-        "flax_nnx",
-        "deepspeed",
-        "optax_shim",
-        "orbax_checkpoint",
-        "huggingface",
-        "diffusers",
-        "tokenizers",
-        "triton",
-        "sklearn",
-        "onnxruntime",
-        "pax",
-        "maxtext",
-        "mlir",
-        "stablehlo",
-        "html_dsl",
-        "latex_dsl",
-        "tikz",
-        "nvidia_sass",
-        "nvidia_ptx",
-        "amd_rdna",
-        "ir",
-    ]
     frameworks = sys.argv[1:] if len(sys.argv) > 1 else all_frameworks
     use_isolated = os.environ.get("ISOLATE_EXTRACTION", "0") == "1"
     has_error = False

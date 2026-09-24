@@ -42,10 +42,10 @@ def resolve_snapshot_path(path: str) -> str:
     repo_root = os.path.dirname(os.path.dirname(pkg_dir))
 
     search_dirs: List[str] = get_custom_snapshots_paths() + [
-        os.path.join(get_cache_dir(), "snapshots"),
-        os.path.join(repo_root, "snapshots"),
         os.path.join(pkg_dir, "snapshots"),
         os.path.join(pkg_dir, "frameworks"),
+        os.path.join(repo_root, "snapshots"),
+        os.path.join(get_cache_dir(), "snapshots"),
         os.path.join(os.getcwd(), "snapshots"),
     ]
 
@@ -968,6 +968,163 @@ def cmd_check_wgsl(args: argparse.Namespace) -> None:
     print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
 
 
+def cmd_check_onnx(args: argparse.Namespace) -> None:
+    """Validate ONNX operation against specification definitions.
+
+    Args:
+        args: Parsed command line arguments.
+    """
+    from .mcp_server import check_onnx_op
+
+    attrs = (
+        [a.strip() for a in args.attributes.split(",") if a.strip()]
+        if args.attributes
+        else None
+    )
+
+    res = check_onnx_op(
+        op_name=args.op_name,
+        domain=getattr(args, "domain", "") or "",
+        inputs_count=args.inputs_count,
+        attributes=attrs,
+    )
+
+    if not res.get("is_valid"):
+        print(f"ONNX Operation '{args.op_name}' Invalid:")
+        for err in res.get("errors", []):
+            print(f"  - {err}")
+        sys.exit(1)
+
+    print(f"ONNX Operation '{args.op_name}' is valid.")
+    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
+    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
+
+
+def cmd_check_metal(args: argparse.Namespace) -> None:
+    """Validate Apple Metal MSL compute operation against specification.
+
+    Args:
+        args: Parsed command line arguments.
+    """
+    from .mcp_server import check_metal_op
+
+    attrs = (
+        [a.strip() for a in args.attributes.split(",") if a.strip()]
+        if args.attributes
+        else None
+    )
+
+    res = check_metal_op(
+        op_name=args.op_name,
+        address_space=getattr(args, "address_space", None),
+        inputs_count=args.inputs_count,
+        attributes=attrs,
+    )
+
+    if not res.get("is_valid"):
+        print(f"Metal Operation '{args.op_name}' Invalid:")
+        for err in res.get("errors", []):
+            print(f"  - {err}")
+        sys.exit(1)
+
+    print(f"Metal Operation '{args.op_name}' is valid.")
+    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
+    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
+
+
+def cmd_check_wasm(args: argparse.Namespace) -> None:
+    """Validate WebAssembly 2.0 / SIMD instruction against specification.
+
+    Args:
+        args: Parsed command line arguments.
+    """
+    from .mcp_server import check_wasm_instruction
+
+    attrs = (
+        [a.strip() for a in args.attributes.split(",") if a.strip()]
+        if args.attributes
+        else None
+    )
+
+    res = check_wasm_instruction(
+        mnemonic=args.mnemonic,
+        operands_count=args.operands_count,
+        attributes=attrs,
+    )
+
+    if not res.get("is_valid"):
+        print(f"WASM Instruction '{args.mnemonic}' Invalid:")
+        for err in res.get("errors", []):
+            print(f"  - {err}")
+        sys.exit(1)
+
+    print(f"WASM Instruction '{args.mnemonic}' is valid.")
+    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
+    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
+
+
+def cmd_check_webgl(args: argparse.Namespace) -> None:
+    """Validate WebGL 2.0 / GLSL ES 3.00 operation against specification.
+
+    Args:
+        args: Parsed command line arguments.
+    """
+    from .mcp_server import check_webgl_op
+
+    attrs = (
+        [a.strip() for a in args.attributes.split(",") if a.strip()]
+        if args.attributes
+        else None
+    )
+
+    res = check_webgl_op(
+        op_name=args.op_name,
+        inputs_count=args.inputs_count,
+        attributes=attrs,
+    )
+
+    if not res.get("is_valid"):
+        print(f"WebGL Operation '{args.op_name}' Invalid:")
+        for err in res.get("errors", []):
+            print(f"  - {err}")
+        sys.exit(1)
+
+    print(f"WebGL Operation '{args.op_name}' is valid.")
+    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
+    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
+
+
+def cmd_check_cpp(args: argparse.Namespace) -> None:
+    """Validate C++17 / PyBind11 operation against specification.
+
+    Args:
+        args: Parsed command line arguments.
+    """
+    from .mcp_server import check_cpp_op
+
+    attrs = (
+        [a.strip() for a in args.attributes.split(",") if a.strip()]
+        if args.attributes
+        else None
+    )
+
+    res = check_cpp_op(
+        op_name=args.op_name,
+        inputs_count=args.inputs_count,
+        attributes=attrs,
+    )
+
+    if not res.get("is_valid"):
+        print(f"C++ Operation '{args.op_name}' Invalid:")
+        for err in res.get("errors", []):
+            print(f"  - {err}")
+        sys.exit(1)
+
+    print(f"C++ Operation '{args.op_name}' is valid.")
+    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
+    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
+
+
 def main() -> None:
     """Parse arguments and route to subcommands."""
     parser = argparse.ArgumentParser(description="ML Framework Snapshots CLI")
@@ -1349,6 +1506,121 @@ def main() -> None:
         help="Path to WGSL shader file to validate",
     )
     parser_check_wgsl.set_defaults(func=cmd_check_wgsl)
+
+    parser_check_onnx = subparsers.add_parser(
+        "check-onnx",
+        help="Validate ONNX operation against official specification",
+    )
+    parser_check_onnx.add_argument(
+        "op_name",
+        help="Name of the ONNX operator (e.g., 'Conv', 'Add')",
+    )
+    parser_check_onnx.add_argument(
+        "--domain",
+        default="",
+        help="Optional domain (e.g., 'ai.onnx.ml')",
+    )
+    parser_check_onnx.add_argument(
+        "--inputs-count",
+        type=int,
+        default=None,
+        help="Expected number of input operands",
+    )
+    parser_check_onnx.add_argument(
+        "--attributes",
+        default=None,
+        help="Comma-separated list of expected attribute names",
+    )
+    parser_check_onnx.set_defaults(func=cmd_check_onnx)
+
+    parser_check_metal = subparsers.add_parser(
+        "check-metal",
+        help="Validate Apple Metal MSL compute operation against specification",
+    )
+    parser_check_metal.add_argument(
+        "op_name",
+        help="Name of the Metal MSL operation (e.g., 'simdgroup_multiply_accumulate')",
+    )
+    parser_check_metal.add_argument(
+        "--address-space",
+        default=None,
+        help="Expected address space (e.g., 'device', 'threadgroup', 'thread')",
+    )
+    parser_check_metal.add_argument(
+        "--inputs-count",
+        type=int,
+        default=None,
+        help="Expected number of input operands",
+    )
+    parser_check_metal.add_argument(
+        "--attributes",
+        default=None,
+        help="Comma-separated list of expected attribute names",
+    )
+    parser_check_metal.set_defaults(func=cmd_check_metal)
+
+    parser_check_wasm = subparsers.add_parser(
+        "check-wasm",
+        help="Validate WebAssembly 2.0 / SIMD instruction against specification",
+    )
+    parser_check_wasm.add_argument(
+        "mnemonic",
+        help="Mnemonic of the WASM instruction (e.g., 'f32x4.add', 'v128.load')",
+    )
+    parser_check_wasm.add_argument(
+        "--operands-count",
+        type=int,
+        default=None,
+        help="Expected number of stack operands",
+    )
+    parser_check_wasm.add_argument(
+        "--attributes",
+        default=None,
+        help="Comma-separated list of expected attribute/immediate names",
+    )
+    parser_check_wasm.set_defaults(func=cmd_check_wasm)
+
+    parser_check_webgl = subparsers.add_parser(
+        "check-webgl",
+        help="Validate WebGL 2.0 / GLSL ES 3.00 operation against specification",
+    )
+    parser_check_webgl.add_argument(
+        "op_name",
+        help="Name of the WebGL operation (e.g., 'texelFetch', 'matrixCompMult')",
+    )
+    parser_check_webgl.add_argument(
+        "--inputs-count",
+        type=int,
+        default=None,
+        help="Expected number of input operands",
+    )
+    parser_check_webgl.add_argument(
+        "--attributes",
+        default=None,
+        help="Comma-separated list of expected attribute names",
+    )
+    parser_check_webgl.set_defaults(func=cmd_check_webgl)
+
+    parser_check_cpp = subparsers.add_parser(
+        "check-cpp",
+        help="Validate C++17 / PyBind11 operation against specification",
+    )
+    parser_check_cpp.add_argument(
+        "op_name",
+        help="Name of the C++ operation (e.g., 'clamp', 'from_blob', 'sqrt')",
+    )
+    parser_check_cpp.add_argument(
+        "--inputs-count",
+        type=int,
+        default=None,
+        help="Expected number of input operands",
+    )
+    parser_check_cpp.add_argument(
+        "--attributes",
+        default=None,
+        help="Comma-separated list of expected attribute names",
+    )
+    parser_check_cpp.set_defaults(func=cmd_check_cpp)
 
     args = parser.parse_args()
     if getattr(args, "offline", False):
