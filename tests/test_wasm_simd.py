@@ -3,13 +3,13 @@
 import argparse
 import pytest
 
-from ml_framework_snapshots.frameworks.wasm_simd import (
+from ml_ecosystem_snapshots.frameworks.wasm_simd import (
     CANONICAL_WASM_SIMD_OPS,
     _load_wasm_simd_ops,
     collect_api,
 )
-from ml_framework_snapshots.mcp_server import check_wasm_instruction
-from ml_framework_snapshots.cli import cmd_check_wasm
+from ml_ecosystem_snapshots.mcp_server import check_wasm_instruction
+from ml_ecosystem_snapshots.cli import cmd_check_wasm
 from ml_switcheroo_ir.schema.ghost import (
     GhostOperationRef,
     OperandDirection,

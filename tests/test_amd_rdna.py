@@ -4,7 +4,7 @@ import json
 from typing import Any
 from unittest import mock
 from ml_switcheroo_ir.schema.ghost import SemanticTier, GhostRef, GhostParam
-from ml_framework_snapshots.frameworks import amd_rdna
+from ml_ecosystem_snapshots.frameworks import amd_rdna
 
 
 def test_amd_rdna_collect_api_layer() -> None:
@@ -12,7 +12,7 @@ def test_amd_rdna_collect_api_layer() -> None:
     assert amd_rdna.collect_api(SemanticTier.LAYER) == []
 
 
-@mock.patch("ml_framework_snapshots.frameworks.amd_rdna._load_exhaustive_rdna")
+@mock.patch("ml_ecosystem_snapshots.frameworks.amd_rdna._load_exhaustive_rdna")
 def test_amd_rdna_collect_api_util(mock_load: mock.MagicMock) -> None:
     """Test that collect_api returns valid GhostRef objects for RDNA instructions.
 
@@ -94,7 +94,7 @@ def test_amd_rdna_collect_api_util(mock_load: mock.MagicMock) -> None:
     assert "GFX11/RDNA3" in (cmp_inst.environment_tags or [])
 
 
-@mock.patch("ml_framework_snapshots.frameworks.amd_rdna._load_exhaustive_rdna")
+@mock.patch("ml_ecosystem_snapshots.frameworks.amd_rdna._load_exhaustive_rdna")
 def test_amd_rdna_specific_instruction(mock_load: mock.MagicMock) -> None:
     """Test a specific instruction to verify it was extracted.
 
@@ -311,7 +311,7 @@ def test_validate_rdna_microarchitecture() -> None:
 
 def test_check_rdna_instruction_extended() -> None:
     """Test check_rdna_instruction with modifiers, wave_size, and constant bus validation."""
-    from ml_framework_snapshots.mcp_server import check_rdna_instruction
+    from ml_ecosystem_snapshots.mcp_server import check_rdna_instruction
 
     # 1. Valid instruction
     res_valid = check_rdna_instruction(
@@ -348,7 +348,7 @@ def test_check_rdna_instruction_extended() -> None:
 
 def test_cli_check_rdna(capsys: Any, tmp_path: Any) -> None:
     """Test CLI check-rdna subcommand with file, mnemonic, and errors."""
-    from ml_framework_snapshots.cli import cmd_check_rdna
+    from ml_ecosystem_snapshots.cli import cmd_check_rdna
     import argparse
     import pytest
 
@@ -525,7 +525,7 @@ def test_load_exhaustive_rdna_variants() -> None:
 
 def test_tokenize_rdna_line_and_code_block() -> None:
     """Test tokenize_rdna_line and check_code_block with RDNA encoding suffixes."""
-    from ml_framework_snapshots.mcp_server import (
+    from ml_ecosystem_snapshots.mcp_server import (
         check_code_block,
         check_rdna_instruction,
     )

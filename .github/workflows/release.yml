@@ -99,7 +99,7 @@ jobs:
           venv-3-10/bin/python3 -m pip uninstall -y jaxlib jax optax || true
           venv-3-10/bin/python3 -m pip install paxml "jaxlib==0.4.26"
 
-          mkdir -p src/ml_framework_snapshots/snapshots
+          mkdir -p src/ml_ecosystem_snapshots/snapshots
           venv-3-10/bin/python3 scripts/generate_all_snapshots.py pax || true
 
       - name: Generate stablehlo snapshot
@@ -107,8 +107,8 @@ jobs:
         run: |
           uv pip install --system -e /Users/samuel/repos/ml-switcheroo-ir
           uv pip install --system '.[generate]'
-          mkdir -p src/ml_framework_snapshots/snapshots
-          PYTHONPATH=src python3 src/ml_framework_snapshots/tools/build_stablehlo_snapshot.py
+          mkdir -p src/ml_ecosystem_snapshots/snapshots
+          PYTHONPATH=src python3 src/ml_ecosystem_snapshots/tools/build_stablehlo_snapshot.py
           python3 scripts/generate_all_snapshots.py stablehlo || true
 
       - name: Generate framework snapshot
@@ -153,7 +153,7 @@ jobs:
             uv pip install --system $PKGS || true
           fi
 
-          mkdir -p src/ml_framework_snapshots/snapshots
+          mkdir -p src/ml_ecosystem_snapshots/snapshots
           python3 scripts/generate_all_snapshots.py $fw || true
 
       - name: Upload snapshot artifact
@@ -161,9 +161,9 @@ jobs:
         with:
           name: snapshot-${{ matrix.framework }}
           path: |
-            src/ml_framework_snapshots/snapshots/*.json
-            src/ml_framework_snapshots/frameworks/*_exhaustive.json
-            src/ml_framework_snapshots/concept_map.json
+            src/ml_ecosystem_snapshots/snapshots/*.json
+            src/ml_ecosystem_snapshots/frameworks/*_exhaustive.json
+            src/ml_ecosystem_snapshots/concept_map.json
           if-no-files-found: warn
 
   build-wheel:
@@ -210,28 +210,28 @@ jobs:
 
       - name: Consolidate snapshots into package
         run: |
-          mkdir -p src/ml_framework_snapshots/snapshots
-          mkdir -p src/ml_framework_snapshots/frameworks
+          mkdir -p src/ml_ecosystem_snapshots/snapshots
+          mkdir -p src/ml_ecosystem_snapshots/frameworks
           if [ -d downloaded_snapshots ]; then
-            find downloaded_snapshots -type f -name "*_exhaustive.json" -exec cp -f {} src/ml_framework_snapshots/frameworks/ \;
-            find downloaded_snapshots -type f -name "concept_map.json" -exec cp -f {} src/ml_framework_snapshots/ \;
-            find downloaded_snapshots -type f -name "*.json" ! -name "*_exhaustive.json" ! -name "concept_map.json" -exec cp -f {} src/ml_framework_snapshots/snapshots/ \;
+            find downloaded_snapshots -type f -name "*_exhaustive.json" -exec cp -f {} src/ml_ecosystem_snapshots/frameworks/ \;
+            find downloaded_snapshots -type f -name "concept_map.json" -exec cp -f {} src/ml_ecosystem_snapshots/ \;
+            find downloaded_snapshots -type f -name "*.json" ! -name "*_exhaustive.json" ! -name "concept_map.json" -exec cp -f {} src/ml_ecosystem_snapshots/snapshots/ \;
           fi
           PYTHONPATH=src python3 -c "
           import os, json
-          from ml_framework_snapshots.mcp_server import DEFAULT_CONCEPT_MAP
-          p = 'src/ml_framework_snapshots/concept_map.json'
+          from ml_ecosystem_snapshots.mcp_server import DEFAULT_CONCEPT_MAP
+          p = 'src/ml_ecosystem_snapshots/concept_map.json'
           if not os.path.exists(p):
               with open(p, 'w', encoding='utf-8') as f:
                   json.dump(DEFAULT_CONCEPT_MAP, f, indent=2)
 
-          from ml_framework_snapshots.frameworks.nvidia_sass import _load_exhaustive_sass
-          from ml_framework_snapshots.frameworks.amd_rdna import _load_exhaustive_rdna
-          from ml_framework_snapshots.frameworks.nvidia_ptx import _load_exhaustive_ptx
-          from ml_framework_snapshots.frameworks.mlir import _get_canonical_mlir_records
-          from ml_framework_snapshots.frameworks.stablehlo import _get_canonical_stablehlo_records
+          from ml_ecosystem_snapshots.frameworks.nvidia_sass import _load_exhaustive_sass
+          from ml_ecosystem_snapshots.frameworks.amd_rdna import _load_exhaustive_rdna
+          from ml_ecosystem_snapshots.frameworks.nvidia_ptx import _load_exhaustive_ptx
+          from ml_ecosystem_snapshots.frameworks.mlir import _get_canonical_mlir_records
+          from ml_ecosystem_snapshots.frameworks.stablehlo import _get_canonical_stablehlo_records
 
-          fw_dir = os.path.join('src', 'ml_framework_snapshots', 'frameworks')
+          fw_dir = os.path.join('src', 'ml_ecosystem_snapshots', 'frameworks')
           for fname, getter in [
               ('nvidia_sass_exhaustive.json', _load_exhaustive_sass),
               ('amd_rdna_exhaustive.json', _load_exhaustive_rdna),
@@ -246,8 +246,8 @@ jobs:
                       json.dump(data, f, indent=2)
           "
           echo "Bundled snapshots:"
-          ls -la src/ml_framework_snapshots/snapshots/
-          ls -la src/ml_framework_snapshots/frameworks/
+          ls -la src/ml_ecosystem_snapshots/snapshots/
+          ls -la src/ml_ecosystem_snapshots/frameworks/
 
       - name: Determine Release Tag
         id: tag_check
@@ -265,19 +265,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Guarantee zero database files in snapshots directory
-          rm -f src/ml_framework_snapshots/snapshots/*.db* src/ml_framework_snapshots/snapshots/*.sqlite* || true
+          rm -f src/ml_ecosystem_snapshots/snapshots/*.db* src/ml_ecosystem_snapshots/snapshots/*.sqlite* || true
           gh release view "$TARGET_TAG" >/dev/null 2>&1 || gh release create "$TARGET_TAG" --title "Release $TARGET_TAG" --notes "Automated release $TARGET_TAG" || true
 
           # Upload all snapshot JSON files, exhaustive catalogs, and concept map
-          for json_file in src/ml_framework_snapshots/snapshots/*.json src/ml_framework_snapshots/frameworks/*_exhaustive.json src/ml_framework_snapshots/concept_map.json; do
+          for json_file in src/ml_ecosystem_snapshots/snapshots/*.json src/ml_ecosystem_snapshots/frameworks/*_exhaustive.json src/ml_ecosystem_snapshots/concept_map.json; do
             if [ -f "$json_file" ]; then
               echo "Uploading $json_file to release $TARGET_TAG..."
               gh release upload "$TARGET_TAG" "$json_file" --clobber
             fi
           done
 
-          if ls src/ml_framework_snapshots/snapshots/*.json 1> /dev/null 2>&1; then
-            cd src/ml_framework_snapshots/snapshots
+          if ls src/ml_ecosystem_snapshots/snapshots/*.json 1> /dev/null 2>&1; then
+            cd src/ml_ecosystem_snapshots/snapshots
             sha256sum *.json > checksums.txt 2>/dev/null || shasum -a 256 *.json > checksums.txt
             gh release upload "$TARGET_TAG" checksums.txt --clobber || true
             cd -
@@ -321,7 +321,7 @@ jobs:
           uv pip install -p venv-offline -e /Users/samuel/repos/ml-switcheroo-ir
           uv pip install -p venv-offline -r requirements.txt
           uv pip install -p venv-offline --no-deps dist/*.whl
-          venv-offline/bin/ml_framework_snapshots list-snapshots
+          venv-offline/bin/ml_ecosystem_snapshots list-snapshots
 
       - name: Upload Wheel to GitHub Release
         if: env.TARGET_TAG != ''

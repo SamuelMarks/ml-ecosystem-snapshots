@@ -1,89 +1,25 @@
-"""Numpy API Snapshot Extractor."""
+"""Backward-compatibility shim for ml_framework_snapshots.frameworks.numpy.
 
-import inspect
-from typing import List
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
-from ml_framework_snapshots.models import GhostInspector
+Transparently re-exports all members from ml_ecosystem_snapshots.frameworks.numpy.
+"""
 
-import typing
+from __future__ import annotations
 
-try:
-    import numpy as _np
+import sys
+from typing import TYPE_CHECKING
+import ml_ecosystem_snapshots.frameworks.numpy as _orig_mod
 
-    np: typing.Any = _np
-except ImportError:
-    np = None
+if TYPE_CHECKING:
+    from ml_ecosystem_snapshots.frameworks.numpy import *  # noqa: F401, F403
 
+# Re-export all attributes including internal and dunder methods
+for _k in dir(_orig_mod):
+    globals()[_k] = getattr(_orig_mod, _k)
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
-    """Collect numpy API.
+__all__ = getattr(
+    _orig_mod,
+    "__all__",
+    [k for k in dir(_orig_mod) if not k.startswith("_")],
+)
 
-    Args:
-        category: The category of API to collect.
-        include_nonpublic: Whether to include non-public APIs.
-
-    Returns:
-        List of GhostRefs.
-    """
-    results: List[GhostRef] = []
-    if not np:
-        return results
-
-    if category == SemanticTier.ACTIVATION:
-        # Numpy doesn't have an "activation" module per se, but we can capture basic math ops
-        for name in ["tanh", "exp", "maximum", "minimum"]:
-            if hasattr(np, name):
-                obj = getattr(np, name)
-                if callable(obj):
-                    try:
-                        res = GhostInspector.inspect(
-                            obj, f"numpy.{name}", is_public=True
-                        )
-                        results.append(res)
-                    except Exception:
-                        pass
-    elif category == SemanticTier.ARRAY_API:
-        for name in dir(np):
-            if not name.startswith("_"):
-                obj = getattr(np, name, None)
-                if callable(obj) and not inspect.isclass(obj):
-                    try:
-                        res = GhostInspector.inspect(
-                            obj, f"numpy.{name}", is_public=True
-                        )
-                        results.append(res)
-                    except Exception:
-                        pass
-
-        # Introspect numpy.linalg.*
-        if hasattr(np, "linalg"):
-            for name in dir(np.linalg):
-                if not name.startswith("_"):
-                    obj = getattr(np.linalg, name)
-                    if callable(obj) and not inspect.isclass(obj):
-                        try:
-                            results.append(
-                                GhostInspector.inspect(
-                                    obj, f"numpy.linalg.{name}", is_public=True
-                                )
-                            )
-                        except Exception:
-                            pass
-
-        # Introspect numpy.fft.*
-        if hasattr(np, "fft"):
-            for name in dir(np.fft):
-                if not name.startswith("_"):
-                    obj = getattr(np.fft, name)
-                    if callable(obj) and not inspect.isclass(obj):
-                        try:
-                            results.append(
-                                GhostInspector.inspect(
-                                    obj, f"numpy.fft.{name}", is_public=True
-                                )
-                            )
-                        except Exception:
-                            pass
-    return results
+sys.modules[__name__] = _orig_mod

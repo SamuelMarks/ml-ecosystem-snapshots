@@ -5,8 +5,8 @@ import os
 from typing import Any
 from unittest import mock
 
-from ml_framework_snapshots.frameworks import stablehlo as stablehlo_fw
-from ml_framework_snapshots.models import GhostMlirRef
+from ml_ecosystem_snapshots.frameworks import stablehlo as stablehlo_fw
+from ml_ecosystem_snapshots.models import GhostMlirRef
 from ml_switcheroo_ir.schema.ghost import SemanticTier
 
 
@@ -453,7 +453,7 @@ def test_cli_check_stablehlo(capsys: Any, tmp_path: Any) -> None:
         capsys: Pytest capsys fixture.
         tmp_path: Pytest temporary directory fixture.
     """
-    from ml_framework_snapshots.cli import cmd_check_stablehlo
+    from ml_ecosystem_snapshots.cli import cmd_check_stablehlo
     import argparse
     import pytest
 

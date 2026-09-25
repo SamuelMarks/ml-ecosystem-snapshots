@@ -1,6 +1,6 @@
 """Module docstring."""
 
-from ml_framework_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.models import GhostInspector
 
 
 def test_ghost_inspector_overloads() -> None:
@@ -25,7 +25,7 @@ def my_overloaded_func(a: Any, b: Any = None) -> Any:
     )
 
     import sys
-    from ml_framework_snapshots.models import _GRIFFE_CACHE
+    from ml_ecosystem_snapshots.models import _GRIFFE_CACHE
 
     _GRIFFE_CACHE.clear()
 
@@ -75,7 +75,7 @@ class OverloadedClass:
     )
 
     import sys
-    from ml_framework_snapshots.models import _GRIFFE_CACHE
+    from ml_ecosystem_snapshots.models import _GRIFFE_CACHE
 
     _GRIFFE_CACHE.clear()
 

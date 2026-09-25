@@ -1,95 +1,25 @@
-"""TikZ DSL API Snapshot Extractor.
+"""Backward-compatibility shim for ml_framework_snapshots.frameworks.tikz.
 
-Provides a static snapshot of standard TikZ drawing commands and node shapes.
+Transparently re-exports all members from ml_ecosystem_snapshots.frameworks.tikz.
 """
 
-from typing import List
+from __future__ import annotations
 
-from ml_switcheroo_ir.schema.ghost import (
-    GhostParam,
-    GhostRef,
-    ParameterKind,
-    SemanticTier,
+import sys
+from typing import TYPE_CHECKING
+import ml_ecosystem_snapshots.frameworks.tikz as _orig_mod
+
+if TYPE_CHECKING:
+    from ml_ecosystem_snapshots.frameworks.tikz import *  # noqa: F401, F403
+
+# Re-export all attributes including internal and dunder methods
+for _k in dir(_orig_mod):
+    globals()[_k] = getattr(_orig_mod, _k)
+
+__all__ = getattr(
+    _orig_mod,
+    "__all__",
+    [k for k in dir(_orig_mod) if not k.startswith("_")],
 )
 
-_TIKZ_COMMANDS = [
-    "draw",
-    "fill",
-    "filldraw",
-    "pattern",
-    "shade",
-    "shadedraw",
-    "clip",
-    "useasboundingbox",
-    "node",
-    "coordinate",
-    "matrix",
-    "pic",
-    "path",
-]
-
-_TIKZ_SHAPES = [
-    "circle",
-    "rectangle",
-    "ellipse",
-    "diamond",
-    "triangle",
-    "star",
-    "regular polygon",
-    "cylinder",
-    "kite",
-    "dart",
-    "trapezium",
-]
-
-
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
-    """Entrypoint to collect the TikZ DSL API signature.
-
-    Args:
-        category: The category of API to collect.
-        include_nonpublic: Whether to include non-public APIs.
-
-    Returns:
-        A list of GhostRef items discovered.
-    """
-    if category != SemanticTier.UTIL:
-        return []
-
-    refs = []
-
-    for cmd in _TIKZ_COMMANDS:
-        params = [
-            GhostParam(name="options", kind=ParameterKind.KEYWORD_ONLY),
-            GhostParam(name="path", kind=ParameterKind.POSITIONAL_OR_KEYWORD),
-        ]
-        refs.append(
-            GhostRef(
-                name=cmd,
-                api_path=f"tikz.{cmd}",
-                kind="function",
-                params=params,
-                docstring=f"TikZ \\{cmd} command.",
-            )
-        )
-
-    for shape in _TIKZ_SHAPES:
-        clean_name = shape.replace(" ", "_")
-        params = [
-            GhostParam(name="name", kind=ParameterKind.POSITIONAL_OR_KEYWORD),
-            GhostParam(name="at", kind=ParameterKind.KEYWORD_ONLY),
-            GhostParam(name="options", kind=ParameterKind.KEYWORD_ONLY),
-        ]
-        refs.append(
-            GhostRef(
-                name=clean_name,
-                api_path=f"tikz.shape.{clean_name}",
-                kind="CLASS",
-                params=params,
-                docstring=f"TikZ {shape} shape node.",
-            )
-        )
-
-    return refs
+sys.modules[__name__] = _orig_mod

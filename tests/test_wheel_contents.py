@@ -33,8 +33,8 @@ def test_wheel_packaging_and_data_assets(tmp_path: os.PathLike[str]) -> None:
             ".coverage*",
         ),
     )
-    fw_dir = os.path.join(proj_dir, "src", "ml_framework_snapshots", "frameworks")
-    pkg_dir = os.path.join(proj_dir, "src", "ml_framework_snapshots")
+    fw_dir = os.path.join(proj_dir, "src", "ml_ecosystem_snapshots", "frameworks")
+    pkg_dir = os.path.join(proj_dir, "src", "ml_ecosystem_snapshots")
 
     required_exhaustive_jsons = [
         "amd_rdna_exhaustive.json",
@@ -54,19 +54,19 @@ def test_wheel_packaging_and_data_assets(tmp_path: os.PathLike[str]) -> None:
             import json
 
             if req == "concept_map.json":
-                from ml_framework_snapshots.mcp_server import DEFAULT_CONCEPT_MAP
+                from ml_ecosystem_snapshots.mcp_server import DEFAULT_CONCEPT_MAP
 
                 with open(target_file, "w", encoding="utf-8") as f:
                     json.dump(DEFAULT_CONCEPT_MAP, f, indent=2)
             elif req == "nvidia_sass_exhaustive.json":
-                from ml_framework_snapshots.frameworks.nvidia_sass import (
+                from ml_ecosystem_snapshots.frameworks.nvidia_sass import (
                     _get_canonical_fallback_sass,
                 )
 
                 with open(target_file, "w", encoding="utf-8") as f:
                     json.dump(_get_canonical_fallback_sass(), f, indent=2)
             elif req == "amd_rdna_exhaustive.json":
-                from ml_framework_snapshots.frameworks.amd_rdna import (
+                from ml_ecosystem_snapshots.frameworks.amd_rdna import (
                     _get_canonical_fallback_rdna,
                 )
 
@@ -74,21 +74,21 @@ def test_wheel_packaging_and_data_assets(tmp_path: os.PathLike[str]) -> None:
                 with open(target_file, "w", encoding="utf-8") as f:
                     json.dump(rdna_data + rdna_data, f, indent=2)
             elif req == "mlir_exhaustive.json":
-                from ml_framework_snapshots.frameworks.mlir import (
+                from ml_ecosystem_snapshots.frameworks.mlir import (
                     _get_canonical_mlir_records,
                 )
 
                 with open(target_file, "w", encoding="utf-8") as f:
                     json.dump(_get_canonical_mlir_records(), f, indent=2)
             elif req == "stablehlo_exhaustive.json":
-                from ml_framework_snapshots.frameworks.stablehlo import (
+                from ml_ecosystem_snapshots.frameworks.stablehlo import (
                     _get_canonical_stablehlo_records,
                 )
 
                 with open(target_file, "w", encoding="utf-8") as f:
                     json.dump(_get_canonical_stablehlo_records(), f, indent=2)
             elif req == "nvidia_ptx_exhaustive.json":
-                from ml_framework_snapshots.frameworks.nvidia_ptx import (
+                from ml_ecosystem_snapshots.frameworks.nvidia_ptx import (
                     _get_canonical_fallback_ptx,
                 )
 
@@ -155,7 +155,7 @@ def test_wheel_packaging_and_data_assets(tmp_path: os.PathLike[str]) -> None:
 
             sass_json = os.path.join(
                 extract_dir,
-                "ml_framework_snapshots",
+                "ml_ecosystem_snapshots",
                 "frameworks",
                 "nvidia_sass_exhaustive.json",
             )
@@ -187,7 +187,7 @@ def test_wheel_bundles_dynamic_snapshots(tmp_path: os.PathLike[str]) -> None:
             ".coverage*",
         ),
     )
-    snap_dir = os.path.join(proj_dir, "src", "ml_framework_snapshots", "snapshots")
+    snap_dir = os.path.join(proj_dir, "src", "ml_ecosystem_snapshots", "snapshots")
     test_json = os.path.join(snap_dir, "testframework_v1.0.0.json")
     test_db = os.path.join(snap_dir, "testleak.db")
 

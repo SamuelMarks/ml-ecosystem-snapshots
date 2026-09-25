@@ -1,85 +1,25 @@
-"""Data models and diagnostic report structures for the Grounding SDK."""
+"""Backward-compatibility shim for ml_framework_snapshots.grounding.models.
 
-from enum import Enum
-from typing import List, Optional
-from pydantic import BaseModel, Field
+Transparently re-exports all members from ml_ecosystem_snapshots.grounding.models.
+"""
 
-from ml_framework_snapshots.models import ExtendedGhostRef
+from __future__ import annotations
 
+import sys
+from typing import TYPE_CHECKING
+import ml_ecosystem_snapshots.grounding.models as _orig_mod
 
-class DiagnosticSeverity(str, Enum):
-    """Severity classification for grounding diagnostics."""
+if TYPE_CHECKING:
+    from ml_ecosystem_snapshots.grounding.models import *  # noqa: F401, F403
 
-    INFO = "INFO"
-    WARNING = "WARNING"
-    ERROR = "ERROR"
+# Re-export all attributes including internal and dunder methods
+for _k in dir(_orig_mod):
+    globals()[_k] = getattr(_orig_mod, _k)
 
+__all__ = getattr(
+    _orig_mod,
+    "__all__",
+    [k for k in dir(_orig_mod) if not k.startswith("_")],
+)
 
-class GroundingDiagnostic(BaseModel):
-    """Specific diagnostic message emitted during symbol or operation verification."""
-
-    field: str = Field(description="The component, attribute, or operand evaluated.")
-    message: str = Field(description="Human-readable diagnostic explanation.")
-    severity: DiagnosticSeverity = Field(
-        default=DiagnosticSeverity.ERROR,
-        description="Severity level of the diagnostic.",
-    )
-    suggested_fix: Optional[str] = Field(
-        default=None,
-        description="Suggested replacement or typo correction.",
-    )
-
-
-class GroundingReport(BaseModel):
-    """Comprehensive validation report for a verified operation or symbol."""
-
-    is_grounded: bool = Field(
-        description="True if the symbol is grounded and valid without fatal errors."
-    )
-    target: str = Field(description="Target framework, dialect, or ISA.")
-    symbol: str = Field(
-        description="Queried symbol, mnemonic, or operation identifier."
-    )
-    diagnostics: List[GroundingDiagnostic] = Field(
-        default_factory=list,
-        description="Collection of diagnostics produced during verification.",
-    )
-    matched_ref: Optional[ExtendedGhostRef] = Field(
-        default=None,
-        description="Resolved ground-truth reference object if discovered.",
-    )
-
-    @property
-    def has_errors(self) -> bool:
-        """Check if any diagnostics have ERROR severity.
-
-        Returns:
-            True if any diagnostic is an ERROR, False otherwise.
-        """
-        return any(d.severity == DiagnosticSeverity.ERROR for d in self.diagnostics)
-
-    def add_diagnostic(
-        self,
-        field: str,
-        message: str,
-        severity: DiagnosticSeverity = DiagnosticSeverity.ERROR,
-        suggested_fix: Optional[str] = None,
-    ) -> None:
-        """Append a new diagnostic message to the report.
-
-        Args:
-            field: Component or operand under evaluation.
-            message: Explanatory error or warning text.
-            severity: Severity classification level.
-            suggested_fix: Optional typo correction or valid value suggestion.
-        """
-        self.diagnostics.append(
-            GroundingDiagnostic(
-                field=field,
-                message=message,
-                severity=severity,
-                suggested_fix=suggested_fix,
-            )
-        )
-        if severity == DiagnosticSeverity.ERROR:
-            self.is_grounded = False
+sys.modules[__name__] = _orig_mod

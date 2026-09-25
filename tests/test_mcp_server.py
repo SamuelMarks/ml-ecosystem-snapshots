@@ -8,7 +8,7 @@ import json
 from typing import Any, Dict, Optional
 from unittest import mock
 
-from ml_framework_snapshots.mcp_server import (
+from ml_ecosystem_snapshots.mcp_server import (
     CONCEPT_ALIAS_MAP,
     check_code_block,
     check_hallucination,
@@ -64,16 +64,16 @@ def test_version_aware_mcp_queries(mocker: Any) -> None:
         return mock_snap_v23
 
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
         side_effect=mock_get_snap,
     )
     # Also bypass SQLite lookup so it queries snapshot
     mocker.patch(
-        "ml_framework_snapshots.index.lookup_symbol",
+        "ml_ecosystem_snapshots.index.lookup_symbol",
         return_value=None,
     )
     mocker.patch(
-        "ml_framework_snapshots.index.search_index",
+        "ml_ecosystem_snapshots.index.search_index",
         return_value=[],
     )
 
@@ -114,11 +114,11 @@ def test_sqlite_fts5_index_integration_in_mcp(mocker: Any) -> None:
         "params": [{"name": "input", "kind": "POSITIONAL_OR_KEYWORD"}],
     }
     mocker.patch(
-        "ml_framework_snapshots.index.lookup_symbol",
+        "ml_ecosystem_snapshots.index.lookup_symbol",
         return_value=mock_symbol,
     )
     mocker.patch(
-        "ml_framework_snapshots.index.search_index",
+        "ml_ecosystem_snapshots.index.search_index",
         return_value=[mock_symbol],
     )
 
@@ -188,7 +188,7 @@ def test_expanded_semantic_concept_maps() -> None:
     assert any("scatter" in a for a in search_apis("torch", "scatter"))
 
     # Test load_concept_map and custom ontology
-    from ml_framework_snapshots.mcp_server import load_concept_map
+    from ml_ecosystem_snapshots.mcp_server import load_concept_map
 
     custom_map = {"custom_op": {"torch": ["torch.my_custom_op"]}}
     res_custom = search_apis("torch", "custom_op", custom_concept_map=custom_map)
@@ -216,7 +216,7 @@ def test_expanded_semantic_concept_maps() -> None:
 
     # Test load_concept_map with ML_SNAPSHOTS_CONCEPT_MAP
     import os
-    from ml_framework_snapshots.mcp_server import DEFAULT_CONCEPT_MAP
+    from ml_ecosystem_snapshots.mcp_server import DEFAULT_CONCEPT_MAP
 
     with mock.patch.dict(os.environ, {"ML_SNAPSHOTS_CONCEPT_MAP": "/env_map.json"}):
         with mock.patch("os.path.exists", return_value=True):
@@ -275,11 +275,11 @@ def test_check_code_block_python(mocker: Any) -> None:
         return {"categories": {}}
 
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
         side_effect=mock_get_snap,
     )
-    mocker.patch("ml_framework_snapshots.index.lookup_symbol", return_value=None)
-    mocker.patch("ml_framework_snapshots.index.search_index", return_value=[])
+    mocker.patch("ml_ecosystem_snapshots.index.lookup_symbol", return_value=None)
+    mocker.patch("ml_ecosystem_snapshots.index.search_index", return_value=[])
 
     code_snippet = """
 import torch
@@ -383,11 +383,11 @@ def test_mcp_server_disk_and_index_fallbacks(mocker: Any, tmp_path: Any) -> None
     (fake_snapshots_dir / "not_json.txt").write_text("text", encoding="utf-8")
 
     mocker.patch(
-        "ml_framework_snapshots.index.get_cache_dir",
+        "ml_ecosystem_snapshots.index.get_cache_dir",
         return_value=str(tmp_path),
     )
     # Clear cache for custom_fw
-    from ml_framework_snapshots.mcp_server import _SNAPSHOT_CACHE
+    from ml_ecosystem_snapshots.mcp_server import _SNAPSHOT_CACHE
 
     _SNAPSHOT_CACHE.pop("custom_fw", None)
     _SNAPSHOT_CACHE.pop("custom_fw_none", None)
@@ -402,7 +402,7 @@ def test_mcp_server_disk_and_index_fallbacks(mocker: Any, tmp_path: Any) -> None
 
     # 2. get_api_signature when lookup_symbol raises exception (lines 115-116)
     mocker.patch(
-        "ml_framework_snapshots.index.lookup_symbol",
+        "ml_ecosystem_snapshots.index.lookup_symbol",
         side_effect=RuntimeError("Index lookup error"),
     )
     mock_data = {
@@ -411,7 +411,7 @@ def test_mcp_server_disk_and_index_fallbacks(mocker: Any, tmp_path: Any) -> None
         }
     }
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
         return_value=mock_data,
     )
     sig = get_api_signature("custom_fw", "custom_fw.fn")
@@ -433,7 +433,7 @@ def test_search_apis_edge_cases(mocker: Any) -> None:
     )
     # 2. search_index raises an Exception (lines 449-450)
     mocker.patch(
-        "ml_framework_snapshots.index.search_index",
+        "ml_ecosystem_snapshots.index.search_index",
         side_effect=RuntimeError("search failed"),
     )
     mock_snap = {
@@ -454,7 +454,7 @@ def test_search_apis_edge_cases(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
         return_value=mock_snap,
     )
     # limit=10 ensures len(matches) < limit (branch 467->469)
@@ -463,7 +463,7 @@ def test_search_apis_edge_cases(mocker: Any) -> None:
 
     # 3. search_index returns results with duplicate or empty path (branches 445->439, 447->452)
     mocker.patch(
-        "ml_framework_snapshots.index.search_index",
+        "ml_ecosystem_snapshots.index.search_index",
         return_value=[{"api_path": None, "name": None, "mnemonic": None}],
     )
     res2 = search_apis("torch", "some_query", limit=10)
@@ -500,11 +500,11 @@ def test_check_hallucination_dtypes_and_ranks_edge_cases(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
         return_value=mock_snap,
     )
     mocker.patch(
-        "ml_framework_snapshots.index.lookup_symbol",
+        "ml_ecosystem_snapshots.index.lookup_symbol",
         return_value=None,
     )
 
@@ -533,7 +533,7 @@ def test_check_hallucination_dtypes_and_ranks_edge_cases(mocker: Any) -> None:
     assert not res_valid.get("is_hallucinated")
 
     # Test check_rdna_instruction with modifiers (lines 979-980)
-    from ml_framework_snapshots.mcp_server import check_rdna_instruction
+    from ml_ecosystem_snapshots.mcp_server import check_rdna_instruction
 
     res_rdna_mods = check_rdna_instruction("v_add_f32", modifiers=["dpp"])
     assert res_rdna_mods is not None
@@ -629,7 +629,7 @@ def test_check_mlir_op_and_stablehlo_additional_branches(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
         return_value=mock_mlir_snap,
     )
     res_existing_traits = check_mlir_op(
@@ -704,23 +704,23 @@ def test_validate_source_code_and_jsonrpc_additional_branches(mocker: Any) -> No
         mocker: Pytest mocker fixture.
     """
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.check_hallucination",
+        "ml_ecosystem_snapshots.mcp_server.check_hallucination",
         return_value={"is_hallucinated": False},
     )
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.check_mlir_op",
+        "ml_ecosystem_snapshots.mcp_server.check_mlir_op",
         return_value={"is_valid": True},
     )
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.check_sass_instruction",
+        "ml_ecosystem_snapshots.mcp_server.check_sass_instruction",
         return_value={"is_valid": True},
     )
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.check_rdna_instruction",
+        "ml_ecosystem_snapshots.mcp_server.check_rdna_instruction",
         return_value={"is_valid": True},
     )
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.check_stablehlo_op",
+        "ml_ecosystem_snapshots.mcp_server.check_stablehlo_op",
         return_value={"is_valid": True},
     )
 
@@ -843,7 +843,7 @@ def test_shape_and_dtype_grounding(mocker: Any) -> None:
             ]
         }
     }
-    from ml_framework_snapshots.index import lookup_symbol
+    from ml_ecosystem_snapshots.index import lookup_symbol
 
     orig_get_framework_snapshot = get_framework_snapshot
     orig_lookup_symbol = lookup_symbol
@@ -880,11 +880,11 @@ def test_shape_and_dtype_grounding(mocker: Any) -> None:
         return orig_lookup_symbol(framework, api_path, version=version)
 
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
         side_effect=mock_get_snap,
     )
     mocker.patch(
-        "ml_framework_snapshots.index.lookup_symbol",
+        "ml_ecosystem_snapshots.index.lookup_symbol",
         side_effect=mock_lookup,
     )
 
@@ -979,10 +979,10 @@ def test_explain_anti_pattern_tool(mocker: Any) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
-    from ml_framework_snapshots.mcp_server import explain_anti_pattern
+    from ml_ecosystem_snapshots.mcp_server import explain_anti_pattern
 
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.get_api_signature",
+        "ml_ecosystem_snapshots.mcp_server.get_api_signature",
         return_value={"params": [{"name": "input"}, {"name": "dim"}]},
     )
 
@@ -1085,7 +1085,7 @@ def test_mcp_edge_error_handling(mocker: Any) -> None:
             ]
         }
     }
-    from ml_framework_snapshots.index import lookup_symbol
+    from ml_ecosystem_snapshots.index import lookup_symbol
 
     orig_get_framework_snapshot = get_framework_snapshot
     orig_lookup_symbol = lookup_symbol
@@ -1122,14 +1122,14 @@ def test_mcp_edge_error_handling(mocker: Any) -> None:
         return orig_lookup_symbol(framework, api_path, version=version)
 
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
         side_effect=mock_get_snap,
     )
     mocker.patch(
-        "ml_framework_snapshots.index.lookup_symbol",
+        "ml_ecosystem_snapshots.index.lookup_symbol",
         side_effect=mock_lookup,
     )
-    from ml_framework_snapshots.mcp_server import explain_anti_pattern
+    from ml_ecosystem_snapshots.mcp_server import explain_anti_pattern
 
     # 1. explain_anti_pattern with unknown framework and API (sig is None)
     res_none_sig = explain_anti_pattern("nonexistent_fw", "nonexistent.op", "bad_arg")
@@ -1219,16 +1219,16 @@ def test_get_framework_snapshot_extraction_exception(mocker: Any) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
-    from ml_framework_snapshots.mcp_server import (
+    from ml_ecosystem_snapshots.mcp_server import (
         _SNAPSHOT_CACHE,
         get_framework_snapshot,
     )
 
     _SNAPSHOT_CACHE.clear()
     mock_extract = mocker.MagicMock(side_effect=RuntimeError("extraction failure"))
-    mocker.patch("ml_framework_snapshots.mcp_server.extract_snapshot", mock_extract)
+    mocker.patch("ml_ecosystem_snapshots.mcp_server.extract_snapshot", mock_extract)
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.is_offline_mode", return_value=False
+        "ml_ecosystem_snapshots.mcp_server.is_offline_mode", return_value=False
     )
 
     res = get_framework_snapshot("torch")
@@ -1237,7 +1237,7 @@ def test_get_framework_snapshot_extraction_exception(mocker: Any) -> None:
 
 def test_check_sass_fp4_microscopic_scaling_architecture_gating() -> None:
     """Test check_sass_instruction architecture gating for FP4/FP6/microscopic scaling mnemonics."""
-    from ml_framework_snapshots.mcp_server import check_sass_instruction
+    from ml_ecosystem_snapshots.mcp_server import check_sass_instruction
 
     # sm_90 target architecture should fail for FP4 instruction
     res_sm90 = check_sass_instruction("MMA_SCALE_FP4", sm_arch="sm_90")
@@ -1254,7 +1254,7 @@ def test_check_sass_fp4_microscopic_scaling_architecture_gating() -> None:
 
 def test_translate_concept_arguments_direct_schema_key() -> None:
     """Test translate_concept_arguments when concept name directly matches a parameter translation schema key."""
-    from ml_framework_snapshots.mcp_server import translate_concept_arguments
+    from ml_ecosystem_snapshots.mcp_server import translate_concept_arguments
 
     res = translate_concept_arguments("matmul", "torch", "numpy", {"dim": 0})
     assert res["concept"] == "matmul"
@@ -1294,11 +1294,11 @@ def test_check_code_block_import_tracking(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
         return_value=mock_torch,
     )
     mocker.patch(
-        "ml_framework_snapshots.index.lookup_symbol",
+        "ml_ecosystem_snapshots.index.lookup_symbol",
         return_value=None,
     )
 
@@ -1341,10 +1341,10 @@ def test_check_hallucination_known_enums_without_allowed_values(
     Returns:
         None.
     """
-    from ml_framework_snapshots.mcp_server import check_hallucination
+    from ml_ecosystem_snapshots.mcp_server import check_hallucination
 
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.get_api_signature",
+        "ml_ecosystem_snapshots.mcp_server.get_api_signature",
         return_value={
             "name": "custom_op",
             "api_path": "custom.custom_op",
@@ -1352,7 +1352,7 @@ def test_check_hallucination_known_enums_without_allowed_values(
         },
     )
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
         return_value={"categories": {"ops": []}},
     )
 
@@ -1371,7 +1371,7 @@ def test_check_hallucination_known_enums_without_allowed_values(
 def test_run_mcp_server_parse_error() -> None:
     """Test run_mcp_server handles malformed JSON input and returns JSON-RPC parse error."""
     import io
-    from ml_framework_snapshots.mcp_server import run_mcp_server
+    from ml_ecosystem_snapshots.mcp_server import run_mcp_server
 
     in_stream = io.StringIO("not-valid-json\n")
     out_stream = io.StringIO()
@@ -1393,7 +1393,7 @@ def test_get_framework_snapshot_corrupt_file(tmp_path: Any, monkeypatch: Any) ->
         tmp_path: Pytest temporary directory fixture.
         monkeypatch: Pytest monkeypatch fixture.
     """
-    from ml_framework_snapshots.mcp_server import (
+    from ml_ecosystem_snapshots.mcp_server import (
         _SNAPSHOT_CACHE,
         get_framework_snapshot,
     )
@@ -1417,7 +1417,7 @@ def test_get_framework_snapshot_list_file(tmp_path: Any, monkeypatch: Any) -> No
         monkeypatch: Pytest monkeypatch fixture.
     """
     import json
-    from ml_framework_snapshots.mcp_server import (
+    from ml_ecosystem_snapshots.mcp_server import (
         _SNAPSHOT_CACHE,
         get_framework_snapshot,
     )
@@ -1454,12 +1454,12 @@ def test_mcp_server_import_error(monkeypatch: Any) -> None:
     """
     import builtins
     import importlib
-    import ml_framework_snapshots.mcp_server as mcp_mod
+    import ml_ecosystem_snapshots.mcp_server as mcp_mod
 
     orig_import = builtins.__import__
 
     def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        """Simulate missing ml_framework_snapshots.api.
+        """Simulate missing ml_ecosystem_snapshots.api.
 
         Args:
             name: Module name.
@@ -1469,7 +1469,7 @@ def test_mcp_server_import_error(monkeypatch: Any) -> None:
         Returns:
             Imported module.
         """
-        if name == "ml_framework_snapshots.api":
+        if name == "ml_ecosystem_snapshots.api":
             raise ImportError("simulated missing api")
         return orig_import(name, *args, **kwargs)
 
@@ -1487,8 +1487,8 @@ def test_mcp_server_import_error(monkeypatch: Any) -> None:
 
 def test_extended_dtypes_normalization() -> None:
     """Test normalization of newly introduced quantized, sub-byte, and generic dtypes."""
-    from ml_framework_snapshots.mcp_server import normalize_dtype_name
-    from ml_framework_snapshots.compliance import (
+    from ml_ecosystem_snapshots.mcp_server import normalize_dtype_name
+    from ml_ecosystem_snapshots.compliance import (
         estimate_tensor_memory_bytes,
         get_dtype_bitwidth,
         validate_dtype_for_op,
@@ -1542,7 +1542,7 @@ def test_extended_dtypes_normalization() -> None:
 
 def test_matches_rank_constraint_variants() -> None:
     """Test _matches_rank_constraint for int, ==, >=, D suffix, digits, and unknown strings."""
-    from ml_framework_snapshots.mcp_server import _matches_rank_constraint
+    from ml_ecosystem_snapshots.mcp_server import _matches_rank_constraint
 
     assert _matches_rank_constraint(2, 2) is True
     assert _matches_rank_constraint(3, 2) is False
@@ -1565,7 +1565,7 @@ def test_matches_rank_constraint_variants() -> None:
 def test_check_hallucination_non_int_rank() -> None:
     """Test check_hallucination handles non-integer passed rank gracefully."""
     from unittest.mock import patch
-    from ml_framework_snapshots.mcp_server import check_hallucination
+    from ml_ecosystem_snapshots.mcp_server import check_hallucination
 
     mock_snap = {
         "categories": {
@@ -1580,7 +1580,7 @@ def test_check_hallucination_non_int_rank() -> None:
         }
     }
     with patch(
-        "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
         return_value=mock_snap,
     ):
         res = check_hallucination(

@@ -3,13 +3,13 @@
 import argparse
 import pytest
 
-from ml_framework_snapshots.frameworks.webgl import (
+from ml_ecosystem_snapshots.frameworks.webgl import (
     CANONICAL_WEBGL_OPS,
     _load_webgl_ops,
     collect_api,
 )
-from ml_framework_snapshots.mcp_server import check_webgl_op
-from ml_framework_snapshots.cli import cmd_check_webgl
+from ml_ecosystem_snapshots.mcp_server import check_webgl_op
+from ml_ecosystem_snapshots.cli import cmd_check_webgl
 from ml_switcheroo_ir.schema.ghost import (
     GhostOperationRef,
     SemanticTier,

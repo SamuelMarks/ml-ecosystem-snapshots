@@ -8,7 +8,7 @@ from typing import Any
 
 def test_align_namespace_exact_mapping() -> None:
     """Test align_namespace exact mapping for zero_jax and zero_optax prefixes."""
-    from ml_framework_snapshots.compliance import align_namespace
+    from ml_ecosystem_snapshots.compliance import align_namespace
 
     assert align_namespace("zero_jax", "target_prefix", "ref") == "jax"
     assert align_namespace("zero_optax", "target_prefix", "ref") == "optax"
@@ -16,7 +16,7 @@ def test_align_namespace_exact_mapping() -> None:
 
 def test_score_compliance_sig_tuple_edge_cases() -> None:
     """Test compliance scoring with signature tuple matching and sanitized defaults."""
-    from ml_framework_snapshots.compliance import score_compliance
+    from ml_ecosystem_snapshots.compliance import score_compliance
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     ref_snap = {
@@ -89,7 +89,7 @@ def test_score_compliance_sig_tuple_edge_cases() -> None:
 
 def test_score_compliance_varargs_fallback_special_cases() -> None:
     """Test compliance scoring with varargs fallback and special parameter handling."""
-    from ml_framework_snapshots.compliance import score_compliance
+    from ml_ecosystem_snapshots.compliance import score_compliance
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     ref_snap = {
@@ -183,7 +183,7 @@ def test_extract_target_refs_string_path(tmp_path: Any) -> None:
     Args:
         tmp_path: Parameter.
     """
-    from ml_framework_snapshots.compliance import extract_target_refs
+    from ml_ecosystem_snapshots.compliance import extract_target_refs
 
     pkg_dir = Path(os.path.join(tmp_path, "str_pkg"))
     pkg_dir.mkdir()
@@ -202,7 +202,7 @@ def test_get_module_info_from_path_no_src_dir(tmp_path: Any) -> None:
     Args:
         tmp_path: Parameter.
     """
-    from ml_framework_snapshots.compliance import get_module_info_from_path
+    from ml_ecosystem_snapshots.compliance import get_module_info_from_path
 
     # mod_name will be empty if we point to a root dir without __init__.py
     path, mod = get_module_info_from_path(str(tmp_path), target_prefix="my_pkg")
@@ -216,7 +216,7 @@ def test_extract_target_refs_list_path(tmp_path: Any) -> None:
     Args:
         tmp_path: Parameter.
     """
-    from ml_framework_snapshots.compliance import extract_target_refs
+    from ml_ecosystem_snapshots.compliance import extract_target_refs
 
     pkg_dir = Path(os.path.join(tmp_path, "list_pkg"))
     pkg_dir.mkdir()
@@ -231,7 +231,7 @@ def test_extract_target_refs_list_path(tmp_path: Any) -> None:
 
 def test_check_mlir_text_compliance() -> None:
     """Test check_mlir_text_compliance with valid and invalid MLIR snippets."""
-    from ml_framework_snapshots.compliance import check_mlir_text_compliance
+    from ml_ecosystem_snapshots.compliance import check_mlir_text_compliance
 
     # 1. Valid MLIR snippet
     valid_snippet = """
@@ -263,7 +263,7 @@ def test_check_mlir_text_compliance() -> None:
 
 def test_check_sass_assembly_compliance() -> None:
     """Test check_sass_assembly_compliance with valid, predicated, and invalid SASS instructions."""
-    from ml_framework_snapshots.compliance import check_sass_assembly_compliance
+    from ml_ecosystem_snapshots.compliance import check_sass_assembly_compliance
 
     # 1. Valid SASS snippet on sm_80
     valid_sass = """
@@ -294,7 +294,7 @@ def test_check_sass_assembly_compliance() -> None:
 
 def test_check_rdna_assembly_compliance() -> None:
     """Test check_rdna_assembly_compliance with valid and misaligned RDNA instructions."""
-    from ml_framework_snapshots.compliance import check_rdna_assembly_compliance
+    from ml_ecosystem_snapshots.compliance import check_rdna_assembly_compliance
 
     # 1. Valid RDNA snippet
     valid_rdna = """
@@ -322,7 +322,7 @@ def test_check_rdna_assembly_compliance() -> None:
 
 def test_validate_broadcast_and_matmul_shapes() -> None:
     """Test validate_broadcast_shapes and validate_matmul_shapes rules and error branches."""
-    from ml_framework_snapshots.compliance import (
+    from ml_ecosystem_snapshots.compliance import (
         validate_broadcast_shapes,
         validate_matmul_shapes,
     )
@@ -412,7 +412,7 @@ def test_validate_broadcast_and_matmul_shapes() -> None:
 
 def test_compliance_edge_branches(tmp_path: Any) -> None:
     """Test edge branches in align_namespace and extract_target_refs_single."""
-    from ml_framework_snapshots.compliance import (
+    from ml_ecosystem_snapshots.compliance import (
         align_namespace,
         extract_target_refs_single,
     )
@@ -457,7 +457,7 @@ def test_compliance_edge_branches(tmp_path: Any) -> None:
 
 def test_score_compliance_opaque_c_extensions() -> None:
     """Test opaque C-extension signature matching and strict rejection."""
-    from ml_framework_snapshots.compliance import score_compliance
+    from ml_ecosystem_snapshots.compliance import score_compliance
     from ml_switcheroo_ir.schema.ghost import GhostRef
 
     ref_snap = {
@@ -494,7 +494,7 @@ def test_score_compliance_opaque_c_extensions() -> None:
 def test_extract_target_refs_single_root_function(tmp_path: Any, mocker: Any) -> None:
     """Test extract_target_refs_single when root node is a Function."""
     import griffe
-    from ml_framework_snapshots.compliance import extract_target_refs_single
+    from ml_ecosystem_snapshots.compliance import extract_target_refs_single
 
     fpath = os.path.join(str(tmp_path), "standalone.py")
     with open(fpath, "w") as f:

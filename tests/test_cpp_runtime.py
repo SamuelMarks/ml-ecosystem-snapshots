@@ -3,13 +3,13 @@
 import argparse
 import pytest
 
-from ml_framework_snapshots.frameworks.cpp_runtime import (
+from ml_ecosystem_snapshots.frameworks.cpp_runtime import (
     CANONICAL_CPP_RUNTIME_OPS,
     _load_cpp_runtime_ops,
     collect_api,
 )
-from ml_framework_snapshots.mcp_server import check_cpp_op
-from ml_framework_snapshots.cli import cmd_check_cpp
+from ml_ecosystem_snapshots.mcp_server import check_cpp_op
+from ml_ecosystem_snapshots.cli import cmd_check_cpp
 from ml_switcheroo_ir.schema.ghost import (
     GhostOperationRef,
     OperandDirection,

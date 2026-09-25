@@ -32,7 +32,7 @@ nvcc -gencode arch=compute_80,code=sm_80 -gencode arch=compute_90,code=sm_90 -cu
 nvdisasm --binary-info kernel.cubin > sass_binary_info.txt
 
 # 3. Process the disassembly into ground-truth JSON
-python -m ml_framework_snapshots.tools.scrape_nvidia_sass --input sass_binary_info.txt
+python -m ml_ecosystem_snapshots.tools.scrape_nvidia_sass --input sass_binary_info.txt
 ```
 
 ### Method B: Parsing CUDA Binary Utilities ISA Metadata
@@ -42,7 +42,7 @@ When utilizing structured ISA definitions exported from the CUDA disassembler ta
 ```bash
 # Provide the path via environment variable or command-line argument:
 export NVIDIA_SASS_INPUT_PATH=/path/to/cuda_isa_metadata.json
-python -m ml_framework_snapshots.tools.scrape_nvidia_sass
+python -m ml_ecosystem_snapshots.tools.scrape_nvidia_sass
 ```
 
 > **Deprecation Notice:** Reliance on unversioned `/tmp/isa.json` is deprecated. Always supply reproducible input files or capture via `nvdisasm --binary-info`.

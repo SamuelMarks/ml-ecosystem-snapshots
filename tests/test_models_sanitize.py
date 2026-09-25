@@ -1,6 +1,6 @@
 """Module docstring."""
 
-from ml_framework_snapshots.models import sanitize_type_str
+from ml_ecosystem_snapshots.models import sanitize_type_str
 
 
 def test_sanitize_type_str() -> None:
@@ -28,7 +28,7 @@ def test_sanitize_type_str() -> None:
 
 def test_sanitize_param_default_edge_cases() -> None:
     """Test sanitize_param_default for non-bracket scrubbed repr and string-only address leaks."""
-    from ml_framework_snapshots.models import sanitize_param_default
+    from ml_ecosystem_snapshots.models import sanitize_param_default
 
     class CustomReprWithAngleBrackets:
         """Helper class with angle-bracket repr containing address."""
@@ -132,7 +132,7 @@ def test_sanitize_param_default_edge_cases() -> None:
 
 def test_sanitize_param_default_pointer_scrubbing() -> None:
     """Test scrubbing raw hexadecimal pointer addresses from default representations."""
-    from ml_framework_snapshots.models import sanitize_param_default
+    from ml_ecosystem_snapshots.models import sanitize_param_default
 
     class PointerDefault:
         """Class with repr containing hex address without at prefix."""
@@ -178,7 +178,7 @@ def test_sanitize_param_default_pointer_scrubbing() -> None:
 def test_sanitize_framework_constants() -> None:
     """Test preservation of framework dtypes, classes, and device constants."""
     import numpy as np
-    from ml_framework_snapshots.models import sanitize_param_default
+    from ml_ecosystem_snapshots.models import sanitize_param_default
 
     # 1. NumPy dtype class
     val_np, fac_np, mand_np = sanitize_param_default(np.float32)

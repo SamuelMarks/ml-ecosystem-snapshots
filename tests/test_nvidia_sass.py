@@ -5,7 +5,7 @@ from typing import Any
 from unittest import mock
 
 from ml_switcheroo_ir.schema.ghost import SemanticTier, GhostRef, GhostParam
-from ml_framework_snapshots.frameworks import nvidia_sass
+from ml_ecosystem_snapshots.frameworks import nvidia_sass
 
 
 def test_nvidia_sass_collect_api_layer() -> None:
@@ -459,7 +459,7 @@ def test_validate_sass_control_code() -> None:
 
 def test_check_sass_instruction_extended() -> None:
     """Test check_sass_instruction with alignment, directionality, modifier, and control code checks."""
-    from ml_framework_snapshots.mcp_server import check_sass_instruction
+    from ml_ecosystem_snapshots.mcp_server import check_sass_instruction
 
     # 1. Valid instruction with structured registers and control codes
     res_valid = check_sass_instruction(
@@ -513,7 +513,7 @@ def test_check_sass_instruction_extended() -> None:
 
 def test_cli_check_sass(capsys: Any, tmp_path: Any) -> None:
     """Test CLI check-sass subcommand with file, valid mnemonic, and error cases."""
-    from ml_framework_snapshots.cli import cmd_check_sass
+    from ml_ecosystem_snapshots.cli import cmd_check_sass
     import argparse
     import pytest
 
@@ -694,7 +694,7 @@ def test_load_exhaustive_sass_variants() -> None:
 
 def test_tokenize_sass_line_and_code_block() -> None:
     """Test tokenize_sass_line and check_code_block validation with real SASS syntax."""
-    from ml_framework_snapshots.mcp_server import (
+    from ml_ecosystem_snapshots.mcp_server import (
         check_code_block,
         check_sass_instruction,
     )

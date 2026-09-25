@@ -1,31 +1,25 @@
-"""ML Framework Snapshots.
+"""Backward-compatibility shim for ml_framework_snapshots.
 
-Provides an SDK and CLI to dynamically introspect ML frameworks and
-capture their API signatures into JSON snapshots.
-
-Attributes:
-    __version__: Package version string.
-    extract_snapshot: Extracts a snapshot for a specific framework.
-    extract_all_snapshots: Extracts snapshots for all installed frameworks.
-    write_snapshot: Saves a snapshot dictionary to a JSON file.
-
+Transparently re-exports all members from ml_ecosystem_snapshots.
 """
 
-__version__ = "0.0.3"
+from __future__ import annotations
 
-try:
-    from ml_framework_snapshots.api import (
-        extract_snapshot,
-        extract_all_snapshots,
-        write_snapshot,
-    )
+import sys
+from typing import TYPE_CHECKING
+import ml_ecosystem_snapshots as _orig_mod
 
-    __all__ = [
-        "__version__",
-        "extract_snapshot",
-        "extract_all_snapshots",
-        "write_snapshot",
-    ]
-except ImportError:
-    # Handle the case where the package is installed without 'generate' dependencies.
-    __all__ = ["__version__"]
+if TYPE_CHECKING:
+    from ml_ecosystem_snapshots import *  # noqa: F401, F403
+
+# Re-export all attributes including internal and dunder methods
+for _k in dir(_orig_mod):
+    globals()[_k] = getattr(_orig_mod, _k)
+
+__all__ = getattr(
+    _orig_mod,
+    "__all__",
+    [k for k in dir(_orig_mod) if not k.startswith("_")],
+)
+
+sys.modules[__name__] = _orig_mod

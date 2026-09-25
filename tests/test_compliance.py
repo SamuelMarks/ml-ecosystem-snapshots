@@ -10,13 +10,13 @@ from typing import Dict
 
 import pytest
 from pathlib import Path
-from ml_framework_snapshots.compliance import (
+from ml_ecosystem_snapshots.compliance import (
     get_module_info_from_path,
     extract_target_ast,
     align_namespace,
 )
 import griffe
-from ml_framework_snapshots.compliance import extract_target_refs, score_compliance
+from ml_ecosystem_snapshots.compliance import extract_target_refs, score_compliance
 
 
 def test_get_module_info_from_path_file(tmp_path: Path) -> None:
@@ -439,7 +439,7 @@ def test_extract_target_refs_catch_all_exception(tmp_path: Path) -> None:
     Args:
         tmp_path: Parameter.
     """
-    from ml_framework_snapshots.compliance import extract_target_refs
+    from ml_ecosystem_snapshots.compliance import extract_target_refs
 
     pkg_dir = Path(os.path.join(tmp_path, "broken_pkg"))
     pkg_dir.mkdir()
@@ -461,7 +461,7 @@ def test_extract_target_refs_catch_inner_exception(tmp_path: Any) -> None:
     Args:
         tmp_path: Parameter.
     """
-    from ml_framework_snapshots.compliance import extract_target_refs
+    from ml_ecosystem_snapshots.compliance import extract_target_refs
     from unittest.mock import patch
 
     pkg_dir = Path(os.path.join(tmp_path, "inner_broken_pkg"))
@@ -471,9 +471,9 @@ def test_extract_target_refs_catch_inner_exception(tmp_path: Any) -> None:
     # Create an invalid state for Griffe so dynamic import fails but walk continues
     sub_mod.write_text("class Outer:\n    class Inner:\n        pass\n")
 
-    import ml_framework_snapshots.models
+    import ml_ecosystem_snapshots.models
 
-    orig_inspect = ml_framework_snapshots.models.GhostInspector.inspect
+    orig_inspect = ml_ecosystem_snapshots.models.GhostInspector.inspect
 
     def mock_inspect(obj: Any, api_path: Any, is_public: Any = None) -> Any:
         """Mock inspect to test inner node failure.
@@ -495,7 +495,7 @@ def test_extract_target_refs_catch_inner_exception(tmp_path: Any) -> None:
         return orig_inspect(obj, api_path, is_public)
 
     with patch.object(
-        ml_framework_snapshots.models.GhostInspector, "inspect", mock_inspect
+        ml_ecosystem_snapshots.models.GhostInspector, "inspect", mock_inspect
     ):
         refs = extract_target_refs(str(sub_mod), "inner_broken_pkg.api", "reference")
         # Should have extracted Outer, skipped Inner due to exception
@@ -508,7 +508,7 @@ def test_extract_target_refs_no_parts(tmp_path: Any) -> None:
     Args:
         tmp_path: Parameter.
     """
-    from ml_framework_snapshots.compliance import extract_target_refs
+    from ml_ecosystem_snapshots.compliance import extract_target_refs
 
     pkg_dir = Path(os.path.join(tmp_path, "top_level_pkg"))
     pkg_dir.mkdir()
@@ -525,7 +525,7 @@ def test_extract_target_refs_break_loop(tmp_path: Any) -> None:
     Args:
         tmp_path: Parameter.
     """
-    from ml_framework_snapshots.compliance import extract_target_refs
+    from ml_ecosystem_snapshots.compliance import extract_target_refs
 
     pkg_dir = Path(os.path.join(tmp_path, "break_pkg"))
     pkg_dir.mkdir()
@@ -546,7 +546,7 @@ def test_extract_target_refs_continue_loop(tmp_path: Any) -> None:
     Args:
         tmp_path: Parameter.
     """
-    from ml_framework_snapshots.compliance import extract_target_refs
+    from ml_ecosystem_snapshots.compliance import extract_target_refs
 
     pkg_dir = Path(os.path.join(tmp_path, "cont_pkg"))
     pkg_dir.mkdir()
@@ -568,7 +568,7 @@ def test_derive_base_path_src(tmp_path: Any) -> None:
     Args:
         tmp_path: Parameter.
     """
-    from ml_framework_snapshots.compliance import get_module_info_from_path
+    from ml_ecosystem_snapshots.compliance import get_module_info_from_path
     import os
 
     src_dir = Path(os.path.join(tmp_path, "src"))
@@ -598,7 +598,7 @@ def test_derive_base_path_src(tmp_path: Any) -> None:
 
 def test_map_target_to_reference_path_extra() -> None:
     """Function docstring."""
-    from ml_framework_snapshots.compliance import align_namespace
+    from ml_ecosystem_snapshots.compliance import align_namespace
 
     assert (
         align_namespace("zero_torch.jax.numpy.array", "zero_torch", "torch")

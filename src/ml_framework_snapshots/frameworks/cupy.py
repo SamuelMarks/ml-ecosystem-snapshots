@@ -1,59 +1,25 @@
-"""CuPy API Snapshot Extractor."""
+"""Backward-compatibility shim for ml_framework_snapshots.frameworks.cupy.
 
-from typing import List
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
-from ml_framework_snapshots.models import GhostInspector
+Transparently re-exports all members from ml_ecosystem_snapshots.frameworks.cupy.
+"""
 
-import typing
+from __future__ import annotations
 
-try:
-    import cupy as _cp
+import sys
+from typing import TYPE_CHECKING
+import ml_ecosystem_snapshots.frameworks.cupy as _orig_mod
 
-    cp: typing.Any = _cp
-except Exception:
-    cp = None
+if TYPE_CHECKING:
+    from ml_ecosystem_snapshots.frameworks.cupy import *  # noqa: F401, F403
 
+# Re-export all attributes including internal and dunder methods
+for _k in dir(_orig_mod):
+    globals()[_k] = getattr(_orig_mod, _k)
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
-    """Collect cupy API.
+__all__ = getattr(
+    _orig_mod,
+    "__all__",
+    [k for k in dir(_orig_mod) if not k.startswith("_")],
+)
 
-    Args:
-        category: The semantic tier to target.
-        include_nonpublic: Whether to include non-public APIs.
-
-    Returns:
-        List of gathered API references.
-    """
-    results: List[GhostRef] = []
-    if not cp:
-        return results
-
-    if category == SemanticTier.ACTIVATION:
-        for name in ["tanh", "exp", "maximum", "minimum"]:
-            if hasattr(cp, name):
-                obj = getattr(cp, name)
-                if callable(obj):
-                    try:
-                        res = GhostInspector.inspect(
-                            obj, f"cupy.{name}", is_public=True
-                        )
-                        results.append(res)
-                    except Exception:
-                        pass
-    elif category == SemanticTier.ARRAY_API:
-        for name in dir(cp):
-            if not include_nonpublic and name.startswith("_"):
-                continue
-            obj = getattr(cp, name)
-            if callable(obj):
-                try:
-                    res = GhostInspector.inspect(
-                        obj, f"cupy.{name}", is_public=not name.startswith("_")
-                    )
-                    results.append(res)
-                except Exception:
-                    pass
-
-    return results
+sys.modules[__name__] = _orig_mod

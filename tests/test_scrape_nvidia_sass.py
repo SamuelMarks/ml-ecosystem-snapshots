@@ -5,7 +5,7 @@ import os
 import tempfile
 from unittest import mock
 
-from ml_framework_snapshots.tools import scrape_nvidia_sass
+from ml_ecosystem_snapshots.tools import scrape_nvidia_sass
 
 import typing
 
@@ -75,7 +75,7 @@ def test_scrape_nvidia_sass() -> None:
 
         # Patch the file paths in the script
         with mock.patch(
-            "ml_framework_snapshots.tools.scrape_nvidia_sass.open"
+            "ml_ecosystem_snapshots.tools.scrape_nvidia_sass.open"
         ) as mock_open:
             # We want to use the real open, but intercept the paths
             original_open = open
@@ -255,7 +255,7 @@ def test_scrape_sass_env_var() -> None:
 
 def test_resolve_instruction_architectures_and_expanded_catalog() -> None:
     """Test resolve_instruction_architectures branches and build_expanded_sass_catalog."""
-    from ml_framework_snapshots.tools.scrape_nvidia_sass import (
+    from ml_ecosystem_snapshots.tools.scrape_nvidia_sass import (
         resolve_instruction_architectures,
         build_expanded_sass_catalog,
     )

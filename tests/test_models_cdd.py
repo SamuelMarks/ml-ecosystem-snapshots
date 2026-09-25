@@ -3,7 +3,7 @@
 from typing import Any
 
 
-from ml_framework_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.models import GhostInspector
 
 
 def some_function(a: int = 1, b: str = "test", *args: Any, **kwargs: Any) -> None:

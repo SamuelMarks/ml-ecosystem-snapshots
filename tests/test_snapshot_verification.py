@@ -11,7 +11,7 @@ import json
 import os
 from typing import Any, Dict, List
 
-from ml_framework_snapshots.models import GhostInspector, GhostRef
+from ml_ecosystem_snapshots.models import GhostInspector, GhostRef
 
 
 def _get_all_json_snapshots() -> List[str]:
@@ -24,8 +24,8 @@ def _get_all_json_snapshots() -> List[str]:
     json_paths: List[str] = []
 
     target_dirs = [
-        os.path.join(repo_root, "src", "ml_framework_snapshots", "frameworks"),
-        os.path.join(repo_root, "src", "ml_framework_snapshots", "snapshots"),
+        os.path.join(repo_root, "src", "ml_ecosystem_snapshots", "frameworks"),
+        os.path.join(repo_root, "src", "ml_ecosystem_snapshots", "snapshots"),
     ]
 
     for target_dir in target_dirs:
@@ -99,7 +99,7 @@ def test_no_uniform_duplicate_operands_rdna() -> None:
     rdna_path = os.path.join(
         repo_root,
         "src",
-        "ml_framework_snapshots",
+        "ml_ecosystem_snapshots",
         "frameworks",
         "amd_rdna_exhaustive.json",
     )
@@ -133,7 +133,7 @@ def test_stablehlo_operand_attribute_separation() -> None:
     stablehlo_path = os.path.join(
         repo_root,
         "src",
-        "ml_framework_snapshots",
+        "ml_ecosystem_snapshots",
         "frameworks",
         "stablehlo_exhaustive.json",
     )
@@ -170,7 +170,7 @@ def test_mlir_operand_attribute_integrity() -> None:
     mlir_path = os.path.join(
         repo_root,
         "src",
-        "ml_framework_snapshots",
+        "ml_ecosystem_snapshots",
         "frameworks",
         "mlir_exhaustive.json",
     )
@@ -242,7 +242,7 @@ def test_schema_validity_all_snapshots() -> None:
 
 def test_baseline_framework_operation_counts() -> None:
     """Verify that baseline operations are extracted across supported frameworks."""
-    from ml_framework_snapshots.api import FRAMEWORK_COLLECTORS
+    from ml_ecosystem_snapshots.api import FRAMEWORK_COLLECTORS
 
     assert len(FRAMEWORK_COLLECTORS) >= 15
     for fw_name in ["torch", "jax", "stablehlo", "nvidia_sass", "amd_rdna"]:

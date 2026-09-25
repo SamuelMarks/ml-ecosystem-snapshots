@@ -1,104 +1,25 @@
-"""MaxText API Snapshot Extractor.
+"""Backward-compatibility shim for ml_framework_snapshots.frameworks.maxtext.
 
-Extracts layer and model configurations from MaxText via AST parsing
-to avoid complex dependency chains.
+Transparently re-exports all members from ml_ecosystem_snapshots.frameworks.maxtext.
 """
 
-import ast
-import glob
-import os
-from typing import List
+from __future__ import annotations
 
-from ml_switcheroo_ir.schema.ghost import (
-    GhostParam,
-    GhostRef,
-    ParameterKind,
-    SemanticTier,
+import sys
+from typing import TYPE_CHECKING
+import ml_ecosystem_snapshots.frameworks.maxtext as _orig_mod
+
+if TYPE_CHECKING:
+    from ml_ecosystem_snapshots.frameworks.maxtext import *  # noqa: F401, F403
+
+# Re-export all attributes including internal and dunder methods
+for _k in dir(_orig_mod):
+    globals()[_k] = getattr(_orig_mod, _k)
+
+__all__ = getattr(
+    _orig_mod,
+    "__all__",
+    [k for k in dir(_orig_mod) if not k.startswith("_")],
 )
 
-import typing
-
-try:
-    import maxtext as _maxtext
-
-    maxtext: typing.Any = _maxtext
-except ImportError:
-    maxtext = None
-
-
-def _parse_maxtext_classes(dir_path: str, module_prefix: str) -> List[GhostRef]:
-    """Parse MaxText model classes from source files.
-
-    Args:
-        dir_path: The path to the models directory.
-        module_prefix: The module prefix to use.
-
-    Returns:
-        A list of GhostRef items.
-    """
-    refs = []
-    for file in glob.glob(os.path.join(dir_path, "**", "*.py"), recursive=True):
-        try:
-            with open(file, "r", encoding="utf-8") as f:
-                tree = ast.parse(f.read())
-
-            for node in ast.walk(tree):
-                if isinstance(node, ast.ClassDef):
-                    params = []
-                    docstring = ast.get_docstring(node) or ""
-
-                    for subnode in node.body:
-                        if (
-                            isinstance(subnode, ast.FunctionDef)
-                            and subnode.name == "__init__"
-                        ):
-                            for arg in subnode.args.args:
-                                if arg.arg != "self":
-                                    params.append(
-                                        GhostParam(
-                                            name=arg.arg,
-                                            kind=ParameterKind.POSITIONAL_OR_KEYWORD,
-                                        )
-                                    )
-                            for arg in subnode.args.kwonlyargs:
-                                params.append(
-                                    GhostParam(
-                                        name=arg.arg,
-                                        kind=ParameterKind.KEYWORD_ONLY,
-                                    )
-                                )
-
-                    refs.append(
-                        GhostRef(
-                            name=node.name,
-                            api_path=f"{module_prefix}.{node.name}",
-                            kind="CLASS",
-                            params=params,
-                            docstring=docstring,
-                        )
-                    )
-        except Exception:
-            pass
-    return refs
-
-
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
-    """Entrypoint to collect the MaxText API signature for a given category.
-
-    Args:
-        category: The category of API to collect.
-        include_nonpublic: Whether to include non-public APIs.
-
-    Returns:
-        A list of GhostRef items discovered for the requested category.
-    """
-    if not maxtext or category != SemanticTier.MODEL:
-        return []
-
-    if getattr(maxtext, "__path__", None):
-        maxtext_dir = maxtext.__path__[0]
-        models_dir = os.path.join(maxtext_dir, "models")
-        return _parse_maxtext_classes(models_dir, "maxtext.models")
-    return []
+sys.modules[__name__] = _orig_mod

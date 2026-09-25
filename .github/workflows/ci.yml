@@ -55,10 +55,10 @@ jobs:
         python3 scripts/generate_all_snapshots.py nvidia_sass amd_rdna nvidia_ptx html_dsl latex_dsl tikz stablehlo mlir
         python3 -c "
         import json, os
-        from ml_framework_snapshots.frameworks.nvidia_sass import _load_exhaustive_sass
-        from ml_framework_snapshots.frameworks.amd_rdna import _load_exhaustive_rdna
-        from ml_framework_snapshots.frameworks.nvidia_ptx import _load_exhaustive_ptx
-        fw_dir = os.path.join('src', 'ml_framework_snapshots', 'frameworks')
+        from ml_ecosystem_snapshots.frameworks.nvidia_sass import _load_exhaustive_sass
+        from ml_ecosystem_snapshots.frameworks.amd_rdna import _load_exhaustive_rdna
+        from ml_ecosystem_snapshots.frameworks.nvidia_ptx import _load_exhaustive_ptx
+        fw_dir = os.path.join('src', 'ml_ecosystem_snapshots', 'frameworks')
         for fname, getter in [
             ('nvidia_sass_exhaustive.json', _load_exhaustive_sass),
             ('amd_rdna_exhaustive.json', _load_exhaustive_rdna),
@@ -96,9 +96,9 @@ jobs:
         uv pip install -p .venv_smoke -e /Users/samuel/repos/ml-switcheroo-ir
         uv pip install -p .venv_smoke -r requirements.txt
         uv pip install -p .venv_smoke --no-deps dist/*.whl
-        .venv_smoke/bin/ml_framework_snapshots list-snapshots
+        .venv_smoke/bin/ml_ecosystem_snapshots list-snapshots
         .venv_smoke/bin/python3 -c "
-        from ml_framework_snapshots.mcp_server import check_sass_instruction, check_rdna_instruction, check_ptx_instruction
+        from ml_ecosystem_snapshots.mcp_server import check_sass_instruction, check_rdna_instruction, check_ptx_instruction
         assert check_sass_instruction('FADD')['is_valid']
         assert check_rdna_instruction('v_add_f32')['is_valid']
         assert check_ptx_instruction('add')['is_valid']

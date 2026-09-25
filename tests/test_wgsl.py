@@ -13,11 +13,11 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
     SnapshotEnvelope,
 )
-from ml_framework_snapshots.api import extract_snapshot, validate_snapshot_envelope
-from ml_framework_snapshots.cli import cmd_check_wgsl
-from ml_framework_snapshots.compliance import check_wgsl_shader_compliance
-from ml_framework_snapshots.frameworks.wgsl import collect_api
-from ml_framework_snapshots.mcp_server import check_wgsl_op
+from ml_ecosystem_snapshots.api import extract_snapshot, validate_snapshot_envelope
+from ml_ecosystem_snapshots.cli import cmd_check_wgsl
+from ml_ecosystem_snapshots.compliance import check_wgsl_shader_compliance
+from ml_ecosystem_snapshots.frameworks.wgsl import collect_api
+from ml_ecosystem_snapshots.mcp_server import check_wgsl_op
 
 
 def test_collect_api_wgsl_categories() -> None:
@@ -39,7 +39,7 @@ def test_collect_api_wgsl_categories() -> None:
 
 def test_wgsl_op_properties_and_roles() -> None:
     """Test operand directions, parameter roles, and attributes of WGSL operations."""
-    from ml_framework_snapshots.models import ExtendedGhostParam
+    from ml_ecosystem_snapshots.models import ExtendedGhostParam
 
     refs = collect_api(SemanticTier.ARRAY_API)
     by_name: Dict[str, GhostRef] = {r.name: r for r in refs}
@@ -122,7 +122,7 @@ def test_check_wgsl_shader_compliance() -> None:
     from unittest.mock import patch
 
     with patch(
-        "ml_framework_snapshots.mcp_server.check_wgsl_op",
+        "ml_ecosystem_snapshots.mcp_server.check_wgsl_op",
         return_value={"op_exists": True, "is_valid": False, "errors": ["Mock error"]},
     ):
         res_err = check_wgsl_shader_compliance("storageStore(1);")
@@ -201,7 +201,7 @@ def test_cmd_check_wgsl_cli(capsys: pytest.CaptureFixture[str]) -> None:
         from unittest.mock import patch
 
         with patch(
-            "ml_framework_snapshots.compliance.check_wgsl_shader_compliance",
+            "ml_ecosystem_snapshots.compliance.check_wgsl_shader_compliance",
             return_value={"is_compliant": False, "errors": ["Mock error"]},
         ):
             args_bad_content = argparse.Namespace(
@@ -220,7 +220,7 @@ def test_cmd_check_wgsl_cli(capsys: pytest.CaptureFixture[str]) -> None:
 def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test _load_wgsl_ops returns CANONICAL_WGSL_OPS when schema resources are unavailable or empty."""
     from unittest.mock import MagicMock
-    from ml_framework_snapshots.frameworks.wgsl import (
+    from ml_ecosystem_snapshots.frameworks.wgsl import (
         _load_wgsl_ops,
         CANONICAL_WGSL_OPS,
     )
@@ -257,7 +257,7 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_wgsl_roundtrip_serialization() -> None:
     """Verify 100% roundtrip serialization through GhostOperationRef and Pydantic models."""
-    from ml_framework_snapshots.frameworks.wgsl import collect_api
+    from ml_ecosystem_snapshots.frameworks.wgsl import collect_api
     from ml_switcheroo_ir.schema.ghost import GhostOperationRef, SemanticTier
 
     refs = collect_api(SemanticTier.ARRAY_API)

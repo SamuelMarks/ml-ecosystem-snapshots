@@ -1,17 +1,19 @@
 """Tests for ONNX operator specification extractor, MCP server verification, and CLI."""
 
 import argparse
+import sys
+import types
 from typing import Any
 import pytest
 
-from ml_framework_snapshots.frameworks.onnx_spec import (
+from ml_ecosystem_snapshots.frameworks.onnx_spec import (
     CANONICAL_ONNX_OPS,
     _get_onnx_defs,
     _load_onnx_ops,
     collect_api,
 )
-from ml_framework_snapshots.mcp_server import check_onnx_op
-from ml_framework_snapshots.cli import cmd_check_onnx
+from ml_ecosystem_snapshots.mcp_server import check_onnx_op
+from ml_ecosystem_snapshots.cli import cmd_check_onnx
 from ml_switcheroo_ir.schema.ghost import (
     GhostOperationRef,
     IRParameterRole,
@@ -92,9 +94,25 @@ def test_check_onnx_op_validation() -> None:
     assert any("Unknown ONNX operation" in e for e in res_nonexistent["errors"])
 
     # 6. Domain fallback when domain="" matches op from another domain
-    res_domain_fallback = check_onnx_op("TreeEnsembleClassifier", domain="")
-    # Either matched via fallback or cleanly reported
-    assert "is_valid" in res_domain_fallback
+    with pytest.MonkeyPatch.context() as mp:
+        dummy_domain_op = [
+            {
+                "name": "CustomClassifier",
+                "domain": "ai.onnx.ml",
+                "since_version": 1,
+                "inputs": ["X"],
+                "outputs": ["Y"],
+                "attributes": [],
+                "description": "Domain specific op",
+            }
+        ]
+        mp.setattr(
+            "ml_ecosystem_snapshots.frameworks.onnx_spec._load_onnx_ops",
+            lambda: dummy_domain_op,
+        )
+        res_domain_fallback = check_onnx_op("CustomClassifier", domain="")
+        assert res_domain_fallback["is_valid"] is True
+        assert res_domain_fallback["op_exists"] is True
 
 
 def test_cmd_check_onnx_cli(capsys: pytest.CaptureFixture[str]) -> None:
@@ -139,7 +157,7 @@ def test_load_onnx_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test fallback paths in _load_onnx_ops when onnx.defs is absent or fails."""
     # 1. Fallback when onnx.defs is None
     monkeypatch.setattr(
-        "ml_framework_snapshots.frameworks.onnx_spec._get_onnx_defs",
+        "ml_ecosystem_snapshots.frameworks.onnx_spec._get_onnx_defs",
         lambda: None,
     )
     ops_fallback = _load_onnx_ops()
@@ -154,7 +172,7 @@ def test_load_onnx_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
             raise RuntimeError("Corrupt schema defs")
 
     monkeypatch.setattr(
-        "ml_framework_snapshots.frameworks.onnx_spec._get_onnx_defs",
+        "ml_ecosystem_snapshots.frameworks.onnx_spec._get_onnx_defs",
         lambda: BrokenDefs(),
     )
     ops_err = _load_onnx_ops()
@@ -168,12 +186,100 @@ def test_get_onnx_defs_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     real_import = builtins.__import__
 
     def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import raising ImportError on onnx.
+
+        Args:
+            name: Module name.
+            *args: Positional args.
+            **kwargs: Keyword args.
+
+        Returns:
+            Imported module.
+
+        Raises:
+            ImportError: When importing onnx.
+        """
         if "onnx" in name:
             raise ImportError("Simulated onnx import error")
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", mock_import)
     assert _get_onnx_defs() is None
+
+
+def test_get_onnx_defs_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify _get_onnx_defs returns module when import succeeds.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    fake_onnx = types.ModuleType("onnx")
+    fake_defs = types.ModuleType("onnx.defs")
+    setattr(fake_onnx, "defs", fake_defs)
+    monkeypatch.setitem(sys.modules, "onnx", fake_onnx)
+    monkeypatch.setitem(sys.modules, "onnx.defs", fake_defs)
+    assert _get_onnx_defs() is fake_defs
+
+
+def test_onnx_schema_attributes_with_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify _load_onnx_ops extracts schema attributes with explicit default values.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+
+    class FakeAttribute:
+        """Mock Schema attribute with type and default value."""
+
+        def __init__(self, typ: str, required: bool, default_val: Any) -> None:
+            """Initialize fake attribute.
+
+            Args:
+                typ: Attribute type name.
+                required: Whether attribute is required.
+                default_val: Default value representation.
+            """
+            self.type = typ
+            self.required = required
+            self.default_value = default_val
+
+    class FakeSchemaWithAttr:
+        """Mock Schema containing inputs, outputs, and attributes."""
+
+        def __init__(self) -> None:
+            """Initialize fake schema with attributes."""
+            self.name = "AttrOp"
+            self.domain = ""
+            self.since_version = 1
+            self.inputs: list[Any] = []
+            self.outputs: list[Any] = []
+            self.attributes = {
+                "alpha": FakeAttribute("FLOAT", False, 1.5),
+                "beta": FakeAttribute("INT", False, None),
+            }
+            self.doc = "Operation with attribute default."
+
+    class MockDefsWithAttrs:
+        """Mock Defs provider returning schemas with attributes."""
+
+        def get_all_schemas_with_history(self) -> Any:
+            """Return schemas with attributes.
+
+            Returns:
+                List of schema objects.
+            """
+            return [FakeSchemaWithAttr()]
+
+    monkeypatch.setattr(
+        "ml_ecosystem_snapshots.frameworks.onnx_spec._get_onnx_defs",
+        lambda: MockDefsWithAttrs(),
+    )
+    ops = _load_onnx_ops()
+    assert len(ops) == 1
+    assert len(ops[0]["attributes"]) == 2
+    attr_map = {a["name"]: a for a in ops[0]["attributes"]}
+    assert attr_map["alpha"]["default"] == "1.5"
+    assert attr_map["beta"]["default"] is None
 
 
 def test_onnx_collect_no_outputs_no_attrs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -190,7 +296,7 @@ def test_onnx_collect_no_outputs_no_attrs(monkeypatch: pytest.MonkeyPatch) -> No
         }
     ]
     monkeypatch.setattr(
-        "ml_framework_snapshots.frameworks.onnx_spec._load_onnx_ops",
+        "ml_ecosystem_snapshots.frameworks.onnx_spec._load_onnx_ops",
         lambda: dummy_ops,
     )
     refs = collect_api(SemanticTier.ARRAY_API)
@@ -214,7 +320,7 @@ def test_onnx_filter_preview_domain(monkeypatch: pytest.MonkeyPatch) -> None:
         }
     ]
     monkeypatch.setattr(
-        "ml_framework_snapshots.frameworks.onnx_spec._load_onnx_ops",
+        "ml_ecosystem_snapshots.frameworks.onnx_spec._load_onnx_ops",
         lambda: preview_ops,
     )
     refs_public = collect_api(SemanticTier.ARRAY_API, include_nonpublic=False)
@@ -250,7 +356,7 @@ def test_onnx_schema_older_version_skipped(monkeypatch: pytest.MonkeyPatch) -> N
             ]
 
     monkeypatch.setattr(
-        "ml_framework_snapshots.frameworks.onnx_spec._get_onnx_defs",
+        "ml_ecosystem_snapshots.frameworks.onnx_spec._get_onnx_defs",
         lambda: MockDefs(),
     )
     ops = _load_onnx_ops()
@@ -269,7 +375,7 @@ def test_onnx_load_empty_schemas(monkeypatch: pytest.MonkeyPatch) -> None:
             return []
 
     monkeypatch.setattr(
-        "ml_framework_snapshots.frameworks.onnx_spec._get_onnx_defs",
+        "ml_ecosystem_snapshots.frameworks.onnx_spec._get_onnx_defs",
         lambda: EmptyDefs(),
     )
     ops = _load_onnx_ops()

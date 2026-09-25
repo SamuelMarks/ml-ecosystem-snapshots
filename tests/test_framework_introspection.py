@@ -15,7 +15,7 @@ from ml_switcheroo_ir.schema.ghost import (
     ParameterKind,
     SemanticTier,
 )
-from ml_framework_snapshots.frameworks import (
+from ml_ecosystem_snapshots.frameworks import (
     huggingface as hf_mod,
     ir as ir_mod,
     jax as jax_fw,
@@ -24,7 +24,7 @@ from ml_framework_snapshots.frameworks import (
     onnxruntime as ort_mod,
     tensorflow as tf_fw,
 )
-from ml_framework_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.models import GhostInspector
 
 
 def test_ir_collect_api_all_categories() -> None:
@@ -613,7 +613,7 @@ def test_mlx_collect_api_all_branches(mocker: Any) -> None:
     # Test outer exception handling in _collect_live (lines 147-148)
     mocker.patch.object(mlx_mod, "mlx", fake_mlx)
     mocker.patch(
-        "ml_framework_snapshots.frameworks.mlx.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.mlx.get_all_members",
         side_effect=RuntimeError("simulated get_all_members crash"),
     )
     assert mlx_mod.collect_api(SemanticTier.LAYER) == []
@@ -719,7 +719,7 @@ def test_huggingface_collect_api_all_branches(mocker: Any) -> None:
 
     ref = GhostRef(name="DummyGen", api_path="DummyGen", kind="class", params=[])
     mocker.patch(
-        "ml_framework_snapshots.frameworks.huggingface.inspect.signature",
+        "ml_ecosystem_snapshots.frameworks.huggingface.inspect.signature",
         side_effect=TypeError("cannot inspect signature"),
     )
     hf_mod._extract_generation_kwargs(DummyGenWithException(), ref)
@@ -1052,7 +1052,7 @@ def test_tensorflow_collect_api_inspection_failures(mocker: Any) -> None:
 
     mocker.patch.object(tf_fw, "tf", fake_tf)
     mocker.patch(
-        "ml_framework_snapshots.models.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
         side_effect=Exception("inspection failure"),
     )
 
@@ -1240,7 +1240,7 @@ def test_jax_array_ops_inspect_exceptions(mocker: Any) -> None:
         raise Exception("inspection failure")
 
     mocker.patch(
-        "ml_framework_snapshots.models.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
         side_effect=mock_inspect,
     )
 

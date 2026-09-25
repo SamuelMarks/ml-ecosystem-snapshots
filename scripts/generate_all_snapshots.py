@@ -14,7 +14,7 @@ _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-from ml_framework_snapshots.api import (  # noqa: E402
+from ml_ecosystem_snapshots.api import (  # noqa: E402
     extract_snapshot,
     extract_snapshot_isolated,
     write_snapshot,
@@ -62,13 +62,21 @@ all_frameworks = [
     "wasm_simd",
     "webgl",
     "cpp_runtime",
+    "array_api",
+    "scipy",
+    "torchvision",
+    "torchaudio",
+    "safetensors",
+    "aten",
+    "nccl",
+    "flash_attention",
 ]
 
 
 def main() -> None:
     """Generate and save API snapshots for supported ML frameworks."""
     os.makedirs(
-        os.path.join("src", "ml_framework_snapshots", "snapshots"), exist_ok=True
+        os.path.join("src", "ml_ecosystem_snapshots", "snapshots"), exist_ok=True
     )
     frameworks = sys.argv[1:] if len(sys.argv) > 1 else all_frameworks
     use_isolated = os.environ.get("ISOLATE_EXTRACTION", "0") == "1"
@@ -84,7 +92,7 @@ def main() -> None:
             else:
                 snapshot = extract_snapshot(fw)
             write_snapshot(
-                fw, snapshot, os.path.join("src", "ml_framework_snapshots", "snapshots")
+                fw, snapshot, os.path.join("src", "ml_ecosystem_snapshots", "snapshots")
             )
             print("  -> Saved")
         except Exception as e:

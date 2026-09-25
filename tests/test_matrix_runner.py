@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ml_framework_snapshots.tools.matrix_runner import (
+from ml_ecosystem_snapshots.tools.matrix_runner import (
     build_and_run,
     upload_to_s3,
     main,
@@ -120,7 +120,7 @@ def test_main_default(mocker: Any, tmp_path: Path) -> None:
     """
     mocker.patch("sys.argv", ["matrix_runner.py", "--output-dir", str(tmp_path)])
     mock_build = mocker.patch(
-        "ml_framework_snapshots.tools.matrix_runner.build_and_run"
+        "ml_ecosystem_snapshots.tools.matrix_runner.build_and_run"
     )
 
     main()
@@ -153,10 +153,10 @@ def test_main_with_matrix_and_s3(mocker: Any, tmp_path: Path) -> None:
         ],
     )
     mock_build = mocker.patch(
-        "ml_framework_snapshots.tools.matrix_runner.build_and_run"
+        "ml_ecosystem_snapshots.tools.matrix_runner.build_and_run"
     )
     mock_upload = mocker.patch(
-        "ml_framework_snapshots.tools.matrix_runner.upload_to_s3"
+        "ml_ecosystem_snapshots.tools.matrix_runner.upload_to_s3"
     )
 
     main()
@@ -169,7 +169,7 @@ def test_matrix_runner_main_entrypoint(mocker: Any, tmp_path: Path) -> None:
     """Test running matrix_runner as __main__."""
     import runpy
     import sys
-    from ml_framework_snapshots.tools import matrix_runner
+    from ml_ecosystem_snapshots.tools import matrix_runner
 
     mocker.patch("subprocess.run")
     matrix_file = tmp_path / "empty_matrix.json"

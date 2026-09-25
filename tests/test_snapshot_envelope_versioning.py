@@ -5,27 +5,27 @@ import os
 import tempfile
 from unittest import mock
 
-from ml_framework_snapshots.api import (
+from ml_ecosystem_snapshots.api import (
     extract_snapshot,
     get_pkg_version,
     validate_snapshot_envelope,
 )
-from ml_framework_snapshots.frameworks.amd_rdna import _load_exhaustive_rdna
-from ml_framework_snapshots.frameworks.mlir import _load_mlir_exhaustive
-from ml_framework_snapshots.frameworks.nvidia_ptx import _load_exhaustive_ptx
-from ml_framework_snapshots.frameworks.nvidia_sass import _load_exhaustive_sass
-from ml_framework_snapshots.frameworks.stablehlo import _load_stablehlo_exhaustive
-from ml_framework_snapshots.index import (
+from ml_ecosystem_snapshots.frameworks.amd_rdna import _load_exhaustive_rdna
+from ml_ecosystem_snapshots.frameworks.mlir import _load_mlir_exhaustive
+from ml_ecosystem_snapshots.frameworks.nvidia_ptx import _load_exhaustive_ptx
+from ml_ecosystem_snapshots.frameworks.nvidia_sass import _load_exhaustive_sass
+from ml_ecosystem_snapshots.frameworks.stablehlo import _load_stablehlo_exhaustive
+from ml_ecosystem_snapshots.index import (
     extract_framework_and_version,
     index_snapshot_file,
     init_db,
 )
-from ml_framework_snapshots.models import SnapshotEnvelope
-from ml_framework_snapshots.tools.build_stablehlo_snapshot import main as stablehlo_main
-from ml_framework_snapshots.tools.scrape_amd_rdna import main as amd_rdna_main
-from ml_framework_snapshots.tools.scrape_mlir import main as mlir_main
-from ml_framework_snapshots.tools.scrape_nvidia_ptx import main as ptx_main
-from ml_framework_snapshots.tools.scrape_nvidia_sass import main as sass_main
+from ml_ecosystem_snapshots.models import SnapshotEnvelope
+from ml_ecosystem_snapshots.tools.build_stablehlo_snapshot import main as stablehlo_main
+from ml_ecosystem_snapshots.tools.scrape_amd_rdna import main as amd_rdna_main
+from ml_ecosystem_snapshots.tools.scrape_mlir import main as mlir_main
+from ml_ecosystem_snapshots.tools.scrape_nvidia_ptx import main as ptx_main
+from ml_ecosystem_snapshots.tools.scrape_nvidia_sass import main as sass_main
 
 
 def test_snapshot_envelope_new_fields() -> None:
@@ -188,7 +188,7 @@ def test_scraper_cli_arguments_and_envelope_emission() -> None:
         out_snap = os.path.join(tmpdir, "stablehlo_v2.0.0.json")
         out_exh = os.path.join(tmpdir, "stablehlo_exh.json")
         with mock.patch(
-            "ml_framework_snapshots.tools.build_stablehlo_snapshot.extract_ops",
+            "ml_ecosystem_snapshots.tools.build_stablehlo_snapshot.extract_ops",
             return_value=[{"name": "custom.op"}],
         ):
             stablehlo_main(
@@ -213,14 +213,14 @@ def test_scraper_cli_arguments_and_envelope_emission() -> None:
         # MLIR
         out_mlir = os.path.join(tmpdir, "mlir_custom.json")
         with mock.patch(
-            "ml_framework_snapshots.tools.scrape_mlir.fetch_html", return_value=""
+            "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html", return_value=""
         ):
             with mock.patch(
-                "ml_framework_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
+                "ml_ecosystem_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
                 return_value=[],
             ):
                 with mock.patch(
-                    "ml_framework_snapshots.tools.scrape_mlir.scrape_stablehlo",
+                    "ml_ecosystem_snapshots.tools.scrape_mlir.scrape_stablehlo",
                     return_value=[],
                 ):
                     mlir_main(
@@ -242,7 +242,7 @@ def test_scraper_cli_arguments_and_envelope_emission() -> None:
         # NVIDIA PTX
         out_ptx = os.path.join(tmpdir, "ptx_custom.json")
         with mock.patch(
-            "ml_framework_snapshots.tools.scrape_nvidia_ptx.fetch_nvptx_td_file",
+            "ml_ecosystem_snapshots.tools.scrape_nvidia_ptx.fetch_nvptx_td_file",
             return_value="",
         ):
             ptx_main(
@@ -285,7 +285,7 @@ def test_scraper_cli_arguments_and_envelope_emission() -> None:
         # AMD RDNA
         out_rdna = os.path.join(tmpdir, "rdna_custom.json")
         with mock.patch(
-            "ml_framework_snapshots.tools.scrape_amd_rdna.fetch_td_file",
+            "ml_ecosystem_snapshots.tools.scrape_amd_rdna.fetch_td_file",
             return_value="",
         ):
             amd_rdna_main(

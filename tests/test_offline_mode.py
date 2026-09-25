@@ -11,7 +11,7 @@ import socket
 from typing import Any
 import pytest
 
-from ml_framework_snapshots.mcp_server import (
+from ml_ecosystem_snapshots.mcp_server import (
     check_mlir_op,
     check_rdna_instruction,
     check_sass_instruction,
@@ -19,7 +19,7 @@ from ml_framework_snapshots.mcp_server import (
     get_framework_snapshot,
     search_apis,
 )
-from ml_framework_snapshots.index import get_index_db_path
+from ml_ecosystem_snapshots.index import get_index_db_path
 
 
 @pytest.fixture(autouse=True)
@@ -108,7 +108,7 @@ def test_index_db_stored_in_cache_dir_only(tmp_path: Any, monkeypatch: Any) -> N
     monkeypatch.setenv("ML_FRAMEWORK_SNAPSHOTS_CACHE_DIR", str(tmp_path))
     db_path = get_index_db_path()
     assert str(tmp_path) in db_path
-    assert "src/ml_framework_snapshots" not in db_path
+    assert "src/ml_ecosystem_snapshots" not in db_path
 
 
 def test_wheel_package_contents_and_no_db(tmp_path: Any) -> None:
@@ -167,13 +167,13 @@ def test_offline_cli_execution(tmp_path: Any, monkeypatch: Any) -> None:
         monkeypatch: Pytest monkeypatch fixture.
     """
     import sys
-    from ml_framework_snapshots import cli
+    from ml_ecosystem_snapshots import cli
 
     # 1. check-sass
     monkeypatch.setattr(
         sys,
         "argv",
-        ["ml_framework_snapshots", "check-sass", "FADD", "--operands", "R,R,R"],
+        ["ml_ecosystem_snapshots", "check-sass", "FADD", "--operands", "R,R,R"],
     )
     cli.main()
 
@@ -182,7 +182,7 @@ def test_offline_cli_execution(tmp_path: Any, monkeypatch: Any) -> None:
         sys,
         "argv",
         [
-            "ml_framework_snapshots",
+            "ml_ecosystem_snapshots",
             "check-rdna",
             "v_add_f32",
             "--operands",
@@ -193,7 +193,7 @@ def test_offline_cli_execution(tmp_path: Any, monkeypatch: Any) -> None:
 
     # 3. check-mlir
     monkeypatch.setattr(
-        sys, "argv", ["ml_framework_snapshots", "check-mlir", "arith.muli"]
+        sys, "argv", ["ml_ecosystem_snapshots", "check-mlir", "arith.muli"]
     )
     cli.main()
 
@@ -201,7 +201,7 @@ def test_offline_cli_execution(tmp_path: Any, monkeypatch: Any) -> None:
     monkeypatch.setattr(
         sys,
         "argv",
-        ["ml_framework_snapshots", "check-stablehlo", "stablehlo.dot_general"],
+        ["ml_ecosystem_snapshots", "check-stablehlo", "stablehlo.dot_general"],
     )
     cli.main()
 
@@ -230,7 +230,7 @@ def test_offline_cli_execution(tmp_path: Any, monkeypatch: Any) -> None:
         sys,
         "argv",
         [
-            "ml_framework_snapshots",
+            "ml_ecosystem_snapshots",
             "export",
             "--input",
             json_path,
@@ -249,7 +249,7 @@ def test_offline_cli_execution(tmp_path: Any, monkeypatch: Any) -> None:
         sys,
         "argv",
         [
-            "ml_framework_snapshots",
+            "ml_ecosystem_snapshots",
             "generate-stubs",
             "--input",
             json_path,
@@ -265,7 +265,7 @@ def test_offline_cli_execution(tmp_path: Any, monkeypatch: Any) -> None:
         sys,
         "argv",
         [
-            "ml_framework_snapshots",
+            "ml_ecosystem_snapshots",
             "diff",
             json_path,
             json_path,
@@ -283,11 +283,11 @@ def test_offline_mode_env_vars_and_custom_paths(
         tmp_path: Pytest temporary directory fixture.
         monkeypatch: Pytest monkeypatch fixture.
     """
-    from ml_framework_snapshots.utils import (
+    from ml_ecosystem_snapshots.utils import (
         get_custom_snapshots_paths,
         is_offline_mode,
     )
-    from ml_framework_snapshots.mcp_server import get_framework_snapshot
+    from ml_ecosystem_snapshots.mcp_server import get_framework_snapshot
 
     # Test offline mode detection
     monkeypatch.delenv("ML_SNAPSHOTS_OFFLINE", raising=False)
@@ -323,13 +323,13 @@ def test_offline_cli_pull_forbidden(monkeypatch: Any) -> None:
         monkeypatch: Pytest monkeypatch fixture.
     """
     import sys
-    from ml_framework_snapshots import cli
+    from ml_ecosystem_snapshots import cli
 
     monkeypatch.setenv("ML_SNAPSHOTS_OFFLINE", "1")
     monkeypatch.setattr(
         sys,
         "argv",
-        ["ml_framework_snapshots", "pull", "torch@2.4.0"],
+        ["ml_ecosystem_snapshots", "pull", "torch@2.4.0"],
     )
     with pytest.raises(SystemExit) as exc_info:
         cli.main()

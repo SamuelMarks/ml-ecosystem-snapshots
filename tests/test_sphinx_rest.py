@@ -3,8 +3,8 @@
 from typing import Any
 import unittest.mock as mock
 
-from ml_framework_snapshots.models import GhostInspector, sanitize_type_str
-from ml_framework_snapshots.utils import (
+from ml_ecosystem_snapshots.models import GhostInspector, sanitize_type_str
+from ml_ecosystem_snapshots.utils import (
     get_framework_docstring_parser,
     resolve_griffe_parser,
     parse_docstring_with_griffe,
@@ -242,7 +242,7 @@ def test_ghost_inspector_merge_branches(mocker: Any) -> None:
     )
 
     mocker.patch(
-        "ml_framework_snapshots.models.extract_griffe_docstring_metadata",
+        "ml_ecosystem_snapshots.models.extract_griffe_docstring_metadata",
         return_value={
             "params": {
                 "a": {"doc": "Augmented doc", "typ": "int", "default": None},
@@ -347,7 +347,7 @@ def test_extract_griffe_docstring_metadata_edge_cases(mocker: Any) -> None:
     ]
 
     mocker.patch(
-        "ml_framework_snapshots.utils.parse_docstring_with_griffe",
+        "ml_ecosystem_snapshots.utils.parse_docstring_with_griffe",
         return_value=mock_sections,
     )
 
@@ -396,7 +396,7 @@ def test_ghost_inspector_griffe_return_type_fallback(mocker: Any) -> None:
         return_value={"params": {}, "returns": None},
     )
     mocker.patch(
-        "ml_framework_snapshots.models.extract_griffe_docstring_metadata",
+        "ml_ecosystem_snapshots.models.extract_griffe_docstring_metadata",
         return_value={
             "params": {},
             "returns": {"typ": "torch.Tensor", "doc": "Output."},
@@ -433,7 +433,7 @@ def test_parse_docstring_with_griffe_unresolved(mocker: Any) -> None:
         return griffe.Parser.sphinx
 
     mocker.patch(
-        "ml_framework_snapshots.utils.resolve_griffe_parser",
+        "ml_ecosystem_snapshots.utils.resolve_griffe_parser",
         side_effect=mock_resolve,
     )
 
@@ -596,7 +596,7 @@ def test_extract_griffe_docstring_metadata_duplicate_and_missing_params() -> Non
     fake_param_section.value = [fake_param_item]
 
     with mock.patch(
-        "ml_framework_snapshots.utils.parse_docstring_with_griffe",
+        "ml_ecosystem_snapshots.utils.parse_docstring_with_griffe",
         return_value=[fake_param_section],
     ):
         meta_misclassified = extract_griffe_docstring_metadata(
@@ -606,7 +606,7 @@ def test_extract_griffe_docstring_metadata_duplicate_and_missing_params() -> Non
         assert "MisclassifiedError" in meta_misclassified["raises"]
 
     with mock.patch(
-        "ml_framework_snapshots.utils.parse_docstring_with_griffe", return_value=[]
+        "ml_ecosystem_snapshots.utils.parse_docstring_with_griffe", return_value=[]
     ):
         meta_empty = extract_griffe_docstring_metadata(
             ":raises SoloError: Doc.", parser_name="rest"

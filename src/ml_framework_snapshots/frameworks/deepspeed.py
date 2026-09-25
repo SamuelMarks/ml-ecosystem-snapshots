@@ -1,75 +1,25 @@
-"""Deepspeed module."""
+"""Backward-compatibility shim for ml_framework_snapshots.frameworks.deepspeed.
 
-import importlib
-from typing import List
-from ml_switcheroo_ir.schema.ghost import SemanticTier
-from ml_framework_snapshots.models import GhostInspector
-from ml_switcheroo_ir.schema.ghost import GhostRef
+Transparently re-exports all members from ml_ecosystem_snapshots.frameworks.deepspeed.
+"""
 
+from __future__ import annotations
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
-    """Collect deepspeed API.
+import sys
+from typing import TYPE_CHECKING
+import ml_ecosystem_snapshots.frameworks.deepspeed as _orig_mod
 
-    Args:
-        category: description
-        include_nonpublic: description
+if TYPE_CHECKING:
+    from ml_ecosystem_snapshots.frameworks.deepspeed import *  # noqa: F401, F403
 
-    Returns:
-        List of GhostRefs.
-    """
-    results: List[GhostRef] = []
+# Re-export all attributes including internal and dunder methods
+for _k in dir(_orig_mod):
+    globals()[_k] = getattr(_orig_mod, _k)
 
-    # DeepSpeed mainly provides training, inference, and utilities.
-    # We categorize 'initialize' and config-related things to MODEL or UTIL.
-    if category not in (SemanticTier.MODEL, SemanticTier.UTIL):
-        return results
+__all__ = getattr(
+    _orig_mod,
+    "__all__",
+    [k for k in dir(_orig_mod) if not k.startswith("_")],
+)
 
-    try:
-        mod = importlib.import_module("deepspeed")
-    except ImportError:
-        return results
-
-    inspector = GhostInspector()
-
-    for name in dir(mod):
-        if not include_nonpublic and name.startswith("_"):
-            continue
-
-        obj = getattr(mod, name, None)
-        if obj is None:
-            continue
-
-        obj_cat = (
-            SemanticTier.MODEL
-            if name in ("initialize", "DeepSpeedEngine")
-            else SemanticTier.UTIL
-        )
-
-        if obj_cat == category:
-            try:
-                ref = inspector.inspect(obj, f"deepspeed.{name}")
-                if ref:
-                    if name == "initialize":
-                        # Map distributed configuration dictionaries into structured elements.
-                        has_config = any(p.name == "config_params" for p in ref.params)
-                        if not has_config:
-                            from ml_switcheroo_ir.schema.ghost import (
-                                GhostParam,
-                                ParameterKind,
-                            )
-
-                            ref.params.append(
-                                GhostParam(
-                                    name="config_params",
-                                    kind=ParameterKind.POSITIONAL_OR_KEYWORD,
-                                    default="None",
-                                    annotation="dict | str | None",
-                                )
-                            )
-                    results.append(ref)
-            except Exception:
-                pass
-
-    return results
+sys.modules[__name__] = _orig_mod

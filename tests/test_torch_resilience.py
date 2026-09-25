@@ -5,13 +5,13 @@ import types
 from typing import Any
 from unittest.mock import patch
 
-from ml_framework_snapshots.frameworks.torch import (
+from ml_ecosystem_snapshots.frameworks.torch import (
     _scan_array_api,
     _scan_metrics,
     get_aten_op_schema,
     get_jit_schemas_for_op,
 )
-from ml_framework_snapshots.models import GhostInspector, GhostPythonRef
+from ml_ecosystem_snapshots.models import GhostInspector, GhostPythonRef
 
 
 def test_torch_module_import_reload() -> None:
@@ -23,7 +23,7 @@ def test_torch_module_import_reload() -> None:
     from torch_mock import ensure_torch
 
     ensure_torch()
-    from ml_framework_snapshots.frameworks import torch as torch_fw
+    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     importlib.reload(torch_fw)
     assert torch_fw.nn is not None
@@ -254,7 +254,7 @@ def test_torch_numpy_warning_ignored() -> None:
     """
     import importlib
     import warnings
-    from ml_framework_snapshots.frameworks import torch as torch_fw
+    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     importlib.reload(torch_fw)
     matching = [

@@ -1,6 +1,6 @@
 # Architecture
 
-The `ml_framework_snapshots` library is engineered to solve a critical foundational problem: **Introspecting dynamic, C-extension heavy Machine Learning frameworks, compiler intermediate representations (IR), and hardware instruction set architectures (ISAs) safely, deterministically, and offline**, then serializing that structural data into lightweight, type-safe schemas that power anti-hallucination grounding engines, transpilers, IDE stubs, and Model Context Protocol (MCP) servers.
+The `ml_ecosystem_snapshots` library is engineered to solve a critical foundational problem: **Introspecting dynamic, C-extension heavy Machine Learning frameworks, compiler intermediate representations (IR), and hardware instruction set architectures (ISAs) safely, deterministically, and offline**, then serializing that structural data into lightweight, type-safe schemas that power anti-hallucination grounding engines, transpilers, IDE stubs, and Model Context Protocol (MCP) servers.
 
 ---
 
@@ -8,7 +8,7 @@ The `ml_framework_snapshots` library is engineered to solve a critical foundatio
 
 At the center of the architecture is the **Ghost Protocol**. Instead of relying on live, heavyweight Python runtime objects (which allocate GPU memory, spawn driver contexts, lock C++ thread state, or depend on gigabyte-sized binary wheels), every framework API, compiler operation, and machine instruction is reduced into a static, serializable representation.
 
-All models inherit from Pydantic V2 schemas defined in `ml_framework_snapshots.models` and `ml_switcheroo_ir.schema.ghost`.
+All models inherit from Pydantic V2 schemas defined in `ml_ecosystem_snapshots.models` and `ml_switcheroo_ir.schema.ghost`.
 
 ```mermaid
 classDiagram
@@ -204,7 +204,7 @@ Introspecting modern ML libraries is complicated by heavy metaclasses, dynamical
 
 The extraction engine manages lifecycle, concurrency, and environment isolation during snapshot generation:
 
-- **Dynamic Collector Discovery (`get_available_frameworks`):** Uses `pkgutil` and `importlib` to scan the `ml_framework_snapshots.frameworks` namespace, detecting all `collect_*` entry points and mapping canonical aliases.
+- **Dynamic Collector Discovery (`get_available_frameworks`):** Uses `pkgutil` and `importlib` to scan the `ml_ecosystem_snapshots.frameworks` namespace, detecting all `collect_*` entry points and mapping canonical aliases.
 - **Subprocess Isolation (`extract_snapshot_isolated`):**
   - High-performance ML libraries (PyTorch with CUDA, JAX with Metal, TensorFlow) often initialize non-resettable hardware driver states upon import.
   - `extract_snapshot_isolated` runs the collection logic in an isolated child Python process via `subprocess.run`. This guarantees that memory pre-allocation locks, C++ symbol collisions, and segmentation faults do not pollute or crash the parent process.
@@ -219,7 +219,7 @@ The extraction engine manages lifecycle, concurrency, and environment isolation 
 
 ## 5. Hardware ISAs, Compiler Dialects, and Domain DSL Schemas
 
-`ml-framework-snapshots` provides structured metadata schemas for low-level compilation backends, hardware architectures, and declarative DSLs:
+`ml-ecosystem-snapshots` provides structured metadata schemas for low-level compilation backends, hardware architectures, and declarative DSLs:
 
 ### A. NVIDIA SASS Schema (`frameworks/nvidia_sass.py`)
 - **Domain Type:** `GhostIsaRef` (`domain_type="isa"`)
@@ -350,7 +350,7 @@ Trans-compiles snapshots into diverse industry-standard interface definitions:
 ## 9. Ephemeral Local SQLite FTS5 Index & Cache (`index.py`)
 
 To achieve sub-millisecond symbol lookups without loading multi-megabyte JSON trees into memory:
-- **SQLite FTS5 Full-Text Index (`get_index_db_path`)**: Automatically creates an ephemeral search database in the user's platform-specific cache directory (`XDG_CACHE_HOME` / `~/.cache/ml_framework_snapshots/index.db`).
+- **SQLite FTS5 Full-Text Index (`get_index_db_path`)**: Automatically creates an ephemeral search database in the user's platform-specific cache directory (`XDG_CACHE_HOME` / `~/.cache/ml_ecosystem_snapshots/index.db`).
 - **Incremental Indexing**: Uses SHA-256 file hashes (`compute_file_sha256`) to incrementally index bundled and cached JSON snapshots.
 - **Integrity Verification**: CLI commands (`verify-local-cache`) validate local cached snapshot files against upstream cryptographic checksums.
 
@@ -364,9 +364,9 @@ The command-line interface provides the user-facing entrypoint for snapshot capt
 Resolves snapshot identifiers (e.g. `torch`, `torch_v2.4.0.json`, or custom paths) across a cascading hierarchy:
 1. Exact file path or `.json` suffix.
 2. Custom paths defined in `ML_SNAPSHOTS_PATH` or `ML_FRAMEWORK_SNAPSHOTS_PATH`.
-3. Local cache directory (`~/.cache/ml_framework_snapshots/snapshots`).
+3. Local cache directory (`~/.cache/ml_ecosystem_snapshots/snapshots`).
 4. Project repository root `snapshots/`.
-5. Package-bundled `src/ml_framework_snapshots/snapshots/` and `frameworks/`.
+5. Package-bundled `src/ml_ecosystem_snapshots/snapshots/` and `frameworks/`.
 6. Current working directory `snapshots/`.
 
 ### CLI Subcommands Overview

@@ -4,7 +4,7 @@ from typing import Any
 from unittest.mock import patch, MagicMock
 
 from ml_switcheroo_ir.schema.ghost import SemanticTier, GhostRef
-from ml_framework_snapshots.frameworks.huggingface import (
+from ml_ecosystem_snapshots.frameworks.huggingface import (
     collect_transformers,
     collect_diffusers,
     collect_tokenizers,
@@ -58,7 +58,7 @@ def test_collect_transformers() -> None:
     with (
         patch("importlib.import_module", return_value=mock_mod),
         patch(
-            "ml_framework_snapshots.frameworks.huggingface.GhostInspector"
+            "ml_ecosystem_snapshots.frameworks.huggingface.GhostInspector"
         ) as MockInspector,
     ):
         from ml_switcheroo_ir.schema.ghost import GhostRef
@@ -105,7 +105,7 @@ def test_collect_diffusers() -> None:
     with (
         patch("importlib.import_module", return_value=mock_mod),
         patch(
-            "ml_framework_snapshots.frameworks.huggingface.GhostInspector"
+            "ml_ecosystem_snapshots.frameworks.huggingface.GhostInspector"
         ) as MockInspector,
     ):
         from ml_switcheroo_ir.schema.ghost import GhostRef
@@ -138,7 +138,7 @@ def test_collect_tokenizers() -> None:
     with (
         patch("importlib.import_module", return_value=mock_mod),
         patch(
-            "ml_framework_snapshots.frameworks.huggingface.GhostInspector"
+            "ml_ecosystem_snapshots.frameworks.huggingface.GhostInspector"
         ) as MockInspector,
     ):
         from ml_switcheroo_ir.schema.ghost import GhostRef

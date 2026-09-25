@@ -4,7 +4,7 @@ import ast
 from typing import Any, List
 from unittest.mock import patch
 
-from ml_framework_snapshots.models import (
+from ml_ecosystem_snapshots.models import (
     GhostInspector,
     extract_accepted_kwargs_from_ast,
 )
@@ -152,7 +152,7 @@ def test_extract_accepted_kwargs_subscript_branches() -> None:
     fn_def.body.append(ast.Expr(value=sub5))
 
     with patch("inspect.getsource", return_value="def sample_fn(**kwargs): pass"):
-        with patch("ml_framework_snapshots.models.ast.parse", return_value=tree):
+        with patch("ml_ecosystem_snapshots.models.ast.parse", return_value=tree):
             res = extract_accepted_kwargs_from_ast(lambda **kwargs: None)
             assert res == ["alpha"]
 
@@ -247,7 +247,7 @@ def test_ghost_inspector_griffe_docstring_exception(mocker: Any) -> None:
         None.
     """
     mocker.patch(
-        "ml_framework_snapshots.models.extract_griffe_docstring_metadata",
+        "ml_ecosystem_snapshots.models.extract_griffe_docstring_metadata",
         side_effect=RuntimeError("simulated griffe doc error"),
     )
 
@@ -337,7 +337,7 @@ def test_ghost_inspector_cdd_ast_params_edges(mocker: Any) -> None:
             raise ValueError("unparse failed")
         return orig_unparse(node)
 
-    mocker.patch("ml_framework_snapshots.models.ast.unparse", side_effect=mock_unparse)
+    mocker.patch("ml_ecosystem_snapshots.models.ast.unparse", side_effect=mock_unparse)
     mocker.patch.object(cdd.function.parse, "function", return_value=fake_cdd_ir)
 
     ref = GhostInspector.inspect(target_fn_ast_edges, "target_fn_ast_edges")
@@ -414,7 +414,7 @@ def test_ghost_inspector_torch_target_infer_exception(mocker: Any) -> None:
     Returns:
         None.
     """
-    from ml_framework_snapshots.frameworks import torch as torch_fw
+    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     mocker.patch.object(
         torch_fw,
@@ -470,7 +470,7 @@ def test_ghost_inspector_c_ext_overload_infer_exception(mocker: Any) -> None:
     Returns:
         None.
     """
-    from ml_framework_snapshots.frameworks import torch as torch_fw
+    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     mocker.patch.object(
         torch_fw,
@@ -490,7 +490,7 @@ def test_ghost_inspector_c_ext_overload_infer_exception(mocker: Any) -> None:
     ]
 
     mocker.patch(
-        "ml_framework_snapshots.models.extract_c_extension_signature",
+        "ml_ecosystem_snapshots.models.extract_c_extension_signature",
         return_value=fake_sig,
     )
     mocker.patch("inspect.signature", side_effect=TypeError("no signature"))

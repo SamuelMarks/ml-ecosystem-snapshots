@@ -6,7 +6,7 @@ from typing import Any
 import urllib.error
 from unittest import mock
 
-from ml_framework_snapshots.tools import scrape_nvidia_ptx
+from ml_ecosystem_snapshots.tools import scrape_nvidia_ptx
 
 
 def test_fetch_nvptx_td_file_local_dir(tmp_path: os.PathLike[str]) -> None:
@@ -67,7 +67,7 @@ def test_scrape_ptx_end_to_end(tmp_path: os.PathLike[str]) -> None:
     """
     out_file = os.path.join(tmp_path, "nvidia_ptx_exhaustive.json")
     with mock.patch(
-        "ml_framework_snapshots.tools.scrape_nvidia_ptx.fetch_nvptx_td_file",
+        "ml_ecosystem_snapshots.tools.scrape_nvidia_ptx.fetch_nvptx_td_file",
         return_value='def DUMMY_OP : NVPTXInst<"custom_ptx_op">;',
     ):
         catalog = scrape_nvidia_ptx.scrape_ptx(output_path=out_file)
@@ -110,7 +110,7 @@ def test_scrape_ptx_with_empty_fetch(tmp_path: os.PathLike[str]) -> None:
     """Test scrape_ptx when TableGen fetch returns empty string."""
     out_file = os.path.join(tmp_path, "empty_ptx.json")
     with mock.patch(
-        "ml_framework_snapshots.tools.scrape_nvidia_ptx.fetch_nvptx_td_file",
+        "ml_ecosystem_snapshots.tools.scrape_nvidia_ptx.fetch_nvptx_td_file",
         return_value="",
     ):
         catalog = scrape_nvidia_ptx.scrape_ptx(output_path=out_file)
@@ -120,7 +120,7 @@ def test_scrape_ptx_with_empty_fetch(tmp_path: os.PathLike[str]) -> None:
 def test_main_invocation() -> None:
     """Test the main entrypoint function invokes scrape_ptx."""
     with mock.patch(
-        "ml_framework_snapshots.tools.scrape_nvidia_ptx.scrape_ptx"
+        "ml_ecosystem_snapshots.tools.scrape_nvidia_ptx.scrape_ptx"
     ) as mock_scrape:
         scrape_nvidia_ptx.main()
         mock_scrape.assert_called_once()

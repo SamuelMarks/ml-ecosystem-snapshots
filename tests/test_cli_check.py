@@ -8,7 +8,7 @@ from typing import Any
 
 import argparse
 from unittest.mock import patch, mock_open
-from ml_framework_snapshots.cli import cmd_check
+from ml_ecosystem_snapshots.cli import cmd_check
 
 MOCK_JSON = """
 {
@@ -44,8 +44,8 @@ MOCK_JSON = """
 """
 
 
-@patch("ml_framework_snapshots.compliance.score_compliance")
-@patch("ml_framework_snapshots.compliance.extract_target_refs")
+@patch("ml_ecosystem_snapshots.compliance.score_compliance")
+@patch("ml_ecosystem_snapshots.compliance.extract_target_refs")
 @patch("builtins.open", new_callable=mock_open, read_data=MOCK_JSON)
 def test_cmd_check(
     mock_file: Any, mock_extract: Any, mock_score: Any, capsys: Any
@@ -91,8 +91,8 @@ def test_cmd_check(
     assert "other.func5" in captured.out
 
 
-@patch("ml_framework_snapshots.compliance.score_compliance")
-@patch("ml_framework_snapshots.compliance.extract_target_refs")
+@patch("ml_ecosystem_snapshots.compliance.score_compliance")
+@patch("ml_ecosystem_snapshots.compliance.extract_target_refs")
 @patch("builtins.open", new_callable=mock_open, read_data='{"categories": {}}')
 def test_cmd_check_pagination(
     mock_file: Any, mock_extract: Any, mock_score: Any, capsys: Any
@@ -134,8 +134,8 @@ def test_cmd_check_pagination(
     assert "... and 5 more" in captured.out
 
 
-@patch("ml_framework_snapshots.compliance.score_compliance")
-@patch("ml_framework_snapshots.compliance.extract_target_refs")
+@patch("ml_ecosystem_snapshots.compliance.score_compliance")
+@patch("ml_ecosystem_snapshots.compliance.extract_target_refs")
 @patch("builtins.open", new_callable=mock_open, read_data='{"categories": {}}')
 def test_cmd_check_no_missing_mismatched(
     mock_file: Any, mock_extract: Any, mock_score: Any, capsys: Any
@@ -177,7 +177,7 @@ def test_cmd_check_output_formatting(mocker: Any, capsys: Any, tmp_path: Any) ->
         mocker: Parameter.
         tmp_path: Parameter.
     """
-    from ml_framework_snapshots.cli import cmd_check
+    from ml_ecosystem_snapshots.cli import cmd_check
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
     import json
 
@@ -214,13 +214,13 @@ def test_cmd_check_output_formatting(mocker: Any, capsys: Any, tmp_path: Any) ->
     snap_file.write_text(json.dumps(snapshot))
 
     mocker.patch(
-        "ml_framework_snapshots.cli.resolve_snapshot_path", return_value=str(snap_file)
+        "ml_ecosystem_snapshots.cli.resolve_snapshot_path", return_value=str(snap_file)
     )
     mocker.patch(
-        "ml_framework_snapshots.compliance.extract_target_refs", return_value=[]
+        "ml_ecosystem_snapshots.compliance.extract_target_refs", return_value=[]
     )
     mocker.patch(
-        "ml_framework_snapshots.compliance.score_compliance",
+        "ml_ecosystem_snapshots.compliance.score_compliance",
         return_value={
             "score_percentage": 0.0,
             "missing": ["torch.nn.func", "torch.nn.mod", "torch.func"],
@@ -251,10 +251,10 @@ def test_cmd_check_sass_no_modifiers(mocker: Any, capsys: Any) -> None:
         mocker: Pytest mocker fixture.
         capsys: Pytest capsys fixture.
     """
-    from ml_framework_snapshots.cli import cmd_check_sass
+    from ml_ecosystem_snapshots.cli import cmd_check_sass
 
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.check_sass_instruction",
+        "ml_ecosystem_snapshots.mcp_server.check_sass_instruction",
         return_value={
             "is_valid": True,
             "supported_architectures": ["sm_80"],
@@ -281,10 +281,10 @@ def test_cmd_check_rdna_no_encoding(mocker: Any, capsys: Any) -> None:
         mocker: Pytest mocker fixture.
         capsys: Pytest capsys fixture.
     """
-    from ml_framework_snapshots.cli import cmd_check_rdna
+    from ml_ecosystem_snapshots.cli import cmd_check_rdna
 
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.check_rdna_instruction",
+        "ml_ecosystem_snapshots.mcp_server.check_rdna_instruction",
         return_value={
             "is_valid": True,
             "supported_architectures": ["gfx1100"],
@@ -309,11 +309,11 @@ def test_cmd_check_rdna_no_encoding(mocker: Any, capsys: Any) -> None:
 def test_cmd_check_non_python_auto_detect(mocker: Any, capsys: Any) -> None:
     """Test cmd_check auto-detecting .sass, .s, and .mlir file extensions."""
     import pytest
-    from ml_framework_snapshots.cli import cmd_check
+    from ml_ecosystem_snapshots.cli import cmd_check
 
     # 1. SASS file compliant
     mocker.patch(
-        "ml_framework_snapshots.compliance.check_sass_assembly_compliance",
+        "ml_ecosystem_snapshots.compliance.check_sass_assembly_compliance",
         return_value={
             "is_compliant": True,
             "total_instructions": 2,
@@ -337,7 +337,7 @@ def test_cmd_check_non_python_auto_detect(mocker: Any, capsys: Any) -> None:
 
     # 2. SASS file non-compliant (exits 1)
     mocker.patch(
-        "ml_framework_snapshots.compliance.check_sass_assembly_compliance",
+        "ml_ecosystem_snapshots.compliance.check_sass_assembly_compliance",
         return_value={
             "is_compliant": False,
             "total_instructions": 2,
@@ -350,7 +350,7 @@ def test_cmd_check_non_python_auto_detect(mocker: Any, capsys: Any) -> None:
 
     # 3. RDNA .s file compliant
     mocker.patch(
-        "ml_framework_snapshots.compliance.check_rdna_assembly_compliance",
+        "ml_ecosystem_snapshots.compliance.check_rdna_assembly_compliance",
         return_value={
             "is_compliant": True,
             "total_instructions": 3,
@@ -374,7 +374,7 @@ def test_cmd_check_non_python_auto_detect(mocker: Any, capsys: Any) -> None:
 
     # 4. RDNA .s file non-compliant (exits 1)
     mocker.patch(
-        "ml_framework_snapshots.compliance.check_rdna_assembly_compliance",
+        "ml_ecosystem_snapshots.compliance.check_rdna_assembly_compliance",
         return_value={
             "is_compliant": False,
             "total_instructions": 3,
@@ -387,7 +387,7 @@ def test_cmd_check_non_python_auto_detect(mocker: Any, capsys: Any) -> None:
 
     # 5. MLIR file compliant
     mocker.patch(
-        "ml_framework_snapshots.compliance.check_mlir_text_compliance",
+        "ml_ecosystem_snapshots.compliance.check_mlir_text_compliance",
         return_value={
             "is_compliant": True,
             "total_ops": 4,
@@ -411,7 +411,7 @@ def test_cmd_check_non_python_auto_detect(mocker: Any, capsys: Any) -> None:
 
     # 6. MLIR file non-compliant (exits 1)
     mocker.patch(
-        "ml_framework_snapshots.compliance.check_mlir_text_compliance",
+        "ml_ecosystem_snapshots.compliance.check_mlir_text_compliance",
         return_value={
             "is_compliant": False,
             "total_ops": 4,

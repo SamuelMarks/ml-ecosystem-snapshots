@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
-from ml_framework_snapshots.export import (
+from ml_ecosystem_snapshots.export import (
     to_json_schema,
     to_openapi,
     _ghost_to_cdd_ir,
@@ -222,7 +222,7 @@ def test_to_protobuf_types() -> None:
 
 def test_export_branches() -> None:
     """Function docstring."""
-    from ml_framework_snapshots.export import (
+    from ml_ecosystem_snapshots.export import (
         _py_type_to_proto,
         to_pydantic,
         to_json_schema,
@@ -273,7 +273,7 @@ def test_export_branches() -> None:
 
 def test_export_branches_more() -> None:
     """Function docstring."""
-    from ml_framework_snapshots.export import (
+    from ml_ecosystem_snapshots.export import (
         to_pydantic,
         to_openapi,
         to_json_schema,
@@ -351,7 +351,7 @@ def test_export_llm_prompt_context_full(sample_ghost_ref: GhostRef) -> None:
 
 def test_export_sass_prompt_context() -> None:
     """Test exporting SASS instruction prompt context with assembly syntax templates."""
-    from ml_framework_snapshots.models import (
+    from ml_ecosystem_snapshots.models import (
         ExtendedGhostRef,
         ExtendedGhostParam,
         OperandDirection,
@@ -428,7 +428,7 @@ def test_export_sass_prompt_context() -> None:
 
 def test_export_mlir_prompt_context() -> None:
     """Test exporting MLIR/StableHLO prompt context with SSA syntax templates."""
-    from ml_framework_snapshots.models import (
+    from ml_ecosystem_snapshots.models import (
         ExtendedGhostRef,
         ExtendedGhostParam,
         GhostResult,
@@ -513,7 +513,7 @@ def test_export_scoped_prompt_context(mocker: Any) -> None:
             ]
         }
     }
-    from ml_framework_snapshots import mcp_server
+    from ml_ecosystem_snapshots import mcp_server
 
     orig_get_snap = mcp_server.get_framework_snapshot
 
@@ -532,7 +532,7 @@ def test_export_scoped_prompt_context(mocker: Any) -> None:
         return orig_get_snap(framework, version=version)
 
     mocker.patch(
-        "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
         side_effect=mock_get_snap,
     )
 
@@ -567,7 +567,7 @@ def test_export_scoped_prompt_context(mocker: Any) -> None:
         }
     }
     with patch(
-        "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
         return_value=mock_snap,
     ):
         ctx = export_scoped_prompt_context("test_fw", max_symbols=50)

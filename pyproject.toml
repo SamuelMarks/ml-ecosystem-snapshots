@@ -1,19 +1,22 @@
 [project]
-name = "ml_framework_snapshots"
+name = "ml_ecosystem_snapshots"
 description = "Extracts API snapshots from ML frameworks for Ghost Mode operation"
 readme = "README.md"
 requires-python = ">=3.10"
 dynamic = ["version", "dependencies", "optional-dependencies"]
 
 [project.scripts]
-ml_framework_snapshots = "ml_framework_snapshots.cli:main"
+ml_ecosystem_snapshots = "ml_ecosystem_snapshots.cli:main"
+ml-ecosystem-snapshots = "ml_ecosystem_snapshots.cli:main"
+ml_framework_snapshots = "ml_ecosystem_snapshots.cli:main"
+ml-framework-snapshots = "ml_ecosystem_snapshots.cli:main"
 
 [build-system]
 requires = ["hatchling", "hatch-requirements-txt"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
-path = "src/ml_framework_snapshots/__init__.py"
+path = "src/ml_ecosystem_snapshots/__init__.py"
 
 [tool.hatch.metadata.hooks.requirements_txt]
 files = ["requirements.txt"]
@@ -35,11 +38,19 @@ strict = true
 warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
+module = "ml_ecosystem_snapshots.models"
+disallow_subclassing_any = false
+
+[[tool.mypy.overrides]]
 module = "ml_framework_snapshots.models"
 disallow_subclassing_any = false
 
 [tool.hatch.build.targets.sdist]
 artifacts = [
+    "src/ml_ecosystem_snapshots/*.json",
+    "src/ml_ecosystem_snapshots/*.json.gz",
+    "src/ml_ecosystem_snapshots/**/*.json",
+    "src/ml_ecosystem_snapshots/**/*.json.gz",
     "src/ml_framework_snapshots/*.json",
     "src/ml_framework_snapshots/*.json.gz",
     "src/ml_framework_snapshots/**/*.json",
@@ -62,14 +73,22 @@ exclude = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ml_framework_snapshots"]
+packages = ["src/ml_ecosystem_snapshots", "src/ml_framework_snapshots"]
 include = [
+    "src/ml_ecosystem_snapshots/*.json",
+    "src/ml_ecosystem_snapshots/*.json.gz",
+    "src/ml_ecosystem_snapshots/**/*.json",
+    "src/ml_ecosystem_snapshots/**/*.json.gz",
     "src/ml_framework_snapshots/*.json",
     "src/ml_framework_snapshots/*.json.gz",
     "src/ml_framework_snapshots/**/*.json",
     "src/ml_framework_snapshots/**/*.json.gz",
 ]
 artifacts = [
+    "src/ml_ecosystem_snapshots/*.json",
+    "src/ml_ecosystem_snapshots/*.json.gz",
+    "src/ml_ecosystem_snapshots/**/*.json",
+    "src/ml_ecosystem_snapshots/**/*.json.gz",
     "src/ml_framework_snapshots/*.json",
     "src/ml_framework_snapshots/*.json.gz",
     "src/ml_framework_snapshots/**/*.json",

@@ -1,5 +1,7 @@
 """Tests for missing framework dependencies."""
 
+import sys
+import types
 from typing import Any
 from unittest.mock import patch, MagicMock
 from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
@@ -7,7 +9,7 @@ from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
 
 def test_deepspeed_missing() -> None:
     """Function docstring."""
-    from ml_framework_snapshots.frameworks.deepspeed import collect_api
+    from ml_ecosystem_snapshots.frameworks.deepspeed import collect_api
 
     with patch("importlib.import_module", side_effect=ImportError):
         assert collect_api(SemanticTier.MODEL) == []
@@ -33,7 +35,7 @@ def test_deepspeed_missing() -> None:
             pass
 
     with patch(
-        "ml_framework_snapshots.models.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
         side_effect=lambda obj, name: (
             None
             if "nothing" in name
@@ -45,7 +47,7 @@ def test_deepspeed_missing() -> None:
             collect_api(SemanticTier.MODEL, include_nonpublic=True)
 
     with patch(
-        "ml_framework_snapshots.models.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
         return_value=MagicMock(params=[]),
     ):
         with patch("importlib.import_module", return_value=DeepspeedMock()):
@@ -54,7 +56,7 @@ def test_deepspeed_missing() -> None:
 
 def test_onnxruntime_missing() -> None:
     """Function docstring."""
-    from ml_framework_snapshots.frameworks.onnxruntime import collect_api
+    from ml_ecosystem_snapshots.frameworks.onnxruntime import collect_api
 
     with patch("importlib.import_module", side_effect=ImportError):
         assert collect_api(SemanticTier.MODEL) == []
@@ -80,7 +82,7 @@ def test_onnxruntime_missing() -> None:
             pass
 
     with patch(
-        "ml_framework_snapshots.models.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
         side_effect=lambda obj, name: (
             None
             if "nothing" in name
@@ -92,7 +94,7 @@ def test_onnxruntime_missing() -> None:
             collect_api(SemanticTier.MODEL, include_nonpublic=True)
 
     with patch(
-        "ml_framework_snapshots.models.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
         return_value=MagicMock(params=[]),
     ):
         with patch("importlib.import_module", return_value=OnnxMock()):
@@ -101,7 +103,7 @@ def test_onnxruntime_missing() -> None:
 
 def test_triton_missing() -> None:
     """Function docstring."""
-    from ml_framework_snapshots.frameworks.triton import collect_api
+    from ml_ecosystem_snapshots.frameworks.triton import collect_api
 
     with patch("importlib.import_module", side_effect=ImportError):
         assert collect_api(SemanticTier.UTIL) == []
@@ -141,7 +143,7 @@ def test_triton_missing() -> None:
     param_b.name = "b"
 
     with patch(
-        "ml_framework_snapshots.models.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
         side_effect=lambda obj, name: (
             None if "not_ref" in name else MagicMock(params=[param_a, param_b])
         ),
@@ -156,8 +158,8 @@ def test_triton_missing() -> None:
         ):
             collect_api(SemanticTier.UTIL)
 
-    from ml_framework_snapshots.frameworks.triton import _extract_triton_kernel
-    from ml_framework_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.frameworks.triton import _extract_triton_kernel
+    from ml_ecosystem_snapshots.models import GhostInspector
 
     class NoAnno:
         """Kernel callable without annotations."""
@@ -172,10 +174,10 @@ def test_triton_missing() -> None:
 
 def test_sklearn_missing() -> None:
     """Function docstring."""
-    from ml_framework_snapshots.frameworks.sklearn import collect_api
+    from ml_ecosystem_snapshots.frameworks.sklearn import collect_api
 
     with patch(
-        "ml_framework_snapshots.frameworks.sklearn.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.sklearn.get_all_members",
         side_effect=Exception,
     ):
         res = collect_api(SemanticTier.LAYER)
@@ -184,7 +186,7 @@ def test_sklearn_missing() -> None:
 
 def test_huggingface_missing() -> None:
     """Function docstring."""
-    from ml_framework_snapshots.frameworks.huggingface import (
+    from ml_ecosystem_snapshots.frameworks.huggingface import (
         _extract_generation_kwargs,
         _parse_pretrained_config,
         collect_transformers,
@@ -428,7 +430,7 @@ def test_huggingface_missing() -> None:
         return MagicMock(params=[MagicMock(**{"name": "config"})])
 
     with patch(
-        "ml_framework_snapshots.models.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
         side_effect=mock_inspect,
     ):
         with patch("importlib.import_module", return_value=FakeMod()):
@@ -441,7 +443,7 @@ def test_hardware_exhaustive_fallbacks() -> None:
     import os
     from unittest.mock import patch
     from ml_switcheroo_ir.schema.ghost import SemanticTier
-    from ml_framework_snapshots.frameworks import (
+    from ml_ecosystem_snapshots.frameworks import (
         amd_rdna,
         mlir,
         nvidia_ptx,
@@ -483,8 +485,8 @@ def test_hardware_exhaustive_fallbacks() -> None:
 
 def test_orbax_checkpoint_inspect_error(mocker: Any) -> None:
     """Test orbax checkpoint exception handling during member inspection and member retrieval."""
-    import ml_framework_snapshots.frameworks.orbax_checkpoint as orbax_mod
-    from ml_framework_snapshots.models import GhostInspector
+    import ml_ecosystem_snapshots.frameworks.orbax_checkpoint as orbax_mod
+    from ml_ecosystem_snapshots.models import GhostInspector
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     def bad_fn() -> None:
@@ -497,7 +499,7 @@ def test_orbax_checkpoint_inspect_error(mocker: Any) -> None:
 
     # 1. Inner exception handler (lines 39-40)
     mocker.patch(
-        "ml_framework_snapshots.frameworks.orbax_checkpoint.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.orbax_checkpoint.get_all_members",
         return_value=[("bad_fn", bad_fn)],
     )
     mocker.patch.object(
@@ -510,7 +512,7 @@ def test_orbax_checkpoint_inspect_error(mocker: Any) -> None:
 
     # 2. Outer exception handler (lines 41-42)
     mocker.patch(
-        "ml_framework_snapshots.frameworks.orbax_checkpoint.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.orbax_checkpoint.get_all_members",
         side_effect=RuntimeError("member enumeration error"),
     )
     res_outer = orbax_mod.collect_api(SemanticTier.ARRAY_API)
@@ -522,7 +524,7 @@ def test_pax_import_fallback(monkeypatch: Any) -> None:
     import importlib
     import sys
     import types
-    import ml_framework_snapshots.frameworks.pax as pax_mod
+    import ml_ecosystem_snapshots.frameworks.pax as pax_mod
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     # Available
@@ -551,7 +553,7 @@ def test_sklearn_import_fallback(monkeypatch: Any) -> None:
     """Test sklearn import logic when sklearn is unavailable."""
     import importlib
     import sys
-    import ml_framework_snapshots.frameworks.sklearn as sklearn_mod
+    import ml_ecosystem_snapshots.frameworks.sklearn as sklearn_mod
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     monkeypatch.setitem(sys.modules, "sklearn", None)
@@ -569,7 +571,7 @@ def test_flax_nnx_import_fallback(monkeypatch: Any, mocker: Any) -> None:
     import importlib
     import sys
     import types
-    import ml_framework_snapshots.frameworks.flax_nnx as nnx_mod
+    import ml_ecosystem_snapshots.frameworks.flax_nnx as nnx_mod
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     # 1. Unavailable import
@@ -595,7 +597,7 @@ def test_flax_nnx_import_fallback(monkeypatch: Any, mocker: Any) -> None:
     monkeypatch.setitem(sys.modules, "flax.nnx", fake_nnx)
     importlib.reload(nnx_mod)
     mocker.patch(
-        "ml_framework_snapshots.frameworks.flax_nnx.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.flax_nnx.get_all_members",
         return_value=[("BadClass", BadClass)],
     )
     res = nnx_mod.collect_api(SemanticTier.LAYER)
@@ -609,8 +611,8 @@ def test_flax_nnx_import_fallback(monkeypatch: Any, mocker: Any) -> None:
 def test_deepspeed_fallback_edges(mocker: Any) -> None:
     """Test deepspeed inspect exception handling and existing config_params."""
     import types
-    import ml_framework_snapshots.frameworks.deepspeed as ds_mod
-    from ml_framework_snapshots.models import GhostInspector
+    import ml_ecosystem_snapshots.frameworks.deepspeed as ds_mod
+    from ml_ecosystem_snapshots.models import GhostInspector
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, SemanticTier
 
     fake_ds: Any = types.ModuleType("deepspeed")
@@ -619,7 +621,7 @@ def test_deepspeed_fallback_edges(mocker: Any) -> None:
     fake_ds.error_op = lambda: None
     fake_ds.z_extra_util = lambda: None
     mocker.patch(
-        "ml_framework_snapshots.frameworks.deepspeed.importlib.import_module",
+        "ml_ecosystem_snapshots.frameworks.deepspeed.importlib.import_module",
         return_value=fake_ds,
     )
 
@@ -675,7 +677,7 @@ def test_optax_shim_import_reload() -> None:
         None.
     """
     import importlib
-    from ml_framework_snapshots.frameworks import optax_shim
+    from ml_ecosystem_snapshots.frameworks import optax_shim
 
     with patch.dict("sys.modules", {"optax": None}):
         importlib.reload(optax_shim)
@@ -683,7 +685,7 @@ def test_optax_shim_import_reload() -> None:
 
     # Restore clean reload
     importlib.reload(optax_shim)
-    import ml_framework_snapshots.frameworks.jax as jax_fw
+    import ml_ecosystem_snapshots.frameworks.jax as jax_fw
 
     importlib.reload(jax_fw)
 
@@ -695,7 +697,7 @@ def test_orbax_checkpoint_import_reload() -> None:
         None.
     """
     import importlib
-    from ml_framework_snapshots.frameworks import orbax_checkpoint
+    from ml_ecosystem_snapshots.frameworks import orbax_checkpoint
 
     with patch.dict("sys.modules", {"orbax.checkpoint": None, "orbax": None}):
         importlib.reload(orbax_checkpoint)
@@ -714,7 +716,7 @@ def test_tensorflow_import_reload() -> None:
     import builtins
     import importlib
     import types
-    from ml_framework_snapshots.frameworks import tensorflow as tf_fw
+    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     with patch.dict("sys.modules", {"tensorflow": None}):
@@ -726,13 +728,28 @@ def test_tensorflow_import_reload() -> None:
     real_import = builtins.__import__
 
     def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import raising ImportError on tensorflow.
+
+        Args:
+            name: Module name.
+            *args: Positional args.
+            **kwargs: Keyword args.
+
+        Returns:
+            Imported module.
+
+        Raises:
+            ImportError: When importing tensorflow.
+        """
         if name == "tensorflow":
             raise ImportError("simulated tf error")
         return real_import(name, *args, **kwargs)
 
-    with patch("builtins.__import__", side_effect=mock_import):
-        assert tf_fw._get_tf() is None
-        assert tf_fw.collect_api(SemanticTier.ACTIVATION) == []
+    with patch.dict(sys.modules):
+        sys.modules.pop("tensorflow", None)
+        with patch("builtins.__import__", side_effect=mock_import):
+            assert tf_fw._get_tf() is None
+            assert tf_fw.collect_api(SemanticTier.ACTIVATION) == []
 
     # Test tf without nn attribute
     fake_tf_no_nn = types.ModuleType("tensorflow")
@@ -743,3 +760,145 @@ def test_tensorflow_import_reload() -> None:
 
     # Restore clean reload
     importlib.reload(tf_fw)
+
+
+def test_tensorflow_collect_live_image_lookup(monkeypatch: Any) -> None:
+    """Verify _collect_live inspects tf.image and tf.lookup members.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    import types
+    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
+    from ml_ecosystem_snapshots.models import GhostInspector
+
+    class MockLookupTable:
+        """Mock lookup table class."""
+
+        pass
+
+    def mock_resize(x: Any) -> Any:
+        """Mock resize function.
+
+        Args:
+            x: Input parameter.
+
+        Returns:
+            Input value.
+        """
+        return x
+
+    def mock_private(x: Any) -> Any:
+        """Mock private function.
+
+        Args:
+            x: Input parameter.
+
+        Returns:
+            Input value.
+        """
+        return x
+
+    fake_image = types.SimpleNamespace(
+        resize=mock_resize,
+        _private=mock_private,
+        not_callable=42,
+    )
+    fake_lookup = types.SimpleNamespace(
+        StaticHashTable=MockLookupTable,
+        _private_table=MockLookupTable,
+        not_callable=99,
+    )
+    fake_nn = types.SimpleNamespace(
+        relu=mock_resize,
+    )
+    fake_tf = types.SimpleNamespace(
+        nn=fake_nn,
+        image=fake_image,
+        lookup=fake_lookup,
+        math=types.SimpleNamespace(),
+        linalg=types.SimpleNamespace(),
+    )
+
+    monkeypatch.setattr(tf_fw, "tf", fake_tf)
+
+    # 1. include_nonpublic=False
+    refs_public = tf_fw._collect_live(SemanticTier.ARRAY_API, include_nonpublic=False)
+    assert any("tf.image.resize" in r.api_path for r in refs_public)
+    assert any("tf.lookup.StaticHashTable" in r.api_path for r in refs_public)
+    assert any("tf.nn.relu" in r.api_path for r in refs_public)
+    assert not any("tf.image._private" in r.api_path for r in refs_public)
+    assert not any("tf.lookup._private_table" in r.api_path for r in refs_public)
+
+    # 2. include_nonpublic=True
+    refs_nonpublic = tf_fw._collect_live(SemanticTier.ARRAY_API, include_nonpublic=True)
+    assert any("tf.image._private" in r.api_path for r in refs_nonpublic)
+    assert any("tf.lookup._private_table" in r.api_path for r in refs_nonpublic)
+
+    # 3. Exception in inspect
+    def mock_broken_inspect(obj: Any, name: str, **kwargs: Any) -> Any:
+        """Mock broken inspect raising on image, lookup, and nn.
+
+        Args:
+            obj: Inspected object.
+            name: Fully qualified target name.
+            **kwargs: Extra inspect kwargs.
+
+        Returns:
+            GhostRef object.
+
+        Raises:
+            RuntimeError: If target belongs to image, lookup, or nn.
+        """
+        if "image" in name or "lookup" in name or "nn" in name:
+            raise RuntimeError("Inspect failure")
+        return GhostInspector.inspect(obj, name, **kwargs)
+
+    monkeypatch.setattr(
+        "ml_ecosystem_snapshots.frameworks.tensorflow.GhostInspector.inspect",
+        mock_broken_inspect,
+    )
+    refs_err = tf_fw._collect_live(SemanticTier.ARRAY_API, include_nonpublic=False)
+    assert not any("tf.image.resize" in r.api_path for r in refs_err)
+    assert not any("tf.nn.relu" in r.api_path for r in refs_err)
+
+
+def test_tensorflow_get_tf_exception(monkeypatch: Any) -> None:
+    """Verify _get_tf returns None when importing tensorflow raises Exception.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    import builtins
+    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
+
+    monkeypatch.setattr(tf_fw, "tf", None)
+    monkeypatch.delitem(sys.modules, "tensorflow", raising=False)
+
+    real_import = builtins.__import__
+
+    def failing_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Failing import for tensorflow.
+
+        Args:
+            name: Module name.
+            *args: Positional args.
+            **kwargs: Keyword args.
+
+        Returns:
+            Module or raises RuntimeError.
+        """
+        if name == "tensorflow":
+            raise RuntimeError("TF boom")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", failing_import)
+    assert tf_fw._get_tf() is None
+
+    # Test _get_tf when import succeeds
+    monkeypatch.setattr(builtins, "__import__", real_import)
+    monkeypatch.setattr(tf_fw, "tf", None)
+    fake_tf_success = types.ModuleType("tensorflow")
+    monkeypatch.setitem(sys.modules, "tensorflow", fake_tf_success)
+    assert tf_fw._get_tf() is fake_tf_success

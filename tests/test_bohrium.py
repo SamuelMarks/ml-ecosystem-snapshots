@@ -5,7 +5,7 @@ import types
 from typing import Any
 import pytest
 
-from ml_framework_snapshots.frameworks.bohrium import (
+from ml_ecosystem_snapshots.frameworks.bohrium import (
     CANONICAL_BOHRIUM_OPS,
     _get_bohrium,
     collect_api,
@@ -19,7 +19,7 @@ from ml_switcheroo_ir.schema.ghost import (
 def test_collect_api_bohrium_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify collect_api returns CANONICAL_BOHRIUM_OPS fallback when bohrium is absent."""
     monkeypatch.setattr(
-        "ml_framework_snapshots.frameworks.bohrium._get_bohrium", lambda: None
+        "ml_ecosystem_snapshots.frameworks.bohrium._get_bohrium", lambda: None
     )
     refs = collect_api(SemanticTier.ARRAY_API)
     assert len(refs) == len(CANONICAL_BOHRIUM_OPS)
@@ -46,7 +46,7 @@ def test_collect_api_bohrium_live(monkeypatch: pytest.MonkeyPatch) -> None:
             pass
 
     monkeypatch.setattr(
-        "ml_framework_snapshots.frameworks.bohrium._get_bohrium", lambda: FakeBohrium()
+        "ml_ecosystem_snapshots.frameworks.bohrium._get_bohrium", lambda: FakeBohrium()
     )
     refs = collect_api(SemanticTier.ARRAY_API)
     assert len(refs) >= 2
@@ -92,14 +92,14 @@ def test_collect_api_bohrium_inspection_exception(
         array = "broken"
 
     monkeypatch.setattr(
-        "ml_framework_snapshots.frameworks.bohrium._get_bohrium", lambda: FlakyBohrium()
+        "ml_ecosystem_snapshots.frameworks.bohrium._get_bohrium", lambda: FlakyBohrium()
     )
 
     def mock_inspect(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("Inspection failure")
 
     monkeypatch.setattr(
-        "ml_framework_snapshots.frameworks.bohrium.GhostInspector.inspect", mock_inspect
+        "ml_ecosystem_snapshots.frameworks.bohrium.GhostInspector.inspect", mock_inspect
     )
     refs = collect_api(SemanticTier.ARRAY_API)
     assert refs == []

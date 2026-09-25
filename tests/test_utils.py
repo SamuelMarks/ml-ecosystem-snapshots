@@ -3,7 +3,7 @@
 from typing import Any
 
 
-from ml_framework_snapshots.utils import get_all_members, extract_c_extension_signature
+from ml_ecosystem_snapshots.utils import get_all_members, extract_c_extension_signature
 
 
 class FaultyModule:
@@ -132,7 +132,7 @@ def test_extract_c_extension_signatures() -> None:
 
 def test_utils_branches() -> None:
     """Test extract_c_extension_signature on classes with whitespace docstrings."""
-    from ml_framework_snapshots.utils import (
+    from ml_ecosystem_snapshots.utils import (
         extract_c_extension_signature,
     )
 
@@ -147,7 +147,7 @@ def test_utils_branches() -> None:
 
 def test_normalize_c_sig_args_and_unparse_branches() -> None:
     """Test branches in _normalize_c_sig_args, _parse_c_extension_sig_str, and docstring usage scanning."""
-    from ml_framework_snapshots.utils import (
+    from ml_ecosystem_snapshots.utils import (
         _normalize_c_sig_args,
         _parse_c_extension_sig_str,
     )
@@ -200,7 +200,7 @@ def test_normalize_c_sig_args_and_unparse_branches() -> None:
 
 def test_tablegen_list_and_traits() -> None:
     """Test TableGen list splitting and trait extraction across complex syntax structures."""
-    from ml_framework_snapshots.utils import (
+    from ml_ecosystem_snapshots.utils import (
         extract_tablegen_traits,
         split_tablegen_list,
     )
@@ -265,7 +265,7 @@ def test_tablegen_list_and_traits() -> None:
     from unittest.mock import patch
 
     with patch(
-        "ml_framework_snapshots.utils.split_tablegen_list",
+        "ml_ecosystem_snapshots.utils.split_tablegen_list",
         return_value=["// comment", "   ", "TraitA"],
     ):
         res_mocked = extract_tablegen_traits("[dummy]")
@@ -282,7 +282,7 @@ def test_get_custom_snapshots_paths_deduplication(
         monkeypatch: Pytest monkeypatch fixture.
     """
     import os
-    from ml_framework_snapshots.utils import get_custom_snapshots_paths
+    from ml_ecosystem_snapshots.utils import get_custom_snapshots_paths
 
     p1 = str(tmp_path / "snap1")
     os.makedirs(p1, exist_ok=True)
@@ -297,7 +297,7 @@ def test_get_custom_snapshots_paths_deduplication(
 def test_resolve_griffe_parser_setattr_failure() -> None:
     """Test resolve_griffe_parser when setting fallback _missing_ raises an exception."""
     from unittest import mock
-    from ml_framework_snapshots.utils import resolve_griffe_parser
+    from ml_ecosystem_snapshots.utils import resolve_griffe_parser
 
     orig_hasattr = hasattr
     orig_setattr = setattr
@@ -343,7 +343,7 @@ def test_parse_docstring_with_griffe_import_error() -> None:
     """Test parse_docstring_with_griffe returns empty list when griffe cannot be imported."""
     import sys
     from unittest.mock import patch
-    from ml_framework_snapshots.utils import parse_docstring_with_griffe
+    from ml_ecosystem_snapshots.utils import parse_docstring_with_griffe
 
     with patch.dict(sys.modules, {"griffe": None}):
         sections = parse_docstring_with_griffe("Some docstring")
@@ -355,7 +355,7 @@ def test_resolve_griffe_parser_has_rest() -> None:
     import sys
     import types
     from unittest.mock import patch
-    from ml_framework_snapshots.utils import resolve_griffe_parser
+    from ml_ecosystem_snapshots.utils import resolve_griffe_parser
 
     class MockParser:
         """Mock parser class with rest attribute."""
@@ -374,7 +374,7 @@ def test_resolve_griffe_parser_has_rest() -> None:
 def test_parse_docstring_with_griffe_parse_exception() -> None:
     """Test parse_docstring_with_griffe when griffe.parse raises an exception."""
     from unittest.mock import patch
-    from ml_framework_snapshots.utils import parse_docstring_with_griffe
+    from ml_ecosystem_snapshots.utils import parse_docstring_with_griffe
 
     with patch("griffe.parse", side_effect=ValueError("simulated parse error")):
         res = parse_docstring_with_griffe("some docstring text")
@@ -383,7 +383,7 @@ def test_parse_docstring_with_griffe_parse_exception() -> None:
 
 def test_is_offline_mode_env_vars(monkeypatch: Any) -> None:
     """Test is_offline_mode across all truthy and falsey environment values."""
-    from ml_framework_snapshots.utils import is_offline_mode
+    from ml_ecosystem_snapshots.utils import is_offline_mode
 
     monkeypatch.delenv("ML_SNAPSHOTS_OFFLINE", raising=False)
     monkeypatch.delenv("ML_FRAMEWORK_SNAPSHOTS_OFFLINE", raising=False)

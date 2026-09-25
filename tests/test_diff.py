@@ -1,7 +1,7 @@
 """Module docstring."""
 
 from typing import Any, Dict, List
-from ml_framework_snapshots.diff import diff_snapshots, generate_changelog
+from ml_ecosystem_snapshots.diff import diff_snapshots, generate_changelog
 
 
 def test_diff_snapshots() -> None:
@@ -259,7 +259,7 @@ def test_generate_changelog_empty() -> None:
 
 def test_changelog_combinations() -> None:
     """Function docstring."""
-    from ml_framework_snapshots.diff import DiffResult
+    from ml_ecosystem_snapshots.diff import DiffResult
 
     # Only added
     res1 = DiffResult(
@@ -310,7 +310,7 @@ def test_changelog_combinations() -> None:
 
 def test_diff_branches() -> None:
     """Function docstring."""
-    from ml_framework_snapshots.diff import diff_snapshots
+    from ml_ecosystem_snapshots.diff import diff_snapshots
 
     # Hit line 81->87 (_compare_params empty)
     s1 = {
@@ -358,7 +358,7 @@ def test_diff_branches() -> None:
 
 def test_diff_branches_more() -> None:
     """Function docstring."""
-    from ml_framework_snapshots.diff import diff_snapshots
+    from ml_ecosystem_snapshots.diff import diff_snapshots
 
     s1 = {
         "categories": {

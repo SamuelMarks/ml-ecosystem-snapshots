@@ -3,7 +3,7 @@
 from typing import Any, Dict, List
 
 
-from ml_framework_snapshots.models import (
+from ml_ecosystem_snapshots.models import (
     ExtendedGhostParam,
     GhostInspector,
     GhostIsaRef,
@@ -632,7 +632,7 @@ def test_ghost_inspector_griffe_overloads(mocker: Any) -> None:
 
 def test_models_branches() -> None:
     """Function docstring."""
-    from ml_framework_snapshots.models import sanitize_type_str
+    from ml_ecosystem_snapshots.models import sanitize_type_str
 
     assert sanitize_type_str("typing.List") == "list"
     assert sanitize_type_str("builtins.str") == "builtins.str"
@@ -640,13 +640,13 @@ def test_models_branches() -> None:
 
 def test_preload_griffe_cache() -> None:
     """Test preloading griffe cache for specified and default frameworks."""
-    from ml_framework_snapshots.models import preload_griffe_cache, _GRIFFE_CACHE
+    from ml_ecosystem_snapshots.models import preload_griffe_cache, _GRIFFE_CACHE
 
-    preload_griffe_cache(["ml_framework_snapshots"])
-    assert "ml_framework_snapshots" in _GRIFFE_CACHE
+    preload_griffe_cache(["ml_ecosystem_snapshots"])
+    assert "ml_ecosystem_snapshots" in _GRIFFE_CACHE
 
     # Call again to hit the already cached branch
-    preload_griffe_cache(["ml_framework_snapshots"])
+    preload_griffe_cache(["ml_ecosystem_snapshots"])
 
     preload_griffe_cache(["non_existent_framework_xyz"])
 
@@ -654,11 +654,11 @@ def test_preload_griffe_cache() -> None:
 def test_inspect_griffe_node_direct() -> None:
     """Test inspecting a Griffe node directly without live object."""
     import griffe
-    from ml_framework_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.models import GhostInspector
 
-    mod = griffe.load("ml_framework_snapshots.models")
+    mod = griffe.load("ml_ecosystem_snapshots.models")
     ref = GhostInspector.inspect(
-        mod["GhostInspector"], "ml_framework_snapshots.models.GhostInspector"
+        mod["GhostInspector"], "ml_ecosystem_snapshots.models.GhostInspector"
     )
     assert ref.name == "GhostInspector"
     assert ref.kind == "class"
@@ -666,7 +666,7 @@ def test_inspect_griffe_node_direct() -> None:
 
 def test_sanitize_type_str_empty_after_strip() -> None:
     """Test sanitize_type_str when strip_sphinx_roles produces an empty string."""
-    from ml_framework_snapshots.models import sanitize_type_str
+    from ml_ecosystem_snapshots.models import sanitize_type_str
 
     assert sanitize_type_str(":class:``") == ""
 
@@ -852,7 +852,7 @@ def test_ghost_inspector_c_ext_overloads_with_literal_and_standard_enum(
     mock_c_sig.overloads = [mock_ov]
 
     mocker.patch(
-        "ml_framework_snapshots.models.extract_c_extension_signature",
+        "ml_ecosystem_snapshots.models.extract_c_extension_signature",
         return_value=mock_c_sig,
     )
 
@@ -888,7 +888,7 @@ def test_ghost_inspector_literal_param() -> None:
 
 def test_extract_accepted_kwargs_from_ast() -> None:
     """Test extracting accepted kwargs via static AST analysis."""
-    from ml_framework_snapshots.models import extract_accepted_kwargs_from_ast
+    from ml_ecosystem_snapshots.models import extract_accepted_kwargs_from_ast
 
     def sample_kwargs_fn(**kwargs: Any) -> None:
         """Sample function querying kwargs in various ways."""
@@ -932,7 +932,7 @@ def test_extract_accepted_kwargs_from_ast() -> None:
 
 def test_ghost_instruction_and_operation_refs() -> None:
     """Test first-class GhostInstructionRef and GhostOperationRef schemas and hydration."""
-    from ml_framework_snapshots.models import (
+    from ml_ecosystem_snapshots.models import (
         GhostInstructionRef,
         GhostOperationRef,
         GhostResult,
@@ -1022,7 +1022,7 @@ def test_ghost_inspector_griffe_param_not_in_cdd(mocker: Any) -> None:
         return_value={"params": {"x": {"doc": "x doc"}}},
     )
     mocker.patch(
-        "ml_framework_snapshots.models.extract_griffe_docstring_metadata",
+        "ml_ecosystem_snapshots.models.extract_griffe_docstring_metadata",
         return_value={
             "params": {"extra_param": {"doc": "extra param doc", "typ": "int"}}
         },

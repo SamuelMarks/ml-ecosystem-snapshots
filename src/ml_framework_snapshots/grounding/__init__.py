@@ -1,33 +1,25 @@
-"""Anti-Hallucination Grounding SDK for machine learning frameworks and hardware ISAs."""
+"""Backward-compatibility shim for ml_framework_snapshots.grounding.
 
-from ml_framework_snapshots.grounding.compiler import (
-    validate_mlir_op,
-    validate_stablehlo_op,
-)
-from ml_framework_snapshots.grounding.engine import (
-    GroundingEngine,
-    compute_levenshtein,
-)
-from ml_framework_snapshots.grounding.hardware import (
-    validate_rdna_instruction,
-    validate_sass_instruction,
-)
-from ml_framework_snapshots.grounding.models import (
-    DiagnosticSeverity,
-    GroundingDiagnostic,
-    GroundingReport,
-)
-from ml_framework_snapshots.grounding.python_fw import validate_python_call
+Transparently re-exports all members from ml_ecosystem_snapshots.grounding.
+"""
 
-__all__ = [
-    "GroundingEngine",
-    "GroundingReport",
-    "GroundingDiagnostic",
-    "DiagnosticSeverity",
-    "compute_levenshtein",
-    "validate_sass_instruction",
-    "validate_rdna_instruction",
-    "validate_stablehlo_op",
-    "validate_mlir_op",
-    "validate_python_call",
-]
+from __future__ import annotations
+
+import sys
+from typing import TYPE_CHECKING
+import ml_ecosystem_snapshots.grounding as _orig_mod
+
+if TYPE_CHECKING:
+    from ml_ecosystem_snapshots.grounding import *  # noqa: F401, F403
+
+# Re-export all attributes including internal and dunder methods
+for _k in dir(_orig_mod):
+    globals()[_k] = getattr(_orig_mod, _k)
+
+__all__ = getattr(
+    _orig_mod,
+    "__all__",
+    [k for k in dir(_orig_mod) if not k.startswith("_")],
+)
+
+sys.modules[__name__] = _orig_mod

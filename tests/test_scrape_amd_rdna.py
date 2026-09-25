@@ -7,7 +7,7 @@ import urllib.request
 from unittest import mock
 import typing
 
-from ml_framework_snapshots.tools import scrape_amd_rdna
+from ml_ecosystem_snapshots.tools import scrape_amd_rdna
 
 
 def test_fetch_td_file_success() -> None:
@@ -30,7 +30,7 @@ def test_fetch_td_file_cache(tmp_path: typing.Any, monkeypatch: typing.Any) -> N
         monkeypatch: Pytest monkeypatch fixture.
     """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    cache_dir = os.path.join(str(tmp_path), "ml_framework_snapshots", "amdgpu_td")
+    cache_dir = os.path.join(str(tmp_path), "ml_ecosystem_snapshots", "amdgpu_td")
     os.makedirs(cache_dir, exist_ok=True)
     cache_file = os.path.join(cache_dir, "cached.td")
     with open(cache_file, "w", encoding="utf-8") as f:
@@ -63,7 +63,7 @@ def test_fetch_td_file_cache_exceptions(
         monkeypatch: Pytest monkeypatch fixture.
     """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    cache_dir = os.path.join(str(tmp_path), "ml_framework_snapshots", "amdgpu_td")
+    cache_dir = os.path.join(str(tmp_path), "ml_ecosystem_snapshots", "amdgpu_td")
     os.makedirs(cache_dir, exist_ok=True)
     unreadable = os.path.join(cache_dir, "unreadable.td")
     with open(unreadable, "w", encoding="utf-8") as f:
@@ -125,7 +125,7 @@ def S_MOV_B32 : SOP1_32 <"s_mov_b32">;
         output_path = os.path.join(temp_dir, "amd_rdna_exhaustive.json")
 
         with mock.patch(
-            "ml_framework_snapshots.tools.scrape_amd_rdna.fetch_td_file"
+            "ml_ecosystem_snapshots.tools.scrape_amd_rdna.fetch_td_file"
         ) as mock_fetch:
 
             def fetch_side_effect(
@@ -147,7 +147,7 @@ def S_MOV_B32 : SOP1_32 <"s_mov_b32">;
             mock_fetch.side_effect = fetch_side_effect
 
             with mock.patch(
-                "ml_framework_snapshots.tools.scrape_amd_rdna.open"
+                "ml_ecosystem_snapshots.tools.scrape_amd_rdna.open"
             ) as mock_open:
                 original_open = open
 

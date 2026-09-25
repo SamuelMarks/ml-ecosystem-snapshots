@@ -3,7 +3,7 @@
 from typing import Any
 
 
-from ml_framework_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.models import GhostInspector
 
 
 class BaseLayer:

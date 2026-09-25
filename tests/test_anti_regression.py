@@ -23,30 +23,30 @@ def get_bundled_json(filename: str) -> Any:
     """
     pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     fpath = os.path.join(
-        pkg_dir, "src", "ml_framework_snapshots", "frameworks", filename
+        pkg_dir, "src", "ml_ecosystem_snapshots", "frameworks", filename
     )
     if os.path.isfile(fpath):
         with open(fpath, "r", encoding="utf-8") as f:
             data = json.load(f)
     else:
         if "sass" in filename:
-            from ml_framework_snapshots.frameworks.nvidia_sass import (
+            from ml_ecosystem_snapshots.frameworks.nvidia_sass import (
                 _load_exhaustive_sass,
             )
 
             data = _load_exhaustive_sass()
         elif "rdna" in filename:
-            from ml_framework_snapshots.frameworks.amd_rdna import _load_exhaustive_rdna
+            from ml_ecosystem_snapshots.frameworks.amd_rdna import _load_exhaustive_rdna
 
             data = _load_exhaustive_rdna()
         elif "mlir" in filename:
-            from ml_framework_snapshots.frameworks.mlir import (
+            from ml_ecosystem_snapshots.frameworks.mlir import (
                 _get_canonical_mlir_records,
             )
 
             data = _get_canonical_mlir_records()
         elif "stablehlo" in filename:
-            from ml_framework_snapshots.frameworks.stablehlo import (
+            from ml_ecosystem_snapshots.frameworks.stablehlo import (
                 _get_canonical_stablehlo_records,
             )
 
@@ -86,7 +86,7 @@ def test_no_decay_to_varargs_for_top_pytorch_ops() -> None:
     from torch_mock import ensure_torch
 
     torch = ensure_torch()
-    from ml_framework_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.models import GhostInspector
 
     top_ops = [
         (torch.relu, "torch.relu"),
@@ -183,7 +183,7 @@ def test_separation_of_ssa_operands_from_attributes_in_dialects() -> None:
 
 def test_dask_minimum_symbol_threshold() -> None:
     """Verify Dask snapshot contains valid endpoints above threshold."""
-    from ml_framework_snapshots.frameworks.dask import collect_api
+    from ml_ecosystem_snapshots.frameworks.dask import collect_api
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     arr_refs = collect_api(SemanticTier.ARRAY_API)
@@ -197,7 +197,7 @@ def test_dask_minimum_symbol_threshold() -> None:
 def test_all_new_snapshots_exist_and_nonempty() -> None:
     """Verify that all target snapshots exist, are valid JSON, and exceed size thresholds."""
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    snap_dir = os.path.join(repo_root, "src", "ml_framework_snapshots", "snapshots")
+    snap_dir = os.path.join(repo_root, "src", "ml_ecosystem_snapshots", "snapshots")
 
     expected_prefixes = [
         "wgsl",

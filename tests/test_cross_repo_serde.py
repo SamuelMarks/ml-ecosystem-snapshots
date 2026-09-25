@@ -4,7 +4,7 @@ import json
 import os
 
 from ml_switcheroo_ir.schema.ghost import ParameterKind
-from ml_framework_snapshots.models import (
+from ml_ecosystem_snapshots.models import (
     ExtendedGhostParam,
     ExtendedGhostRef,
     GhostIsaRef,
@@ -91,7 +91,7 @@ def test_migrate_ghost_ref_v2_roundtrip() -> None:
 def test_exhaustive_snapshot_loading_serde() -> None:
     """Verify all 5 exhaustive snapshot files deserialize into Ghost Protocol v2 models."""
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    fw_dir = os.path.join(repo_root, "src", "ml_framework_snapshots", "frameworks")
+    fw_dir = os.path.join(repo_root, "src", "ml_ecosystem_snapshots", "frameworks")
 
     for fname in [
         "stablehlo_exhaustive.json",
@@ -120,8 +120,8 @@ def test_exhaustive_snapshot_loading_serde() -> None:
 def test_cross_repo_dtype_coverage() -> None:
     """Verify all ml_switcheroo_ir DType variants are supported and roundtrip serialized."""
     import ml_switcheroo_ir as ir
-    from ml_framework_snapshots.compliance import DTYPE_BITWIDTHS, get_dtype_bitwidth
-    from ml_framework_snapshots.mcp_server import normalize_dtype_name
+    from ml_ecosystem_snapshots.compliance import DTYPE_BITWIDTHS, get_dtype_bitwidth
+    from ml_ecosystem_snapshots.mcp_server import normalize_dtype_name
 
     all_ir_dtypes = [dt.value for dt in ir.DType]
     assert len(all_ir_dtypes) >= 30

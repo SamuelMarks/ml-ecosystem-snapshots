@@ -1,44 +1,25 @@
-"""Pax API Snapshot Extractor."""
+"""Backward-compatibility shim for ml_framework_snapshots.frameworks.pax.
 
-from typing import List
-import inspect
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
-from ml_framework_snapshots.models import GhostInspector
-from ml_framework_snapshots.utils import get_all_members
+Transparently re-exports all members from ml_ecosystem_snapshots.frameworks.pax.
+"""
 
-try:
-    import paxml
-    import praxis
-    from praxis import layers
-except Exception:
-    paxml = None
-    praxis = None
-    layers = None
+from __future__ import annotations
 
+import sys
+from typing import TYPE_CHECKING
+import ml_ecosystem_snapshots.frameworks.pax as _orig_mod
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
-    """Collect pax API.
+if TYPE_CHECKING:
+    from ml_ecosystem_snapshots.frameworks.pax import *  # noqa: F401, F403
 
-    Args:
-        category: The category of API to collect.
-        include_nonpublic: Whether to include non-public APIs.
+# Re-export all attributes including internal and dunder methods
+for _k in dir(_orig_mod):
+    globals()[_k] = getattr(_orig_mod, _k)
 
-    Returns:
-        List of GhostRefs.
-    """
-    results: List[GhostRef] = []
-    if not layers:
-        return results
+__all__ = getattr(
+    _orig_mod,
+    "__all__",
+    [k for k in dir(_orig_mod) if not k.startswith("_")],
+)
 
-    if category == SemanticTier.NEURAL:
-        for name, obj in get_all_members(layers):
-            if not include_nonpublic and name.startswith("_"):
-                continue
-            if inspect.isclass(obj):
-                try:
-                    results.append(GhostInspector.inspect(obj, f"praxis.layers.{name}"))
-                except Exception:
-                    pass
-    return results
+sys.modules[__name__] = _orig_mod

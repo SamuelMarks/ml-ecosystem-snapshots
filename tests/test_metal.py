@@ -3,13 +3,13 @@
 import argparse
 import pytest
 
-from ml_framework_snapshots.frameworks.metal import (
+from ml_ecosystem_snapshots.frameworks.metal import (
     CANONICAL_METAL_OPS,
     _load_metal_ops,
     collect_api,
 )
-from ml_framework_snapshots.mcp_server import check_metal_op
-from ml_framework_snapshots.cli import cmd_check_metal
+from ml_ecosystem_snapshots.mcp_server import check_metal_op
+from ml_ecosystem_snapshots.cli import cmd_check_metal
 from ml_switcheroo_ir.schema.ghost import (
     GhostOperationRef,
     OperandDirection,

@@ -1,6 +1,6 @@
 # Usage Guide & Examples
 
-`ml-framework-snapshots` provides a comprehensive command-line interface, a programmatic Grounding SDK, and a Model Context Protocol (MCP) server for capturing, diffing, validating, and exporting framework signatures, compiler IRs, and hardware ISAs.
+`ml-ecosystem-snapshots` provides a comprehensive command-line interface, a programmatic Grounding SDK, and a Model Context Protocol (MCP) server for capturing, diffing, validating, and exporting framework signatures, compiler IRs, and hardware ISAs.
 
 ---
 
@@ -25,13 +25,13 @@ The `capture` subcommand inspects installed ML frameworks in your environment, s
 
 ```bash
 # Capture PyTorch, JAX, and Keras into ./snapshots
-ml_framework_snapshots capture torch jax keras --out-dir ./snapshots
+ml_ecosystem_snapshots capture torch jax keras --out-dir ./snapshots
 ```
 
 ### Capture All Installed Frameworks
 
 ```bash
-ml_framework_snapshots capture all --out-dir ./snapshots
+ml_ecosystem_snapshots capture all --out-dir ./snapshots
 ```
 
 ### Include Non-Public APIs
@@ -39,7 +39,7 @@ ml_framework_snapshots capture all --out-dir ./snapshots
 By default, private methods and functions (prefixed with `_`) are excluded. Use `--include-nonpublic` to extract internal APIs:
 
 ```bash
-ml_framework_snapshots capture torch --include-nonpublic --out-dir ./snapshots
+ml_ecosystem_snapshots capture torch --include-nonpublic --out-dir ./snapshots
 ```
 
 ### Capturing Hardware ISAs & Compiler Dialects
@@ -48,19 +48,19 @@ The tool captures pre-compiled hardware ISAs and compiler specifications without
 
 ```bash
 # Capture NVIDIA SASS assembly catalog
-ml_framework_snapshots capture nvidia_sass --out-dir ./snapshots
+ml_ecosystem_snapshots capture nvidia_sass --out-dir ./snapshots
 
 # Capture AMD RDNA / CDNA assembly catalog
-ml_framework_snapshots capture amd_rdna --out-dir ./snapshots
+ml_ecosystem_snapshots capture amd_rdna --out-dir ./snapshots
 
 # Capture NVIDIA PTX assembly catalog
-ml_framework_snapshots capture nvidia_ptx --out-dir ./snapshots
+ml_ecosystem_snapshots capture nvidia_ptx --out-dir ./snapshots
 
 # Capture StableHLO compiler dialect
-ml_framework_snapshots capture stablehlo --out-dir ./snapshots
+ml_ecosystem_snapshots capture stablehlo --out-dir ./snapshots
 
 # Capture Core MLIR dialects
-ml_framework_snapshots capture mlir --out-dir ./snapshots
+ml_ecosystem_snapshots capture mlir --out-dir ./snapshots
 ```
 
 ### Regenerating Exhaustive Target Catalogs
@@ -69,38 +69,38 @@ To update the exhaustive JSON dumps (e.g., when a new CUDA Toolkit, LLVM release
 
 ```bash
 # Rebuild NVIDIA SASS catalog from CUDA Toolkit tables
-python -m ml_framework_snapshots.tools.scrape_nvidia_sass
+python -m ml_ecosystem_snapshots.tools.scrape_nvidia_sass
 
 # Rebuild AMD RDNA / CDNA catalog from LLVM TableGen sources
-python -m ml_framework_snapshots.tools.scrape_amd_rdna
+python -m ml_ecosystem_snapshots.tools.scrape_amd_rdna
 
 # Rebuild NVIDIA PTX catalog
-python -m ml_framework_snapshots.tools.scrape_nvidia_ptx
+python -m ml_ecosystem_snapshots.tools.scrape_nvidia_ptx
 
 # Rebuild Core MLIR dialect catalog
-python -m ml_framework_snapshots.tools.scrape_mlir
+python -m ml_ecosystem_snapshots.tools.scrape_mlir
 
 # Rebuild StableHLO dialect catalog
-python -m ml_framework_snapshots.tools.build_stablehlo_snapshot
+python -m ml_ecosystem_snapshots.tools.build_stablehlo_snapshot
 ```
 
 ---
 
 ## 2. Offline Snapshots & Cache Management
 
-`ml-framework-snapshots` resolves snapshot references across a multi-tier search cascade:
+`ml-ecosystem-snapshots` resolves snapshot references across a multi-tier search cascade:
 1. Exact file paths (`./snapshots/torch_v2.4.0.json`)
 2. Custom paths defined in `$ML_SNAPSHOTS_PATH` or `$ML_FRAMEWORK_SNAPSHOTS_PATH`
-3. Local user cache directory (`~/.cache/ml_framework_snapshots/snapshots/`)
+3. Local user cache directory (`~/.cache/ml_ecosystem_snapshots/snapshots/`)
 4. Project root `snapshots/`
-5. Package-bundled offline snapshots (`src/ml_framework_snapshots/snapshots/` and `frameworks/`)
+5. Package-bundled offline snapshots (`src/ml_ecosystem_snapshots/snapshots/` and `frameworks/`)
 
 ### Listing Available Snapshots
 
 List all bundled, cached, and local snapshots available offline:
 
 ```bash
-ml_framework_snapshots list-snapshots
+ml_ecosystem_snapshots list-snapshots
 ```
 
 ### Downloading Pre-Compiled Snapshots
@@ -109,13 +109,13 @@ Fetch official pre-compiled snapshot releases from GitHub into your local cache:
 
 ```bash
 # Pull a specific framework and version
-ml_framework_snapshots pull torch@2.4.0
+ml_ecosystem_snapshots pull torch@2.4.0
 
 # Pull JAX snapshot
-ml_framework_snapshots pull jax@0.4.30
+ml_ecosystem_snapshots pull jax@0.4.30
 
 # Download all canonical pre-compiled snapshot assets
-ml_framework_snapshots download-all
+ml_ecosystem_snapshots download-all
 ```
 
 ### Cryptographic Cache Integrity Verification
@@ -123,7 +123,7 @@ ml_framework_snapshots download-all
 Verify the SHA-256 checksums of all cached snapshot files:
 
 ```bash
-ml_framework_snapshots verify-local-cache
+ml_ecosystem_snapshots verify-local-cache
 ```
 
 ### Managing the Ephemeral SQLite FTS5 Index
@@ -132,13 +132,13 @@ The ephemeral SQLite FTS5 search index provides sub-millisecond symbol lookups w
 
 ```bash
 # Check index status and total indexed symbols
-ml_framework_snapshots index --status
+ml_ecosystem_snapshots index --status
 
 # Rebuild the search index across all available snapshots
-ml_framework_snapshots index --rebuild
+ml_ecosystem_snapshots index --rebuild
 
 # Clear the index database
-ml_framework_snapshots index --clean
+ml_ecosystem_snapshots index --clean
 ```
 
 ---
@@ -152,7 +152,7 @@ The `check` subcommand performs cleanroom verification of candidate framework im
 Test the compliance of a custom JAX wrapper against a reference JAX snapshot:
 
 ```bash
-ml_framework_snapshots check
+ml_ecosystem_snapshots check
     jax
     ~/repos/ml-switcheroo/src/ml_switcheroo/frameworks/jax.py
     --reference-prefix jax
@@ -183,7 +183,7 @@ Missing APIs (2):
 Test an independent project like `onnx9000-jax`:
 
 ```bash
-ml_framework_snapshots check
+ml_ecosystem_snapshots check
     jax
     ~/repos/ml-switcheroo/onnx9000/packages/python/onnx9000-jax
     --reference-prefix jax
@@ -199,7 +199,7 @@ The `diff` subcommand compares two snapshots, identifying additions, removals, p
 ### Generating a Terminal Summary
 
 ```bash
-ml_framework_snapshots diff ./snapshots/torch_v2.3.0.json ./snapshots/torch_v2.4.0.json
+ml_ecosystem_snapshots diff ./snapshots/torch_v2.3.0.json ./snapshots/torch_v2.4.0.json
 ```
 
 **Output:**
@@ -218,7 +218,7 @@ SIGNATURE CHANGED: 5
 Use `--changelog` to emit release notes with breaking vs. non-breaking classification:
 
 ```bash
-ml_framework_snapshots diff ./snapshots/jax_v0.4.30.json ./snapshots/jax_v0.4.31.json --changelog
+ml_ecosystem_snapshots diff ./snapshots/jax_v0.4.30.json ./snapshots/jax_v0.4.31.json --changelog
 ```
 
 **Example Output:**
@@ -249,7 +249,7 @@ Transform framework snapshots into diverse interface formats and schemas.
 Create PEP-484 type stub files with reconstructed module trees and overloads:
 
 ```bash
-ml_framework_snapshots generate-stubs --input torch --out-dir ./stubs/
+ml_ecosystem_snapshots generate-stubs --input torch --out-dir ./stubs/
 ```
 
 ### Export to Pydantic V2 Models
@@ -257,7 +257,7 @@ ml_framework_snapshots generate-stubs --input torch --out-dir ./stubs/
 Generate type-safe Pydantic models with `Field(description=...)` and overloaded union variants:
 
 ```bash
-ml_framework_snapshots export --input torch --format pydantic --out-dir ./models/
+ml_ecosystem_snapshots export --input torch --format pydantic --out-dir ./models/
 ```
 
 ### Export to OpenAPI 3.0 Specifications
@@ -265,7 +265,7 @@ ml_framework_snapshots export --input torch --format pydantic --out-dir ./models
 Generate OpenAPI REST interface routes:
 
 ```bash
-ml_framework_snapshots export --input torch --format openapi --out-dir ./openapi/
+ml_ecosystem_snapshots export --input torch --format openapi --out-dir ./openapi/
 ```
 
 ### Export to JSON Schema
@@ -273,7 +273,7 @@ ml_framework_snapshots export --input torch --format openapi --out-dir ./openapi
 Generate JSON Schema validation specifications:
 
 ```bash
-ml_framework_snapshots export --input jax --format json_schema --out-dir ./json_schema/
+ml_ecosystem_snapshots export --input jax --format json_schema --out-dir ./json_schema/
 ```
 
 ### Export to Protobuf v3 & gRPC
@@ -281,7 +281,7 @@ ml_framework_snapshots export --input jax --format json_schema --out-dir ./json_
 Generate `.proto` message definitions, standard enums (Reduction, Padding, Layout), and service stubs:
 
 ```bash
-ml_framework_snapshots export --input torch --format protobuf --out-dir ./proto/
+ml_ecosystem_snapshots export --input torch --format protobuf --out-dir ./proto/
 ```
 
 ### Export LLM Prompt Contexts
@@ -289,7 +289,7 @@ ml_framework_snapshots export --input torch --format protobuf --out-dir ./proto/
 Generate compact Markdown specifications with parameter constraints and built-in hallucination guards:
 
 ```bash
-ml_framework_snapshots export --input torch --format llm_prompt --out-dir ./prompts/
+ml_ecosystem_snapshots export --input torch --format llm_prompt --out-dir ./prompts/
 ```
 
 ---
@@ -304,13 +304,13 @@ Validate instruction legality, operands, modifiers, and SM architecture support:
 
 ```bash
 # Verify Hopper asynchronous warpgroup matrix instruction
-ml_framework_snapshots check-sass WGMMA --sm-arch sm_90 --modifiers .F16
+ml_ecosystem_snapshots check-sass WGMMA --sm-arch sm_90 --modifiers .F16
 
 # Verify single precision fused multiply-add
-ml_framework_snapshots check-sass FFMA --operands R0,R1,R2,R3 --modifiers .FTZ --sm-arch sm_80
+ml_ecosystem_snapshots check-sass FFMA --operands R0,R1,R2,R3 --modifiers .FTZ --sm-arch sm_80
 
 # Verify an entire SASS assembly file
-ml_framework_snapshots check-sass --file kernel.sass --sm-arch sm_90
+ml_ecosystem_snapshots check-sass --file kernel.sass --sm-arch sm_90
 ```
 
 ### AMD RDNA / CDNA Instruction Validation (`check-rdna`)
@@ -319,13 +319,13 @@ Validate RDNA/CDNA instructions, wave sizes, modifiers, and GFX generations:
 
 ```bash
 # Verify RDNA3 dual-issue instruction
-ml_framework_snapshots check-rdna v_dual_fmac_f32 --gfx-arch GFX11/RDNA3
+ml_ecosystem_snapshots check-rdna v_dual_fmac_f32 --gfx-arch GFX11/RDNA3
 
 # Verify vector addition with operand modifiers
-ml_framework_snapshots check-rdna v_add_f32 --operands v0,v1,v2 --modifiers clamp --gfx-arch GFX10.3/RDNA2
+ml_ecosystem_snapshots check-rdna v_add_f32 --operands v0,v1,v2 --modifiers clamp --gfx-arch GFX10.3/RDNA2
 
 # Verify an entire RDNA assembly file
-ml_framework_snapshots check-rdna --file kernel.s --gfx-arch GFX11/RDNA3
+ml_ecosystem_snapshots check-rdna --file kernel.s --gfx-arch GFX11/RDNA3
 ```
 
 ### Core MLIR Dialect Verification (`check-mlir`)
@@ -334,10 +334,10 @@ Validate MLIR operations against TableGen traits and SSA operand counts:
 
 ```bash
 # Verify arith.addf operation
-ml_framework_snapshots check-mlir arith.addf --operands-count 2
+ml_ecosystem_snapshots check-mlir arith.addf --operands-count 2
 
 # Verify an entire MLIR text file
-ml_framework_snapshots check-mlir --file module.mlir
+ml_ecosystem_snapshots check-mlir --file module.mlir
 ```
 
 ### StableHLO Operation Verification (`check-stablehlo`)
@@ -346,12 +346,12 @@ Validate StableHLO operations against dimension number and region constraints:
 
 ```bash
 # Verify stablehlo.dot_general with mandatory dot_dimension_numbers attribute
-ml_framework_snapshots check-stablehlo stablehlo.dot_general
+ml_ecosystem_snapshots check-stablehlo stablehlo.dot_general
     --operands-count 2
     --attributes dot_dimension_numbers
 
 # Verify an entire StableHLO text file
-ml_framework_snapshots check-stablehlo --file graph.mlir
+ml_ecosystem_snapshots check-stablehlo --file graph.mlir
 ```
 
 ---
@@ -361,7 +361,7 @@ ml_framework_snapshots check-stablehlo --file graph.mlir
 Integrate the verification engine directly into your code synthesis pipelines, transpilers, or compiler passes.
 
 ```python
-from ml_framework_snapshots.grounding import (
+from ml_ecosystem_snapshots.grounding import (
     GroundingEngine,
     validate_python_call,
     validate_sass_instruction,
@@ -442,7 +442,7 @@ The MCP server connects AI coding agents directly to ground-truth signatures and
 ### Starting the Server
 
 ```bash
-ml_framework_snapshots mcp
+ml_ecosystem_snapshots mcp
 ```
 
 ### Example JSON-RPC Invocations

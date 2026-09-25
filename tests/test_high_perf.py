@@ -5,9 +5,9 @@ from typing import Any
 
 from unittest.mock import patch, MagicMock
 from ml_switcheroo_ir.schema.ghost import SemanticTier
-from ml_framework_snapshots.frameworks.triton import collect_api as triton_collect
-from ml_framework_snapshots.frameworks.onnxruntime import collect_api as onnx_collect
-from ml_framework_snapshots.frameworks.deepspeed import collect_api as ds_collect
+from ml_ecosystem_snapshots.frameworks.triton import collect_api as triton_collect
+from ml_ecosystem_snapshots.frameworks.onnxruntime import collect_api as onnx_collect
+from ml_ecosystem_snapshots.frameworks.deepspeed import collect_api as ds_collect
 
 
 def test_triton_collect() -> None:
@@ -52,7 +52,7 @@ def test_triton_collect() -> None:
     setattr(mock_math, "bad", 123)
     mock_tl.math = mock_math
 
-    with patch("ml_framework_snapshots.models.GhostInspector.inspect") as mock_inspect:
+    with patch("ml_ecosystem_snapshots.models.GhostInspector.inspect") as mock_inspect:
         mock_inspect.return_value = MagicMock()  # Return a dummy GhostRef
         with patch("importlib.import_module") as mock_import:
 
@@ -104,7 +104,7 @@ def test_onnx_collect() -> None:
     with (
         patch("importlib.import_module", return_value=mock_onnx),
         patch(
-            "ml_framework_snapshots.frameworks.onnxruntime.GhostInspector"
+            "ml_ecosystem_snapshots.frameworks.onnxruntime.GhostInspector"
         ) as MockInspector,
     ):
         from ml_switcheroo_ir.schema.ghost import GhostRef
@@ -137,7 +137,7 @@ def test_ds_collect() -> None:
     with (
         patch("importlib.import_module", return_value=mock_ds),
         patch(
-            "ml_framework_snapshots.frameworks.deepspeed.GhostInspector"
+            "ml_ecosystem_snapshots.frameworks.deepspeed.GhostInspector"
         ) as MockInspector,
     ):
         from ml_switcheroo_ir.schema.ghost import GhostRef

@@ -1,12 +1,12 @@
-ml-framework-snapshots
+ml-ecosystem-snapshots
 ======================
 
 [![License](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![CI](https://github.com/SamuelMarks/ml-framework-snapshots/actions/workflows/ci.yml/badge.svg)](https://github.com/SamuelMarks/ml-framework-snapshots/actions/workflows/ci.yml)
+[![CI](https://github.com/SamuelMarks/ml-ecosystem-snapshots/actions/workflows/ci.yml/badge.svg)](https://github.com/SamuelMarks/ml-ecosystem-snapshots/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/tests-100%25-brightgreen.svg)]()
 [![Docs](https://img.shields.io/badge/docs-100%25-brightgreen.svg)]()
 
-**ML Framework Snapshots** is a core component of the **ml-switcheroo** ecosystem. It is a toolset designed to statically extract and formalize API signatures, compiler intermediate representations (IR), and hardware instruction set architectures (ISAs) into stable, serializable `GhostRef` schemas (as defined in `ml_switcheroo_ir`).
+**ML Ecosystem Snapshots** is a core component of the **ml-switcheroo** ecosystem. It is a toolset designed to statically extract and formalize API signatures, compiler intermediate representations (IR), and hardware instruction set architectures (ISAs) into stable, serializable `GhostRef` schemas (as defined in `ml_switcheroo_ir`).
 
 By deeply introspecting libraries like PyTorch, JAX, TensorFlow, Keras, MLX, Triton, Core MLIR, StableHLO, NVIDIA SASS/PTX, and AMD RDNA without requiring heavy GPU drivers or native dependencies in downstream tools, this project acts as the foundational **"Ghost Mode"** layer for ML synthesis tools, compiler backends, and agentic anti-hallucination engines.
 
@@ -16,7 +16,7 @@ By deeply introspecting libraries like PyTorch, JAX, TensorFlow, Keras, MLX, Tri
 
 Machine Learning frameworks frequently utilize heavy GPU-bound libraries, complex C/C++ extensions, and dynamic metaprogramming. If you are building tools to analyze, compile, or transpile ML code, installing every ML framework into your runtime environment is prohibitive—especially for lightweight environments like WebAssembly (WASM), CI/CD pipelines, or edge devices.
 
-`ml-framework-snapshots` decouples **API discovery** from **API execution**. It allows you to:
+`ml-ecosystem-snapshots` decouples **API discovery** from **API execution**. It allows you to:
 1. Extract robust metadata (signatures, docstrings, type hints, overloads, return types, instruction scheduling) from installed ML frameworks and compiler ODS definitions into standard JSON snapshots.
 2. Ship those lightweight JSON snapshots to zero-dependency downstream tools.
 3. Ground Large Language Models (LLMs), transpilers, and IDEs against hallucinations via an in-memory Grounding SDK and a live Model Context Protocol (MCP) server.
@@ -77,20 +77,20 @@ Machine Learning frameworks frequently utilize heavy GPU-bound libraries, comple
 Requires **Python >= 3.10**.
 
 ```bash
-pip install ml-framework-snapshots
+pip install ml-ecosystem-snapshots
 ```
 
 ### Installation Extras
 
 ```bash
 # Install with heavy framework dependencies for live extraction
-pip install "ml-framework-snapshots[frameworks]"
+pip install "ml-ecosystem-snapshots[frameworks]"
 
 # Install with development and code generation tools
-pip install "ml-framework-snapshots[generate]"
+pip install "ml-ecosystem-snapshots[generate]"
 
 # Install with full test dependencies
-pip install "ml-framework-snapshots[test]"
+pip install "ml-ecosystem-snapshots[test]"
 ```
 
 *(Note: Running the CLI to diff, export, ground, or check existing pre-bundled JSON snapshots requires **zero** heavy ML dependencies.)*
@@ -99,14 +99,14 @@ pip install "ml-framework-snapshots[test]"
 
 ## 💻 CLI Usage
 
-The tool provides an extensive command line interface via `ml_framework_snapshots`:
+The tool provides an extensive command line interface via `ml_ecosystem_snapshots`:
 
 ### 1. Capture Snapshots
 
 Extract API structures from your local environment and save them as JSON:
 
 ```bash
-ml_framework_snapshots capture torch jax keras --out-dir ./snapshots
+ml_ecosystem_snapshots capture torch jax keras --out-dir ./snapshots
 ```
 *Flags:*
 - `--isolated`: Runs each extraction in an isolated child subprocess to prevent driver crashes.
@@ -117,7 +117,7 @@ ml_framework_snapshots capture torch jax keras --out-dir ./snapshots
 Test a local module's API compliance against a canonical reference snapshot:
 
 ```bash
-ml_framework_snapshots check ./snapshots/torch_v2.4.0.json ./my_project/src/my_torch_shim
+ml_ecosystem_snapshots check ./snapshots/torch_v2.4.0.json ./my_project/src/my_torch_shim
     --reference-prefix torch --target-prefix my_project.my_torch_shim
 ```
 
@@ -126,7 +126,7 @@ ml_framework_snapshots check ./snapshots/torch_v2.4.0.json ./my_project/src/my_t
 Compare two snapshots to detect additions, deletions, and breaking/non-breaking signature shifts:
 
 ```bash
-ml_framework_snapshots diff ./snapshots/jax_v0.4.30.json ./snapshots/jax_v0.4.31.json --changelog
+ml_ecosystem_snapshots diff ./snapshots/jax_v0.4.30.json ./snapshots/jax_v0.4.31.json --changelog
 ```
 
 ### 4. Generate Python Type Stubs (`.pyi`)
@@ -134,7 +134,7 @@ ml_framework_snapshots diff ./snapshots/jax_v0.4.30.json ./snapshots/jax_v0.4.31
 Export snapshots back into PEP-484 `.pyi` type stubs with sanitized signatures and overload definitions:
 
 ```bash
-ml_framework_snapshots generate-stubs --input ./snapshots/torch_v2.4.0.json --out-dir ./stubs/
+ml_ecosystem_snapshots generate-stubs --input ./snapshots/torch_v2.4.0.json --out-dir ./stubs/
 ```
 
 ### 5. Multi-Target Schema & Prompt Export
@@ -143,16 +143,16 @@ Export framework definitions to standard schemas or compact LLM prompt context:
 
 ```bash
 # Export to Pydantic V2 models
-ml_framework_snapshots export --input ./snapshots/torch_v2.4.0.json --format pydantic --out-dir ./models/
+ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format pydantic --out-dir ./models/
 
 # Export to OpenAPI 3.0 specification
-ml_framework_snapshots export --input ./snapshots/torch_v2.4.0.json --format openapi --out-dir ./openapi/
+ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format openapi --out-dir ./openapi/
 
 # Export to Protobuf v3 message and gRPC definitions
-ml_framework_snapshots export --input ./snapshots/torch_v2.4.0.json --format protobuf --out-dir ./proto/
+ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format protobuf --out-dir ./proto/
 
 # Export compact, typed LLM prompt context with hallucination guards
-ml_framework_snapshots export --input ./snapshots/torch_v2.4.0.json --format prompt --out-dir ./prompts/
+ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format prompt --out-dir ./prompts/
 ```
 
 ### 6. Hardware ISA & Compiler Dialect Verification
@@ -161,42 +161,42 @@ Directly validate assembly snippets and compiler IR from the terminal:
 
 ```bash
 # Validate NVIDIA SASS instruction against Hopper architecture
-ml_framework_snapshots check-sass WGMMA --sm-arch sm_90 --modifiers .F16
+ml_ecosystem_snapshots check-sass WGMMA --sm-arch sm_90 --modifiers .F16
 
 # Validate AMD RDNA instruction against RDNA3 architecture
-ml_framework_snapshots check-rdna v_dual_fmac_f32 --gfx-arch GFX11/RDNA3
+ml_ecosystem_snapshots check-rdna v_dual_fmac_f32 --gfx-arch GFX11/RDNA3
 
 # Validate StableHLO operation attributes and operand counts
-ml_framework_snapshots check-stablehlo stablehlo.dot_general --operands-count 2 --attributes dot_dimension_numbers
+ml_ecosystem_snapshots check-stablehlo stablehlo.dot_general --operands-count 2 --attributes dot_dimension_numbers
 ```
 
 ### 7. Snapshot Management & Local Cache
 
 ```bash
 # List all pre-bundled and locally cached snapshots
-ml_framework_snapshots list-snapshots
+ml_ecosystem_snapshots list-snapshots
 
 # Download official pre-compiled snapshot releases into cache
-ml_framework_snapshots pull torch 2.4.0
-ml_framework_snapshots download-all
+ml_ecosystem_snapshots pull torch 2.4.0
+ml_ecosystem_snapshots download-all
 
 # Cryptographically verify the integrity of cached snapshot files
-ml_framework_snapshots verify-local-cache
+ml_ecosystem_snapshots verify-local-cache
 
 # Rebuild or query the local SQLite FTS5 search index
-ml_framework_snapshots index --rebuild
+ml_ecosystem_snapshots index --rebuild
 ```
 
 ---
 
 ## 🤖 Model Context Protocol (MCP) Server
 
-`ml-framework-snapshots` includes a built-in Model Context Protocol (MCP) server that connects LLM coding assistants and transpiler agents to ground-truth framework signatures in real time via JSON-RPC 2.0.
+`ml-ecosystem-snapshots` includes a built-in Model Context Protocol (MCP) server that connects LLM coding assistants and transpiler agents to ground-truth framework signatures in real time via JSON-RPC 2.0.
 
 ### Starting the Server
 
 ```bash
-ml_framework_snapshots mcp
+ml_ecosystem_snapshots mcp
 ```
 
 ### Available MCP Tools
@@ -221,9 +221,9 @@ ml_framework_snapshots mcp
 ```json
 {
   "mcpServers": {
-    "ml-framework-snapshots": {
+    "ml-ecosystem-snapshots": {
       "command": "python",
-      "args": ["-m", "ml_framework_snapshots.mcp_server"]
+      "args": ["-m", "ml_ecosystem_snapshots.mcp_server"]
     }
   }
 }
@@ -233,9 +233,9 @@ ml_framework_snapshots mcp
 ```json
 {
   "mcpServers": {
-    "ml-framework-snapshots": {
+    "ml-ecosystem-snapshots": {
       "command": "python",
-      "args": ["-m", "ml_framework_snapshots.mcp_server"]
+      "args": ["-m", "ml_ecosystem_snapshots.mcp_server"]
     }
   }
 }
@@ -245,9 +245,9 @@ ml_framework_snapshots mcp
 ```json
 {
   "mcpServers": {
-    "ml-framework-snapshots": {
+    "ml-ecosystem-snapshots": {
       "command": "python",
-      "args": ["-m", "ml_framework_snapshots.mcp_server"]
+      "args": ["-m", "ml_ecosystem_snapshots.mcp_server"]
     }
   }
 }
@@ -260,8 +260,8 @@ ml_framework_snapshots mcp
 ### 1. Snapshot Extraction & Diffing
 
 ```python
-from ml_framework_snapshots.api import extract_snapshot, write_snapshot
-from ml_framework_snapshots.diff import diff_snapshots, generate_changelog
+from ml_ecosystem_snapshots.api import extract_snapshot, write_snapshot
+from ml_ecosystem_snapshots.diff import diff_snapshots, generate_changelog
 
 # Extract snapshot for PyTorch (uses isolated subprocess by default)
 snapshot = extract_snapshot("torch")
@@ -278,7 +278,7 @@ if snapshot:
 ### 2. Anti-Hallucination Grounding SDK
 
 ```python
-from ml_framework_snapshots.grounding import (
+from ml_ecosystem_snapshots.grounding import (
     GroundingEngine,
     validate_python_call,
     validate_sass_instruction,
@@ -323,7 +323,7 @@ print("StableHLO Grounded:", hlo_report.is_grounded)
 
 ## 🛡️ The Ecosystem & Preventing LLM Hallucinations
 
-`ml-framework-snapshots` serves as the ground-truth contract for a broader suite of cross-framework translation and compilation tools:
+`ml-ecosystem-snapshots` serves as the ground-truth contract for a broader suite of cross-framework translation and compilation tools:
 
 - **[ml-switcheroo](https://github.com/SamuelMarks/ml-switcheroo)**: Universal compiler and transpiler solving the $O(N^2)$ ML interoperability problem by translating dialects (PyTorch, JAX, TensorFlow) through a canonical intermediate representation.
 - **[ml-switcheroo-compiler](https://github.com/SamuelMarks/ml-switcheroo-compiler)**: Core execution backend lowering Unified IR into WebGPU and WASM SIMD binaries for zero-dependency execution.
@@ -342,7 +342,7 @@ source .venv/bin/activate
 pip install -r test-requirements.txt
 
 # Run test suite with 100% coverage enforcement
-pytest --cov=src/ml_framework_snapshots --cov-branch
+pytest --cov=src/ml_ecosystem_snapshots --cov-branch
 ```
 
 ---

@@ -3,7 +3,7 @@
 from typing import Any
 import pytest
 
-from ml_framework_snapshots.frameworks.dpnp import (
+from ml_ecosystem_snapshots.frameworks.dpnp import (
     CANONICAL_DPNP_OPS,
     _get_dpnp,
     collect_api,
@@ -17,7 +17,7 @@ from ml_switcheroo_ir.schema.ghost import (
 def test_collect_api_dpnp_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify collect_api returns CANONICAL_DPNP_OPS fallback when dpnp is not installed."""
     monkeypatch.setattr(
-        "ml_framework_snapshots.frameworks.dpnp._get_dpnp", lambda: None
+        "ml_ecosystem_snapshots.frameworks.dpnp._get_dpnp", lambda: None
     )
     refs = collect_api(SemanticTier.ARRAY_API)
     assert len(refs) == len(CANONICAL_DPNP_OPS)
@@ -44,7 +44,7 @@ def test_collect_api_dpnp_live(monkeypatch: pytest.MonkeyPatch) -> None:
             return shape
 
     monkeypatch.setattr(
-        "ml_framework_snapshots.frameworks.dpnp._get_dpnp", lambda: FakeDPNP()
+        "ml_ecosystem_snapshots.frameworks.dpnp._get_dpnp", lambda: FakeDPNP()
     )
     refs = collect_api(SemanticTier.ARRAY_API)
     assert len(refs) >= 2
@@ -91,14 +91,14 @@ def test_collect_api_dpnp_inspection_exception(monkeypatch: pytest.MonkeyPatch) 
         array = "broken"
 
     monkeypatch.setattr(
-        "ml_framework_snapshots.frameworks.dpnp._get_dpnp", lambda: FlakyDPNP()
+        "ml_ecosystem_snapshots.frameworks.dpnp._get_dpnp", lambda: FlakyDPNP()
     )
 
     def mock_inspect(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("Inspection failure")
 
     monkeypatch.setattr(
-        "ml_framework_snapshots.frameworks.dpnp.GhostInspector.inspect", mock_inspect
+        "ml_ecosystem_snapshots.frameworks.dpnp.GhostInspector.inspect", mock_inspect
     )
     refs = collect_api(SemanticTier.ARRAY_API)
     assert refs == []

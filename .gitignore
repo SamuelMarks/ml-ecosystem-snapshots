@@ -163,11 +163,11 @@ scripts/fix_docs.py
 *.json.gz
 *.jsonl
 *.jsonl.gz
-src/ml_framework_snapshots/snapshots/*.json
-src/ml_framework_snapshots/snapshots/*.json.gz
-src/ml_framework_snapshots/frameworks/*.json
-src/ml_framework_snapshots/frameworks/*.json.gz
-src/ml_framework_snapshots/concept_map.json
+src/ml_ecosystem_snapshots/snapshots/*.json
+src/ml_ecosystem_snapshots/snapshots/*.json.gz
+src/ml_ecosystem_snapshots/frameworks/*.json
+src/ml_ecosystem_snapshots/frameworks/*.json.gz
+src/ml_ecosystem_snapshots/concept_map.json
 matrix_snapshots/**/*.json
 matrix_snapshots/**/*.json.gz
 dist_snapshots/

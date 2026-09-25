@@ -7,7 +7,7 @@ import os
 def test_golden_symbol_counts_and_mandatory_ops() -> None:
     """Verify that golden datasets contain all mandatory operations and minimum symbol thresholds."""
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    fw_dir = os.path.join(repo_root, "src", "ml_framework_snapshots", "frameworks")
+    fw_dir = os.path.join(repo_root, "src", "ml_ecosystem_snapshots", "frameworks")
 
     required_exhaustive = [
         "stablehlo_exhaustive.json",
@@ -123,7 +123,7 @@ def test_golden_symbol_counts_and_mandatory_ops() -> None:
 def test_golden_datasets_zero_leak_tokens() -> None:
     """Verify zero unparsed regex or scraper leak tokens in any exhaustive dataset."""
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    fw_dir = os.path.join(repo_root, "src", "ml_framework_snapshots", "frameworks")
+    fw_dir = os.path.join(repo_root, "src", "ml_ecosystem_snapshots", "frameworks")
 
     leak_tokens = [
         "???0",

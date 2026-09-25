@@ -1,67 +1,25 @@
-"""Dask API Snapshot Extractor."""
+"""Backward-compatibility shim for ml_framework_snapshots.frameworks.dask.
 
-from typing import List
-from ml_switcheroo_ir.schema.ghost import SemanticTier
-from ml_switcheroo_ir.schema.ghost import GhostRef
-from ..models import GhostInspector
+Transparently re-exports all members from ml_ecosystem_snapshots.frameworks.dask.
+"""
 
-from typing import Any
+from __future__ import annotations
 
-try:
-    import dask.array as _da
+import sys
+from typing import TYPE_CHECKING
+import ml_ecosystem_snapshots.frameworks.dask as _orig_mod
 
-    da: Any = _da
-except (ImportError, Exception):
-    da = None
+if TYPE_CHECKING:
+    from ml_ecosystem_snapshots.frameworks.dask import *  # noqa: F401, F403
 
+# Re-export all attributes including internal and dunder methods
+for _k in dir(_orig_mod):
+    globals()[_k] = getattr(_orig_mod, _k)
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
-    """Collect dask API.
+__all__ = getattr(
+    _orig_mod,
+    "__all__",
+    [k for k in dir(_orig_mod) if not k.startswith("_")],
+)
 
-    Args:
-        category: The semantic tier to target.
-        include_nonpublic: Whether to include non-public APIs.
-
-    Returns:
-        List of gathered API references.
-    """
-    results: List[GhostRef] = []
-
-    if category == SemanticTier.ARRAY_API:
-        if not da:
-            return results
-        for name in dir(da):
-            if not include_nonpublic and name.startswith("_"):
-                continue
-            obj = getattr(da, name)
-            if callable(obj):
-                try:
-                    res = GhostInspector.inspect(
-                        obj, f"dask.array.{name}", is_public=not name.startswith("_")
-                    )
-                    results.append(res)
-                except Exception:
-                    pass
-
-    elif category == SemanticTier.UTIL:
-        try:
-            import dask as _dask_top
-
-            for name in dir(_dask_top):
-                if not include_nonpublic and name.startswith("_"):
-                    continue
-                obj = getattr(_dask_top, name)
-                if callable(obj):
-                    try:
-                        res = GhostInspector.inspect(
-                            obj, f"dask.{name}", is_public=not name.startswith("_")
-                        )
-                        results.append(res)
-                    except Exception:
-                        pass
-        except (ImportError, Exception):
-            pass
-
-    return results
+sys.modules[__name__] = _orig_mod

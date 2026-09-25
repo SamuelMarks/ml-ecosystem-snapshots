@@ -1,12 +1,13 @@
 """Tests for cupy and dask framework collectors."""
 
+import sys
 from typing import Any
 import types
 
 from ml_switcheroo_ir.schema.ghost import SemanticTier
-from ml_framework_snapshots.models import GhostInspector
-import ml_framework_snapshots.frameworks.cupy as cupy_fw
-import ml_framework_snapshots.frameworks.dask as dask_fw
+from ml_ecosystem_snapshots.models import GhostInspector
+import ml_ecosystem_snapshots.frameworks.cupy as cupy_fw
+import ml_ecosystem_snapshots.frameworks.dask as dask_fw
 
 
 def create_module(name: str, attrs: dict[str, Any]) -> types.ModuleType:
@@ -32,7 +33,7 @@ def test_cupy_collect(mocker: Any) -> None:
         mocker: Parameter.
     """
     # Test when cp is None
-    mocker.patch("ml_framework_snapshots.frameworks.cupy.cp", None)
+    mocker.patch("ml_ecosystem_snapshots.frameworks.cupy.cp", None)
     assert cupy_fw.collect_api(SemanticTier.ACTIVATION) == []
 
     # Mock cp
@@ -61,7 +62,7 @@ def test_cupy_collect(mocker: Any) -> None:
             ),  # We'll mock GhostInspector.inspect to raise exception for this
         },
     )
-    mocker.patch("ml_framework_snapshots.frameworks.cupy.cp", fake_cp)
+    mocker.patch("ml_ecosystem_snapshots.frameworks.cupy.cp", fake_cp)
 
     # Test ACTIVATION
     orig_inspect = GhostInspector.inspect
@@ -85,7 +86,7 @@ def test_cupy_collect(mocker: Any) -> None:
         return orig_inspect(obj, fqn, is_public=is_public)
 
     mocker.patch(
-        "ml_framework_snapshots.frameworks.cupy.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.frameworks.cupy.GhostInspector.inspect",
         side_effect=mock_inspect,
     )
 
@@ -111,7 +112,7 @@ def test_dask_collect(mocker: Any) -> None:
         mocker: Parameter.
     """
     # Test when da is None
-    mocker.patch("ml_framework_snapshots.frameworks.dask.da", None)
+    mocker.patch("ml_ecosystem_snapshots.frameworks.dask.da", None)
     assert dask_fw.collect_api(SemanticTier.ARRAY_API) == []
 
     def fake_func() -> None:
@@ -130,7 +131,7 @@ def test_dask_collect(mocker: Any) -> None:
             "not_callable": 42,
         },
     )
-    mocker.patch("ml_framework_snapshots.frameworks.dask.da", fake_da)
+    mocker.patch("ml_ecosystem_snapshots.frameworks.dask.da", fake_da)
 
     orig_inspect = GhostInspector.inspect
 
@@ -153,7 +154,7 @@ def test_dask_collect(mocker: Any) -> None:
         return orig_inspect(obj, fqn, is_public=is_public)
 
     mocker.patch(
-        "ml_framework_snapshots.frameworks.dask.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.frameworks.dask.GhostInspector.inspect",
         side_effect=mock_inspect,
     )
 
@@ -167,7 +168,18 @@ def test_dask_collect(mocker: Any) -> None:
     # Test other tier
     assert dask_fw.collect_api(SemanticTier.OPTIMIZER) == []
 
-    # Test UTIL tier
+    # Test UTIL tier with mocked top-level dask module
+    fake_top_dask = create_module(
+        "dask",
+        {
+            "compute": fake_func,
+            "visualize": fake_func,
+            "_private_util": fake_private,
+            "not_callable": 123,
+        },
+    )
+    mocker.patch.dict(sys.modules, {"dask": fake_top_dask})
+
     res_util = dask_fw.collect_api(SemanticTier.UTIL, include_nonpublic=False)
     assert len(res_util) > 0
     res_util_nonpublic = dask_fw.collect_api(SemanticTier.UTIL, include_nonpublic=True)
@@ -175,6 +187,15 @@ def test_dask_collect(mocker: Any) -> None:
 
     # Test UTIL tier when dask import raises
     def mock_import_raise(*args: Any, **kwargs: Any) -> Any:
+        """Mock import raising error when importing dask.
+
+        Args:
+            *args: Positional import arguments.
+            **kwargs: Keyword import arguments.
+
+        Raises:
+            RuntimeError: Always raised to simulate import failure.
+        """
         raise RuntimeError("Simulated dask error")
 
     mocker.patch("builtins.__import__", side_effect=mock_import_raise)
@@ -182,8 +203,9 @@ def test_dask_collect(mocker: Any) -> None:
 
     # Test UTIL tier when inspect raises
     mocker.stopall()
+    mocker.patch.dict(sys.modules, {"dask": fake_top_dask})
     mocker.patch(
-        "ml_framework_snapshots.frameworks.dask.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.frameworks.dask.GhostInspector.inspect",
         side_effect=ValueError("simulated util error"),
     )
     assert dask_fw.collect_api(SemanticTier.UTIL) == []
@@ -202,10 +224,10 @@ def test_cupy_import_success(mocker: Any) -> None:
     mocker.patch.dict(sys.modules, {"cupy": fake_cupy})
 
     # Reload framework to trigger the try block successfully
-    if "ml_framework_snapshots.frameworks.cupy" in sys.modules:
-        del sys.modules["ml_framework_snapshots.frameworks.cupy"]
+    if "ml_ecosystem_snapshots.frameworks.cupy" in sys.modules:
+        del sys.modules["ml_ecosystem_snapshots.frameworks.cupy"]
 
-    import ml_framework_snapshots.frameworks.cupy as c_fw
+    import ml_ecosystem_snapshots.frameworks.cupy as c_fw
 
     assert c_fw.cp is fake_cupy
 
@@ -219,10 +241,10 @@ def test_cupy_import_error(mocker: Any) -> None:
     import sys
 
     mocker.patch.dict(sys.modules, {"cupy": None})
-    if "ml_framework_snapshots.frameworks.cupy" in sys.modules:
-        del sys.modules["ml_framework_snapshots.frameworks.cupy"]
+    if "ml_ecosystem_snapshots.frameworks.cupy" in sys.modules:
+        del sys.modules["ml_ecosystem_snapshots.frameworks.cupy"]
 
-    import ml_framework_snapshots.frameworks.cupy as c_fw
+    import ml_ecosystem_snapshots.frameworks.cupy as c_fw
 
     assert c_fw.cp is None
 
@@ -236,7 +258,7 @@ def test_dask_import_error(mocker: Any) -> None:
     import importlib
     import sys
     import types
-    import ml_framework_snapshots.frameworks.dask as d_fw
+    import ml_ecosystem_snapshots.frameworks.dask as d_fw
 
     # 1. Available
     fake_dask = types.ModuleType("dask")

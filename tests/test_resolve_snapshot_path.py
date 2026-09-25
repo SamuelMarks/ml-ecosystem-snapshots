@@ -5,7 +5,7 @@ import os
 
 from typing import Any
 from unittest.mock import patch
-from ml_framework_snapshots.cli import resolve_snapshot_path
+from ml_ecosystem_snapshots.cli import resolve_snapshot_path
 
 
 def test_resolve_snapshot_path_existing_file(tmp_path: Any) -> None:
@@ -44,7 +44,7 @@ def test_resolve_snapshot_path_fallback_to_repo(tmp_path: Any) -> None:
     """
     # Mock __file__ so repo root points to our temp directory
     pkg_dir = Path(
-        os.path.join(Path(os.path.join(tmp_path, "src")), "ml_framework_snapshots")
+        os.path.join(Path(os.path.join(tmp_path, "src")), "ml_ecosystem_snapshots")
     )
     pkg_dir.mkdir(parents=True)
 
@@ -55,7 +55,7 @@ def test_resolve_snapshot_path_fallback_to_repo(tmp_path: Any) -> None:
     target_file.touch()
 
     with patch(
-        "ml_framework_snapshots.cli.__file__",
+        "ml_ecosystem_snapshots.cli.__file__",
         str(Path(os.path.join(pkg_dir, "cli.py"))),
     ):
         # Providing just the basename
@@ -82,7 +82,7 @@ def test_resolve_snapshot_path_not_found(tmp_path: Any) -> None:
         tmp_path: Parameter.
     """
     # Should just return the input path if nothing works
-    with patch("ml_framework_snapshots.cli.__file__", "/tmp/does_not_exist/cli.py"):
+    with patch("ml_ecosystem_snapshots.cli.__file__", "/tmp/does_not_exist/cli.py"):
         resolved = resolve_snapshot_path("missing_framework")
         assert resolved == "missing_framework"
 
@@ -94,7 +94,7 @@ def test_resolve_multiple_matches(tmp_path: Any) -> None:
         tmp_path: Parameter.
     """
     pkg_dir = Path(
-        os.path.join(Path(os.path.join(tmp_path, "src")), "ml_framework_snapshots")
+        os.path.join(Path(os.path.join(tmp_path, "src")), "ml_ecosystem_snapshots")
     )
     pkg_dir.mkdir(parents=True)
 
@@ -105,7 +105,7 @@ def test_resolve_multiple_matches(tmp_path: Any) -> None:
     Path(os.path.join(snapshots_dir, "torch-2.0.json")).touch()
 
     with patch(
-        "ml_framework_snapshots.cli.__file__",
+        "ml_ecosystem_snapshots.cli.__file__",
         str(Path(os.path.join(pkg_dir, "cli.py"))),
     ):
         res = resolve_snapshot_path("torch")
@@ -119,7 +119,7 @@ def test_resolve_no_matches_in_existing_dir(tmp_path: Any) -> None:
         tmp_path: Parameter.
     """
     pkg_dir = Path(
-        os.path.join(Path(os.path.join(tmp_path, "src")), "ml_framework_snapshots")
+        os.path.join(Path(os.path.join(tmp_path, "src")), "ml_ecosystem_snapshots")
     )
     pkg_dir.mkdir(parents=True)
 
@@ -127,7 +127,7 @@ def test_resolve_no_matches_in_existing_dir(tmp_path: Any) -> None:
     snapshots_dir.mkdir()
 
     with patch(
-        "ml_framework_snapshots.cli.__file__",
+        "ml_ecosystem_snapshots.cli.__file__",
         str(Path(os.path.join(pkg_dir, "cli.py"))),
     ):
         res = resolve_snapshot_path("nonexistent_framework")
@@ -142,7 +142,7 @@ def test_resolve_snapshot_path_from_pkg_snapshots(tmp_path: Any) -> None:
     """
     pkg_dir = Path(
         os.path.join(
-            Path(os.path.join(tmp_path, "site-packages")), "ml_framework_snapshots"
+            Path(os.path.join(tmp_path, "site-packages")), "ml_ecosystem_snapshots"
         )
     )
     snapshots_dir = Path(os.path.join(pkg_dir, "snapshots"))
@@ -152,7 +152,7 @@ def test_resolve_snapshot_path_from_pkg_snapshots(tmp_path: Any) -> None:
     target_file.touch()
 
     with patch(
-        "ml_framework_snapshots.cli.__file__",
+        "ml_ecosystem_snapshots.cli.__file__",
         str(Path(os.path.join(pkg_dir, "cli.py"))),
     ):
         # Exact match with json extension
@@ -176,7 +176,7 @@ def test_resolve_snapshot_path_from_pkg_frameworks(tmp_path: Any) -> None:
     """
     pkg_dir = Path(
         os.path.join(
-            Path(os.path.join(tmp_path, "site-packages")), "ml_framework_snapshots"
+            Path(os.path.join(tmp_path, "site-packages")), "ml_ecosystem_snapshots"
         )
     )
     frameworks_dir = Path(os.path.join(pkg_dir, "frameworks"))
@@ -186,7 +186,7 @@ def test_resolve_snapshot_path_from_pkg_frameworks(tmp_path: Any) -> None:
     target_file.touch()
 
     with patch(
-        "ml_framework_snapshots.cli.__file__",
+        "ml_ecosystem_snapshots.cli.__file__",
         str(Path(os.path.join(pkg_dir, "cli.py"))),
     ):
         resolved = resolve_snapshot_path("amd_rdna_exhaustive.json")
@@ -208,7 +208,7 @@ def test_resolve_snapshot_path_from_cwd_snapshots(tmp_path: Any) -> None:
     with (
         patch("os.getcwd", return_value=str(tmp_path)),
         patch(
-            "ml_framework_snapshots.cli.__file__",
+            "ml_ecosystem_snapshots.cli.__file__",
             "/nonexistent/cli.py",
         ),
     ):

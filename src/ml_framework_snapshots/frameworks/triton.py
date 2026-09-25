@@ -1,94 +1,25 @@
-"""Triton module."""
+"""Backward-compatibility shim for ml_framework_snapshots.frameworks.triton.
 
-import importlib
-from typing import List, Any
-from ml_switcheroo_ir.schema.ghost import SemanticTier
-from ml_framework_snapshots.models import GhostInspector
-from ml_switcheroo_ir.schema.ghost import GhostRef
+Transparently re-exports all members from ml_ecosystem_snapshots.frameworks.triton.
+"""
 
+from __future__ import annotations
 
-def _extract_triton_kernel(
-    obj: Any, name: str, module_name: str, inspector: GhostInspector
-) -> GhostRef:
-    """Extract triton kernel.
+import sys
+from typing import TYPE_CHECKING
+import ml_ecosystem_snapshots.frameworks.triton as _orig_mod
 
-    Args:
-        obj: description
-        name: description
-        module_name: description
-        inspector: description
+if TYPE_CHECKING:
+    from ml_ecosystem_snapshots.frameworks.triton import *  # noqa: F401, F403
 
-    Returns:
-        The GhostRef.
-    """
-    # A triton JIT kernel often wraps the original function in `obj.fn` or `obj.src`
-    fn = obj
-    if hasattr(obj, "fn"):
-        fn = obj.fn
-    else:
-        pass
+# Re-export all attributes including internal and dunder methods
+for _k in dir(_orig_mod):
+    globals()[_k] = getattr(_orig_mod, _k)
 
-    ref = inspector.inspect(fn, f"{module_name}.{name}")
-    if ref:
-        # Check for constexpr hints. Sometimes it's in annotations.
-        for param in ref.params:
-            if hasattr(fn, "__annotations__") and param.name in fn.__annotations__:
-                anno = fn.__annotations__[param.name]
-                if "constexpr" in str(anno):
-                    param.annotation = "tl.constexpr"
-    return ref
+__all__ = getattr(
+    _orig_mod,
+    "__all__",
+    [k for k in dir(_orig_mod) if not k.startswith("_")],
+)
 
-
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
-    """Collect triton API.
-
-    Args:
-        category: description
-        include_nonpublic: description
-
-    Returns:
-        List of GhostRefs.
-    """
-    results: List[GhostRef] = []
-    if category != SemanticTier.UTIL:
-        return results
-
-    try:
-        importlib.import_module("triton")
-    except ImportError:
-        return results
-
-    import inspect
-
-    inspector = GhostInspector()
-
-    # Introspect triton language (tl) and kernels
-    try:
-        tl = importlib.import_module("triton.language")
-        for name in dir(tl):
-            if not include_nonpublic and name.startswith("_"):
-                continue
-            obj = getattr(tl, name, None)
-            if obj and callable(obj):
-                ref = _extract_triton_kernel(obj, name, "triton.language", inspector)
-                if ref:
-                    results.append(ref)
-
-        tl_math = getattr(tl, "math", None)
-        if inspect.ismodule(tl_math):
-            for name in dir(tl_math):
-                if not include_nonpublic and name.startswith("_"):
-                    continue
-                obj = getattr(tl_math, name, None)
-                if obj and callable(obj):
-                    ref = _extract_triton_kernel(
-                        obj, name, "triton.language.math", inspector
-                    )
-                    if ref:
-                        results.append(ref)
-    except ImportError:
-        pass
-
-    return results
+sys.modules[__name__] = _orig_mod

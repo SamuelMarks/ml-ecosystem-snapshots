@@ -3,12 +3,12 @@
 from typing import Any, Dict, List
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier, SnapshotEnvelope
-from ml_framework_snapshots.api import (
+from ml_ecosystem_snapshots.api import (
     extract_snapshot,
     get_pkg_version,
     validate_snapshot_envelope,
 )
-from ml_framework_snapshots.frameworks.ir import collect_api
+from ml_ecosystem_snapshots.frameworks.ir import collect_api
 
 
 def test_collect_api_categories() -> None:

@@ -1,8 +1,8 @@
 """Module docstring."""
 
 from unittest.mock import patch
-from ml_framework_snapshots.api import _consolidate_aliases, get_pkg_version
-from ml_framework_snapshots.frameworks.optax_shim import collect_api
+from ml_ecosystem_snapshots.api import _consolidate_aliases, get_pkg_version
+from ml_ecosystem_snapshots.frameworks.optax_shim import collect_api
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
     GhostRef,
@@ -62,17 +62,17 @@ def test_get_pkg_version_aliases() -> None:
 def test_optax_shim_collect_api() -> None:
     """Test optax_shim.collect_api."""
     with patch(
-        "ml_framework_snapshots.frameworks.optax_shim.OptaxScanner.scan_optimizers",
+        "ml_ecosystem_snapshots.frameworks.optax_shim.OptaxScanner.scan_optimizers",
         return_value=[],
     ):
         assert collect_api(SemanticTier.OPTIMIZER, False) == []
     with patch(
-        "ml_framework_snapshots.frameworks.optax_shim.OptaxScanner.scan_losses",
+        "ml_ecosystem_snapshots.frameworks.optax_shim.OptaxScanner.scan_losses",
         return_value=[],
     ):
         assert collect_api(SemanticTier.LOSS, False) == []
     with patch(
-        "ml_framework_snapshots.frameworks.optax_shim.OptaxScanner.scan_schedulers",
+        "ml_ecosystem_snapshots.frameworks.optax_shim.OptaxScanner.scan_schedulers",
         return_value=[],
     ):
         assert collect_api(SemanticTier.SCHEDULER, False) == []
@@ -83,7 +83,7 @@ def test_optax_shim_collect_api() -> None:
 
 def test_consolidate_aliases_extended_params_and_metadata() -> None:
     """Test that _consolidate_aliases preserves distinct instructions with different directionality or metadata."""
-    from ml_framework_snapshots.models import (
+    from ml_ecosystem_snapshots.models import (
         ExtendedGhostParam,
         ExtendedGhostRef,
         GhostResult,

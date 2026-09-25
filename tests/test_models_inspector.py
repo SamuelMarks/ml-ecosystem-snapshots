@@ -3,7 +3,7 @@
 from typing import Any
 
 
-from ml_framework_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.models import GhostInspector
 
 
 def dummy_func_with_docstring(x: int) -> str:
@@ -166,7 +166,7 @@ def test_models_raises_no_typ(mocker: Any) -> None:
         return_value={"raises": [{"not_typ": "KeyError"}]},
     )
     mocker.patch(
-        "ml_framework_snapshots.models.extract_griffe_docstring_metadata",
+        "ml_ecosystem_snapshots.models.extract_griffe_docstring_metadata",
         return_value={"params": {}, "returns": None, "raises": []},
     )
     ref = GhostInspector.inspect(
@@ -181,7 +181,7 @@ def test_ghost_inspector_aten_overload_and_factory_default(mocker: Any) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
-    from ml_framework_snapshots.utils import CExtensionSignature
+    from ml_ecosystem_snapshots.utils import CExtensionSignature
 
     existing_overload = CExtensionSignature(
         params=[
@@ -201,11 +201,11 @@ def test_ghost_inspector_aten_overload_and_factory_default(mocker: Any) -> None:
     )
 
     mocker.patch(
-        "ml_framework_snapshots.models.extract_c_extension_signature",
+        "ml_ecosystem_snapshots.models.extract_c_extension_signature",
         return_value=existing_sig,
     )
     mocker.patch(
-        "ml_framework_snapshots.frameworks.torch.extract_aten_c_extension_signature",
+        "ml_ecosystem_snapshots.frameworks.torch.extract_aten_c_extension_signature",
         return_value=aten_sig,
     )
     mocker.patch("inspect.signature", side_effect=TypeError("no python signature"))
@@ -232,11 +232,11 @@ def test_ghost_inspector_aten_none(mocker: Any) -> None:
     """
     mocker.patch("inspect.signature", side_effect=TypeError("no python signature"))
     mocker.patch(
-        "ml_framework_snapshots.frameworks.torch.extract_aten_c_extension_signature",
+        "ml_ecosystem_snapshots.frameworks.torch.extract_aten_c_extension_signature",
         return_value=None,
     )
     mocker.patch(
-        "ml_framework_snapshots.models.extract_c_extension_signature",
+        "ml_ecosystem_snapshots.models.extract_c_extension_signature",
         return_value=None,
     )
 

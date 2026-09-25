@@ -3,7 +3,7 @@
 import json
 from typing import Any
 from unittest import mock
-from ml_framework_snapshots.tools import scrape_mlir
+from ml_ecosystem_snapshots.tools import scrape_mlir
 
 
 def test_parse_table() -> None:
@@ -43,7 +43,7 @@ def test_parse_dialect_page(mocker: Any) -> None:
     <h3 id="minimal"><code>arith.min</code> (arith::MinOp)</h3>
     """
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.fetch_html", return_value=html
+        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html", return_value=html
     )
     ops = scrape_mlir.parse_dialect_page("http://fake", "arith")
     assert len(ops) == 2
@@ -58,7 +58,7 @@ def test_parse_dialect_page(mocker: Any) -> None:
 
     # Test empty page and page without h3 tags
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.fetch_html",
+        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html",
         return_value="No h3 header",
     )
     assert scrape_mlir.parse_dialect_page("http://fake", "empty") == []
@@ -93,7 +93,7 @@ Does an abs operation.
 
 #### Outputs
 """
-    mocker.patch("ml_framework_snapshots.tools.scrape_mlir.fetch_html", return_value=md)
+    mocker.patch("ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html", return_value=md)
     ops = scrape_mlir.scrape_stablehlo()
     assert len(ops) == 1
     assert ops[0]["api_path"] == "stablehlo.abs"
@@ -109,19 +109,19 @@ def test_main_docs(mocker: Any) -> None:
         mocker: Pytest mocker fixture.
     """
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
+        "ml_ecosystem_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
         return_value=[],
     )
     # Quoted and unquoted hrefs to test both branches
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.fetch_html",
+        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html",
         return_value="""<a href="/docs/Dialects/ArithOps/">'arith' Dialect</a>""",
     )
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.parse_dialect_page", return_value=[]
+        "ml_ecosystem_snapshots.tools.scrape_mlir.parse_dialect_page", return_value=[]
     )
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.scrape_stablehlo", return_value=[]
+        "ml_ecosystem_snapshots.tools.scrape_mlir.scrape_stablehlo", return_value=[]
     )
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
 
@@ -130,7 +130,7 @@ def test_main_docs(mocker: Any) -> None:
 
     # Second pass with unquoted href
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.fetch_html",
+        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html",
         return_value="""<a href=/docs/Dialects/ArithOps/>'arith' Dialect</a>""",
     )
     scrape_mlir.main()
@@ -143,7 +143,7 @@ def test_main_live_inspection(mocker: Any) -> None:
         mocker: Pytest mocker fixture.
     """
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
+        "ml_ecosystem_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
         return_value=[{"api_path": "arith.addf"}],
     )
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
@@ -398,18 +398,18 @@ def test_main_tablegen_empty_and_duplicate_ops(mocker: Any) -> None:
         return td_with_dups
 
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.fetch_html", side_effect=mock_fetch
+        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html", side_effect=mock_fetch
     )
 
     # inspect_mlir_python_module returns an unseen op (lines 645-646)
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
+        "ml_ecosystem_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
         return_value=[{"api_path": "arith.live_unique_op", "name": "live_unique_op"}],
     )
 
     # scrape_stablehlo returns a duplicate op (arith.live_unique_op) already in seen_paths (branch 677 -> 676)
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.scrape_stablehlo",
+        "ml_ecosystem_snapshots.tools.scrape_mlir.scrape_stablehlo",
         return_value=[{"api_path": "arith.live_unique_op", "name": "live_unique_op"}],
     )
 
@@ -790,7 +790,7 @@ def test_parse_dialect_page_empty_html() -> None:
         None.
     """
     with mock.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.fetch_html", return_value=""
+        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html", return_value=""
     ):
         assert scrape_mlir.parse_dialect_page("http://fake", "arith") == []
 
@@ -816,7 +816,7 @@ def test_scrape_stablehlo_empty_md() -> None:
         None.
     """
     with mock.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.fetch_html", return_value=""
+        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html", return_value=""
     ):
         assert scrape_mlir.scrape_stablehlo() == []
 
@@ -831,7 +831,7 @@ def test_main_docs_with_ops_and_duplicates(mocker: Any) -> None:
         None.
     """
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
+        "ml_ecosystem_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
         return_value=[],
     )
     # Return duplicate links in index_html to exercise dialect_url in seen_urls branch
@@ -840,18 +840,18 @@ def test_main_docs_with_ops_and_duplicates(mocker: Any) -> None:
         """<a href="/docs/Dialects/ArithOps/">'arith' Dialect</a>\n"""
     )
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.fetch_html",
+        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html",
         return_value=index_html,
     )
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.parse_dialect_page",
+        "ml_ecosystem_snapshots.tools.scrape_mlir.parse_dialect_page",
         return_value=[
             {"api_path": "arith.addf"},
             {"api_path": "arith.addf"},
         ],
     )
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.scrape_stablehlo",
+        "ml_ecosystem_snapshots.tools.scrape_mlir.scrape_stablehlo",
         return_value=[{"api_path": "stablehlo.abs"}],
     )
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
@@ -874,7 +874,7 @@ def test_scrape_mlir_main_entrypoint(mocker: Any) -> None:
     mocker.patch("builtins.open", mocker.mock_open())
     mocker.patch("urllib.request.urlopen")
     mocker.patch(
-        "ml_framework_snapshots.tools.scrape_mlir.fetch_html",
+        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html",
         return_value="<html></html>",
     )
     runpy.run_path(scrape_mlir.__file__, run_name="__main__")

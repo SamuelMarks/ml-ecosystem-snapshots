@@ -5,7 +5,7 @@ import json
 import os
 from typing import Any
 
-from ml_framework_snapshots.grounding import (
+from ml_ecosystem_snapshots.grounding import (
     DiagnosticSeverity,
     GroundingDiagnostic,
     GroundingEngine,
@@ -525,7 +525,7 @@ def test_validate_python_call(tmp_path: Any) -> None:
 
     # Overloads (dict & object) and accepted_kwargs coverage
     from ml_switcheroo_ir.schema.ghost import ParameterKind
-    from ml_framework_snapshots.models import ExtendedGhostRef, GhostParam, GhostRef
+    from ml_ecosystem_snapshots.models import ExtendedGhostRef, GhostParam, GhostRef
 
     mock_ref = ExtendedGhostRef(
         name="fn",
@@ -717,7 +717,7 @@ def test_grounding_engine_edge_branches(tmp_path: Any, monkeypatch: Any) -> None
     assert prim_eng.load_target("prim") == {}
 
     # Test hydrate exception handling
-    from ml_framework_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.models import GhostInspector
 
     orig_hydrate = GhostInspector.hydrate
 
@@ -766,7 +766,7 @@ def test_grounding_engine_collector_fallback(tmp_path: Any, monkeypatch: Any) ->
     assert eng.load_target("nonexistent_framework") == {}
 
     # 3. Exception during extract_snapshot returns empty dict
-    import ml_framework_snapshots.api as api_mod
+    import ml_ecosystem_snapshots.api as api_mod
 
     def mock_extract_fail(target: str) -> Any:
         """Simulate extraction failure.
@@ -819,7 +819,7 @@ def test_grounding_engine_collector_fallback(tmp_path: Any, monkeypatch: Any) ->
             }
         }
 
-    from ml_framework_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.models import GhostInspector
 
     orig_hydrate = GhostInspector.hydrate
 

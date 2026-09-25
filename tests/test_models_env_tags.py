@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from ml_framework_snapshots.models import (
+from ml_ecosystem_snapshots.models import (
     GhostInspector,
     FRAMEWORK_CAPABILITIES,
     OperandDirection,

@@ -1,101 +1,25 @@
-"""HTML DSL API Snapshot Extractor.
+"""Backward-compatibility shim for ml_framework_snapshots.frameworks.html_dsl.
 
-Provides a static snapshot of standard HTML tags and attributes for the HTML DSL.
+Transparently re-exports all members from ml_ecosystem_snapshots.frameworks.html_dsl.
 """
 
-from typing import List
+from __future__ import annotations
 
-from ml_switcheroo_ir.schema.ghost import (
-    GhostParam,
-    GhostRef,
-    ParameterKind,
-    SemanticTier,
+import sys
+from typing import TYPE_CHECKING
+import ml_ecosystem_snapshots.frameworks.html_dsl as _orig_mod
+
+if TYPE_CHECKING:
+    from ml_ecosystem_snapshots.frameworks.html_dsl import *  # noqa: F401, F403
+
+# Re-export all attributes including internal and dunder methods
+for _k in dir(_orig_mod):
+    globals()[_k] = getattr(_orig_mod, _k)
+
+__all__ = getattr(
+    _orig_mod,
+    "__all__",
+    [k for k in dir(_orig_mod) if not k.startswith("_")],
 )
 
-_HTML_TAGS = [
-    "div",
-    "span",
-    "a",
-    "p",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-    "ul",
-    "ol",
-    "li",
-    "table",
-    "tr",
-    "td",
-    "th",
-    "thead",
-    "tbody",
-    "img",
-    "form",
-    "input",
-    "button",
-    "select",
-    "option",
-    "textarea",
-    "label",
-    "br",
-    "hr",
-    "strong",
-    "em",
-    "head",
-    "body",
-    "html",
-    "title",
-    "meta",
-    "link",
-    "style",
-    "script",
-    "nav",
-    "header",
-    "footer",
-    "main",
-    "section",
-    "article",
-    "aside",
-    "figure",
-    "figcaption",
-]
-
-
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
-    """Entrypoint to collect the HTML DSL API signature.
-
-    Args:
-        category: The category of API to collect.
-        include_nonpublic: Whether to include non-public APIs.
-
-    Returns:
-        A list of GhostRef items discovered.
-    """
-    if category != SemanticTier.UTIL:
-        return []
-
-    refs = []
-    for tag in _HTML_TAGS:
-        params = [
-            GhostParam(name="children", kind=ParameterKind.POSITIONAL_OR_KEYWORD),
-            GhostParam(name="id", kind=ParameterKind.KEYWORD_ONLY),
-            GhostParam(name="class_name", kind=ParameterKind.KEYWORD_ONLY),
-            GhostParam(name="style", kind=ParameterKind.KEYWORD_ONLY),
-            GhostParam(name="kwargs", kind=ParameterKind.VAR_KEYWORD),
-        ]
-
-        refs.append(
-            GhostRef(
-                name=tag,
-                api_path=f"html.{tag}",
-                kind="CLASS",
-                params=params,
-                docstring=f"HTML <{tag}> element.",
-            )
-        )
-    return refs
+sys.modules[__name__] = _orig_mod

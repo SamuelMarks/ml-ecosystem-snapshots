@@ -7,15 +7,15 @@ and semantic default value preservation.
 import inspect
 from typing import Any, List
 
-from ml_framework_snapshots.frameworks.torch import (
+from ml_ecosystem_snapshots.frameworks.torch import (
     extract_aten_c_extension_signature,
     get_aten_op_schema,
     infer_torch_dtype_and_rank,
     parse_native_functions_yaml,
 )
-from ml_framework_snapshots.mcp_server import check_hallucination, handle_mcp_message
+from ml_ecosystem_snapshots.mcp_server import check_hallucination, handle_mcp_message
 from ml_switcheroo_ir.schema.ghost import ParameterKind
-from ml_framework_snapshots.models import (
+from ml_ecosystem_snapshots.models import (
     ExtendedGhostParam,
     GhostInspector,
     GhostPythonRef,
@@ -443,11 +443,11 @@ def test_check_hallucination_dtype_and_rank_validation() -> None:
 
     with (
         patch(
-            "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+            "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
             return_value=mock_snap,
         ),
         patch(
-            "ml_framework_snapshots.index.lookup_symbol",
+            "ml_ecosystem_snapshots.index.lookup_symbol",
             return_value=None,
         ),
     ):
@@ -528,7 +528,7 @@ def test_handle_mcp_message_dtypes_and_ranks() -> None:
     from unittest.mock import patch
 
     with patch(
-        "ml_framework_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
         return_value=mock_snap,
     ):
         msg = {
@@ -605,7 +605,7 @@ def test_aten_edge_cases_and_mocks(mocker: Any) -> None:
         },
     ]
     mocker.patch(
-        "ml_framework_snapshots.frameworks.torch.get_aten_op_schema",
+        "ml_ecosystem_snapshots.frameworks.torch.get_aten_op_schema",
         return_value=mock_schemas,
     )
     sig = extract_aten_c_extension_signature(None, "custom_op")
@@ -624,7 +624,7 @@ def test_torch_collect_api_array_api_aten(mocker: Any) -> None:
     from torch_mock import ensure_torch
 
     torch = ensure_torch()
-    from ml_framework_snapshots.frameworks import torch as torch_fw
+    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     mocker.patch.object(
@@ -658,8 +658,8 @@ def test_get_jit_schemas_for_op(monkeypatch: Any) -> None:
     from torch_mock import ensure_torch
 
     torch = ensure_torch()
-    from ml_framework_snapshots.frameworks import torch as torch_fw
-    from ml_framework_snapshots.frameworks.torch import get_jit_schemas_for_op
+    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
+    from ml_ecosystem_snapshots.frameworks.torch import get_jit_schemas_for_op
 
     # Reset cache to test parsing
     monkeypatch.setattr(torch_fw, "_JIT_SCHEMAS_CACHE", None)

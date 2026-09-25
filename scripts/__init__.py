@@ -1,1 +1,1 @@
-"""Scripts for ml_framework_snapshots."""
+"""Scripts for ml_ecosystem_snapshots."""

@@ -3,11 +3,11 @@
 from typing import Any
 from unittest.mock import patch
 
-from ml_framework_snapshots.models import (
+from ml_ecosystem_snapshots.models import (
     GhostInspector,
     to_parameter_kind,
 )
-from ml_framework_snapshots.utils import CExtensionSignature
+from ml_ecosystem_snapshots.utils import CExtensionSignature
 from ml_switcheroo_ir.schema.ghost import ParameterKind
 
 
@@ -41,11 +41,11 @@ def test_ghost_inspector_aten_overload_merge_and_returns() -> None:
     with (
         patch("inspect.signature", side_effect=ValueError),
         patch(
-            "ml_framework_snapshots.models.extract_c_extension_signature",
+            "ml_ecosystem_snapshots.models.extract_c_extension_signature",
             return_value=c_sig,
         ),
         patch(
-            "ml_framework_snapshots.frameworks.torch.extract_aten_c_extension_signature",
+            "ml_ecosystem_snapshots.frameworks.torch.extract_aten_c_extension_signature",
             return_value=aten_sig,
         ),
     ):
@@ -65,11 +65,11 @@ def test_ghost_inspector_opaque_c_extension_none_env_tags() -> None:
     with (
         patch("inspect.signature", side_effect=ValueError),
         patch(
-            "ml_framework_snapshots.models.extract_c_extension_signature",
+            "ml_ecosystem_snapshots.models.extract_c_extension_signature",
             return_value=None,
         ),
         patch(
-            "ml_framework_snapshots.frameworks.torch.extract_aten_c_extension_signature",
+            "ml_ecosystem_snapshots.frameworks.torch.extract_aten_c_extension_signature",
             return_value=None,
         ),
     ):

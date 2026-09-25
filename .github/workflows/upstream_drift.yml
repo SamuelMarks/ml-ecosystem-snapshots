@@ -35,7 +35,7 @@ jobs:
           for pkg in packages:
               try:
                   url = f'https://pypi.org/pypi/{pkg}/json'
-                  req = urllib.request.Request(url, headers={'User-Agent': 'ml-framework-snapshots-drift-check'})
+                  req = urllib.request.Request(url, headers={'User-Agent': 'ml-ecosystem-snapshots-drift-check'})
                   with urllib.request.urlopen(req, timeout=10) as resp:
                       data = json.loads(resp.read().decode())
                       latest_versions[pkg] = data['info']['version']
@@ -46,7 +46,7 @@ jobs:
           for gh_repo, name in [('openxla/stablehlo', 'stablehlo'), ('llvm/llvm-project', 'llvm')]:
               try:
                   url = f'https://api.github.com/repos/{gh_repo}/releases/latest'
-                  req = urllib.request.Request(url, headers={'User-Agent': 'ml-framework-snapshots-drift-check'})
+                  req = urllib.request.Request(url, headers={'User-Agent': 'ml-ecosystem-snapshots-drift-check'})
                   with urllib.request.urlopen(req, timeout=10) as resp:
                       data = json.loads(resp.read().decode())
                       latest_versions[name] = data.get('tag_name', 'latest')
@@ -65,10 +65,10 @@ jobs:
         run: |
           python3 -c "
           import os, glob
-          from ml_framework_snapshots.diff import diff_snapshots, generate_changelog
+          from ml_ecosystem_snapshots.diff import diff_snapshots, generate_changelog
 
           print('Checking bundled snapshot consistency against current schemas...')
-          snapshot_files = sorted(glob.glob('src/ml_framework_snapshots/snapshots/*.json'))
+          snapshot_files = sorted(glob.glob('src/ml_ecosystem_snapshots/snapshots/*.json'))
           for sf in snapshot_files:
               print(f'Inspected bundled snapshot: {os.path.basename(sf)}')
           "

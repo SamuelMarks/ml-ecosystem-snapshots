@@ -11,7 +11,7 @@ from typing import Any, cast
 from unittest import mock
 from unittest.mock import patch
 
-from ml_framework_snapshots.index import (
+from ml_ecosystem_snapshots.index import (
     clear_index,
     compute_file_sha256,
     ensure_index,
@@ -51,7 +51,7 @@ def test_get_cache_dir_xdg_env(monkeypatch: Any, tmp_path: Any) -> None:
     xdg_dir = str(tmp_path / "xdg_cache")
     monkeypatch.setenv("XDG_CACHE_HOME", xdg_dir)
     res = get_cache_dir()
-    assert res == os.path.join(xdg_dir, "ml_framework_snapshots")
+    assert res == os.path.join(xdg_dir, "ml_ecosystem_snapshots")
     assert os.path.isdir(res)
 
 
@@ -68,7 +68,7 @@ def test_get_cache_dir_fallback(monkeypatch: Any, tmp_path: Any) -> None:
         "os.path.expanduser", lambda path: str(tmp_path) if path == "~" else path
     )
     res = get_cache_dir()
-    expected = os.path.join(str(tmp_path), ".cache", "ml_framework_snapshots")
+    expected = os.path.join(str(tmp_path), ".cache", "ml_ecosystem_snapshots")
     assert res == expected
     assert os.path.isdir(res)
 
@@ -92,12 +92,12 @@ def test_get_cache_dir_filenotfound_fallback(monkeypatch: Any) -> None:
         Raises:
             FileNotFoundError: Always raised when path matches cache dir.
         """
-        if "ml_framework_snapshots" in path:
+        if "ml_ecosystem_snapshots" in path:
             raise FileNotFoundError("Broken symlink")
 
     monkeypatch.setattr("os.makedirs", mock_makedirs)
     res = get_cache_dir()
-    expected = os.path.join(tempfile.gettempdir(), "ml_framework_cache")
+    expected = os.path.join(tempfile.gettempdir(), "ml_ecosystem_cache")
     assert res == expected
 
 
@@ -121,13 +121,13 @@ def test_get_cache_dir_filenotfound_and_fallback_error(monkeypatch: Any) -> None
             FileNotFoundError: If cache dir in path.
             OSError: For all other paths.
         """
-        if "ml_framework_snapshots" in path:
+        if "ml_ecosystem_snapshots" in path:
             raise FileNotFoundError("Broken symlink")
         raise OSError("Fallback failed")
 
     monkeypatch.setattr("os.makedirs", mock_makedirs)
     res = get_cache_dir()
-    expected = os.path.join(tempfile.gettempdir(), "ml_framework_cache")
+    expected = os.path.join(tempfile.gettempdir(), "ml_ecosystem_cache")
     assert res == expected
 
 
@@ -158,7 +158,7 @@ def test_get_cache_dir_fileexists_fallback(monkeypatch: Any, tmp_path: Any) -> N
 
     monkeypatch.setattr("os.makedirs", mock_makedirs)
     res = get_cache_dir()
-    expected = os.path.join(str(tmp_path), ".cache", "ml_framework_snapshots")
+    expected = os.path.join(str(tmp_path), ".cache", "ml_ecosystem_snapshots")
     assert res == expected
 
 
@@ -491,7 +491,7 @@ def test_clear_index(tmp_path: Any) -> None:
 
     # Test OSError in clear_index
     with patch(
-        "ml_framework_snapshots.index.os.remove",
+        "ml_ecosystem_snapshots.index.os.remove",
         side_effect=OSError("Permission denied"),
     ):
         with open(db_file, "w") as f:
@@ -523,7 +523,7 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Any) -> None:
         tmp_path: Pytest temporary directory fixture.
     """
     import sqlite3
-    from ml_framework_snapshots.index import (
+    from ml_ecosystem_snapshots.index import (
         clean_index_cache,
         get_readonly_connection,
     )
@@ -547,7 +547,7 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Any) -> None:
     assert os.path.exists(wal_file)
 
     with patch(
-        "ml_framework_snapshots.index.os.remove",
+        "ml_ecosystem_snapshots.index.os.remove",
         side_effect=OSError("Permission denied"),
     ):
         removed_zero = clean_index_cache(db_file)
@@ -580,7 +580,7 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Any) -> None:
         return cast(sqlite3.Connection, orig_connect(*args, **kwargs))
 
     with patch(
-        "ml_framework_snapshots.index.sqlite3.connect", side_effect=mock_connect
+        "ml_ecosystem_snapshots.index.sqlite3.connect", side_effect=mock_connect
     ):
         conn_fallback = get_readonly_connection(db_file)
         assert conn_fallback is not None
@@ -617,7 +617,7 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Any) -> None:
             """Exit context manager."""
             pass
 
-    with patch("ml_framework_snapshots.index.sqlite3.connect", return_value=MockConn()):
+    with patch("ml_ecosystem_snapshots.index.sqlite3.connect", return_value=MockConn()):
         conn_pragma = init_db(str(tmp_path / "pragma_test.db"))
         assert conn_pragma is not None
 
@@ -658,7 +658,7 @@ def test_discover_local_snapshots_filtering(tmp_path: Any, monkeypatch: Any) -> 
         tmp_path: Pytest temporary directory fixture.
         monkeypatch: Pytest monkeypatch fixture.
     """
-    from ml_framework_snapshots.index import get_available_snapshot_files
+    from ml_ecosystem_snapshots.index import get_available_snapshot_files
 
     snap_dir = tmp_path / "custom_snaps"
     snap_dir.mkdir()
@@ -667,7 +667,7 @@ def test_discover_local_snapshots_filtering(tmp_path: Any, monkeypatch: Any) -> 
     (snap_dir / "ignore.txt").write_text("ignored", encoding="utf-8")
 
     monkeypatch.setattr(
-        "ml_framework_snapshots.index.get_custom_snapshots_paths",
+        "ml_ecosystem_snapshots.index.get_custom_snapshots_paths",
         lambda: [str(snap_dir), str(tmp_path / "nonexistent")],
     )
     files = get_available_snapshot_files()

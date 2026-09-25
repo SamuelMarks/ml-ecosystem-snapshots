@@ -4,9 +4,11 @@ from pathlib import Path
 from typing import Any, Dict
 
 import os
-from ml_framework_snapshots.utils import get_all_members
+import sys
+import pytest
+from ml_ecosystem_snapshots.utils import get_all_members
 
-from ml_framework_snapshots.api import (
+from ml_ecosystem_snapshots.api import (
     get_pkg_version,
     extract_snapshot,
     extract_all_snapshots,
@@ -93,11 +95,11 @@ def test_extract_snapshot(mocker: Any) -> None:
     assert extract_snapshot("nonexistent") == {}
 
     # unknown version
-    mocker.patch("ml_framework_snapshots.api.get_pkg_version", return_value="unknown")
+    mocker.patch("ml_ecosystem_snapshots.api.get_pkg_version", return_value="unknown")
     assert extract_snapshot("torch") == {}
 
     # successful extraction
-    mocker.patch("ml_framework_snapshots.api.get_pkg_version", return_value="1.0.0")
+    mocker.patch("ml_ecosystem_snapshots.api.get_pkg_version", return_value="1.0.0")
 
     mock_ref = GhostRef(name="MSELoss", api_path="torch.nn.MSELoss", kind="class")
 
@@ -154,7 +156,7 @@ def test_extract_all_snapshots(mocker: Any) -> None:
         mocker: Parameter.
     """
     mocker.patch(
-        "ml_framework_snapshots.api.extract_snapshot",
+        "ml_ecosystem_snapshots.api.extract_snapshot",
         side_effect=lambda fw, include_nonpublic=False: (
             {"version": "1"} if fw == "torch" else {}
         ),
@@ -180,7 +182,7 @@ def test_write_snapshot(tmp_path: Any) -> None:
 
 def test_get_available_frameworks_exception() -> None:
     """Test get_available_frameworks handles exceptions."""
-    from ml_framework_snapshots.api import get_available_frameworks
+    from ml_ecosystem_snapshots.api import get_available_frameworks
     from unittest.mock import patch
 
     with patch("pkgutil.iter_modules", return_value=[(None, "broken_module", False)]):
@@ -192,7 +194,7 @@ def test_get_available_frameworks_exception() -> None:
 
 def test_get_available_frameworks_discovery() -> None:
     """Test function."""
-    from ml_framework_snapshots.api import get_available_frameworks
+    from ml_ecosystem_snapshots.api import get_available_frameworks
     from unittest.mock import patch, MagicMock
 
     mock_mod = MagicMock()
@@ -236,7 +238,7 @@ def test_get_available_frameworks_discovery() -> None:
 
 def test_get_available_frameworks_aliases() -> None:
     """Test function."""
-    from ml_framework_snapshots.api import get_available_frameworks
+    from ml_ecosystem_snapshots.api import get_available_frameworks
     from unittest.mock import patch, MagicMock
 
     with patch(
@@ -267,7 +269,7 @@ def test_get_available_frameworks_aliases() -> None:
 
 def test_get_available_frameworks_not_startswith_collect() -> None:
     """Test function."""
-    from ml_framework_snapshots.api import get_available_frameworks
+    from ml_ecosystem_snapshots.api import get_available_frameworks
     from unittest.mock import patch, MagicMock
 
     with patch("pkgutil.iter_modules", return_value=[(None, "foo", False)]):
@@ -295,7 +297,7 @@ def test_get_available_frameworks_not_startswith_collect() -> None:
 
 def test_consolidate_aliases_shorter() -> None:
     """Test function."""
-    from ml_framework_snapshots.api import _consolidate_aliases
+    from ml_ecosystem_snapshots.api import _consolidate_aliases
     from ml_switcheroo_ir.schema.ghost import GhostRef
 
     r1 = GhostRef(
@@ -337,7 +339,7 @@ def test_consolidate_aliases_shorter() -> None:
 
 def test_consolidate_aliases_none_aliases() -> None:
     """Test _consolidate_aliases handling None aliases and standalone ref."""
-    from ml_framework_snapshots.api import _consolidate_aliases
+    from ml_ecosystem_snapshots.api import _consolidate_aliases
     from ml_switcheroo_ir.schema.ghost import GhostRef
 
     r0 = GhostRef(name="alone", api_path="alone.func", kind="function", aliases=None)
@@ -353,17 +355,17 @@ def test_consolidate_aliases_none_aliases() -> None:
 
 def test_extract_all_snapshots_no_data() -> None:
     """Test function."""
-    from ml_framework_snapshots.api import extract_all_snapshots
+    from ml_ecosystem_snapshots.api import extract_all_snapshots
     from unittest.mock import patch
 
-    with patch("ml_framework_snapshots.api.extract_snapshot", return_value={}):
+    with patch("ml_ecosystem_snapshots.api.extract_snapshot", return_value={}):
         res = extract_all_snapshots()
         assert len(res) == 0
 
 
 def test_get_available_frameworks_not_collect() -> None:
     """Test function."""
-    from ml_framework_snapshots.api import get_available_frameworks
+    from ml_ecosystem_snapshots.api import get_available_frameworks
     from unittest.mock import patch, MagicMock
 
     with patch("pkgutil.iter_modules", return_value=[(None, "bar", False)]):
@@ -396,7 +398,7 @@ def test_get_available_frameworks_not_collect() -> None:
 
 def test_consolidate_aliases_same_length() -> None:
     """Test function."""
-    from ml_framework_snapshots.api import _consolidate_aliases
+    from ml_ecosystem_snapshots.api import _consolidate_aliases
     from ml_switcheroo_ir.schema.ghost import GhostRef
 
     # The else branch is hit when api_path len is not < existing.api_path len
@@ -443,7 +445,7 @@ def test_api_version_aliases(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    import ml_framework_snapshots.api as api
+    import ml_ecosystem_snapshots.api as api
 
     mocker.patch("importlib.metadata.version", return_value="1.2.3")
     assert api.get_pkg_version("pytorch") == "1.2.3"
@@ -456,7 +458,7 @@ def test_api_version_aliases(mocker: Any) -> None:
 
 def test_get_pkg_version_extra() -> None:
     """Test get_pkg_version for extra packages."""
-    from ml_framework_snapshots.api import get_pkg_version
+    from ml_ecosystem_snapshots.api import get_pkg_version
     import unittest.mock as mock
 
     with mock.patch("importlib.metadata.version") as mock_version:
@@ -473,7 +475,7 @@ def test_get_pkg_version_extra() -> None:
 
 def test_get_pkg_version_more() -> None:
     """Test get_pkg_version for more packages."""
-    from ml_framework_snapshots.api import get_pkg_version
+    from ml_ecosystem_snapshots.api import get_pkg_version
     import unittest.mock as mock
 
     with mock.patch("importlib.metadata.version") as mock_version:
@@ -486,7 +488,7 @@ def test_get_pkg_version_more() -> None:
 
 def test_get_pkg_version_cupy_tensorflow() -> None:
     """Test get_pkg_version for cupy and tensorflow branches."""
-    from ml_framework_snapshots.api import get_pkg_version
+    from ml_ecosystem_snapshots.api import get_pkg_version
     import unittest.mock as mock
 
     # Cupy success
@@ -523,7 +525,7 @@ def test_get_pkg_version_cupy_tensorflow() -> None:
 
 def test_get_pkg_version_fallback() -> None:
     """Test get_pkg_version fallback using pip freeze."""
-    from ml_framework_snapshots.api import get_pkg_version
+    from ml_ecosystem_snapshots.api import get_pkg_version
     import unittest.mock as mock
 
     with mock.patch("importlib.metadata.version", side_effect=Exception):
@@ -566,7 +568,7 @@ def test_get_pkg_version_keras(mocker: Any) -> None:
     Args:
         mocker: Mock fixture.
     """
-    from ml_framework_snapshots.api import get_pkg_version
+    from ml_ecosystem_snapshots.api import get_pkg_version
 
     mocker.patch("subprocess.run", side_effect=Exception)
 
@@ -625,7 +627,7 @@ def test_extract_snapshot_stablehlo_zero_dep() -> None:
 def test_validate_snapshot_envelope_and_extraction_metadata() -> None:
     """Test validate_snapshot_envelope function and envelope fields in extract_snapshot."""
     import pytest
-    from ml_framework_snapshots.api import validate_snapshot_envelope, extract_snapshot
+    from ml_ecosystem_snapshots.api import validate_snapshot_envelope, extract_snapshot
 
     # Test invalid type
     with pytest.raises(ValueError, match="Snapshot must be a dictionary"):
@@ -664,7 +666,7 @@ def test_validate_snapshot_envelope_and_extraction_metadata() -> None:
 def test_get_pkg_version_hardware_and_mlir_fallbacks(mocker: Any) -> None:
     """Test get_pkg_version for mlir and hardware targets with file present and missing."""
     import unittest.mock as mock
-    from ml_framework_snapshots.api import get_pkg_version
+    from ml_ecosystem_snapshots.api import get_pkg_version
 
     # mlir with importlib raising exception -> reads mlir_exhaustive.json
     mocker.patch(
@@ -716,7 +718,7 @@ def test_get_pkg_version_hardware_and_mlir_fallbacks(mocker: Any) -> None:
 
 def test_extract_snapshot_isolated() -> None:
     """Test extracting a snapshot in an isolated subprocess."""
-    from ml_framework_snapshots.api import extract_snapshot_isolated
+    from ml_ecosystem_snapshots.api import extract_snapshot_isolated
 
     # Extract lightweight target in child subprocess
     snap = extract_snapshot_isolated("html_dsl", timeout=30)
@@ -743,11 +745,11 @@ def test_extract_snapshot_isolated() -> None:
 
     # Test extract_all_snapshots with isolated=True
     with mock.patch(
-        "ml_framework_snapshots.api.FRAMEWORK_COLLECTORS",
+        "ml_ecosystem_snapshots.api.FRAMEWORK_COLLECTORS",
         {"html_dsl": None},
     ):
         with mock.patch(
-            "ml_framework_snapshots.api.extract_snapshot_isolated",
+            "ml_ecosystem_snapshots.api.extract_snapshot_isolated",
             return_value={"target": "html_dsl"},
         ):
             res_all = extract_all_snapshots(isolated=True)
@@ -758,12 +760,12 @@ def test_init_import_error(monkeypatch: Any) -> None:
     """Test fallback when importing api in __init__ raises ImportError."""
     import builtins
     import importlib
-    import ml_framework_snapshots
+    import ml_ecosystem_snapshots
 
     orig_import = builtins.__import__
 
     def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        """Simulate missing ml_framework_snapshots.api.
+        """Simulate missing ml_ecosystem_snapshots.api.
 
         Args:
             name: Module name.
@@ -773,39 +775,48 @@ def test_init_import_error(monkeypatch: Any) -> None:
         Returns:
             Imported module.
         """
-        if name == "ml_framework_snapshots.api":
+        if name == "ml_ecosystem_snapshots.api":
             raise ImportError("simulated missing api")
         return orig_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
-    importlib.reload(ml_framework_snapshots)
-    assert ml_framework_snapshots.__all__ == ["__version__"]
-    assert ml_framework_snapshots.__version__ == "0.0.3"
+    importlib.reload(ml_ecosystem_snapshots)
+    assert ml_ecosystem_snapshots.__all__ == ["__version__"]
+    assert ml_ecosystem_snapshots.__version__ == "0.0.3"
 
     # Restore normal import
     monkeypatch.undo()
-    importlib.reload(ml_framework_snapshots)
-    assert "extract_snapshot" in ml_framework_snapshots.__all__
-    assert ml_framework_snapshots.__version__ == "0.0.3"
+    importlib.reload(ml_ecosystem_snapshots)
+    assert "extract_snapshot" in ml_ecosystem_snapshots.__all__
+    assert ml_ecosystem_snapshots.__version__ == "0.0.3"
 
 
 def test_package_version_exposed() -> None:
-    """Test that ml_framework_snapshots.__version__ matches hatch metadata."""
-    import ml_framework_snapshots
+    """Test that ml_ecosystem_snapshots.__version__ matches hatch metadata."""
+    import ml_ecosystem_snapshots
     from hatchling.metadata.core import ProjectMetadata
     from hatchling.plugin.manager import PluginManager
 
-    assert ml_framework_snapshots.__version__ == "0.0.3"
-    assert "__version__" in ml_framework_snapshots.__all__
+    assert ml_ecosystem_snapshots.__version__ == "0.0.3"
+    assert "__version__" in ml_ecosystem_snapshots.__all__
 
     pm = PluginManager()
     project_metadata = ProjectMetadata(".", pm)
-    assert project_metadata.version == ml_framework_snapshots.__version__
+    assert project_metadata.version == ml_ecosystem_snapshots.__version__
 
 
-def test_get_pkg_version_new_dialects() -> None:
-    """Verify get_pkg_version resolves all newly added target versions."""
-    from ml_framework_snapshots.api import get_pkg_version
+def test_get_pkg_version_new_dialects(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify get_pkg_version resolves all newly added target versions.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    import types
+    from ml_ecosystem_snapshots.api import get_pkg_version
+
+    fake_onnx = types.ModuleType("onnx")
+    setattr(fake_onnx, "__version__", "1.17.0")
+    monkeypatch.setitem(sys.modules, "onnx", fake_onnx)
 
     assert get_pkg_version("metal") == "3.2"
     assert get_pkg_version("wasm_simd") == "2.0"
@@ -823,7 +834,7 @@ def test_get_pkg_version_new_dialects() -> None:
 
 def test_make_lazy_collector_execution() -> None:
     """Verify _make_lazy_collector forwards execution dynamically."""
-    from ml_framework_snapshots.api import _make_lazy_collector
+    from ml_ecosystem_snapshots.api import _make_lazy_collector
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     collector = _make_lazy_collector("metal", "collect_api")
@@ -831,7 +842,7 @@ def test_make_lazy_collector_execution() -> None:
     assert len(refs) > 0
 
     collector_abs = _make_lazy_collector(
-        "ml_framework_snapshots.frameworks.metal", "collect_api"
+        "ml_ecosystem_snapshots.frameworks.metal", "collect_api"
     )
     refs_abs = collector_abs(SemanticTier.ARRAY_API)
     assert len(refs_abs) > 0
@@ -839,7 +850,7 @@ def test_make_lazy_collector_execution() -> None:
 
 def test_get_available_frameworks_import_exception() -> None:
     """Verify get_available_frameworks falls back to lazy collector when import raises."""
-    from ml_framework_snapshots.api import get_available_frameworks
+    from ml_ecosystem_snapshots.api import get_available_frameworks
     import unittest.mock as mock
 
     with mock.patch("pkgutil.iter_modules", return_value=[(None, "broken_mod", False)]):
@@ -848,38 +859,11 @@ def test_get_available_frameworks_import_exception() -> None:
             assert "broken_mod" in res
 
 
-def test_get_pkg_version_import_fallbacks(monkeypatch: Any) -> None:
-    """Verify get_pkg_version exception handlers for new dialects."""
-    import builtins
-    from ml_framework_snapshots.api import get_pkg_version
-
-    real_import = builtins.__import__
-
-    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        if name in (
-            "numba",
-            "sparse",
-            "onnx",
-            "awkward",
-            "pyarrow",
-            "bohrium",
-            "dpnp",
-        ):
-            raise ImportError(f"simulated {name} error")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", mock_import)
-    assert get_pkg_version("dpnp") == "0.15.0"
-    assert get_pkg_version("awkward") == "2.6.8"
-    assert get_pkg_version("pyarrow_compute") == "17.0.0"
-    assert get_pkg_version("bohrium") == "0.13.0"
-
-
 def test_get_available_frameworks_discovery_branches() -> None:
     """Verify get_available_frameworks skips underscored modules and handles empty collectors."""
     import types
     import unittest.mock as mock
-    from ml_framework_snapshots.api import get_available_frameworks
+    from ml_ecosystem_snapshots.api import get_available_frameworks
 
     fake_modules = [
         (None, "_private_mod", False),
@@ -903,12 +887,22 @@ def test_get_pkg_version_ir_package(monkeypatch: Any, mocker: Any) -> None:
     """
     import builtins
     import types
-    from ml_framework_snapshots.api import get_pkg_version
+    from ml_ecosystem_snapshots.api import get_pkg_version
 
     mock_ir = types.SimpleNamespace(__version__="0.0.9")
     real_import = builtins.__import__
 
     def mock_import_success(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import returning mock IR.
+
+        Args:
+            name: Module name.
+            *args: Positional args.
+            **kwargs: Keyword args.
+
+        Returns:
+            Module namespace or real module.
+        """
         if name == "ml_switcheroo_ir":
             return mock_ir
         return real_import(name, *args, **kwargs)
@@ -917,6 +911,19 @@ def test_get_pkg_version_ir_package(monkeypatch: Any, mocker: Any) -> None:
     assert get_pkg_version("ir") == "0.0.9"
 
     def mock_import_fail(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import raising ImportError on IR.
+
+        Args:
+            name: Module name.
+            *args: Positional args.
+            **kwargs: Keyword args.
+
+        Returns:
+            Real imported module.
+
+        Raises:
+            ImportError: When importing ml_switcheroo_ir.
+        """
         if name == "ml_switcheroo_ir":
             raise ImportError("no ml_switcheroo_ir")
         return real_import(name, *args, **kwargs)
@@ -932,7 +939,7 @@ def test_get_pkg_version_dialects_and_aliases(mocker: Any) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
-    from ml_framework_snapshots.api import get_pkg_version
+    from ml_ecosystem_snapshots.api import get_pkg_version
 
     assert get_pkg_version("wgsl") == "draft-2024"
     assert get_pkg_version("metal") == "3.2"
@@ -959,7 +966,7 @@ def test_get_pkg_version_modules_installed_and_fallbacks(
     import builtins
     import importlib.metadata
     import types
-    from ml_framework_snapshots.api import get_pkg_version
+    from ml_ecosystem_snapshots.api import get_pkg_version
 
     mock_modules: Dict[str, Any] = {
         "numba": types.SimpleNamespace(__version__="0.60.2"),
@@ -973,6 +980,16 @@ def test_get_pkg_version_modules_installed_and_fallbacks(
     real_import = builtins.__import__
 
     def mock_import_success(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import returning mock modules.
+
+        Args:
+            name: Module name.
+            *args: Positional args.
+            **kwargs: Keyword args.
+
+        Returns:
+            Mock module or real module.
+        """
         if name in mock_modules:
             return mock_modules[name]
         return real_import(name, *args, **kwargs)
@@ -988,6 +1005,19 @@ def test_get_pkg_version_modules_installed_and_fallbacks(
     assert get_pkg_version("onnx_spec") == "1.17.2"
 
     def mock_import_fail(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import raising error for simulated modules.
+
+        Args:
+            name: Module name.
+            *args: Positional args.
+            **kwargs: Keyword args.
+
+        Returns:
+            Real imported module.
+
+        Raises:
+            ImportError: When importing simulated modules.
+        """
         if name in mock_modules:
             raise ImportError(f"simulated import error for {name}")
         return real_import(name, *args, **kwargs)
@@ -995,6 +1025,17 @@ def test_get_pkg_version_modules_installed_and_fallbacks(
     monkeypatch.setattr(builtins, "__import__", mock_import_fail)
 
     def mock_metadata_version(pkg: str) -> str:
+        """Mock metadata version lookup.
+
+        Args:
+            pkg: Package name.
+
+        Returns:
+            Version string.
+
+        Raises:
+            PackageNotFoundError: When package not in mock versions.
+        """
         versions = {
             "numba": "0.60.0",
             "sparse": "0.15.4",
@@ -1018,7 +1059,7 @@ def test_get_pkg_version_pip_freeze_url_format(mocker: Any) -> None:
         mocker: Pytest mocker fixture.
     """
     import subprocess
-    from ml_framework_snapshots.api import get_pkg_version
+    from ml_ecosystem_snapshots.api import get_pkg_version
 
     mocker.patch("importlib.metadata.version", side_effect=Exception("not in metadata"))
     mocker.patch(
@@ -1034,7 +1075,7 @@ def test_get_pkg_version_pip_freeze_url_format(mocker: Any) -> None:
 
 def test_extract_snapshot_hardware_and_dsl_metadata() -> None:
     """Verify extract_snapshot metadata population for ptx, mlir, and dsl targets."""
-    from ml_framework_snapshots.api import extract_snapshot
+    from ml_ecosystem_snapshots.api import extract_snapshot
 
     ptx_snap = extract_snapshot("nvidia_ptx")
     assert ptx_snap["target"] == "nvidia_ptx"
@@ -1056,7 +1097,7 @@ def test_extract_snapshot_hardware_and_dsl_metadata() -> None:
 
 def test_validate_snapshot_envelope_empty_target_and_time() -> None:
     """Verify validate_snapshot_envelope fallback behavior for missing/empty target and timestamp."""
-    from ml_framework_snapshots.api import validate_snapshot_envelope
+    from ml_ecosystem_snapshots.api import validate_snapshot_envelope
 
     env_empty = validate_snapshot_envelope({})
     assert env_empty.target == "unknown"
@@ -1074,7 +1115,7 @@ def test_write_snapshot_special_chars(tmp_path: Path) -> None:
     Args:
         tmp_path: Pytest temporary directory fixture.
     """
-    from ml_framework_snapshots.api import write_snapshot
+    from ml_ecosystem_snapshots.api import write_snapshot
 
     snap_data = {
         "schema_version": "1.0.0",
@@ -1094,7 +1135,7 @@ def test_extract_snapshot_isolated_empty_output(mocker: Any) -> None:
         mocker: Pytest mocker fixture.
     """
     import subprocess
-    from ml_framework_snapshots.api import extract_snapshot_isolated
+    from ml_ecosystem_snapshots.api import extract_snapshot_isolated
 
     mocker.patch(
         "subprocess.run",
@@ -1105,3 +1146,114 @@ def test_extract_snapshot_isolated_empty_output(mocker: Any) -> None:
         ),
     )
     assert extract_snapshot_isolated("html_dsl") == {}
+
+
+def test_get_pkg_version_import_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify get_pkg_version handles import failures and successes for specialized packages.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    import builtins
+    import types
+    from ml_ecosystem_snapshots.api import get_pkg_version
+
+    pkgs = [
+        "scipy",
+        "torchvision",
+        "torchaudio",
+        "safetensors",
+        "torch",
+        "numba",
+        "sparse",
+        "dpnp",
+        "awkward",
+        "pyarrow",
+        "bohrium",
+        "onnx",
+    ]
+
+    # 1. Success branches
+    for name in pkgs:
+        fake_mod = types.ModuleType(name)
+        setattr(fake_mod, "__version__", "7.7.7")
+        monkeypatch.setitem(sys.modules, name, fake_mod)
+
+    assert get_pkg_version("scipy") == "7.7.7"
+    assert get_pkg_version("torchvision") == "7.7.7"
+    assert get_pkg_version("torchaudio") == "7.7.7"
+    assert get_pkg_version("safetensors") == "7.7.7"
+    assert get_pkg_version("aten") == "7.7.7"
+    assert get_pkg_version("numba") == "7.7.7"
+    assert get_pkg_version("sparse") == "7.7.7"
+    assert get_pkg_version("dpnp") == "7.7.7"
+    assert get_pkg_version("awkward") == "7.7.7"
+    assert get_pkg_version("pyarrow_compute") == "7.7.7"
+    assert get_pkg_version("bohrium") == "7.7.7"
+    assert get_pkg_version("onnx") == "7.7.7"
+    assert get_pkg_version("onnx_spec") == "7.7.7"
+
+    # 2. Failure branches
+    real_import = builtins.__import__
+
+    for name in pkgs:
+        monkeypatch.delitem(sys.modules, name, raising=False)
+
+    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import raising error for targets.
+
+        Args:
+            name: Module name.
+            *args: Positional args.
+            **kwargs: Keyword args.
+
+        Returns:
+            Module or raises ImportError.
+        """
+        if name in pkgs:
+            raise ImportError(f"Simulated {name} absent")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import)
+    monkeypatch.setattr("importlib.metadata.version", lambda pkg: "9.9.9")
+
+    assert get_pkg_version("scipy") == "9.9.9"
+    assert get_pkg_version("torchvision") == "9.9.9"
+    assert get_pkg_version("torchaudio") == "9.9.9"
+    assert get_pkg_version("safetensors") == "9.9.9"
+    assert get_pkg_version("aten") == "9.9.9"
+    assert get_pkg_version("numba") == "9.9.9"
+    assert get_pkg_version("sparse") == "9.9.9"
+    assert get_pkg_version("dpnp") == "0.15.0"
+    assert get_pkg_version("awkward") == "2.6.8"
+    assert get_pkg_version("pyarrow_compute") == "17.0.0"
+    assert get_pkg_version("bohrium") == "0.13.0"
+    assert get_pkg_version("onnx") == "9.9.9"
+    assert get_pkg_version("onnx_spec") == "9.9.9"
+    assert get_pkg_version("array_api") == "2024.12"
+    assert get_pkg_version("nccl") == "2.21"
+    assert get_pkg_version("rccl") == "2.21"
+    assert get_pkg_version("flash_attention") == "2.6.3"
+    assert get_pkg_version("flash_attn") == "2.6.3"
+
+
+def test_extract_snapshot_isolated_pythonpath(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify extract_snapshot_isolated appends existing PYTHONPATH to subprocess env.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    import unittest.mock as mock
+    from ml_ecosystem_snapshots.api import extract_snapshot_isolated
+
+    monkeypatch.setenv("PYTHONPATH", "/custom/test/path")
+    with mock.patch(
+        "subprocess.run",
+        return_value=mock.MagicMock(returncode=0, stdout='{"target": "html_dsl"}'),
+    ) as mock_run:
+        res = extract_snapshot_isolated("html_dsl")
+        assert res.get("target") == "html_dsl"
+        called_env = mock_run.call_args[1]["env"]
+        assert "/custom/test/path" in called_env["PYTHONPATH"]

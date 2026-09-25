@@ -6,7 +6,7 @@ import os
 from typing import Any
 
 
-from ml_framework_snapshots.stubs import generate_stubs
+from ml_ecosystem_snapshots.stubs import generate_stubs
 
 
 def test_generate_stubs(tmp_path: Any) -> None:
@@ -229,7 +229,7 @@ def test_generate_stubs_list_and_non_dict(tmp_path: Any) -> None:
         tmp_path: Pytest temporary directory fixture.
     """
     import pytest
-    from ml_framework_snapshots.stubs import validate_pyi_stub
+    from ml_ecosystem_snapshots.stubs import validate_pyi_stub
 
     # Test snapshot_data as list
     list_data = [

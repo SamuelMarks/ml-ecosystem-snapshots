@@ -34,7 +34,7 @@ def test_torch_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks import torch as torch_fw
+    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     class Module:
         """Class docstring."""
@@ -370,8 +370,8 @@ def test_torch_collect_in_place_mutation_already_tagged(mocker: Any) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
-    from ml_framework_snapshots.frameworks import torch as torch_fw
-    from ml_framework_snapshots.models import GhostInspector, GhostPythonRef
+    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
+    from ml_ecosystem_snapshots.models import GhostInspector, GhostPythonRef
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     fake_ref = GhostPythonRef(
@@ -398,7 +398,7 @@ def test_torch_import_error(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks import torch as torch_fw
+    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     mocker.patch.object(torch_fw, "nn", None)
     mocker.patch.object(torch_fw, "optim", None)
@@ -427,7 +427,7 @@ def test_torch_typeerror(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks import torch as torch_fw
+    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     class BadLoss:
         """Class docstring."""
@@ -461,7 +461,7 @@ def test_tensorflow_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks import tensorflow as tf_fw
+    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
 
     def relu() -> Any:
         """Function docstring."""
@@ -679,7 +679,7 @@ def test_tf_raw_ops_none_env_tags(mocker: Any) -> None:
         mocker: Pytest mocker fixture.
     """
     import types
-    from ml_framework_snapshots.frameworks import tensorflow as tf_fw
+    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
     from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
     fake_raw = types.ModuleType("tf.raw_ops")
@@ -695,7 +695,7 @@ def test_tf_raw_ops_none_env_tags(mocker: Any) -> None:
     )
     mocker.patch.object(tf_fw, "tf", fake_tf)
     mocker.patch(
-        "ml_framework_snapshots.models.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
         return_value=ref,
     )
 
@@ -711,7 +711,7 @@ def test_tf_raw_ops_inspect_exception(mocker: Any) -> None:
         mocker: Pytest mocker fixture.
     """
     import types
-    from ml_framework_snapshots.frameworks import tensorflow as tf_fw
+    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     fake_raw = types.ModuleType("tf.raw_ops")
@@ -721,7 +721,7 @@ def test_tf_raw_ops_inspect_exception(mocker: Any) -> None:
 
     mocker.patch.object(tf_fw, "tf", fake_tf)
     mocker.patch(
-        "ml_framework_snapshots.models.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
         side_effect=RuntimeError("Broken op inspect"),
     )
 
@@ -735,7 +735,7 @@ def test_tf_collect_outer_exception(mocker: Any) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
-    from ml_framework_snapshots.frameworks import tensorflow as tf_fw
+    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     fake_tf = mocker.MagicMock()
@@ -748,7 +748,7 @@ def test_tf_collect_outer_exception(mocker: Any) -> None:
 
     # Exception branch coverage
     mocker.patch(
-        "ml_framework_snapshots.frameworks.tensorflow.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.tensorflow.get_all_members",
         side_effect=Exception,
     )
     assert tf_fw.collect_api(SemanticTier.LAYER) == []
@@ -776,7 +776,7 @@ def test_keras_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks import keras as keras_fw
+    from ml_ecosystem_snapshots.frameworks import keras as keras_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     class MockMember:
@@ -922,8 +922,8 @@ def test_keras_collect(mocker: Any) -> None:
 
 def test_keras_collect_static_none_env_tags(mocker: Any) -> None:
     """Test _collect_static for ARRAY_API when ref.environment_tags is None."""
-    from ml_framework_snapshots.frameworks import keras as keras_fw
-    from ml_framework_snapshots.frameworks.keras import _collect_static
+    from ml_ecosystem_snapshots.frameworks import keras as keras_fw
+    from ml_ecosystem_snapshots.frameworks.keras import _collect_static
     from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
     mocker.patch.object(keras_fw, "griffe", object())
@@ -934,7 +934,7 @@ def test_keras_collect_static_none_env_tags(mocker: Any) -> None:
         environment_tags=None,
     )
     mocker.patch(
-        "ml_framework_snapshots.frameworks.keras._scan_griffe_module",
+        "ml_ecosystem_snapshots.frameworks.keras._scan_griffe_module",
         return_value=[ref],
     )
     res = _collect_static(SemanticTier.ARRAY_API, False)
@@ -948,7 +948,7 @@ def test_mlx_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks import mlx as mlx_fw
+    from ml_ecosystem_snapshots.frameworks import mlx as mlx_fw
 
     class Dense:
         """Class docstring."""
@@ -1036,7 +1036,7 @@ def test_mlx_collect(mocker: Any) -> None:
 
     # Exception branch coverage
     mocker.patch(
-        "ml_framework_snapshots.frameworks.tensorflow.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.tensorflow.get_all_members",
         side_effect=Exception,
     )
     assert mlx_fw.collect_api(SemanticTier.LAYER) == []
@@ -1048,8 +1048,8 @@ def test_jax_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks import jax as jax_fw
-    from ml_framework_snapshots.frameworks.optax_shim import OptaxScanner
+    from ml_ecosystem_snapshots.frameworks import jax as jax_fw
+    from ml_ecosystem_snapshots.frameworks.optax_shim import OptaxScanner
 
     def relu() -> Any:
         """Function docstring."""
@@ -1171,7 +1171,7 @@ def test_jax_collect(mocker: Any) -> None:
     # Test line 139 when transpose is on jnp but not yet in found
     fake_jnp_extra = create_module("jax.numpy", {"transpose": lambda a: a})
     mocker.patch(
-        "ml_framework_snapshots.frameworks.jax.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.jax.get_all_members",
         return_value=[],
     )
     mocker.patch.dict("sys.modules", {"jax.numpy": fake_jnp_extra})
@@ -1183,8 +1183,8 @@ def test_jax_collect(mocker: Any) -> None:
 
 def test_jax_static_arg_metadata_none_environment_tags(mocker: Any) -> None:
     """Test _attach_jax_static_arg_metadata when environment_tags is None."""
-    from ml_framework_snapshots.frameworks import jax as jax_fw
-    from ml_framework_snapshots.frameworks.jax import _attach_jax_static_arg_metadata
+    from ml_ecosystem_snapshots.frameworks import jax as jax_fw
+    from ml_ecosystem_snapshots.frameworks.jax import _attach_jax_static_arg_metadata
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     class FakeObj:
@@ -1223,7 +1223,7 @@ def test_jax_static_arg_metadata_none_environment_tags(mocker: Any) -> None:
     # Exception branch coverage with jax not None
     mocker.patch.object(jax_fw, "jax", True)
     with patch(
-        "ml_framework_snapshots.frameworks.jax.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.jax.get_all_members",
         side_effect=Exception,
     ):
         assert jax_fw.collect_api(SemanticTier.ACTIVATION) == []
@@ -1254,7 +1254,7 @@ def test_flax_nnx_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks import flax_nnx as flax_fw
+    from ml_ecosystem_snapshots.frameworks import flax_nnx as flax_fw
 
     class Module:
         """Class docstring."""
@@ -1283,7 +1283,7 @@ def test_flax_nnx_collect(mocker: Any) -> None:
 
     mocker.patch.object(flax_fw, "nnx", fake_nnx)
     mocker.patch(
-        "ml_framework_snapshots.frameworks.flax_nnx.jax_collect_api",
+        "ml_ecosystem_snapshots.frameworks.flax_nnx.jax_collect_api",
         return_value=[
             GhostRef(
                 name="delegated",
@@ -1303,7 +1303,7 @@ def test_flax_nnx_collect(mocker: Any) -> None:
 
     # Exception branch coverage
     mocker.patch(
-        "ml_framework_snapshots.frameworks.flax_nnx.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.flax_nnx.get_all_members",
         side_effect=Exception,
     )
     assert flax_fw.collect_api(SemanticTier.LAYER) == []
@@ -1322,7 +1322,7 @@ def test_optax_shim_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    import ml_framework_snapshots.frameworks.optax_shim as o_shim
+    import ml_ecosystem_snapshots.frameworks.optax_shim as o_shim
 
     def adam() -> Any:
         """Function docstring."""
@@ -1417,7 +1417,7 @@ def test_optax_shim_collect(mocker: Any) -> None:
 
     # Exception branch coverage
     mocker.patch(
-        "ml_framework_snapshots.models.GhostInspector.inspect", side_effect=Exception
+        "ml_ecosystem_snapshots.models.GhostInspector.inspect", side_effect=Exception
     )
     assert o_shim.OptaxScanner.scan_optimizers() == []
     assert o_shim.OptaxScanner.scan_losses() == []
@@ -1435,7 +1435,7 @@ def test_sklearn_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks import sklearn as sklearn_fw
+    from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
     import types
 
@@ -1523,7 +1523,7 @@ def test_sklearn_import_error(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks import sklearn as sklearn_fw
+    from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     mocker.patch.object(sklearn_fw, "sklearn", None)
@@ -1538,7 +1538,7 @@ def test_sklearn_module_import_error(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks import sklearn as sklearn_fw
+    from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
     import types
     import builtins
@@ -1582,7 +1582,7 @@ def test_sklearn_scan_module_edge_cases(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks.sklearn import _scan_module
+    from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
     import types
 
     # 43: not module
@@ -1606,7 +1606,7 @@ def test_sklearn_scan_module_edge_cases(mocker: Any) -> None:
 
     setattr(mock_mod, "bad_obj", BadObj())
     mocker.patch(
-        "ml_framework_snapshots.frameworks.tensorflow.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.tensorflow.get_all_members",
         side_effect=Exception("mocked"),
     )
     assert _scan_module(mock_mod, "prefix") == []
@@ -1623,7 +1623,7 @@ def test_sklearn_scan_module_edge_cases(mocker: Any) -> None:
     setattr(mock_mod2, "blocked", ValidObj)
 
     mocker.patch(
-        "ml_framework_snapshots.frameworks.tensorflow.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.tensorflow.get_all_members",
         return_value=[("_private", ValidObj), ("blocked", ValidObj)],
     )
     mocker.patch("inspect.isclass", return_value=True)
@@ -1636,7 +1636,7 @@ def test_sklearn_scan_module_branches(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks.sklearn import _scan_module
+    from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
     import types
 
     mock_mod = types.ModuleType("mock_mod")
@@ -1655,7 +1655,7 @@ def test_sklearn_scan_module_branches(mocker: Any) -> None:
     setattr(mock_mod, "valid_func", valid_func)
 
     mocker.patch(
-        "ml_framework_snapshots.frameworks.tensorflow.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.tensorflow.get_all_members",
         return_value=[
             ("ValidObj", ValidObj),
             ("valid_func", valid_func),
@@ -1676,12 +1676,12 @@ def test_sklearn_scan_module_exception(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks.sklearn import _scan_module
+    from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
     import types
 
     mock_mod = types.ModuleType("mock_mod")
     mocker.patch(
-        "ml_framework_snapshots.frameworks.sklearn.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.sklearn.get_all_members",
         side_effect=Exception("Mocked failure in get_all_members"),
     )
     res = _scan_module(mock_mod, "prefix")
@@ -1694,9 +1694,9 @@ def test_numpy_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    import ml_framework_snapshots.frameworks.numpy as np_shim
+    import ml_ecosystem_snapshots.frameworks.numpy as np_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
-    from ml_framework_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.models import GhostInspector
 
     def tanh() -> Any:
         """Docstring."""
@@ -1748,7 +1748,7 @@ def test_numpy_collect(mocker: Any) -> None:
         return original_inspect(obj, api_path, **kwargs)
 
     mocker.patch(
-        "ml_framework_snapshots.frameworks.numpy.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.frameworks.numpy.GhostInspector.inspect",
         side_effect=mock_inspect,
     )
 
@@ -1782,9 +1782,9 @@ def test_orbax_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    import ml_framework_snapshots.frameworks.orbax_checkpoint as ocp_shim
+    import ml_ecosystem_snapshots.frameworks.orbax_checkpoint as ocp_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
-    from ml_framework_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.models import GhostInspector
 
     def checkpoint() -> Any:
         """Docstring."""
@@ -1836,7 +1836,7 @@ def test_orbax_collect(mocker: Any) -> None:
         return original_inspect(obj, api_path, **kwargs)
 
     mocker.patch(
-        "ml_framework_snapshots.frameworks.orbax_checkpoint.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.frameworks.orbax_checkpoint.GhostInspector.inspect",
         side_effect=mock_inspect,
     )
 
@@ -1866,9 +1866,9 @@ def test_pax_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    import ml_framework_snapshots.frameworks.pax as pax_shim
+    import ml_ecosystem_snapshots.frameworks.pax as pax_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
-    from ml_framework_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.models import GhostInspector
 
     class Linear:
         """Docstring."""
@@ -1922,7 +1922,7 @@ def test_pax_collect(mocker: Any) -> None:
         return original_inspect(obj, api_path, **kwargs)
 
     mocker.patch(
-        "ml_framework_snapshots.frameworks.pax.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.frameworks.pax.GhostInspector.inspect",
         side_effect=mock_inspect,
     )
 
@@ -1946,7 +1946,7 @@ def test_triton_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    import ml_framework_snapshots.frameworks.triton as triton_shim
+    import ml_ecosystem_snapshots.frameworks.triton as triton_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
     import importlib
 
@@ -1998,7 +1998,7 @@ def test_deepspeed_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    import ml_framework_snapshots.frameworks.deepspeed as ds_shim
+    import ml_ecosystem_snapshots.frameworks.deepspeed as ds_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
     import importlib
 
@@ -2054,7 +2054,7 @@ def test_onnxruntime_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    import ml_framework_snapshots.frameworks.onnxruntime as ort_shim
+    import ml_ecosystem_snapshots.frameworks.onnxruntime as ort_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier, GhostRef
     import importlib
 
@@ -2101,7 +2101,7 @@ def test_onnxruntime_collect(mocker: Any) -> None:
         params=[],
     )
     mocker.patch(
-        "ml_framework_snapshots.frameworks.onnxruntime.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.frameworks.onnxruntime.GhostInspector.inspect",
         return_value=dummy_ref,
     )
 
@@ -2120,7 +2120,7 @@ def test_huggingface_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    import ml_framework_snapshots.frameworks.huggingface as hf_shim
+    import ml_ecosystem_snapshots.frameworks.huggingface as hf_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
     import importlib
 
@@ -2174,7 +2174,7 @@ def test_maxtext_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks import maxtext as maxtext_fw
+    from ml_ecosystem_snapshots.frameworks import maxtext as maxtext_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     class FakeMaxtext:
@@ -2232,7 +2232,7 @@ def test_mlir_collect(mocker: Any) -> None:
     Args:
         mocker: Parameter.
     """
-    from ml_framework_snapshots.frameworks import mlir as mlir_fw
+    from ml_ecosystem_snapshots.frameworks import mlir as mlir_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     mocker.patch("os.path.exists", return_value=True)
@@ -2304,7 +2304,7 @@ def test_mlir_collect(mocker: Any) -> None:
 
 def test_static_dsl_extractors() -> None:
     """Test static DSL extractors."""
-    from ml_framework_snapshots.frameworks import html_dsl, latex_dsl, tikz, nvidia_sass
+    from ml_ecosystem_snapshots.frameworks import html_dsl, latex_dsl, tikz, nvidia_sass
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     html_refs = html_dsl.collect_api(SemanticTier.UTIL)
@@ -2332,7 +2332,7 @@ def test_static_dsl_extractors() -> None:
 
 def test_tensor_instance_methods_extraction() -> None:
     """Test extraction of tensor core instance methods across Torch, JAX, and TensorFlow."""
-    from ml_framework_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.models import GhostInspector
 
     try:
         import torch
@@ -2563,7 +2563,7 @@ def test_keras_griffe_missing(monkeypatch: Any) -> None:
     """Test keras import logic when griffe is not available."""
     import importlib
     import sys
-    import ml_framework_snapshots.frameworks.keras as k_fw
+    import ml_ecosystem_snapshots.frameworks.keras as k_fw
 
     monkeypatch.setitem(sys.modules, "griffe", None)
     importlib.reload(k_fw)
@@ -2580,7 +2580,7 @@ def test_maxtext_import_fallback(monkeypatch: Any) -> None:
     import importlib
     import sys
     import types
-    import ml_framework_snapshots.frameworks.maxtext as m_fw
+    import ml_ecosystem_snapshots.frameworks.maxtext as m_fw
 
     # Available
     fake_mt = types.ModuleType("maxtext")

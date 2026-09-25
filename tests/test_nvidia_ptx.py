@@ -4,8 +4,8 @@ import json
 import os
 from unittest import mock
 from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, SemanticTier
-from ml_framework_snapshots.frameworks import nvidia_ptx
-from ml_framework_snapshots import mcp_server
+from ml_ecosystem_snapshots.frameworks import nvidia_ptx
+from ml_ecosystem_snapshots import mcp_server
 
 
 def test_nvidia_ptx_collect_api_layer() -> None:

@@ -92,7 +92,7 @@ jobs:
 
         mkdir -p dist_snapshots
         venv-3-10/bin/python3 scripts/generate_all_snapshots.py pax || true
-        cp -f src/ml_framework_snapshots/snapshots/* dist_snapshots/ 2>/dev/null || true
+        cp -f src/ml_ecosystem_snapshots/snapshots/* dist_snapshots/ 2>/dev/null || true
 
     - name: Install base dependencies
       if: matrix.framework != 'pax'
@@ -143,7 +143,7 @@ jobs:
       if: matrix.framework != 'pax'
       run: |
         mkdir -p dist_snapshots
-        python -m ml_framework_snapshots.cli capture ${{ matrix.framework }} --out-dir dist_snapshots || true
+        python -m ml_ecosystem_snapshots.cli capture ${{ matrix.framework }} --out-dir dist_snapshots || true
 
     - name: Upload snapshot artifact
       uses: actions/upload-artifact@v7

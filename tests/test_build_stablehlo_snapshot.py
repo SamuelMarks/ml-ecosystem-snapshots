@@ -2,7 +2,7 @@
 
 from unittest import mock
 
-from ml_framework_snapshots.tools import build_stablehlo_snapshot
+from ml_ecosystem_snapshots.tools import build_stablehlo_snapshot
 
 
 def test_is_attribute() -> None:
@@ -108,7 +108,7 @@ Dot general op.
     assert dot_op["params"][2]["kind"] == "KEYWORD_ONLY"
 
 
-@mock.patch("ml_framework_snapshots.tools.build_stablehlo_snapshot.extract_ops")
+@mock.patch("ml_ecosystem_snapshots.tools.build_stablehlo_snapshot.extract_ops")
 @mock.patch("builtins.open", new_callable=mock.mock_open)
 def test_main(mock_open: mock.MagicMock, mock_extract: mock.MagicMock) -> None:
     """Test main.

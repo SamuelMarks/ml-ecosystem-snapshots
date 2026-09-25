@@ -10,7 +10,7 @@ from typing import Any
 from unittest import mock
 import pytest
 
-from ml_framework_snapshots import mcp_server
+from ml_ecosystem_snapshots import mcp_server
 
 
 @pytest.fixture(autouse=True)
@@ -160,12 +160,12 @@ def test_offline_mcp_hallucination_missing_snapshot_diagnostic() -> None:
 
 def test_offline_mlir_decoupled_operands_and_regions() -> None:
     """Verify GhostMlirRef decoupled operands, regions, and successor block validation."""
-    from ml_framework_snapshots.frameworks.mlir import (
+    from ml_ecosystem_snapshots.frameworks.mlir import (
         validate_mlir_region,
         validate_mlir_successors,
     )
     from ml_switcheroo_ir.schema.ghost import ParameterKind
-    from ml_framework_snapshots.models import (
+    from ml_ecosystem_snapshots.models import (
         ExtendedGhostParam,
         GhostMlirRef,
         IRParameterRole,
@@ -274,7 +274,7 @@ def test_offline_mlir_decoupled_operands_and_regions() -> None:
 
 def test_offline_stablehlo_op_validation() -> None:
     """Verify validate_stablehlo_op checking dimension numbers and regions against operand ranks."""
-    from ml_framework_snapshots.frameworks.stablehlo import validate_stablehlo_op
+    from ml_ecosystem_snapshots.frameworks.stablehlo import validate_stablehlo_op
 
     # Valid dot_general
     valid_dot = validate_stablehlo_op(
@@ -415,7 +415,7 @@ def test_offline_stablehlo_op_validation() -> None:
 def test_offline_index_db_in_memory_fallback(monkeypatch: Any) -> None:
     """Verify init_db falls back to in-memory database if disk directory creation fails."""
     import os
-    from ml_framework_snapshots.index import init_db
+    from ml_ecosystem_snapshots.index import init_db
 
     def mock_makedirs_fail(path: str, exist_ok: bool = True) -> None:
         """Simulate read-only filesystem error.
@@ -444,7 +444,7 @@ def test_offline_index_db_in_memory_fallback(monkeypatch: Any) -> None:
 
 def test_offline_ghost_isa_structured_modifiers() -> None:
     """Verify GhostIsaRef handles structured modifiers and VOPD profiles."""
-    from ml_framework_snapshots.models import GhostIsaRef
+    from ml_ecosystem_snapshots.models import GhostIsaRef
 
     isa_ref = GhostIsaRef(
         name="FADD",

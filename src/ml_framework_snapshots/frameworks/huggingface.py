@@ -1,239 +1,25 @@
-"""Huggingface module."""
+"""Backward-compatibility shim for ml_framework_snapshots.frameworks.huggingface.
 
-import inspect
-from typing import Dict, List, Any
-from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
-from ml_switcheroo_ir.schema.ghost import GhostRef, GhostParam
-from ml_framework_snapshots.models import GhostInspector, sanitize_type_str
+Transparently re-exports all members from ml_ecosystem_snapshots.frameworks.huggingface.
+"""
 
+from __future__ import annotations
 
-def _extract_generation_kwargs(obj: Any, ref: GhostRef) -> None:
-    """Extract generation kwargs.
+import sys
+from typing import TYPE_CHECKING
+import ml_ecosystem_snapshots.frameworks.huggingface as _orig_mod
 
-    Args:
-        obj: description
-        ref: description
-    """
-    gen_method = getattr(obj, "generate")
-    try:
-        sig = inspect.signature(gen_method)
-        for param in sig.parameters.values():
-            if param.name == "self" or param.kind in (
-                inspect.Parameter.VAR_POSITIONAL,
-                inspect.Parameter.VAR_KEYWORD,
-            ):
-                continue
-            if not any(p.name == param.name for p in ref.params):
-                default_str = (
-                    str(param.default)
-                    if param.default is not inspect.Parameter.empty
-                    else None
-                )
-                anno_str = (
-                    str(param.annotation)
-                    if param.annotation is not inspect.Parameter.empty
-                    else None
-                )
-                anno_str = sanitize_type_str(anno_str) if anno_str else None
-                ref.params.append(
-                    GhostParam(
-                        name=param.name,
-                        kind=ParameterKind.KEYWORD_ONLY,
-                        default=default_str,
-                        annotation=anno_str,
-                    )
-                )
-    except Exception:
-        pass
+if TYPE_CHECKING:
+    from ml_ecosystem_snapshots.frameworks.huggingface import *  # noqa: F401, F403
 
+# Re-export all attributes including internal and dunder methods
+for _k in dir(_orig_mod):
+    globals()[_k] = getattr(_orig_mod, _k)
 
-def _parse_pretrained_config(obj: Any, ref: GhostRef) -> None:
-    """Parse pretrained config.
+__all__ = getattr(
+    _orig_mod,
+    "__all__",
+    [k for k in dir(_orig_mod) if not k.startswith("_")],
+)
 
-    Args:
-        obj: description
-        ref: description
-    """
-    if not hasattr(obj, "__annotations__"):
-        return
-
-    for (
-        attr_name,
-        attr_type,
-    ) in obj.__annotations__.items():
-        if not any(p.name == attr_name for p in ref.params):
-            anno_str = str(attr_type) if not isinstance(attr_type, str) else attr_type
-            final_anno = sanitize_type_str(anno_str) if anno_str else None
-            ref.params.append(
-                GhostParam(
-                    name=attr_name,
-                    kind=ParameterKind.POSITIONAL_OR_KEYWORD,
-                    default=None,
-                    annotation=final_anno,
-                )
-            )
-
-
-def _handle_automodel_factory(obj: Any, name: str, ref: GhostRef) -> None:
-    """Handle auto model factory.
-
-    Args:
-        obj: description
-        name: description
-        ref: description
-    """
-    if not any(p.name == "config" for p in ref.params):
-        ref.params.append(
-            GhostParam(
-                name="config",
-                kind=ParameterKind.POSITIONAL_OR_KEYWORD,
-                default=None,
-                annotation="PreTrainedConfig",
-            )
-        )
-
-
-def collect_huggingface(
-    module_name: str,
-    category_mapping: Dict[SemanticTier, List[str]],
-    category: SemanticTier,
-    include_nonpublic: bool = False,
-) -> List[GhostRef]:
-    """Collect huggingface APIs.
-
-    Args:
-        module_name: description
-        category_mapping: description
-        category: description
-        include_nonpublic: description
-
-    Returns:
-        List of GhostRefs.
-    """
-    import importlib
-
-    results: List[GhostRef] = []
-
-    # Check if this category is handled
-    if category not in category_mapping:
-        return results
-
-    try:
-        mod = importlib.import_module(module_name)
-    except ImportError:
-        return results
-
-    inspector = GhostInspector()
-
-    dir_mod = dir(mod)
-    is_large_module = len(dir_mod) > 100
-
-    for name in dir_mod:
-        if not include_nonpublic and name.startswith("_"):
-            continue
-
-        if is_large_module and module_name == "transformers":
-            if not (
-                name.startswith("Auto")
-                or name.startswith("TFAuto")
-                or name.startswith("FlaxAuto")
-                or name.startswith("pipeline")
-                or name.startswith("PreTrained")
-                or name.endswith("Pipeline")
-                or name.endswith("TokenizerFast")
-                or name.endswith("Tokenizer")
-            ):
-                continue
-
-        try:
-            obj = getattr(mod, name)
-        except Exception:
-            continue
-
-        if obj is None:
-            continue
-
-        obj_cat = None
-        if "Config" in name:
-            obj_cat = SemanticTier.MODEL
-        elif "Model" in name or "Pipeline" in name or "Tokenizer" in name:
-            obj_cat = SemanticTier.MODEL
-        elif "Scheduler" in name:
-            obj_cat = SemanticTier.OPTIMIZER
-        else:
-            obj_cat = SemanticTier.UTIL
-
-        if obj_cat == category:
-            try:
-                ref = inspector.inspect(obj, f"{module_name}.{name}")
-                if ref:
-                    if "Config" in name:
-                        _parse_pretrained_config(obj, ref)
-                    if name.startswith("AutoModel"):
-                        _handle_automodel_factory(obj, name, ref)
-                    if hasattr(obj, "generate"):
-                        _extract_generation_kwargs(obj, ref)
-
-                    results.append(ref)
-            except Exception:
-                pass
-
-    return results
-
-
-def collect_transformers(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
-    """Collect transformers API.
-
-    Args:
-        category: description
-        include_nonpublic: description
-
-    Returns:
-        List of GhostRefs.
-    """
-    mapping = {
-        SemanticTier.MODEL: ["Config", "Model", "Pipeline", "Tokenizer"],
-        SemanticTier.UTIL: ["other"],
-    }
-    return collect_huggingface("transformers", mapping, category, include_nonpublic)
-
-
-def collect_diffusers(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
-    """Collect diffusers API.
-
-    Args:
-        category: description
-        include_nonpublic: description
-
-    Returns:
-        List of GhostRefs.
-    """
-    mapping = {
-        SemanticTier.MODEL: ["Model", "Pipeline"],
-        SemanticTier.OPTIMIZER: ["Scheduler"],
-        SemanticTier.UTIL: ["other"],
-    }
-    return collect_huggingface("diffusers", mapping, category, include_nonpublic)
-
-
-def collect_tokenizers(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
-    """Collect tokenizers API.
-
-    Args:
-        category: description
-        include_nonpublic: description
-
-    Returns:
-        List of GhostRefs.
-    """
-    mapping = {
-        SemanticTier.MODEL: ["Tokenizer", "Model"],
-        SemanticTier.UTIL: ["other"],
-    }
-    return collect_huggingface("tokenizers", mapping, category, include_nonpublic)
+sys.modules[__name__] = _orig_mod

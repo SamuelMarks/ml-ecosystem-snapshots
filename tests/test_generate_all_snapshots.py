@@ -35,7 +35,7 @@ def test_main_success(
     generate_all_snapshots.main()
 
     mock_makedirs.assert_called_once_with(
-        os.path.join("src", "ml_framework_snapshots", "snapshots"), exist_ok=True
+        os.path.join("src", "ml_ecosystem_snapshots", "snapshots"), exist_ok=True
     )
 
     frameworks = generate_all_snapshots.all_frameworks
@@ -48,7 +48,7 @@ def test_main_success(
         mock_write.assert_any_call(
             fw,
             {"mock": "data"},
-            os.path.join("src", "ml_framework_snapshots", "snapshots"),
+            os.path.join("src", "ml_ecosystem_snapshots", "snapshots"),
         )
         mock_print.assert_any_call(f"Building snapshot for {fw}...")
         mock_print.assert_any_call("  -> Saved")
