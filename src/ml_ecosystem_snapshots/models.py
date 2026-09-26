@@ -1393,10 +1393,16 @@ class GhostInspector:
 
         if "params" in data and isinstance(data["params"], list):
             data = dict(data)
-            data["params"] = [
-                ExtendedGhostParam.model_validate(p) if isinstance(p, dict) else p
-                for p in data["params"]
-            ]
+            hydrated_params = []
+            for p in data["params"]:
+                if isinstance(p, dict):
+                    p_dict = dict(p)
+                    if "kind" not in p_dict:
+                        p_dict["kind"] = ParameterKind.POSITIONAL_OR_KEYWORD
+                    hydrated_params.append(ExtendedGhostParam.model_validate(p_dict))
+                else:
+                    hydrated_params.append(p)
+            data["params"] = hydrated_params
 
         res = ref_cls.model_validate(data)
         assert isinstance(res, ExtendedGhostRef)

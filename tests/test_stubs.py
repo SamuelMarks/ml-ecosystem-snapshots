@@ -387,3 +387,100 @@ def test_generate_stubs_overloads_and_dsl(tmp_path: Any) -> None:
     assert sass_pyi.exists()
     sass_text = sass_pyi.read_text()
     assert "def HMMA16816(d: str) -> Any: ..." in sass_text
+
+
+def test_generate_stubs_class_methods(tmp_path: Any) -> None:
+    """Verify that class methods are nested inside class definitions in stubs.
+
+    Args:
+        tmp_path: Temporary directory fixture.
+    """
+    snap = {
+        "categories": {
+            "tensor": [
+                {
+                    "api_path": "torch.Tensor",
+                    "kind": "class",
+                    "params": [],
+                    "returns_type": "Tensor",
+                },
+                {
+                    "api_path": "torch.Tensor.add",
+                    "kind": "method",
+                    "params": [
+                        {
+                            "name": "other",
+                            "annotation": "Tensor",
+                            "kind": "POSITIONAL_OR_KEYWORD",
+                        }
+                    ],
+                    "overloads": [
+                        {
+                            "params": [
+                                {
+                                    "name": "other",
+                                    "annotation": "int",
+                                    "kind": "POSITIONAL_OR_KEYWORD",
+                                }
+                            ],
+                            "returns_type": "Tensor",
+                        }
+                    ],
+                    "returns_type": "Tensor",
+                },
+                {
+                    "api_path": "torch.Tensor.dim",
+                    "kind": "method",
+                    "params": [],
+                    "returns_type": "int",
+                },
+                {
+                    "api_path": "torch.StandaloneClass.method",
+                    "kind": "method",
+                    "params": [
+                        {
+                            "name": "x",
+                            "annotation": "float",
+                            "kind": "POSITIONAL_OR_KEYWORD",
+                        }
+                    ],
+                    "overloads": [
+                        {
+                            "params": [
+                                {
+                                    "name": "x",
+                                    "annotation": "int",
+                                    "kind": "POSITIONAL_OR_KEYWORD",
+                                }
+                            ],
+                            "returns_type": "int",
+                        }
+                    ],
+                    "returns_type": "float",
+                },
+                {
+                    "api_path": "Parent.foo",
+                    "kind": "method",
+                    "framework": "standalone_fw",
+                    "params": [{"name": "val", "annotation": "str"}],
+                    "returns_type": "str",
+                },
+            ]
+        }
+    }
+
+    out_dir = Path(os.path.join(tmp_path, "class_methods_stubs"))
+    generate_stubs(snap, str(out_dir))
+
+    torch_pyi = Path(os.path.join(out_dir, "torch", "__init__.pyi"))
+    assert torch_pyi.exists()
+    content = torch_pyi.read_text()
+
+    assert "class Tensor:" in content
+    assert "    def __init__(self) -> Tensor: ..." in content
+    assert "    @overload" in content
+    assert "    def add(self, other: int) -> Tensor: ..." in content
+    assert "    def add(self, other: Tensor) -> Tensor: ..." in content
+    assert "    def dim(self) -> int: ..." in content
+    assert "class StandaloneClass:" in content
+    assert "    def method(self, x: float) -> float: ..." in content

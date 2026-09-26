@@ -42,6 +42,54 @@ def _sanitize_default(default_str: str) -> str:
         return "..."
 
 
+def _format_param_list(
+    params: List[Dict[str, Any]],
+    has_varargs: bool = False,
+    is_method: bool = False,
+) -> str:
+    """Format a list of parameter dictionaries into a Python signature string.
+
+    Args:
+        params: List of parameter dictionary definitions.
+        has_varargs: Whether to append generic varargs if none are present.
+        is_method: Whether this signature belongs to a method requiring 'self'.
+
+    Returns:
+        A comma-separated parameter string for def statements.
+    """
+    param_strs: List[str] = []
+    if is_method and not any(p.get("name") in ("self", "cls") for p in params):
+        param_strs.append("self")
+
+    for p in params:
+        p_name = p.get("name")
+        p_anno = p.get("annotation")
+        p_default = p.get("default")
+        p_kind = p.get("kind")
+
+        if p_kind == "VAR_POSITIONAL":
+            p_str = f"*{p_name}"
+        elif p_kind == "VAR_KEYWORD":
+            p_str = f"**{p_name}"
+        else:
+            p_str = str(p_name)
+            if p_anno:
+                p_str += f": {p_anno}"
+            else:
+                p_str += ": Any"
+
+            if p_default is not None:
+                sanitized = _sanitize_default(str(p_default))
+                p_str += f" = {sanitized}"
+
+        param_strs.append(p_str)
+
+    if has_varargs and not any(p.get("kind") == "VAR_POSITIONAL" for p in params):
+        param_strs.append("*args: Any")
+
+    return ", ".join(param_strs)
+
+
 def generate_stubs(
     snapshot_data: Any, output_dir: str, include_nonpublic: bool = False
 ) -> None:
@@ -56,6 +104,7 @@ def generate_stubs(
     out_path.mkdir(parents=True, exist_ok=True)
 
     modules: Dict[str, List[Tuple[str, Dict[str, Any]]]] = {}
+    class_methods: Dict[str, Dict[str, List[Tuple[str, Dict[str, Any]]]]] = {}
 
     if isinstance(snapshot_data, list):
         categories_dict = {"all": snapshot_data}
@@ -64,7 +113,7 @@ def generate_stubs(
     else:
         categories_dict = {}
 
-    for cat, items in categories_dict.items():
+    for _cat, items in categories_dict.items():
         for item in items:
             if not include_nonpublic and not item.get("is_public", True):
                 continue
@@ -76,19 +125,36 @@ def generate_stubs(
                 continue
 
             parts = api_path.split(".")
-            if len(parts) == 1:
-                module_name = item.get("framework") or item.get("dialect") or ""
-                obj_name = parts[0]
+            kind = item.get("kind", "function")
+
+            if kind in ("method", "property") and len(parts) >= 2:
+                class_name = parts[-2]
+                method_name = parts[-1]
+                if len(parts) == 2:
+                    module_name = item.get("framework") or item.get("dialect") or ""
+                else:
+                    module_name = ".".join(parts[:-2])
+
+                if module_name not in class_methods:
+                    class_methods[module_name] = {}
+                if class_name not in class_methods[module_name]:
+                    class_methods[module_name][class_name] = []
+                class_methods[module_name][class_name].append((method_name, item))
             else:
-                module_name = ".".join(parts[:-1])
-                obj_name = parts[-1]
+                if len(parts) == 1:
+                    module_name = item.get("framework") or item.get("dialect") or ""
+                    obj_name = parts[0]
+                else:
+                    module_name = ".".join(parts[:-1])
+                    obj_name = parts[-1]
 
-            if module_name not in modules:
-                modules[module_name] = []
+                if module_name not in modules:
+                    modules[module_name] = []
+                modules[module_name].append((obj_name, item))
 
-            modules[module_name].append((obj_name, item))
+    all_modules = sorted(set(modules.keys()) | set(class_methods.keys()))
 
-    for module_name, items in modules.items():
+    for module_name in all_modules:
         if not module_name:
             continue
 
@@ -96,95 +162,118 @@ def generate_stubs(
         module_path.mkdir(parents=True, exist_ok=True)
         init_file = Path(os.path.join(module_path, "__init__.pyi"))
 
-        lines = []
-        lines.append(
-            "from typing import Any, Optional, Union, Tuple, List, Callable, Dict, overload"
-        )
-        lines.append("")
+        lines = [
+            "from typing import Any, Optional, Union, Tuple, List, Callable, Dict, overload",
+            "",
+        ]
+
+        handled_classes = set()
+        items = modules.get(module_name, [])
 
         for obj_name, item in items:
             kind = item.get("kind", "function")
-            params = item.get("params", [])
-            has_varargs = item.get("has_varargs", False)
-
-            # Generate @overload signatures if defined
-            for ov in item.get("overloads", []):
-                ov_params = ov.get("params", [])
-                ov_param_strs = []
-                if kind == "class":
-                    ov_param_strs.append("self")
-                for p in ov_params:
-                    p_name = p.get("name")
-                    p_anno = p.get("annotation") or "Any"
-                    p_default = p.get("default")
-                    p_kind = p.get("kind")
-                    if p_kind == "VAR_POSITIONAL":
-                        ov_param_strs.append(f"*{p_name}")
-                    elif p_kind == "VAR_KEYWORD":
-                        ov_param_strs.append(f"**{p_name}")
-                    else:
-                        p_str = f"{p_name}: {p_anno}"
-                        if p_default is not None:
-                            p_str += f" = {_sanitize_default(str(p_default))}"
-                        ov_param_strs.append(p_str)
-                ov_sig = ", ".join(ov_param_strs)
-                ov_ret = (
-                    f" -> {ov.get('returns_type')}"
-                    if ov.get("returns_type")
-                    else " -> Any"
-                )
-                lines.append("@overload")
-                if kind == "class":
-                    lines.append(f"def __init__({ov_sig}){ov_ret}: ...")
-                else:
-                    lines.append(f"def {obj_name}({ov_sig}){ov_ret}: ...")
-
-            param_strs = []
-            if kind == "class":
-                param_strs.append("self")
-
-            for p in params:
-                p_name = p.get("name")
-                p_anno = p.get("annotation")
-                p_default = p.get("default")
-                p_kind = p.get("kind")
-
-                if p_kind == "VAR_POSITIONAL":
-                    p_str = f"*{p_name}"
-                elif p_kind == "VAR_KEYWORD":
-                    p_str = f"**{p_name}"
-                else:
-                    p_str = p_name
-                    if p_anno:
-                        p_str += f": {p_anno}"
-                    else:
-                        p_str += ": Any"
-
-                    if p_default is not None:
-                        sanitized = _sanitize_default(str(p_default))
-                        p_str += f" = {sanitized}"
-
-                param_strs.append(p_str)
-
-            if has_varargs and not any(
-                p.get("kind") == "VAR_POSITIONAL" for p in params
-            ):
-                param_strs.append("*args: Any")
-
-            sig = ", ".join(param_strs)
-
-            ret_type = item.get("returns_type")
-            ret_str = f" -> {ret_type}" if ret_type else " -> Any"
 
             if kind == "class":
+                handled_classes.add(obj_name)
                 lines.append(f"class {obj_name}:")
-                if param_strs == ["self"]:
-                    lines.append(f"    def __init__(self){ret_str}: ...")
-                else:
-                    lines.append(f"    def __init__({sig}){ret_str}: ...")
+
+                # Generate @overload signatures for __init__
+                for ov in item.get("overloads", []):
+                    ov_sig = _format_param_list(ov.get("params", []), is_method=True)
+                    ov_ret = (
+                        f" -> {ov.get('returns_type')}"
+                        if ov.get("returns_type")
+                        else " -> None"
+                    )
+                    lines.append("    @overload")
+                    lines.append(f"    def __init__({ov_sig}){ov_ret}: ...")
+
+                init_sig = _format_param_list(
+                    item.get("params", []),
+                    has_varargs=item.get("has_varargs", False),
+                    is_method=True,
+                )
+                ret_type = item.get("returns_type")
+                ret_str = f" -> {ret_type}" if ret_type else " -> Any"
+                lines.append(f"    def __init__({init_sig}){ret_str}: ...")
+
+                # Emit associated methods
+                methods = class_methods.get(module_name, {}).get(obj_name, [])
+                for m_name, m_item in methods:
+                    for ov in m_item.get("overloads", []):
+                        ov_sig = _format_param_list(
+                            ov.get("params", []), is_method=True
+                        )
+                        ov_ret = (
+                            f" -> {ov.get('returns_type')}"
+                            if ov.get("returns_type")
+                            else " -> Any"
+                        )
+                        lines.append("    @overload")
+                        lines.append(f"    def {m_name}({ov_sig}){ov_ret}: ...")
+
+                    m_sig = _format_param_list(
+                        m_item.get("params", []),
+                        has_varargs=m_item.get("has_varargs", False),
+                        is_method=True,
+                    )
+                    m_ret = (
+                        f" -> {m_item.get('returns_type')}"
+                        if m_item.get("returns_type")
+                        else " -> Any"
+                    )
+                    lines.append(f"    def {m_name}({m_sig}){m_ret}: ...")
+
                 lines.append("")
             else:
+                # Generate @overload signatures for function
+                for ov in item.get("overloads", []):
+                    ov_sig = _format_param_list(ov.get("params", []))
+                    ov_ret = (
+                        f" -> {ov.get('returns_type')}"
+                        if ov.get("returns_type")
+                        else " -> Any"
+                    )
+                    lines.append("@overload")
+                    lines.append(f"def {obj_name}({ov_sig}){ov_ret}: ...")
+
+                sig = _format_param_list(
+                    item.get("params", []),
+                    has_varargs=item.get("has_varargs", False),
+                )
+                ret_type = item.get("returns_type")
+                ret_str = f" -> {ret_type}" if ret_type else " -> Any"
                 lines.append(f"def {obj_name}({sig}){ret_str}: ...")
+                lines.append("")
+
+        # Emit classes that only had methods
+        for cls_name, methods in class_methods.get(module_name, {}).items():
+            if cls_name not in handled_classes:
+                lines.append(f"class {cls_name}:")
+                for m_name, m_item in methods:
+                    for ov in m_item.get("overloads", []):
+                        ov_sig = _format_param_list(
+                            ov.get("params", []), is_method=True
+                        )
+                        ov_ret = (
+                            f" -> {ov.get('returns_type')}"
+                            if ov.get("returns_type")
+                            else " -> Any"
+                        )
+                        lines.append("    @overload")
+                        lines.append(f"    def {m_name}({ov_sig}){ov_ret}: ...")
+
+                    m_sig = _format_param_list(
+                        m_item.get("params", []),
+                        has_varargs=m_item.get("has_varargs", False),
+                        is_method=True,
+                    )
+                    m_ret = (
+                        f" -> {m_item.get('returns_type')}"
+                        if m_item.get("returns_type")
+                        else " -> Any"
+                    )
+                    lines.append(f"    def {m_name}({m_sig}){m_ret}: ...")
                 lines.append("")
 
         stub_content = "\n".join(lines) + "\n"

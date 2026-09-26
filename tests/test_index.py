@@ -258,6 +258,32 @@ def test_init_db_and_index_snapshot_file(tmp_path: Any) -> None:
     count2 = index_snapshot_file(json_path, conn)
     assert count2 == 2
 
+    # 4b. Test re-indexing with replaced symbols cleanly evicts old FTS tokens
+    snap_data_replaced = {
+        "categories": {
+            "math": [
+                {
+                    "api_path": "torch.prod",
+                    "name": "prod",
+                    "kind": "function",
+                    "docstring": "Compute product along dimensions.",
+                }
+            ]
+        }
+    }
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(snap_data_replaced, f)
+
+    count_replaced = index_snapshot_file(json_path, conn)
+    assert count_replaced == 1
+
+    cur = conn.cursor()
+    cur.execute("SELECT rowid FROM symbols_fts WHERE symbols_fts MATCH 'sum'")
+    assert len(cur.fetchall()) == 0
+
+    cur.execute("SELECT rowid FROM symbols_fts WHERE symbols_fts MATCH 'prod'")
+    assert len(cur.fetchall()) == 1
+
     # 5. Test indexing dict with 'items' key and list format
     items_snap = {
         "items": [

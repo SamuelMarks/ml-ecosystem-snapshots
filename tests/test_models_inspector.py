@@ -248,3 +248,23 @@ def test_ghost_inspector_aten_none(mocker: Any) -> None:
     assert len(ref.params) == 2
     assert ref.params[0].name == "args"
     assert ref.params[1].name == "kwargs"
+
+
+def test_ghost_inspector_hydrate_variations() -> None:
+    """Test GhostInspector.hydrate handles missing kind and pre-hydrated parameters."""
+    from ml_switcheroo_ir.schema.ghost import ExtendedGhostParam, ParameterKind
+
+    data = {
+        "name": "op_test",
+        "api_path": "custom.op_test",
+        "params": [
+            {"name": "x"},
+            ExtendedGhostParam(name="y", kind=ParameterKind.POSITIONAL_ONLY),
+        ],
+    }
+    hydrated = GhostInspector.hydrate(data)
+    assert len(hydrated.params) == 2
+    assert hydrated.params[0].name == "x"
+    assert hydrated.params[0].kind == ParameterKind.POSITIONAL_OR_KEYWORD
+    assert hydrated.params[1].name == "y"
+    assert hydrated.params[1].kind == ParameterKind.POSITIONAL_ONLY

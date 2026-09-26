@@ -2504,6 +2504,11 @@ def test_translate_concept_arguments() -> None:
     empty_conv = translate_concept_arguments("conv2d", "torch", "custom_fw", {})
     assert empty_conv["translated_kwargs"] == {}
 
+    generic_norm = translate_concept_arguments(
+        "generic_norm", "torch", "jax", {"weight": "w"}
+    )
+    assert generic_norm["translated_kwargs"]["scale"] == "w"
+
     # Partial matmul and conv operands for 100% branch coverage
     partial_mm = translate_concept_arguments("matmul", "torch", "torch", {"other": "B"})
     assert "input" not in partial_mm["translated_kwargs"]

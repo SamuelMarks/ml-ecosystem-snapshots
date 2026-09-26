@@ -1,14 +1,17 @@
-"""Module docstring."""
+"""Tests for GhostInspector overload extraction."""
 
-from ml_ecosystem_snapshots.models import GhostInspector
+import pathlib
+import sys
+from ml_ecosystem_snapshots.models import GhostInspector, _GRIFFE_CACHE
 
 
-def test_ghost_inspector_overloads() -> None:
-    """Function docstring."""
-    # We write it out to a file so Griffe can load it properly
-    import pathlib
+def test_ghost_inspector_overloads(tmp_path: pathlib.Path) -> None:
+    """Test extracting function overloads via Griffe.
 
-    p = pathlib.Path("test_overload_mock_unique.py")
+    Args:
+        tmp_path: Temporary directory fixture.
+    """
+    p = tmp_path / "test_overload_mock_unique.py"
     p.write_text(
         """
 from typing import overload, Any
@@ -24,12 +27,9 @@ def my_overloaded_func(a: Any, b: Any = None) -> Any:
 """
     )
 
-    import sys
-    from ml_ecosystem_snapshots.models import _GRIFFE_CACHE
-
     _GRIFFE_CACHE.clear()
 
-    sys.path.insert(0, ".")
+    sys.path.insert(0, str(tmp_path))
     if "test_overload_mock_unique" in sys.modules:
         del sys.modules["test_overload_mock_unique"]
     import test_overload_mock_unique
@@ -51,13 +51,17 @@ def my_overloaded_func(a: Any, b: Any = None) -> Any:
     assert ref.overloads[1].returns_type == "str"
 
     p.unlink(missing_ok=True)
+    if str(tmp_path) in sys.path:
+        sys.path.remove(str(tmp_path))
 
 
-def test_ghost_inspector_class_constructor_overloads() -> None:
-    """Test extracting overloads on class constructors via Griffe."""
-    import pathlib
+def test_ghost_inspector_class_constructor_overloads(tmp_path: pathlib.Path) -> None:
+    """Test extracting overloads on class constructors via Griffe.
 
-    p = pathlib.Path("test_class_overload_mock.py")
+    Args:
+        tmp_path: Temporary directory fixture.
+    """
+    p = tmp_path / "test_class_overload_mock.py"
     p.write_text(
         """
 from typing import overload, Any
@@ -74,12 +78,9 @@ class OverloadedClass:
 """
     )
 
-    import sys
-    from ml_ecosystem_snapshots.models import _GRIFFE_CACHE
-
     _GRIFFE_CACHE.clear()
 
-    sys.path.insert(0, ".")
+    sys.path.insert(0, str(tmp_path))
     if "test_class_overload_mock" in sys.modules:
         del sys.modules["test_class_overload_mock"]
     import test_class_overload_mock
@@ -101,3 +102,5 @@ class OverloadedClass:
     assert ref.overloads[1].params[1].annotation == "str"
 
     p.unlink(missing_ok=True)
+    if str(tmp_path) in sys.path:
+        sys.path.remove(str(tmp_path))

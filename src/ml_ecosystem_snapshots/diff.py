@@ -36,6 +36,10 @@ class DiffResult(BaseModel):
         default_factory=list,
         description="List of deprecated or removed microarchitecture capabilities.",
     )
+    overloads_changed: List[str] = Field(
+        default_factory=list,
+        description="List of api_paths with modified, added, or removed overloads.",
+    )
 
 
 def _is_breaking_change(
@@ -43,6 +47,10 @@ def _is_breaking_change(
     p2_list: List[Dict[str, Any]],
     meta1: Optional[Dict[str, Any]] = None,
     meta2: Optional[Dict[str, Any]] = None,
+    ret1: Optional[str] = None,
+    ret2: Optional[str] = None,
+    ov1: Optional[List[Dict[str, Any]]] = None,
+    ov2: Optional[List[Dict[str, Any]]] = None,
 ) -> bool:
     """Determine if a signature change is backwards-incompatible.
 
@@ -51,6 +59,10 @@ def _is_breaking_change(
         p2_list: New parameter list.
         meta1: Optional old domain metadata (modifiers, architectures).
         meta2: Optional new domain metadata.
+        ret1: Optional old return type annotation.
+        ret2: Optional new return type annotation.
+        ov1: Optional old list of overload signatures.
+        ov2: Optional new list of overload signatures.
 
     Returns:
         True if breaking, False otherwise.
@@ -69,12 +81,42 @@ def _is_breaking_change(
         if m1_archs - m2_archs:
             return True
 
+    # Check return type changes
+    if ret1 is not None and ret2 is not None and ret1 != ret2:
+        clean_ret1 = str(ret1).strip()
+        if clean_ret1 not in ("", "Any", "None"):
+            return True
+
+    # Check overload removal
+    if ov1 is not None and ov2 is not None and len(ov1) > len(ov2):
+        return True
+
     p1_map = {p.get("name"): p for p in p1_list}
     p2_map = {p.get("name"): p for p in p2_list}
 
     # Parameter removed?
     for name in p1_map:
         if name not in p2_map:
+            return True
+
+    # Check positional parameter order preservation
+    pos1_names = [
+        str(p.get("name"))
+        for p in p1_list
+        if p.get("kind") in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
+    ]
+    pos2_names = [
+        str(p.get("name"))
+        for p in p2_list
+        if p.get("kind") in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
+    ]
+    common_pos1 = [n for n in pos1_names if n in p2_map]
+    common_pos2 = [n for n in pos2_names if n in p1_map]
+    if common_pos1 != common_pos2:
+        return True
+
+    for idx, name in enumerate(common_pos1):
+        if idx >= len(pos2_names) or pos2_names[idx] != name:
             return True
 
     for name, p2 in p2_map.items():
@@ -96,12 +138,6 @@ def _is_breaking_change(
                 if (
                     k2 in ("POSITIONAL_ONLY", "KEYWORD_ONLY")
                     and k1 == "POSITIONAL_OR_KEYWORD"
-                ):
-                    return True
-                # Changing between pos-only and kw-only is breaking
-                if k1 in ("POSITIONAL_ONLY", "KEYWORD_ONLY") and k2 in (
-                    "POSITIONAL_ONLY",
-                    "KEYWORD_ONLY",
                 ):
                     return True
                 # Changing to/from VAR_*
@@ -164,6 +200,7 @@ def diff_snapshots(snap1: Any, snap2: Any) -> DiffResult:
     signature_changed = []
     breaking_signature_changed = []
     non_breaking_signature_changed = []
+    overloads_changed = []
 
     for path, item2 in flat2.items():
         is_public = item2.get("is_public", True)
@@ -196,11 +233,23 @@ def diff_snapshots(snap1: Any, snap2: Any) -> DiffResult:
             sig2 = [sig_tuple(p) for p in p2]
             meta1 = item1.get("domain_metadata")
             meta2 = item2.get("domain_metadata")
+            ret1 = item1.get("returns_type") or item1.get("returns")
+            ret2 = item2.get("returns_type") or item2.get("returns")
+            ov1 = item1.get("overloads", [])
+            ov2 = item2.get("overloads", [])
+
+            is_sig_diff = sig1 != sig2
+            is_meta_diff = bool(meta1 and meta2 and meta1 != meta2)
+            is_ret_diff = ret1 != ret2 and (ret1 is not None or ret2 is not None)
+            is_ov_diff = ov1 != ov2
+
+            if is_ov_diff:
+                overloads_changed.append(display_path)
 
             # evaluate if changes are breaking
-            if sig1 != sig2 or (meta1 and meta2 and meta1 != meta2):
+            if is_sig_diff or is_meta_diff or is_ret_diff or is_ov_diff:
                 signature_changed.append(display_path)
-                if _is_breaking_change(p1, p2, meta1, meta2):
+                if _is_breaking_change(p1, p2, meta1, meta2, ret1, ret2, ov1, ov2):
                     breaking_signature_changed.append(display_path)
                 else:
                     non_breaking_signature_changed.append(display_path)
@@ -245,6 +294,7 @@ def diff_snapshots(snap1: Any, snap2: Any) -> DiffResult:
         non_breaking_signature_changed=sorted(non_breaking_signature_changed),
         metadata_changed=metadata_changed,
         deprecated_capabilities=deprecated_capabilities,
+        overloads_changed=sorted(overloads_changed),
     )
 
 
@@ -266,6 +316,7 @@ def generate_changelog(diff: DiffResult) -> str:
         and not diff.signature_changed
         and not diff.metadata_changed
         and not diff.deprecated_capabilities
+        and not diff.overloads_changed
     ):
         lines.append("No changes detected.")
         return "\n".join(lines)
@@ -303,6 +354,12 @@ def generate_changelog(diff: DiffResult) -> str:
     if diff.non_breaking_signature_changed:
         lines.append("## Non-Breaking Signature Changes")
         for path in diff.non_breaking_signature_changed:
+            lines.append(f"- `{path}`")
+        lines.append("")
+
+    if diff.overloads_changed:
+        lines.append("## Overload Changes")
+        for path in diff.overloads_changed:
             lines.append(f"- `{path}`")
         lines.append("")
 

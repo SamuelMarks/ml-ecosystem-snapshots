@@ -63,9 +63,11 @@ def get_framework_snapshot(
             ]
             for candidate_dir, source_label in candidates:
                 if os.path.isdir(candidate_dir):
-                    for fname in sorted(os.listdir(candidate_dir)):
-                        if not fname.endswith(".json"):
-                            continue
+                    candidate_files = [
+                        f for f in os.listdir(candidate_dir) if f.endswith(".json")
+                    ]
+                    candidate_files.sort(reverse=True)
+                    for fname in candidate_files:
                         matches = False
                         if clean_ver:
                             if (
@@ -3611,6 +3613,336 @@ def get_mcp_tools_list() -> List[Dict[str, Any]]:
                 ],
             },
         },
+        {
+            "name": "check_wgsl_op",
+            "description": "Validate a WebGPU WGSL built-in function, memory barrier, or address space.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "op_name": {
+                        "type": "string",
+                        "description": "WGSL function name (e.g. 'workgroupBarrier', 'storageStore').",
+                    },
+                    "inputs_count": {
+                        "type": "integer",
+                        "description": "Optional expected input operands count.",
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional operation attributes.",
+                    },
+                },
+                "required": ["op_name"],
+            },
+        },
+        {
+            "name": "check_onnx_op",
+            "description": "Validate an ONNX operator specification.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "op_name": {
+                        "type": "string",
+                        "description": "ONNX operator name (e.g. 'MatMul', 'Conv', 'Relu').",
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": "Optional ONNX domain (e.g. 'ai.onnx').",
+                    },
+                    "inputs_count": {
+                        "type": "integer",
+                        "description": "Optional input count.",
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional operator attributes.",
+                    },
+                },
+                "required": ["op_name"],
+            },
+        },
+        {
+            "name": "check_metal_op",
+            "description": "Validate Apple Metal Shading Language (MSL) compute builtins.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "op_name": {
+                        "type": "string",
+                        "description": "Metal builtin name (e.g. 'simdgroup_matrix', 'threadgroup_barrier').",
+                    },
+                    "address_space": {
+                        "type": "string",
+                        "description": "Optional address space (e.g. 'device', 'threadgroup').",
+                    },
+                    "inputs_count": {
+                        "type": "integer",
+                        "description": "Optional input count.",
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional attributes.",
+                    },
+                },
+                "required": ["op_name"],
+            },
+        },
+        {
+            "name": "check_wasm_instruction",
+            "description": "Validate W3C WebAssembly 128-bit SIMD vector instruction opcodes.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "mnemonic": {
+                        "type": "string",
+                        "description": "WASM opcode mnemonic (e.g. 'f32x4.add', 'v128.load').",
+                    },
+                    "operands_count": {
+                        "type": "integer",
+                        "description": "Optional operands count.",
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional instruction attributes.",
+                    },
+                },
+                "required": ["mnemonic"],
+            },
+        },
+        {
+            "name": "check_webgl_op",
+            "description": "Validate WebGL 2.0 / GLSL ES 3.00 shader builtins and uniforms.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "op_name": {
+                        "type": "string",
+                        "description": "GLSL builtin name (e.g. 'texture', 'dFdx', 'fma').",
+                    },
+                    "inputs_count": {
+                        "type": "integer",
+                        "description": "Optional inputs count.",
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional attributes.",
+                    },
+                },
+                "required": ["op_name"],
+            },
+        },
+        {
+            "name": "check_cpp_op",
+            "description": "Validate C++17 STL mathematical kernel runtime functions.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "op_name": {
+                        "type": "string",
+                        "description": "C++ function name (e.g. 'clamp', 'from_blob').",
+                    },
+                    "inputs_count": {
+                        "type": "integer",
+                        "description": "Optional inputs count.",
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional attribute names.",
+                    },
+                },
+                "required": ["op_name"],
+            },
+        },
+        {
+            "name": "check_array_api_op",
+            "description": "Validate Python Array API standard consortium specification functions.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "op_name": {
+                        "type": "string",
+                        "description": "Array API function name (e.g. 'matmul', 'astype', 'reshape').",
+                    },
+                    "inputs_count": {
+                        "type": "integer",
+                        "description": "Optional positional arguments count.",
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional keyword arguments.",
+                    },
+                },
+                "required": ["op_name"],
+            },
+        },
+        {
+            "name": "check_scipy_op",
+            "description": "Validate SciPy special functions, signal, or linalg APIs.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "op_name": {
+                        "type": "string",
+                        "description": "SciPy API name (e.g. 'erf', 'inv', 'convolve').",
+                    },
+                    "inputs_count": {
+                        "type": "integer",
+                        "description": "Optional positional arguments count.",
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional keyword arguments.",
+                    },
+                },
+                "required": ["op_name"],
+            },
+        },
+        {
+            "name": "check_torchvision_op",
+            "description": "Validate TorchVision vision transforms and operators.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "op_name": {
+                        "type": "string",
+                        "description": "TorchVision API name (e.g. 'nms', 'roi_align').",
+                    },
+                    "inputs_count": {
+                        "type": "integer",
+                        "description": "Optional positional arguments count.",
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional keyword arguments.",
+                    },
+                },
+                "required": ["op_name"],
+            },
+        },
+        {
+            "name": "check_torchaudio_op",
+            "description": "Validate TorchAudio audio processing transforms and functionals.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "op_name": {
+                        "type": "string",
+                        "description": "TorchAudio API name (e.g. 'spectrogram', 'melscale_fbanks').",
+                    },
+                    "inputs_count": {
+                        "type": "integer",
+                        "description": "Optional positional arguments count.",
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional keyword arguments.",
+                    },
+                },
+                "required": ["op_name"],
+            },
+        },
+        {
+            "name": "check_safetensors_op",
+            "description": "Validate SafeTensors weight loading and serialization routines.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "op_name": {
+                        "type": "string",
+                        "description": "SafeTensors API name (e.g. 'save_file', 'load_file', 'safe_open').",
+                    },
+                    "inputs_count": {
+                        "type": "integer",
+                        "description": "Optional positional arguments count.",
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional keyword arguments.",
+                    },
+                },
+                "required": ["op_name"],
+            },
+        },
+        {
+            "name": "check_aten_op",
+            "description": "Validate PyTorch ATen C++ kernel dispatch operation.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "op_name": {
+                        "type": "string",
+                        "description": "ATen operator name (e.g. 'add', 'matmul', 'relu').",
+                    },
+                    "inputs_count": {
+                        "type": "integer",
+                        "description": "Optional inputs count.",
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional keyword argument names.",
+                    },
+                },
+                "required": ["op_name"],
+            },
+        },
+        {
+            "name": "check_nccl_op",
+            "description": "Validate NVIDIA NCCL / AMD RCCL GPU collective communications.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "op_name": {
+                        "type": "string",
+                        "description": "NCCL operation name (e.g. 'all_reduce', 'all_gather', 'reduce_scatter').",
+                    },
+                    "inputs_count": {
+                        "type": "integer",
+                        "description": "Optional inputs count.",
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional attributes.",
+                    },
+                },
+                "required": ["op_name"],
+            },
+        },
+        {
+            "name": "check_flash_attention_op",
+            "description": "Validate FlashAttention-2/3, PagedAttention, and custom kernel parameters.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "op_name": {
+                        "type": "string",
+                        "description": "Attention kernel API name (e.g. 'flash_attn_func', 'flash_attn_varlen_func').",
+                    },
+                    "inputs_count": {
+                        "type": "integer",
+                        "description": "Optional positional arguments count.",
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional keyword arguments.",
+                    },
+                },
+                "required": ["op_name"],
+            },
+        },
     ]
 
 
@@ -3830,6 +4162,190 @@ def handle_mcp_message(message: Dict[str, Any]) -> Dict[str, Any]:
                     "content": [
                         {"type": "text", "text": json.dumps(trans_res, indent=2)}
                     ]
+                },
+            }
+        elif tool_name == "check_wgsl_op":
+            res = check_wgsl_op(
+                op_name=args.get("op_name") or args.get("api_path", ""),
+                inputs_count=args.get("inputs_count") or args.get("operands_count"),
+                attributes=args.get("attributes"),
+            )
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
+                },
+            }
+        elif tool_name == "check_onnx_op":
+            res = check_onnx_op(
+                op_name=args.get("op_name") or args.get("api_path", ""),
+                domain=args.get("domain", ""),
+                inputs_count=args.get("inputs_count"),
+                attributes=args.get("attributes"),
+            )
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
+                },
+            }
+        elif tool_name == "check_metal_op":
+            res = check_metal_op(
+                op_name=args.get("op_name") or args.get("api_path", ""),
+                address_space=args.get("address_space"),
+                inputs_count=args.get("inputs_count"),
+                attributes=args.get("attributes"),
+            )
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
+                },
+            }
+        elif tool_name == "check_wasm_instruction":
+            res = check_wasm_instruction(
+                mnemonic=args.get("mnemonic") or args.get("op_name", ""),
+                operands_count=args.get("operands_count") or args.get("inputs_count"),
+                attributes=args.get("attributes"),
+            )
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
+                },
+            }
+        elif tool_name == "check_webgl_op":
+            res = check_webgl_op(
+                op_name=args.get("op_name") or args.get("api_path", ""),
+                inputs_count=args.get("inputs_count"),
+                attributes=args.get("attributes"),
+            )
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
+                },
+            }
+        elif tool_name == "check_cpp_op":
+            res = check_cpp_op(
+                op_name=args.get("op_name") or args.get("api_path", ""),
+                inputs_count=args.get("inputs_count"),
+                attributes=args.get("attributes"),
+            )
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
+                },
+            }
+        elif tool_name == "check_array_api_op":
+            res = check_array_api_op(
+                op_name=args.get("op_name") or args.get("api_path", ""),
+                inputs_count=args.get("inputs_count") or args.get("args_count"),
+                attributes=args.get("attributes") or args.get("kwargs"),
+            )
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
+                },
+            }
+        elif tool_name == "check_scipy_op":
+            res = check_scipy_op(
+                op_name=args.get("op_name") or args.get("api_path", ""),
+                inputs_count=args.get("inputs_count") or args.get("args_count"),
+                attributes=args.get("attributes") or args.get("kwargs"),
+            )
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
+                },
+            }
+        elif tool_name == "check_torchvision_op":
+            res = check_torchvision_op(
+                op_name=args.get("op_name") or args.get("api_path", ""),
+                inputs_count=args.get("inputs_count") or args.get("args_count"),
+                attributes=args.get("attributes") or args.get("kwargs"),
+            )
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
+                },
+            }
+        elif tool_name == "check_torchaudio_op":
+            res = check_torchaudio_op(
+                op_name=args.get("op_name") or args.get("api_path", ""),
+                inputs_count=args.get("inputs_count") or args.get("args_count"),
+                attributes=args.get("attributes") or args.get("kwargs"),
+            )
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
+                },
+            }
+        elif tool_name == "check_safetensors_op":
+            res = check_safetensors_op(
+                op_name=args.get("op_name") or args.get("api_path", ""),
+                inputs_count=args.get("inputs_count") or args.get("args_count"),
+                attributes=args.get("attributes") or args.get("kwargs"),
+            )
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
+                },
+            }
+        elif tool_name == "check_aten_op":
+            res = check_aten_op(
+                op_name=args.get("op_name") or args.get("api_path", ""),
+                inputs_count=args.get("inputs_count"),
+                attributes=args.get("attributes"),
+            )
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
+                },
+            }
+        elif tool_name == "check_nccl_op":
+            res = check_nccl_op(
+                op_name=args.get("op_name") or args.get("api_path", ""),
+                inputs_count=args.get("inputs_count"),
+                attributes=args.get("attributes"),
+            )
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
+                },
+            }
+        elif tool_name == "check_flash_attention_op":
+            res = check_flash_attention_op(
+                op_name=args.get("op_name") or args.get("api_path", ""),
+                inputs_count=args.get("inputs_count") or args.get("args_count"),
+                attributes=args.get("attributes") or args.get("kwargs"),
+            )
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
                 },
             }
         else:

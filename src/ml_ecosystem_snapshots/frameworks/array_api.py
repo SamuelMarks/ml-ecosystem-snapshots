@@ -903,6 +903,73 @@ CANONICAL_ARRAY_API_OPS: List[Dict[str, Any]] = [
         ],
         "docstring": "Tests whether any input array elements evaluate to True.",
     },
+    # Elementwise floating-point checks & math
+    {
+        "name": "isfinite",
+        "api_path": "array_api.isfinite",
+        "params": [
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Tests each element for finiteness.",
+    },
+    {
+        "name": "isinf",
+        "api_path": "array_api.isinf",
+        "params": [
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Tests each element for positive or negative infinity.",
+    },
+    {
+        "name": "isnan",
+        "api_path": "array_api.isnan",
+        "params": [
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Tests each element for NaN.",
+    },
+    {
+        "name": "logaddexp",
+        "api_path": "array_api.logaddexp",
+        "params": [
+            {"name": "x1", "kind": "POSITIONAL_ONLY"},
+            {"name": "x2", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Calculates the logarithm of the sum of exponentiations.",
+    },
+    # Set & unique operations
+    {
+        "name": "unique_all",
+        "api_path": "array_api.unique_all",
+        "params": [
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Returns unique elements, indices, inverse indices, and counts.",
+    },
+    {
+        "name": "unique_counts",
+        "api_path": "array_api.unique_counts",
+        "params": [
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Returns unique elements and their counts.",
+    },
+    {
+        "name": "unique_inverse",
+        "api_path": "array_api.unique_inverse",
+        "params": [
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Returns unique elements and inverse indices.",
+    },
+    {
+        "name": "unique_values",
+        "api_path": "array_api.unique_values",
+        "params": [
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Returns unique elements of an input array.",
+    },
 ]
 
 

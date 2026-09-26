@@ -1006,3 +1006,113 @@ def test_cli_main_entrypoint(mocker: Any) -> None:
 
     mocker.patch("sys.argv", ["ml_ecosystem_snapshots", "list-snapshots"])
     runpy.run_path(cli.__file__, run_name="__main__")
+
+
+def test_cli_check_ptx_and_new_export_formats(
+    tmp_path: Any, mocker: Any, capsys: Any
+) -> None:
+    """Test check-ptx command and extended export formats in CLI.
+
+    Args:
+        tmp_path: Temporary directory fixture.
+        mocker: Pytest mocker fixture.
+        capsys: Standard output capture fixture.
+    """
+    import pytest
+    import json
+    from ml_ecosystem_snapshots.cli import main
+
+    # 1. check-ptx valid instruction
+    mocker.patch(
+        "sys.argv",
+        [
+            "ml_ecosystem_snapshots",
+            "check-ptx",
+            "add",
+            "--types",
+            ".s32",
+            "--sm-arch",
+            "sm_80",
+        ],
+    )
+    main()
+    captured = capsys.readouterr()
+    assert "PTX Instruction 'add' is valid." in captured.out
+
+    # 2. check-ptx invalid instruction
+    mocker.patch(
+        "sys.argv",
+        [
+            "ml_ecosystem_snapshots",
+            "check-ptx",
+            "nonexistent_ptx_mnemonic",
+        ],
+    )
+    with pytest.raises(SystemExit):
+        main()
+    captured_err = capsys.readouterr()
+    assert "PTX Instruction 'nonexistent_ptx_mnemonic' Invalid:" in captured_err.out
+
+    # 2b. check-ptx with missing mnemonic
+    mocker.patch(
+        "sys.argv",
+        [
+            "ml_ecosystem_snapshots",
+            "check-ptx",
+        ],
+    )
+    with pytest.raises(SystemExit):
+        main()
+    captured_missing = capsys.readouterr()
+    assert "Error: Instruction mnemonic must be specified." in captured_missing.out
+
+    # 3. Export formats
+    snap_data = {
+        "target": "custom_fw",
+        "categories": {
+            "ops": [
+                {
+                    "name": "AddOp",
+                    "api_path": "custom.AddOp",
+                    "kind": "function",
+                    "params": [
+                        {"name": "lhs", "annotation": "int"},
+                        {"name": "rhs", "annotation": "int"},
+                    ],
+                    "docstring": "Add two integers together.",
+                }
+            ]
+        },
+    }
+    snap_path = str(tmp_path / "custom_snap.json")
+    with open(snap_path, "w", encoding="utf-8") as f:
+        json.dump(snap_data, f)
+
+    export_formats = [
+        "sass_prompt",
+        "mlir_prompt",
+        "rdna_prompt",
+        "ptx_prompt",
+        "stablehlo_prompt",
+        "scoped_prompt",
+        "cpp_header",
+        "typescript",
+    ]
+    for fmt in export_formats:
+        out_sub = str(tmp_path / f"export_{fmt}")
+        mocker.patch(
+            "sys.argv",
+            [
+                "ml_ecosystem_snapshots",
+                "export",
+                "--input",
+                snap_path,
+                "--out-dir",
+                out_sub,
+                "--format",
+                fmt,
+            ],
+        )
+        main()
+        cap_fmt = capsys.readouterr()
+        assert "Exported" in cap_fmt.out

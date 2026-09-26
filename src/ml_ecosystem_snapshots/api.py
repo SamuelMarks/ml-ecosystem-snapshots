@@ -11,7 +11,7 @@ import concurrent.futures
 import importlib.metadata
 import json
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Tuple, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from ml_switcheroo_ir.schema.ghost import SemanticTier
 from ml_ecosystem_snapshots.models import SnapshotEnvelope
@@ -715,17 +715,21 @@ def extract_all_snapshots(
 
 
 def write_snapshot(
-    framework_name: str, snapshot_data: Dict[str, Any], output_dir: str
+    framework_name: str,
+    snapshot_data: Dict[str, Any],
+    output_dir: str,
+    compress: Optional[str] = None,
 ) -> str:
-    """Write a snapshot dictionary to a JSON file on disk.
+    """Write a snapshot dictionary to a JSON or compressed file on disk.
 
     Args:
         framework_name: The framework identifier.
         snapshot_data: The snapshot dictionary.
         output_dir: The directory path where the file should be written.
+        compress: Optional compression algorithm ('gzip', 'gz', 'zstd').
 
     Returns:
-        The path to the generated JSON file.
+        The path to the generated snapshot file.
 
     """
     out_path = Path(output_dir)
@@ -734,11 +738,44 @@ def write_snapshot(
     version = snapshot_data.get("version", "unknown")
     safe_ver = version.replace("+", "_").replace(" ", "_")
 
-    file_path = Path(os.path.join(out_path, f"{framework_name}_v{safe_ver}.json"))
+    if compress in ("gzip", "gz"):
+        file_path = Path(
+            os.path.join(out_path, f"{framework_name}_v{safe_ver}.json.gz")
+        )
+        import gzip
 
-    with open(file_path, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(snapshot_data, f, indent=2, sort_keys=True)
-        f.write("\n")
+        with gzip.open(file_path, "wt", encoding="utf-8", newline="\n") as f:
+            json.dump(snapshot_data, f, indent=2, sort_keys=True)
+            f.write("\n")
+    elif compress == "zstd":
+        file_path = Path(
+            os.path.join(out_path, f"{framework_name}_v{safe_ver}.json.zst")
+        )
+        raw_bytes = (
+            json.dumps(snapshot_data, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+        )
+        try:
+            import importlib
+
+            zstd = importlib.import_module("zstandard")
+            cctx = getattr(zstd, "ZstdCompressor")()
+            compressed: bytes = cctx.compress(raw_bytes)
+            with open(file_path, "wb") as f:
+                f.write(compressed)
+        except Exception:
+            import gzip
+
+            file_path = Path(
+                os.path.join(out_path, f"{framework_name}_v{safe_ver}.json.gz")
+            )
+            with gzip.open(file_path, "wt", encoding="utf-8", newline="\n") as f:
+                json.dump(snapshot_data, f, indent=2, sort_keys=True)
+                f.write("\n")
+    else:
+        file_path = Path(os.path.join(out_path, f"{framework_name}_v{safe_ver}.json"))
+        with open(file_path, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(snapshot_data, f, indent=2, sort_keys=True)
+            f.write("\n")
 
     return str(file_path)
 

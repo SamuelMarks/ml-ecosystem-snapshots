@@ -321,6 +321,257 @@ CANONICAL_SCIPY_OPS: List[Dict[str, Any]] = [
         ],
         "docstring": "Compute the matrix exponential using Pade approximation.",
     },
+    {
+        "name": "beta",
+        "api_path": "scipy.special.beta",
+        "submodule": "special",
+        "params": [
+            {"name": "a", "kind": "POSITIONAL_ONLY"},
+            {"name": "b", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Beta function.",
+    },
+    {
+        "name": "betainc",
+        "api_path": "scipy.special.betainc",
+        "submodule": "special",
+        "params": [
+            {"name": "a", "kind": "POSITIONAL_ONLY"},
+            {"name": "b", "kind": "POSITIONAL_ONLY"},
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Incomplete beta integral.",
+    },
+    {
+        "name": "dawsn",
+        "api_path": "scipy.special.dawsn",
+        "submodule": "special",
+        "params": [
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Dawson's integral.",
+    },
+    {
+        "name": "expn",
+        "api_path": "scipy.special.expn",
+        "submodule": "special",
+        "params": [
+            {"name": "n", "kind": "POSITIONAL_ONLY"},
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Generalized exponential integral.",
+    },
+    {
+        "name": "fresnel",
+        "api_path": "scipy.special.fresnel",
+        "submodule": "special",
+        "params": [
+            {"name": "z", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Fresnel integrals.",
+    },
+    {
+        "name": "gammainc",
+        "api_path": "scipy.special.gammainc",
+        "submodule": "special",
+        "params": [
+            {"name": "a", "kind": "POSITIONAL_ONLY"},
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Regularized lower incomplete gamma function.",
+    },
+    {
+        "name": "gammaincc",
+        "api_path": "scipy.special.gammaincc",
+        "submodule": "special",
+        "params": [
+            {"name": "a", "kind": "POSITIONAL_ONLY"},
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Regularized upper incomplete gamma function.",
+    },
+    {
+        "name": "i0e",
+        "api_path": "scipy.special.i0e",
+        "submodule": "special",
+        "params": [
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Exponentially scaled modified Bessel function of order 0.",
+    },
+    {
+        "name": "i1e",
+        "api_path": "scipy.special.i1e",
+        "submodule": "special",
+        "params": [
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Exponentially scaled modified Bessel function of order 1.",
+    },
+    {
+        "name": "jv",
+        "api_path": "scipy.special.jv",
+        "submodule": "special",
+        "params": [
+            {"name": "v", "kind": "POSITIONAL_ONLY"},
+            {"name": "z", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Bessel function of the first kind of real order.",
+    },
+    {
+        "name": "k0e",
+        "api_path": "scipy.special.k0e",
+        "submodule": "special",
+        "params": [
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Exponentially scaled modified Bessel function K of order 0.",
+    },
+    {
+        "name": "k1e",
+        "api_path": "scipy.special.k1e",
+        "submodule": "special",
+        "params": [
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Exponentially scaled modified Bessel function K of order 1.",
+    },
+    {
+        "name": "spence",
+        "api_path": "scipy.special.spence",
+        "submodule": "special",
+        "params": [
+            {"name": "z", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Spence's function, also known as the dilogarithm.",
+    },
+    {
+        "name": "zeta",
+        "api_path": "scipy.special.zeta",
+        "submodule": "special",
+        "params": [
+            {"name": "x", "kind": "POSITIONAL_ONLY"},
+            {"name": "q", "kind": "POSITIONAL_OR_KEYWORD", "default": "None"},
+        ],
+        "docstring": "Riemann zeta function of two arguments.",
+    },
+    {
+        "name": "cho_solve",
+        "api_path": "scipy.linalg.cho_solve",
+        "submodule": "linalg",
+        "params": [
+            {"name": "c_and_lower", "kind": "POSITIONAL_ONLY"},
+            {"name": "b", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Solve the linear equations Ax = b, given the Cholesky factorization of A.",
+    },
+    {
+        "name": "eigh_tridiagonal",
+        "api_path": "scipy.linalg.eigh_tridiagonal",
+        "submodule": "linalg",
+        "params": [
+            {"name": "d", "kind": "POSITIONAL_ONLY"},
+            {"name": "e", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Solve eigenvalue problem for a real symmetric tridiagonal matrix.",
+    },
+    {
+        "name": "hessenberg",
+        "api_path": "scipy.linalg.hessenberg",
+        "submodule": "linalg",
+        "params": [
+            {"name": "a", "kind": "POSITIONAL_ONLY"},
+            {"name": "calc_q", "kind": "KEYWORD_ONLY", "default": "False"},
+        ],
+        "docstring": "Compute Hessenberg form of a matrix.",
+    },
+    {
+        "name": "lu",
+        "api_path": "scipy.linalg.lu",
+        "submodule": "linalg",
+        "params": [
+            {"name": "a", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Compute LU decomposition of a matrix.",
+    },
+    {
+        "name": "lu_factor",
+        "api_path": "scipy.linalg.lu_factor",
+        "submodule": "linalg",
+        "params": [
+            {"name": "a", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Compute pivoted LU decomposition of a matrix.",
+    },
+    {
+        "name": "lu_solve",
+        "api_path": "scipy.linalg.lu_solve",
+        "submodule": "linalg",
+        "params": [
+            {"name": "lu_and_piv", "kind": "POSITIONAL_ONLY"},
+            {"name": "b", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Solve an equation system, a * x = b, given the LU factorization of a.",
+    },
+    {
+        "name": "polar",
+        "api_path": "scipy.linalg.polar",
+        "submodule": "linalg",
+        "params": [
+            {"name": "a", "kind": "POSITIONAL_ONLY"},
+            {"name": "side", "kind": "KEYWORD_ONLY", "default": "'right'"},
+        ],
+        "docstring": "Compute the polar decomposition.",
+    },
+    {
+        "name": "schur",
+        "api_path": "scipy.linalg.schur",
+        "submodule": "linalg",
+        "params": [
+            {"name": "a", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Compute Schur decomposition of a matrix.",
+    },
+    {
+        "name": "solve_banded",
+        "api_path": "scipy.linalg.solve_banded",
+        "submodule": "linalg",
+        "params": [
+            {"name": "l_and_u", "kind": "POSITIONAL_ONLY"},
+            {"name": "ab", "kind": "POSITIONAL_ONLY"},
+            {"name": "b", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "Solve the equation a x = b for x, assuming a is banded matrix.",
+    },
+    {
+        "name": "maximum_filter",
+        "api_path": "scipy.ndimage.maximum_filter",
+        "submodule": "ndimage",
+        "params": [
+            {"name": "input", "kind": "POSITIONAL_ONLY"},
+            {"name": "size", "kind": "KEYWORD_ONLY", "default": "None"},
+        ],
+        "docstring": "Calculate a multidimensional maximum filter.",
+    },
+    {
+        "name": "beta",
+        "api_path": "scipy.stats.beta",
+        "submodule": "stats",
+        "params": [
+            {"name": "a", "kind": "POSITIONAL_ONLY"},
+            {"name": "b", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "A beta continuous random variable.",
+    },
+    {
+        "name": "poisson",
+        "api_path": "scipy.stats.poisson",
+        "submodule": "stats",
+        "params": [
+            {"name": "mu", "kind": "POSITIONAL_ONLY"},
+        ],
+        "docstring": "A Poisson discrete random variable.",
+    },
     # Signal processing
     {
         "name": "convolve",
@@ -405,7 +656,7 @@ def collect_api(
         return []
 
     # Map categories to submodules
-    target_submodules = ["special", "linalg", "signal"]
+    target_submodules = ["special", "linalg", "signal", "ndimage", "stats"]
     loaded_submods: Dict[str, Any] = {}
     for sub in target_submodules:
         mod = _get_scipy_submodule(sub)

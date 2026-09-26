@@ -573,3 +573,355 @@ def test_export_scoped_prompt_context(mocker: Any) -> None:
         ctx = export_scoped_prompt_context("test_fw", max_symbols=50)
         assert "# Framework Grounding Context: `test_fw`" in ctx
         assert "*(Showing" not in ctx
+
+
+def test_export_extended_prompt_contexts_and_headers() -> None:
+    """Test export_rdna_prompt_context, export_ptx_prompt_context, export_stablehlo_prompt_context, to_cpp_header, and to_typescript_interface."""
+    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+    from ml_ecosystem_snapshots.export import (
+        export_ptx_prompt_context,
+        export_rdna_prompt_context,
+        export_stablehlo_prompt_context,
+        to_cpp_header,
+        to_typescript_interface,
+    )
+
+    rdna_ref = GhostRef(
+        name="v_add_f32",
+        api_path="v_add_f32",
+        kind="instruction",
+        params=[
+            GhostParam(
+                name="vdst",
+                kind=ParameterKind.POSITIONAL_ONLY,
+                annotation="vgpr",
+            ),
+            GhostParam(
+                name="vsrc0",
+                kind=ParameterKind.POSITIONAL_ONLY,
+                annotation="vgpr",
+            ),
+            GhostParam(
+                name="vsrc1",
+                kind=ParameterKind.POSITIONAL_ONLY,
+                annotation="vgpr",
+            ),
+        ],
+        environment_tags=["VOP2", "gfx1100"],
+        docstring="Vector floating point addition.",
+    )
+    rdna_ctx = export_rdna_prompt_context([rdna_ref])
+    assert "### `v_add_f32`" in rdna_ctx
+    assert "**Encoding**: `VOP2`" in rdna_ctx
+    assert "gfx1100" in rdna_ctx
+
+    ptx_ref = GhostRef(
+        name="add",
+        api_path="add",
+        kind="instruction",
+        params=[
+            GhostParam(name="d", kind=ParameterKind.POSITIONAL_ONLY, annotation="reg"),
+            GhostParam(name="a", kind=ParameterKind.POSITIONAL_ONLY, annotation="reg"),
+            GhostParam(name="b", kind=ParameterKind.POSITIONAL_ONLY, annotation="reg"),
+        ],
+        environment_tags=["sm_50", ".s32", ".f32"],
+        docstring="PTX integer addition.",
+    )
+    ptx_ctx = export_ptx_prompt_context([ptx_ref])
+    assert "### `add`" in ptx_ctx
+    assert "**Minimum SM**: `sm_50`" in ptx_ctx
+    assert ".s32, .f32" in ptx_ctx
+
+    hlo_ref = GhostRef(
+        name="stablehlo.add",
+        api_path="stablehlo.add",
+        kind="operation",
+        params=[
+            GhostParam(
+                name="lhs",
+                kind=ParameterKind.POSITIONAL_ONLY,
+                annotation="tensor",
+            ),
+            GhostParam(
+                name="rhs",
+                kind=ParameterKind.POSITIONAL_ONLY,
+                annotation="tensor",
+            ),
+        ],
+    )
+    hlo_ctx = export_stablehlo_prompt_context([hlo_ref])
+    assert "stablehlo.add" in hlo_ctx
+
+    # C++ and TypeScript exports with various types
+    typed_ref = GhostRef(
+        name="AllTypes",
+        api_path="AllTypes",
+        kind="function",
+        params=[
+            GhostParam(
+                name="f_val",
+                kind=ParameterKind.POSITIONAL_OR_KEYWORD,
+                annotation="float",
+            ),
+            GhostParam(
+                name="i_val",
+                kind=ParameterKind.POSITIONAL_OR_KEYWORD,
+                annotation="int",
+            ),
+            GhostParam(
+                name="b_val",
+                kind=ParameterKind.POSITIONAL_OR_KEYWORD,
+                annotation="bool",
+            ),
+            GhostParam(
+                name="s_val",
+                kind=ParameterKind.POSITIONAL_OR_KEYWORD,
+                annotation="str",
+            ),
+            GhostParam(
+                name="l_val",
+                kind=ParameterKind.POSITIONAL_OR_KEYWORD,
+                annotation="list[int]",
+                default="None",
+            ),
+        ],
+        docstring="Docstring for AllTypes.",
+    )
+    cpp_code = to_cpp_header(typed_ref, namespace="test_ns")
+    assert "namespace test_ns {" in cpp_code
+    assert "struct AllTypes {" in cpp_code
+    assert "int64_t i_val;" in cpp_code
+    assert "bool b_val;" in cpp_code
+    assert "std::string s_val;" in cpp_code
+    assert "std::vector<float> l_val;" in cpp_code
+
+    ts_code = to_typescript_interface(typed_ref)
+    assert "export interface AllTypes {" in ts_code
+    assert "i_val: number;" in ts_code
+    assert "b_val: boolean;" in ts_code
+    assert "s_val: string;" in ts_code
+    assert "l_val?: unknown[];" in ts_code
+
+
+def test_export_coverage_hardening() -> None:
+    """Test edge cases across to_pydantic, to_protobuf, export_rdna_prompt_context, export_ptx_prompt_context, and export_scoped_prompt_context."""
+    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+    from ml_ecosystem_snapshots.export import (
+        _py_type_to_proto,
+        export_ptx_prompt_context,
+        export_rdna_prompt_context,
+        export_scoped_prompt_context,
+        to_protobuf,
+        to_pydantic,
+    )
+
+    # 1. to_pydantic with VAR_POSITIONAL, VAR_KEYWORD, defaults with description, and overloads with GhostRefs
+    ov_ref = GhostRef(
+        name="FnOverload",
+        api_path="fn.overload",
+        kind="function",
+        params=[
+            GhostParam(name="x", kind=ParameterKind.POSITIONAL_ONLY, annotation="int")
+        ],
+        docstring="Variant docstring",
+    )
+    main_ref = GhostRef(
+        name="FnWithVars",
+        api_path="fn.vars",
+        kind="function",
+        params=[
+            GhostParam(
+                name="args",
+                kind=ParameterKind.VAR_POSITIONAL,
+                annotation="str",
+                description="varargs",
+            ),
+            GhostParam(
+                name="kwargs",
+                kind=ParameterKind.VAR_KEYWORD,
+                annotation="Any",
+                description="kwargs",
+            ),
+            GhostParam(
+                name="opt",
+                kind=ParameterKind.KEYWORD_ONLY,
+                annotation="int",
+                default="10",
+                description="opt val",
+            ),
+            GhostParam(
+                name="no_desc_opt",
+                kind=ParameterKind.KEYWORD_ONLY,
+                annotation="int",
+                default="20",
+            ),
+        ],
+        overloads=[ov_ref],
+        docstring="Main function docstring",
+    )
+    pyd_code = to_pydantic(main_ref, validate_varargs=True)
+    assert "FnWithVarsVariant0" in pyd_code
+    assert "FnWithVarsVariant1" in pyd_code
+    assert "FnWithVars = Union[FnWithVarsVariant0, FnWithVarsVariant1]" in pyd_code
+
+    # 2. _py_type_to_proto edge cases
+    assert _py_type_to_proto(None) == "string"
+    assert _py_type_to_proto("tensor") == "TensorProto"
+    assert _py_type_to_proto("int", param_name="shape") == "repeated int64"
+    assert _py_type_to_proto("tuple[int, ...]", param_name="other") == "repeated int64"
+    assert _py_type_to_proto("int", param_name="reduction") == "ReductionType"
+    assert _py_type_to_proto("int", param_name="padding") == "PaddingMode"
+    assert _py_type_to_proto("int", param_name="layout") == "LayoutMode"
+    assert (
+        _py_type_to_proto("interpolation_mode", param_name="mode")
+        == "InterpolationMode"
+    )
+    assert _py_type_to_proto("dict[str, int]") == "map<string, string>"
+    assert _py_type_to_proto("bool") == "bool"
+    assert _py_type_to_proto("str") == "string"
+    assert _py_type_to_proto("bytes") == "string"
+    assert _py_type_to_proto("complex") == "string"
+
+    # to_protobuf with package
+    proto_def = to_protobuf(main_ref, package="custom_pkg")
+    assert 'syntax = "proto3";' in proto_def
+    assert "package custom_pkg;" in proto_def
+    assert "message FnWithVars {" in proto_def
+
+    # 3. export_rdna_prompt_context with various tags (DS, FLAT, SOP, SMEM) and minimal ref
+    ds_ref = GhostRef(
+        name="ds_add_rtn_u32",
+        api_path="ds_add_rtn_u32",
+        kind="instruction",
+        params=[
+            GhostParam(
+                name="vdst", kind=ParameterKind.POSITIONAL_ONLY, annotation="vgpr"
+            )
+        ],
+        environment_tags=["DS_ADD", "gfx900"],
+    )
+    flat_ref = GhostRef(
+        name="flat_load_dword",
+        api_path="flat_load_dword",
+        kind="instruction",
+        params=[],
+        environment_tags=["FLAT_LOAD", "gfx1030"],
+    )
+    minimal_rdna = GhostRef(
+        name="v_nop",
+        api_path="v_nop",
+        kind="instruction",
+        params=[],
+        environment_tags=["VOP1"],
+    )
+    rdna_out = export_rdna_prompt_context([ds_ref, flat_ref, minimal_rdna])
+    assert "### `ds_add_rtn_u32`" in rdna_out
+    assert "**Encoding**: `DS_ADD`" in rdna_out
+    assert "### `flat_load_dword`" in rdna_out
+    assert "**Encoding**: `FLAT_LOAD`" in rdna_out
+    assert "### `v_nop`" in rdna_out
+
+    # 4. export_ptx_prompt_context with various tags and minimal ref
+    ptx_mod_ref = GhostRef(
+        name="mma_op",
+        api_path="mma_op",
+        kind="instruction",
+        params=[],
+        environment_tags=["sm_90", ".b32", ".cta", "non_modifier_tag"],
+    )
+    minimal_ptx = GhostRef(
+        name="nop",
+        api_path="nop",
+        kind="instruction",
+        params=[],
+        environment_tags=["sm_70"],
+    )
+    ptx_out = export_ptx_prompt_context([ptx_mod_ref, minimal_ptx])
+    assert "### `mma_op`" in ptx_out
+    assert "**Minimum SM**: `sm_90`" in ptx_out
+    assert ".b32, .cta" in ptx_out
+    assert "### `nop`" in ptx_out
+
+    # 5. export_scoped_prompt_context with module_prefix and non-dict items
+    mock_mixed_snap = {
+        "categories": {
+            "nn": [
+                {
+                    "name": "Linear",
+                    "api_path": "torch.nn.Linear",
+                    "kind": "class",
+                    "params": [],
+                },
+                {
+                    "name": "Conv2d",
+                    "api_path": "torch.nn.Conv2d",
+                    "kind": "class",
+                    "params": [],
+                },
+                "not_a_dict",
+            ],
+            "optim": [
+                {
+                    "name": "SGD",
+                    "api_path": "torch.optim.SGD",
+                    "kind": "class",
+                    "params": [],
+                },
+            ],
+        }
+    }
+    with patch(
+        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        return_value=mock_mixed_snap,
+    ):
+        scoped_nn = export_scoped_prompt_context("torch", module_prefix="torch.nn")
+        assert "Linear" in scoped_nn
+        assert "Conv2d" in scoped_nn
+        assert "SGD" not in scoped_nn
+
+    # 6. export_llm_prompt_context constraints branch and no-docstring headers
+    from ml_ecosystem_snapshots.models import ExtendedGhostParam
+    from ml_ecosystem_snapshots.export import (
+        export_llm_prompt_context,
+        to_cpp_header,
+        to_typescript_interface,
+    )
+
+    constrained_param = ExtendedGhostParam(
+        name="input_t",
+        kind=ParameterKind.POSITIONAL_ONLY,
+        annotation="Tensor",
+        allowed_dtypes=["float32", "bfloat16"],
+        rank_constraint="4",
+    )
+    constrained_ref = GhostRef(
+        name="CustomNorm",
+        api_path="torch.nn.CustomNorm",
+        kind="class",
+        params=[constrained_param],
+    )
+    llm_out = export_llm_prompt_context([constrained_ref])
+    assert "dtypes: ['float32', 'bfloat16']" in llm_out
+    assert "rank: 4" in llm_out
+
+    # no docstring and unannotated parameter header / interface
+    no_doc_ref = GhostRef(
+        name="SimpleStruct",
+        api_path="SimpleStruct",
+        kind="class",
+        params=[
+            GhostParam(name="val", kind=ParameterKind.POSITIONAL_ONLY, annotation=None),
+            GhostParam(
+                name="custom_t",
+                kind=ParameterKind.POSITIONAL_ONLY,
+                annotation="MyCustomClass",
+            ),
+        ],
+    )
+    cpp_no_doc = to_cpp_header(no_doc_ref)
+    assert "struct SimpleStruct {" in cpp_no_doc
+    assert "float val;" in cpp_no_doc
+    ts_no_doc = to_typescript_interface(no_doc_ref)
+    assert "export interface SimpleStruct {" in ts_no_doc
+    assert "val: unknown;" in ts_no_doc
+    assert "custom_t: unknown;" in ts_no_doc

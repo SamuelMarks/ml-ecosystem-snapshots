@@ -19,6 +19,7 @@ class AliasLoader(Loader):
 
     Attributes:
         target_mod: The canonical module instance to return.
+        original_spec: The original ModuleSpec descriptor of target_mod.
     """
 
     def __init__(self, target_mod: ModuleType) -> None:
@@ -28,6 +29,7 @@ class AliasLoader(Loader):
             target_mod: The canonical module instance.
         """
         self.target_mod = target_mod
+        self.original_spec: Optional[ModuleSpec] = getattr(target_mod, "__spec__", None)
 
     def create_module(self, spec: ModuleSpec) -> ModuleType:
         """Return the target canonical module instance.
@@ -41,12 +43,13 @@ class AliasLoader(Loader):
         return self.target_mod
 
     def exec_module(self, module: ModuleType) -> None:
-        """Execute the module body (no-op since canonical module is already executed).
+        """Execute the module body, ensuring the canonical module spec is preserved.
 
         Args:
             module: The module to execute.
         """
-        pass
+        if self.original_spec is not None:
+            self.target_mod.__spec__ = self.original_spec
 
 
 class AliasFinder:

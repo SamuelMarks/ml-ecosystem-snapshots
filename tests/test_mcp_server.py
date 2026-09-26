@@ -228,6 +228,8 @@ def test_expanded_semantic_concept_maps() -> None:
                 assert load_concept_map() == DEFAULT_CONCEPT_MAP
             with mock.patch("builtins.open", mock.mock_open(read_data="{bad_json")):
                 assert load_concept_map() == DEFAULT_CONCEPT_MAP
+        with mock.patch("os.path.exists", return_value=False):
+            assert load_concept_map() == DEFAULT_CONCEPT_MAP
 
 
 def test_check_code_block_python(mocker: Any) -> None:
@@ -1588,3 +1590,55 @@ def test_check_hallucination_non_int_rank() -> None:
         )
         assert res["api_exists"] is True
         assert res["is_hallucinated"] is False
+
+
+def test_all_14_mcp_tools_dispatch() -> None:
+    """Test JSON-RPC 2.0 tools/call dispatch for all 14 newly registered check tools."""
+    from ml_ecosystem_snapshots.mcp_server import handle_mcp_message
+
+    # Ensure all 25 tools are in tools/list
+    tools_list_msg = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list",
+        "params": {},
+    }
+    resp_list = handle_mcp_message(tools_list_msg)
+    tool_names = {t["name"] for t in resp_list["result"]["tools"]}
+    assert len(tool_names) == 25
+
+    # Test tools/call dispatch for all 14 tools
+    test_calls = [
+        ("check_wgsl_op", {"op_name": "workgroupBarrier"}),
+        ("check_onnx_op", {"op_name": "MatMul"}),
+        ("check_metal_op", {"op_name": "threadgroup_barrier"}),
+        ("check_wasm_instruction", {"mnemonic": "f32x4.add"}),
+        ("check_webgl_op", {"op_name": "texture"}),
+        ("check_cpp_op", {"op_name": "clamp"}),
+        ("check_array_api_op", {"op_name": "matmul"}),
+        ("check_scipy_op", {"op_name": "erf"}),
+        ("check_torchvision_op", {"op_name": "nms"}),
+        ("check_torchaudio_op", {"op_name": "spectrogram"}),
+        ("check_safetensors_op", {"op_name": "load_file"}),
+        ("check_aten_op", {"op_name": "add"}),
+        ("check_nccl_op", {"op_name": "all_reduce"}),
+        ("check_flash_attention_op", {"op_name": "flash_attn_func"}),
+    ]
+
+    for tool_name, args in test_calls:
+        msg = {
+            "jsonrpc": "2.0",
+            "id": 100,
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": args,
+            },
+        }
+        resp = handle_mcp_message(msg)
+        assert resp.get("jsonrpc") == "2.0"
+        assert "result" in resp, f"Failed on tool: {tool_name}"
+        content = resp["result"]["content"]
+        assert len(content) > 0
+        parsed_res = json.loads(content[0]["text"])
+        assert "is_valid" in parsed_res or "op_exists" in parsed_res

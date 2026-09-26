@@ -246,6 +246,76 @@ def cmd_export(args: argparse.Namespace) -> None:
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(content)
         print(f"Exported LLM prompt context to {out_path}")
+    elif args.format == "sass_prompt":
+        from ml_ecosystem_snapshots.export import export_sass_prompt_context
+
+        content = export_sass_prompt_context(refs)
+        out_path = os.path.join(args.out_dir, "sass_context.md")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"Exported SASS prompt context to {out_path}")
+    elif args.format == "mlir_prompt":
+        from ml_ecosystem_snapshots.export import export_mlir_prompt_context
+
+        content = export_mlir_prompt_context(refs)
+        out_path = os.path.join(args.out_dir, "mlir_context.md")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"Exported MLIR prompt context to {out_path}")
+    elif args.format == "rdna_prompt":
+        from ml_ecosystem_snapshots.export import export_rdna_prompt_context
+
+        content = export_rdna_prompt_context(refs)
+        out_path = os.path.join(args.out_dir, "rdna_context.md")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"Exported RDNA prompt context to {out_path}")
+    elif args.format == "ptx_prompt":
+        from ml_ecosystem_snapshots.export import export_ptx_prompt_context
+
+        content = export_ptx_prompt_context(refs)
+        out_path = os.path.join(args.out_dir, "ptx_context.md")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"Exported PTX prompt context to {out_path}")
+    elif args.format == "stablehlo_prompt":
+        from ml_ecosystem_snapshots.export import export_stablehlo_prompt_context
+
+        content = export_stablehlo_prompt_context(refs)
+        out_path = os.path.join(args.out_dir, "stablehlo_context.md")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"Exported StableHLO prompt context to {out_path}")
+    elif args.format == "scoped_prompt":
+        from ml_ecosystem_snapshots.export import export_scoped_prompt_context
+
+        fw_name = (
+            (snap.get("target") if isinstance(snap, dict) else None)
+            or (getattr(refs[0], "framework", None) if refs else None)
+            or "unknown"
+        )
+        content = export_scoped_prompt_context(str(fw_name))
+        out_path = os.path.join(args.out_dir, "scoped_context.md")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"Exported Scoped prompt context to {out_path}")
+    elif args.format == "cpp_header":
+        from ml_ecosystem_snapshots.export import to_cpp_header
+
+        for ref in refs:
+            code = to_cpp_header(ref)
+            out_path = os.path.join(args.out_dir, f"{ref.name.lower()}.hpp")
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(code)
+        print(f"Exported {len(refs)} C++ headers to {args.out_dir}")
+    elif args.format == "typescript":
+        from ml_ecosystem_snapshots.export import to_typescript_interface
+
+        ts_defs = [to_typescript_interface(ref) for ref in refs]
+        out_path = os.path.join(args.out_dir, "interfaces.d.ts")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write("\n\n".join(ts_defs) + "\n")
+        print(f"Exported {len(refs)} TypeScript interfaces to {out_path}")
     else:
         raise ValueError(f"Unknown format: {args.format}")
 
@@ -801,6 +871,55 @@ def cmd_check_rdna(args: argparse.Namespace) -> None:
         )
         if res.get("encoding"):
             print(f"  Encoding:                {res.get('encoding')}")
+
+
+def cmd_check_ptx(args: argparse.Namespace) -> None:
+    """Validate NVIDIA PTX instruction mnemonic from the CLI.
+
+    Args:
+        args: Parsed command line arguments containing mnemonic, types, operands, state_space, scope, vector_width, sm_arch.
+    """
+    from .mcp_server import check_ptx_instruction
+
+    mnemonic = getattr(args, "opt_mnemonic", None) or getattr(args, "mnemonic", None)
+    if not mnemonic:
+        print("Error: Instruction mnemonic must be specified.")
+        sys.exit(1)
+
+    types = (
+        [t.strip() for t in args.types.split(",") if t.strip()]
+        if getattr(args, "types", None)
+        else None
+    )
+    operands = (
+        [op.strip() for op in args.operands.split(",") if op.strip()]
+        if getattr(args, "operands", None)
+        else None
+    )
+
+    res = check_ptx_instruction(
+        mnemonic=mnemonic,
+        types=types,
+        operands=operands,
+        state_space=getattr(args, "state_space", None),
+        scope=getattr(args, "scope", None),
+        vector_width=getattr(args, "vector_width", None),
+        sm_arch=getattr(args, "sm_arch", None),
+    )
+
+    if not res.get("is_valid"):
+        print(f"PTX Instruction '{mnemonic}' Invalid:")
+        for err in res.get("errors", []):
+            print(f"  - {err}")
+        sys.exit(1)
+    else:
+        print(f"PTX Instruction '{mnemonic}' is valid.")
+        if res.get("min_sm"):
+            print(f"  Minimum SM Architecture: {res.get('min_sm')}")
+        if res.get("supported_types"):
+            print(
+                f"  Supported Types:         {', '.join(res.get('supported_types', []))}"
+            )
 
 
 def cmd_check_mlir(args: argparse.Namespace) -> None:
@@ -1435,7 +1554,21 @@ def main() -> None:
     )
     parser_export.add_argument(
         "--format",
-        choices=["openapi", "json_schema", "pydantic", "protobuf", "llm_prompt"],
+        choices=[
+            "openapi",
+            "json_schema",
+            "pydantic",
+            "protobuf",
+            "llm_prompt",
+            "sass_prompt",
+            "mlir_prompt",
+            "rdna_prompt",
+            "ptx_prompt",
+            "stablehlo_prompt",
+            "scoped_prompt",
+            "cpp_header",
+            "typescript",
+        ],
         required=True,
         help="Format to export",
     )
@@ -1658,6 +1791,63 @@ def main() -> None:
         help="Path to RDNA assembly file to validate",
     )
     parser_check_rdna.set_defaults(func=cmd_check_rdna)
+
+    # check-ptx
+    parser_check_ptx = subparsers.add_parser(
+        "check-ptx",
+        help="Validate NVIDIA PTX instruction mnemonics, operands, and SM requirements",
+    )
+    parser_check_ptx.add_argument(
+        "mnemonic",
+        type=str,
+        nargs="?",
+        default=None,
+        help="PTX mnemonic to validate (e.g. add, wgmma.mma_async)",
+    )
+    parser_check_ptx.add_argument(
+        "--mnemonic",
+        dest="opt_mnemonic",
+        type=str,
+        default=None,
+        help="PTX mnemonic to validate (alternative to positional argument)",
+    )
+    parser_check_ptx.add_argument(
+        "--types",
+        type=str,
+        default=None,
+        help="Comma-separated PTX type qualifiers (e.g. '.f32,.f16')",
+    )
+    parser_check_ptx.add_argument(
+        "--operands",
+        type=str,
+        default=None,
+        help="Comma-separated operands (e.g. '%r0,%r1,%r2')",
+    )
+    parser_check_ptx.add_argument(
+        "--state-space",
+        type=str,
+        default=None,
+        help="Memory state space qualifier (e.g. '.global', '.shared')",
+    )
+    parser_check_ptx.add_argument(
+        "--scope",
+        type=str,
+        default=None,
+        help="Memory visibility scope (e.g. '.cta', '.gpu', '.sys')",
+    )
+    parser_check_ptx.add_argument(
+        "--vector-width",
+        type=str,
+        default=None,
+        help="Vector width qualifier (e.g. '.v2', '.v4')",
+    )
+    parser_check_ptx.add_argument(
+        "--sm-arch",
+        type=str,
+        default=None,
+        help="Target SM architecture (e.g. 'sm_80', 'sm_90')",
+    )
+    parser_check_ptx.set_defaults(func=cmd_check_ptx)
 
     # check-mlir
     parser_check_mlir = subparsers.add_parser(

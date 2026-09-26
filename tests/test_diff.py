@@ -545,3 +545,286 @@ def test_diff_metadata_and_deprecated_capabilities() -> None:
     assert "## Deprecated Capabilities" in changelog
     assert "- `sm_50`" in changelog
     assert "- `sm_60`" in changelog
+
+
+def test_diff_positional_argument_order_swapping() -> None:
+    """Test that swapping the order of positional arguments is flagged as a breaking change."""
+    from ml_ecosystem_snapshots.diff import diff_snapshots
+
+    snap_old: Dict[str, Any] = {
+        "categories": {
+            "math": [
+                {
+                    "api_path": "math.add",
+                    "params": [
+                        {
+                            "name": "a",
+                            "kind": "POSITIONAL_OR_KEYWORD",
+                            "annotation": "int",
+                        },
+                        {
+                            "name": "b",
+                            "kind": "POSITIONAL_OR_KEYWORD",
+                            "annotation": "int",
+                        },
+                    ],
+                }
+            ]
+        }
+    }
+    snap_new_swapped: Dict[str, Any] = {
+        "categories": {
+            "math": [
+                {
+                    "api_path": "math.add",
+                    "params": [
+                        {
+                            "name": "b",
+                            "kind": "POSITIONAL_OR_KEYWORD",
+                            "annotation": "int",
+                        },
+                        {
+                            "name": "a",
+                            "kind": "POSITIONAL_OR_KEYWORD",
+                            "annotation": "int",
+                        },
+                    ],
+                }
+            ]
+        }
+    }
+
+    res = diff_snapshots(snap_old, snap_new_swapped)
+    assert "math.add" in res.signature_changed
+    assert "math.add" in res.breaking_signature_changed
+
+    # Test inserted positional parameter shifting order
+    snap_new_prepended: Dict[str, Any] = {
+        "categories": {
+            "math": [
+                {
+                    "api_path": "math.add",
+                    "params": [
+                        {
+                            "name": "prefix",
+                            "kind": "POSITIONAL_OR_KEYWORD",
+                            "default": "0",
+                        },
+                        {
+                            "name": "a",
+                            "kind": "POSITIONAL_OR_KEYWORD",
+                            "annotation": "int",
+                        },
+                        {
+                            "name": "b",
+                            "kind": "POSITIONAL_OR_KEYWORD",
+                            "annotation": "int",
+                        },
+                    ],
+                }
+            ]
+        }
+    }
+    res_prepended = diff_snapshots(snap_old, snap_new_prepended)
+    assert "math.add" in res_prepended.breaking_signature_changed
+
+
+def test_diff_return_type_mutations() -> None:
+    """Test that return type changes are detected and evaluated for backward compatibility."""
+    from ml_ecosystem_snapshots.diff import diff_snapshots
+
+    snap_old: Dict[str, Any] = {
+        "categories": {
+            "ops": [
+                {
+                    "api_path": "ops.compute",
+                    "params": [],
+                    "returns_type": "float",
+                }
+            ]
+        }
+    }
+    snap_new_incompatible: Dict[str, Any] = {
+        "categories": {
+            "ops": [
+                {
+                    "api_path": "ops.compute",
+                    "params": [],
+                    "returns_type": "str",
+                }
+            ]
+        }
+    }
+    snap_new_none: Dict[str, Any] = {
+        "categories": {
+            "ops": [
+                {
+                    "api_path": "ops.compute",
+                    "params": [],
+                    "returns_type": "None",
+                }
+            ]
+        }
+    }
+
+    res_incompatible = diff_snapshots(snap_old, snap_new_incompatible)
+    assert "ops.compute" in res_incompatible.signature_changed
+    assert "ops.compute" in res_incompatible.breaking_signature_changed
+
+    res_none = diff_snapshots(snap_old, snap_new_none)
+    assert "ops.compute" in res_none.signature_changed
+    assert "ops.compute" in res_none.breaking_signature_changed
+
+    # Any to int (non-breaking)
+    snap_any = {
+        "categories": {
+            "ops": [{"api_path": "ops.compute", "params": [], "returns_type": "Any"}]
+        }
+    }
+    snap_int = {
+        "categories": {
+            "ops": [{"api_path": "ops.compute", "params": [], "returns_type": "int"}]
+        }
+    }
+    res_any = diff_snapshots(snap_any, snap_int)
+    assert "ops.compute" in res_any.non_breaking_signature_changed
+
+    # None to int (non-breaking)
+    res_none_to_int = diff_snapshots(snap_new_none, snap_int)
+    assert "ops.compute" in res_none_to_int.non_breaking_signature_changed
+
+
+def test_diff_overloads_and_changelog() -> None:
+    """Test that overload additions, removals, and modifications are tracked in diff and changelog."""
+    from ml_ecosystem_snapshots.diff import diff_snapshots, generate_changelog
+
+    snap_old: Dict[str, Any] = {
+        "categories": {
+            "fn": [
+                {
+                    "api_path": "fn.overloaded",
+                    "params": [],
+                    "overloads": [
+                        {
+                            "params": [{"name": "x", "annotation": "int"}],
+                            "returns_type": "int",
+                        },
+                        {
+                            "params": [{"name": "x", "annotation": "float"}],
+                            "returns_type": "float",
+                        },
+                    ],
+                }
+            ]
+        }
+    }
+    snap_new_removed_overload: Dict[str, Any] = {
+        "categories": {
+            "fn": [
+                {
+                    "api_path": "fn.overloaded",
+                    "params": [],
+                    "overloads": [
+                        {
+                            "params": [{"name": "x", "annotation": "int"}],
+                            "returns_type": "int",
+                        },
+                    ],
+                }
+            ]
+        }
+    }
+
+    res = diff_snapshots(snap_old, snap_new_removed_overload)
+    assert "fn.overloaded" in res.overloads_changed
+    assert "fn.overloaded" in res.breaking_signature_changed
+
+    # Overload added (non-breaking)
+    res_added_ov = diff_snapshots(snap_new_removed_overload, snap_old)
+    assert "fn.overloaded" in res_added_ov.overloads_changed
+    assert "fn.overloaded" in res_added_ov.non_breaking_signature_changed
+
+    # Empty return type string (non-breaking)
+    snap_empty_ret = {
+        "categories": {
+            "fn": [{"api_path": "fn.empty", "params": [], "returns_type": ""}]
+        }
+    }
+    snap_valid_ret = {
+        "categories": {
+            "fn": [{"api_path": "fn.empty", "params": [], "returns_type": "int"}]
+        }
+    }
+    res_empty_ret = diff_snapshots(snap_empty_ret, snap_valid_ret)
+    assert "fn.empty" in res_empty_ret.non_breaking_signature_changed
+
+    changelog = generate_changelog(res)
+    assert "## Overload Changes" in changelog
+    assert "- `fn.overloaded`" in changelog
+
+
+def test_diff_parameter_kind_changes() -> None:
+    """Test that changing parameter kind (pos-only to kw-only, VAR to non-VAR) is flagged breaking."""
+    from ml_ecosystem_snapshots.diff import diff_snapshots
+
+    snap_pos_only = {
+        "categories": {
+            "math": [
+                {
+                    "api_path": "math.fn",
+                    "params": [{"name": "x", "kind": "POSITIONAL_ONLY"}],
+                }
+            ]
+        }
+    }
+    snap_kw_only = {
+        "categories": {
+            "math": [
+                {
+                    "api_path": "math.fn",
+                    "params": [{"name": "x", "kind": "KEYWORD_ONLY"}],
+                }
+            ]
+        }
+    }
+    res_pk = diff_snapshots(snap_pos_only, snap_kw_only)
+    assert "math.fn" in res_pk.breaking_signature_changed
+
+    snap_var = {
+        "categories": {
+            "math": [
+                {
+                    "api_path": "math.fn",
+                    "params": [{"name": "args", "kind": "VAR_POSITIONAL"}],
+                }
+            ]
+        }
+    }
+    res_var = diff_snapshots(snap_pos_only, snap_var)
+    assert "math.fn" in res_var.breaking_signature_changed
+
+    snap_kw_single = {
+        "categories": {
+            "math": [
+                {
+                    "api_path": "math.fn",
+                    "params": [{"name": "kwargs", "kind": "KEYWORD_ONLY"}],
+                }
+            ]
+        }
+    }
+    snap_var_kw = {
+        "categories": {
+            "math": [
+                {
+                    "api_path": "math.fn",
+                    "params": [{"name": "kwargs", "kind": "VAR_KEYWORD"}],
+                }
+            ]
+        }
+    }
+    res_vkw1 = diff_snapshots(snap_kw_single, snap_var_kw)
+    assert "math.fn" in res_vkw1.breaking_signature_changed
+
+    res_vkw2 = diff_snapshots(snap_var_kw, snap_kw_single)
+    assert "math.fn" in res_vkw2.breaking_signature_changed

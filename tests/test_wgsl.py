@@ -247,12 +247,30 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Case 3: Outer import failure
     def mock_files_raise(_: Any) -> Any:
-        """Mock failure in files resource resolution."""
+        """Mock failure in files resource resolution.
+
+        Args:
+            _: Resource anchor package.
+
+        Raises:
+            RuntimeError: Always raised to simulate resource lookup failure.
+        """
         raise RuntimeError("Outer failure")
 
     monkeypatch.setattr("importlib.resources.files", mock_files_raise)
     ops_err = _load_wgsl_ops()
     assert ops_err == CANONICAL_WGSL_OPS
+
+    # Case 4: Non-empty ops list in json returns ops directly
+    mock_file_valid = MagicMock()
+    mock_file_valid.open.return_value = io.StringIO(
+        '{"ops": [{"name": "mockOp", "domain": "wgsl"}]}'
+    )
+    mock_schema_res_valid = MagicMock()
+    mock_schema_res_valid.joinpath.return_value = mock_file_valid
+    monkeypatch.setattr("importlib.resources.files", lambda _: mock_schema_res_valid)
+    ops_valid = _load_wgsl_ops()
+    assert ops_valid == [{"name": "mockOp", "domain": "wgsl"}]
 
 
 def test_wgsl_roundtrip_serialization() -> None:

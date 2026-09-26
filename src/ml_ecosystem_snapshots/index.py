@@ -291,13 +291,16 @@ def index_snapshot_file(json_path: str, conn: sqlite3.Connection) -> int:
 
     with conn:
         # Clear previous records for this file
-        cur.execute("SELECT id FROM symbols WHERE file_path = ?", (json_path,))
-        old_ids = [r["id"] for r in cur.fetchall()]
-        if old_ids:
-            for oid in old_ids:
+        cur.execute(
+            "SELECT id, api_path, name, docstring FROM symbols WHERE file_path = ?",
+            (json_path,),
+        )
+        old_rows = cur.fetchall()
+        if old_rows:
+            for r in old_rows:
                 cur.execute(
-                    "INSERT INTO symbols_fts(symbols_fts, rowid, api_path, name, docstring) VALUES('delete', ?, '', '', '')",
-                    (oid,),
+                    "INSERT INTO symbols_fts(symbols_fts, rowid, api_path, name, docstring) VALUES('delete', ?, ?, ?, ?)",
+                    (r["id"], r["api_path"], r["name"], r["docstring"]),
                 )
             cur.execute("DELETE FROM symbols WHERE file_path = ?", (json_path,))
 

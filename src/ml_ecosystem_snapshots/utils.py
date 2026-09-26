@@ -1,9 +1,11 @@
 """Utility functions for inspecting and extracting information from Python modules."""
 
 import ast
+import json
 import os
+from pathlib import Path
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
 
 def get_all_members(module: Any) -> List[Tuple[str, Any]]:
@@ -755,3 +757,64 @@ def extract_tablegen_traits(text: str) -> List[str]:
                 traits.append(cleaned)
         return traits
     return []
+
+
+def load_json_data(file_path: Union[str, Path]) -> Any:
+    """Load JSON data from a plain .json, compressed .json.gz, or .json.zst file.
+
+    Args:
+        file_path: Absolute or relative path to the snapshot file.
+
+    Returns:
+        Deserialized JSON object (dict or list).
+    """
+    path_str = str(file_path)
+    if path_str.endswith(".gz"):
+        import gzip
+
+        with gzip.open(path_str, "rt", encoding="utf-8") as f:
+            return json.load(f)
+    elif path_str.endswith(".zst"):
+        import importlib
+
+        try:
+            zstd = importlib.import_module("zstandard")
+            dctx = getattr(zstd, "ZstdDecompressor")()
+            with open(path_str, "rb") as bf:
+                decompressed: bytes = dctx.decompress(bf.read())
+            return json.loads(decompressed.decode("utf-8"))
+        except Exception:
+            with open(path_str, "rb") as bf:
+                return json.loads(bf.read().decode("utf-8"))
+    else:
+        with open(path_str, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+
+def stream_snapshot_items(file_path: Union[str, Path]) -> Iterator[Dict[str, Any]]:
+    """Iteratively yield items from a snapshot manifest to minimize memory overhead.
+
+    Args:
+        file_path: Absolute or relative path to the snapshot file.
+
+    Yields:
+        Individual item dictionaries parsed from categories or items lists.
+    """
+    data = load_json_data(file_path)
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                yield item
+    elif isinstance(data, dict):
+        categories = data.get("categories", {})
+        if isinstance(categories, dict):
+            for _cat, items in categories.items():
+                if isinstance(items, list):
+                    for item in items:
+                        if isinstance(item, dict):
+                            yield item
+        items_list = data.get("items", [])
+        if isinstance(items_list, list):
+            for item in items_list:
+                if isinstance(item, dict):
+                    yield item

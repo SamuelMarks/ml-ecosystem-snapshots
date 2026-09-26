@@ -379,14 +379,50 @@ def test_validate_broadcast_and_matmul_shapes() -> None:
     assert compat_1d_err is False
     assert "dot product mismatch" in (err_1d or "")
 
-    # Rank < 2 error (left < 2 vs right < 2)
-    compat_r1, _, err_r1 = validate_matmul_shapes([4], [4, 5])
-    assert compat_r1 is False
-    assert "requires at least 2D operands" in (err_r1 or "")
+    # Vector-matrix (1D x 2D) and Matrix-vector (2D x 1D)
+    compat_vm, res_vm, _ = validate_matmul_shapes([4], [4, 5])
+    assert compat_vm is True
+    assert res_vm == [5]
 
-    compat_r2, _, err_r2 = validate_matmul_shapes([4, 5], [4])
-    assert compat_r2 is False
-    assert "requires at least 2D operands" in (err_r2 or "")
+    compat_mv, res_mv, _ = validate_matmul_shapes([3, 4], [4])
+    assert compat_mv is True
+    assert res_mv == [3]
+
+    # Batch vector-matrix and matrix-vector
+    compat_bvm, res_bvm, _ = validate_matmul_shapes([4], [2, 4, 5])
+    assert compat_bvm is True
+    assert res_bvm == [2, 5]
+
+    compat_bmv, res_bmv, _ = validate_matmul_shapes([2, 3, 4], [4])
+    assert compat_bmv is True
+    assert res_bmv == [2, 3]
+
+    # Symbolic dynamic dimensions in vector-matrix and matrix-vector
+    compat_sym_vm, res_sym_vm, _ = validate_matmul_shapes(["?"], ["?", 5])
+    assert compat_sym_vm is True
+    assert res_sym_vm == [5]
+
+    compat_sym_mv, res_sym_mv, _ = validate_matmul_shapes([3, "?"], ["?"])
+    assert compat_sym_mv is True
+    assert res_sym_mv == [3]
+
+    # Contracting mismatch in vector-matrix / matrix-vector
+    compat_vm_err, _, err_vm = validate_matmul_shapes([4], [5, 6])
+    assert compat_vm_err is False
+    assert "Vector-matrix multiplication contracting dimension mismatch" in (
+        err_vm or ""
+    )
+
+    compat_mv_err, _, err_mv = validate_matmul_shapes([3, 4], [5])
+    assert compat_mv_err is False
+    assert "Matrix-vector multiplication contracting dimension mismatch" in (
+        err_mv or ""
+    )
+
+    # Rank < 1 error (e.g. scalar operand)
+    compat_r0, _, err_r0 = validate_matmul_shapes([], [4, 5])
+    assert compat_r0 is False
+    assert "requires at least 2D operands" in (err_r0 or "")
 
     # 2D matmul valid and contracting mismatch
     compat_2d, res_2d, _ = validate_matmul_shapes([2, 3], [3, 4])

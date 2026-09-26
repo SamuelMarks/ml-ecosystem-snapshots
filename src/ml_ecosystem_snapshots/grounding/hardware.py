@@ -155,3 +155,76 @@ def validate_rdna_instruction(
                 )
 
     return report
+
+
+def validate_ptx_instruction(
+    mnemonic: str,
+    sm_arch: Optional[str] = None,
+    types: Optional[List[str]] = None,
+    operands: Optional[List[str]] = None,
+    state_space: Optional[str] = None,
+    scope: Optional[str] = None,
+    vector_width: Optional[str] = None,
+    engine: Optional[GroundingEngine] = None,
+) -> GroundingReport:
+    """Verify an NVIDIA PTX instruction against the ground-truth offline ISA catalog.
+
+    Args:
+        mnemonic: The PTX instruction mnemonic (e.g., 'add', 'wgmma.mma_async').
+        sm_arch: Optional target SM architecture (e.g., 'sm_70', 'sm_80', 'sm_90').
+        types: Optional list of PTX type qualifiers (e.g. ['.f32', '.f16']).
+        operands: Optional list of register/memory operands.
+        state_space: Optional memory state space (e.g. '.global', '.shared').
+        scope: Optional memory visibility scope (e.g. '.cta', '.gpu').
+        vector_width: Optional vector width (e.g. '.v2', '.v4').
+        engine: Optional GroundingEngine instance.
+
+    Returns:
+        GroundingReport containing diagnostic results and grounding status.
+    """
+    from ml_ecosystem_snapshots.frameworks.nvidia_ptx import (
+        _load_exhaustive_ptx,
+        validate_ptx_instruction as raw_validate_ptx,
+    )
+
+    eng = engine or GroundingEngine()
+    clean_mnemonic = mnemonic.lower().strip()
+
+    report = GroundingReport(
+        is_grounded=True,
+        target="nvidia_ptx",
+        symbol=clean_mnemonic,
+    )
+
+    ptx_db = {inst["mnemonic"]: inst for inst in _load_exhaustive_ptx()}
+    if clean_mnemonic not in ptx_db:
+        suggested = eng.suggest_closest_symbol("nvidia_ptx", clean_mnemonic)
+        report.add_diagnostic(
+            field="mnemonic",
+            message=f"Unrecognized NVIDIA PTX instruction mnemonic '{clean_mnemonic}'.",
+            severity=DiagnosticSeverity.ERROR,
+            suggested_fix=suggested,
+        )
+        return report
+
+    ref = eng.get_symbol("nvidia_ptx", clean_mnemonic)
+    if ref:
+        report.matched_ref = ref
+
+    errors = raw_validate_ptx(
+        clean_mnemonic,
+        types=types,
+        operands=operands,
+        state_space=state_space,
+        scope=scope,
+        vector_width=vector_width,
+        sm_arch=sm_arch,
+    )
+    for err in errors:
+        report.add_diagnostic(
+            field="instruction",
+            message=err,
+            severity=DiagnosticSeverity.ERROR,
+        )
+
+    return report

@@ -74,6 +74,14 @@ def test_alias_finder_and_loader_mechanisms() -> None:
     # exec_module is a safe no-op
     spec.loader.exec_module(target_mod)
 
+    # Branch where target module has no __spec__ (original_spec is None)
+    import types
+
+    dummy_mod = types.ModuleType("dummy_module")
+    loader_no_spec = AliasLoader(dummy_mod)
+    assert loader_no_spec.original_spec is None
+    loader_no_spec.exec_module(dummy_mod)
+
     # Branch where parent_name is not in sys.modules
     sys.modules.pop("ml_framework_snapshots", None)
     spec2 = finder.find_spec("ml_framework_snapshots.models")
@@ -82,3 +90,22 @@ def test_alias_finder_and_loader_mechanisms() -> None:
     # Idempotent registration
     register_alias_finder()
     register_alias_finder()
+
+
+def test_all_shim_files_execution() -> None:
+    """Verify that all physical backward-compatibility shim files execute cleanly and export modules."""
+    import os
+    import runpy
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    shim_dir = os.path.join(repo_root, "src", "ml_framework_snapshots")
+    assert os.path.isdir(shim_dir)
+    executed_count: int = 0
+    for root, _, files in os.walk(shim_dir):
+        for f in sorted(files):
+            if f.endswith(".py"):
+                fpath = os.path.join(root, f)
+                res = runpy.run_path(fpath)
+                assert "_orig_mod" in res
+                executed_count += 1
+    assert executed_count == 74

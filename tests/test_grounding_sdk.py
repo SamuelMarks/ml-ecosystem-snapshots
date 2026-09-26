@@ -852,3 +852,89 @@ def test_grounding_engine_collector_fallback(tmp_path: Any, monkeypatch: Any) ->
     monkeypatch.setattr(api_mod, "extract_snapshot", lambda t: {"no_categories": 123})
     eng_non_dict = GroundingEngine(base_dirs=[empty_dir])
     assert eng_non_dict.load_target("latex_dsl") == {}
+
+
+def test_grounding_new_verifiers() -> None:
+    """Test validate_ptx_instruction and edge compiler verifiers in Grounding SDK."""
+    from ml_ecosystem_snapshots.grounding import (
+        validate_metal_op,
+        validate_onnx_op,
+        validate_ptx_instruction,
+        validate_wasm_op,
+        validate_webgl_op,
+        validate_wgsl_op,
+    )
+
+    # 1. PTX Instruction
+    ptx_valid = validate_ptx_instruction("add", sm_arch="sm_80", types=[".s32"])
+    assert ptx_valid.is_grounded
+    assert not ptx_valid.has_errors
+
+    from unittest.mock import MagicMock
+
+    mock_eng = MagicMock()
+    mock_eng.get_symbol.return_value = None
+    ptx_no_ref = validate_ptx_instruction("add", engine=mock_eng)
+    assert ptx_no_ref.matched_ref is None
+
+    ptx_invalid_type = validate_ptx_instruction("add", types=[".invalid_type"])
+    assert ptx_invalid_type.has_errors
+
+    ptx_unknown = validate_ptx_instruction("nonexistent_ptx_op")
+    assert ptx_unknown.has_errors
+    assert any("Unrecognized NVIDIA PTX" in d.message for d in ptx_unknown.diagnostics)
+
+    # 2. WGSL Builtin
+    wgsl_valid = validate_wgsl_op("workgroupBarrier")
+    assert wgsl_valid.is_grounded
+    assert not wgsl_valid.has_errors
+
+    wgsl_err = validate_wgsl_op("workgroupBarrier", operands_count=99)
+    assert wgsl_err.has_errors
+
+    wgsl_unknown = validate_wgsl_op("nonexistent_wgsl_op")
+    assert wgsl_unknown.has_errors
+
+    # 3. ONNX Operator
+    onnx_valid = validate_onnx_op("MatMul")
+    assert onnx_valid.is_grounded
+    assert not onnx_valid.has_errors
+
+    onnx_err = validate_onnx_op("MatMul", inputs_count=99)
+    assert onnx_err.has_errors
+
+    onnx_unknown = validate_onnx_op("NonexistentOnnxOp")
+    assert onnx_unknown.has_errors
+
+    # 4. Metal MSL
+    metal_valid = validate_metal_op("threadgroup_barrier")
+    assert metal_valid.is_grounded
+    assert not metal_valid.has_errors
+
+    metal_err = validate_metal_op("threadgroup_barrier", inputs_count=99)
+    assert metal_err.has_errors
+
+    metal_unknown = validate_metal_op("nonexistent_metal_op")
+    assert metal_unknown.has_errors
+
+    # 5. WASM SIMD
+    wasm_valid = validate_wasm_op("f32x4.add")
+    assert wasm_valid.is_grounded
+    assert not wasm_valid.has_errors
+
+    wasm_err = validate_wasm_op("f32x4.add", operands_count=99)
+    assert wasm_err.has_errors
+
+    wasm_unknown = validate_wasm_op("nonexistent_wasm_op")
+    assert wasm_unknown.has_errors
+
+    # 6. WebGL GLSL
+    webgl_valid = validate_webgl_op("texture")
+    assert webgl_valid.is_grounded
+    assert not webgl_valid.has_errors
+
+    webgl_err = validate_webgl_op("texture", inputs_count=99)
+    assert webgl_err.has_errors
+
+    webgl_unknown = validate_webgl_op("nonexistent_webgl_op")
+    assert webgl_unknown.has_errors

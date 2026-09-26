@@ -154,3 +154,251 @@ def validate_mlir_op(
         )
 
     return report
+
+
+def validate_wgsl_op(
+    op_name: str,
+    operands_count: Optional[int] = None,
+    attributes: Optional[List[str]] = None,
+    engine: Optional[GroundingEngine] = None,
+) -> GroundingReport:
+    """Verify a WebGPU WGSL builtin function or memory barrier against ground truth.
+
+    Args:
+        op_name: WGSL operation name (e.g., 'workgroupBarrier', 'storageStore').
+        operands_count: Optional number of passed arguments.
+        attributes: Optional list of operation attributes.
+        engine: Optional GroundingEngine instance.
+
+    Returns:
+        GroundingReport containing diagnostic results.
+    """
+    from ml_ecosystem_snapshots.mcp_server import check_wgsl_op
+
+    eng = engine or GroundingEngine()
+    report = GroundingReport(
+        is_grounded=True,
+        target="wgsl",
+        symbol=op_name,
+    )
+    res = check_wgsl_op(
+        op_name=op_name,
+        inputs_count=operands_count,
+        attributes=attributes,
+    )
+    if not res.get("op_exists"):
+        suggested = eng.suggest_closest_symbol("wgsl", op_name)
+        report.add_diagnostic(
+            field="operation",
+            message=f"Unrecognized WGSL builtin '{op_name}'.",
+            severity=DiagnosticSeverity.ERROR,
+            suggested_fix=suggested,
+        )
+        return report
+
+    for err in res.get("errors", []):
+        report.add_diagnostic(
+            field="operation",
+            message=err,
+            severity=DiagnosticSeverity.ERROR,
+        )
+    return report
+
+
+def validate_onnx_op(
+    op_name: str,
+    inputs_count: Optional[int] = None,
+    attributes: Optional[List[str]] = None,
+    engine: Optional[GroundingEngine] = None,
+) -> GroundingReport:
+    """Verify an ONNX operator specification against the standard schema.
+
+    Args:
+        op_name: ONNX operator name (e.g., 'MatMul', 'Conv', 'Relu').
+        inputs_count: Optional number of passed inputs.
+        attributes: Optional list of attributes.
+        engine: Optional GroundingEngine instance.
+
+    Returns:
+        GroundingReport containing diagnostic results.
+    """
+    from ml_ecosystem_snapshots.mcp_server import check_onnx_op
+
+    eng = engine or GroundingEngine()
+    report = GroundingReport(
+        is_grounded=True,
+        target="onnx",
+        symbol=op_name,
+    )
+    res = check_onnx_op(
+        op_name=op_name,
+        inputs_count=inputs_count,
+        attributes=attributes,
+    )
+    if not res.get("op_exists"):
+        suggested = eng.suggest_closest_symbol("onnx", op_name)
+        report.add_diagnostic(
+            field="operation",
+            message=f"Unrecognized ONNX operator '{op_name}'.",
+            severity=DiagnosticSeverity.ERROR,
+            suggested_fix=suggested,
+        )
+        return report
+
+    for err in res.get("errors", []):
+        report.add_diagnostic(
+            field="operation",
+            message=err,
+            severity=DiagnosticSeverity.ERROR,
+        )
+    return report
+
+
+def validate_metal_op(
+    op_name: str,
+    address_space: Optional[str] = None,
+    inputs_count: Optional[int] = None,
+    attributes: Optional[List[str]] = None,
+    engine: Optional[GroundingEngine] = None,
+) -> GroundingReport:
+    """Verify an Apple Metal Shading Language compute builtin against specifications.
+
+    Args:
+        op_name: Metal builtin name (e.g., 'simdgroup_matrix', 'threadgroup_barrier').
+        address_space: Optional expected address space (e.g., 'device', 'threadgroup').
+        inputs_count: Optional number of passed arguments.
+        attributes: Optional list of attributes.
+        engine: Optional GroundingEngine instance.
+
+    Returns:
+        GroundingReport containing diagnostic results.
+    """
+    from ml_ecosystem_snapshots.mcp_server import check_metal_op
+
+    eng = engine or GroundingEngine()
+    report = GroundingReport(
+        is_grounded=True,
+        target="metal",
+        symbol=op_name,
+    )
+    res = check_metal_op(
+        op_name=op_name,
+        address_space=address_space,
+        inputs_count=inputs_count,
+        attributes=attributes,
+    )
+    if not res.get("op_exists"):
+        suggested = eng.suggest_closest_symbol("metal", op_name)
+        report.add_diagnostic(
+            field="operation",
+            message=f"Unrecognized Metal builtin '{op_name}'.",
+            severity=DiagnosticSeverity.ERROR,
+            suggested_fix=suggested,
+        )
+        return report
+
+    for err in res.get("errors", []):
+        report.add_diagnostic(
+            field="operation",
+            message=err,
+            severity=DiagnosticSeverity.ERROR,
+        )
+    return report
+
+
+def validate_wasm_op(
+    mnemonic: str,
+    operands_count: Optional[int] = None,
+    attributes: Optional[List[str]] = None,
+    engine: Optional[GroundingEngine] = None,
+) -> GroundingReport:
+    """Verify a W3C WebAssembly SIMD opcode mnemonic against standard specifications.
+
+    Args:
+        mnemonic: WASM opcode mnemonic (e.g., 'f32x4.add', 'v128.load').
+        operands_count: Optional number of passed operands.
+        attributes: Optional list of attributes.
+        engine: Optional GroundingEngine instance.
+
+    Returns:
+        GroundingReport containing diagnostic results.
+    """
+    from ml_ecosystem_snapshots.mcp_server import check_wasm_instruction
+
+    eng = engine or GroundingEngine()
+    report = GroundingReport(
+        is_grounded=True,
+        target="wasm_simd",
+        symbol=mnemonic,
+    )
+    res = check_wasm_instruction(
+        mnemonic=mnemonic,
+        operands_count=operands_count,
+        attributes=attributes,
+    )
+    if not res.get("is_valid") and not res.get("op_exists"):
+        suggested = eng.suggest_closest_symbol("wasm_simd", mnemonic)
+        report.add_diagnostic(
+            field="mnemonic",
+            message=f"Unrecognized WebAssembly SIMD opcode '{mnemonic}'.",
+            severity=DiagnosticSeverity.ERROR,
+            suggested_fix=suggested,
+        )
+        return report
+
+    for err in res.get("errors", []):
+        report.add_diagnostic(
+            field="instruction",
+            message=err,
+            severity=DiagnosticSeverity.ERROR,
+        )
+    return report
+
+
+def validate_webgl_op(
+    op_name: str,
+    inputs_count: Optional[int] = None,
+    attributes: Optional[List[str]] = None,
+    engine: Optional[GroundingEngine] = None,
+) -> GroundingReport:
+    """Verify a WebGL 2.0 / GLSL ES 3.00 shader builtin against standard specifications.
+
+    Args:
+        op_name: GLSL builtin function name (e.g., 'texture', 'dFdx').
+        inputs_count: Optional number of passed arguments.
+        attributes: Optional list of attributes.
+        engine: Optional GroundingEngine instance.
+
+    Returns:
+        GroundingReport containing diagnostic results.
+    """
+    from ml_ecosystem_snapshots.mcp_server import check_webgl_op
+
+    eng = engine or GroundingEngine()
+    report = GroundingReport(
+        is_grounded=True,
+        target="webgl",
+        symbol=op_name,
+    )
+    res = check_webgl_op(
+        op_name=op_name,
+        inputs_count=inputs_count,
+        attributes=attributes,
+    )
+    if not res.get("op_exists"):
+        suggested = eng.suggest_closest_symbol("webgl", op_name)
+        report.add_diagnostic(
+            field="operation",
+            message=f"Unrecognized WebGL / GLSL builtin '{op_name}'.",
+            severity=DiagnosticSeverity.ERROR,
+            suggested_fix=suggested,
+        )
+        return report
+
+    for err in res.get("errors", []):
+        report.add_diagnostic(
+            field="operation",
+            message=err,
+            severity=DiagnosticSeverity.ERROR,
+        )
+    return report

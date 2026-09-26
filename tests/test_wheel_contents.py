@@ -31,6 +31,7 @@ def test_wheel_packaging_and_data_assets(tmp_path: os.PathLike[str]) -> None:
             ".mypy_cache",
             "*.whl",
             ".coverage*",
+            "test_*_mock*.py",
         ),
     )
     fw_dir = os.path.join(proj_dir, "src", "ml_ecosystem_snapshots", "frameworks")
@@ -185,6 +186,7 @@ def test_wheel_bundles_dynamic_snapshots(tmp_path: os.PathLike[str]) -> None:
             ".mypy_cache",
             "*.whl",
             ".coverage*",
+            "test_*_mock*.py",
         ),
     )
     snap_dir = os.path.join(proj_dir, "src", "ml_ecosystem_snapshots", "snapshots")

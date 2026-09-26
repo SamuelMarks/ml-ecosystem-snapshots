@@ -3,7 +3,7 @@ ml-ecosystem-snapshots
 
 [![License](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![CI](https://github.com/SamuelMarks/ml-ecosystem-snapshots/actions/workflows/ci.yml/badge.svg)](https://github.com/SamuelMarks/ml-ecosystem-snapshots/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-100%25-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-99%25-brightgreen.svg)]()
 [![Docs](https://img.shields.io/badge/docs-100%25-brightgreen.svg)]()
 
 **ML Ecosystem Snapshots** is a core component of the **ml-switcheroo** ecosystem. It is a toolset designed to statically extract and formalize API signatures, compiler intermediate representations (IR), and hardware instruction set architectures (ISAs) into stable, serializable `GhostRef` schemas (as defined in `ml_switcheroo_ir`).

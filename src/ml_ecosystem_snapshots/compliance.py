@@ -729,6 +729,36 @@ def validate_matmul_shapes(
                 )
         return True, [], None
 
+    # Vector-Matrix (1D x >=2D): (K,) x (...B, K, N) -> (...B, N)
+    if len(shape_a) == 1 and len(shape_b) >= 2:
+        k_lhs = shape_a[0]
+        k_rhs = shape_b[-2]
+        if str(k_lhs) not in ("?", "-1") and str(k_rhs) not in ("?", "-1"):
+            if int(k_lhs) != int(k_rhs):
+                return (
+                    False,
+                    None,
+                    f"Vector-matrix multiplication contracting dimension mismatch: inner dimension {k_lhs} != {k_rhs} (shapes: {list(shape_a)} vs {list(shape_b)}).",
+                )
+        batch_res = [int(d) if str(d).isdigit() else -1 for d in shape_b[:-2]]
+        out_n = int(shape_b[-1]) if str(shape_b[-1]).isdigit() else -1
+        return True, batch_res + [out_n], None
+
+    # Matrix-Vector (>=2D x 1D): (...B, M, K) x (K,) -> (...B, M)
+    if len(shape_a) >= 2 and len(shape_b) == 1:
+        k_lhs = shape_a[-1]
+        k_rhs = shape_b[0]
+        if str(k_lhs) not in ("?", "-1") and str(k_rhs) not in ("?", "-1"):
+            if int(k_lhs) != int(k_rhs):
+                return (
+                    False,
+                    None,
+                    f"Matrix-vector multiplication contracting dimension mismatch: inner dimension {k_lhs} != {k_rhs} (shapes: {list(shape_a)} vs {list(shape_b)}).",
+                )
+        batch_res = [int(d) if str(d).isdigit() else -1 for d in shape_a[:-2]]
+        out_m = int(shape_a[-2]) if str(shape_a[-2]).isdigit() else -1
+        return True, batch_res + [out_m], None
+
     if len(shape_a) < 2 or len(shape_b) < 2:
         return (
             False,

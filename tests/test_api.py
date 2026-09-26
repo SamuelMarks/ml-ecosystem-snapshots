@@ -1257,3 +1257,86 @@ def test_extract_snapshot_isolated_pythonpath(
         assert res.get("target") == "html_dsl"
         called_env = mock_run.call_args[1]["env"]
         assert "/custom/test/path" in called_env["PYTHONPATH"]
+
+
+def test_write_snapshot_compression_and_streaming(tmp_path: Any) -> None:
+    """Test write_snapshot with compression options and stream_snapshot_items in utils.
+
+    Args:
+        tmp_path: Temporary directory fixture.
+    """
+    import json
+    from unittest import mock
+    from ml_ecosystem_snapshots.api import write_snapshot
+    from ml_ecosystem_snapshots.utils import load_json_data, stream_snapshot_items
+
+    snap_data = {
+        "target": "compress_test",
+        "version": "1.0.0",
+        "categories": {
+            "math": [
+                {"name": "op1", "api_path": "test.op1", "kind": "function"},
+                {"name": "op2", "api_path": "test.op2", "kind": "function"},
+            ]
+        },
+        "items": [{"name": "op3", "api_path": "test.op3", "kind": "function"}],
+    }
+
+    # 1. Plain json
+    p_plain = write_snapshot("compress_test", snap_data, str(tmp_path))
+    assert p_plain.endswith(".json")
+    loaded_plain = load_json_data(p_plain)
+    assert loaded_plain["version"] == "1.0.0"
+
+    # 2. Gzip compression
+    p_gz = write_snapshot("compress_test", snap_data, str(tmp_path), compress="gzip")
+    assert p_gz.endswith(".json.gz")
+    loaded_gz = load_json_data(p_gz)
+    assert loaded_gz["version"] == "1.0.0"
+
+    # 3. Zstd compression (or fallback)
+    p_zst = write_snapshot("compress_test", snap_data, str(tmp_path), compress="zstd")
+    assert p_zst.endswith(".json.zst") or p_zst.endswith(".json.gz")
+    loaded_zst = load_json_data(p_zst)
+    assert loaded_zst["version"] == "1.0.0"
+
+    # 3b. Zstd fallback to gzip when zstandard not present
+    with mock.patch("importlib.import_module", side_effect=ImportError("no zstandard")):
+        p_zst_fallback = write_snapshot(
+            "compress_fallback", snap_data, str(tmp_path), compress="zstd"
+        )
+        assert p_zst_fallback.endswith(".json.gz")
+        loaded_zst_fallback = load_json_data(p_zst_fallback)
+        assert loaded_zst_fallback["version"] == "1.0.0"
+
+    # 3c. Test load_json_data zstd fallback
+    p_dummy_zst = str(tmp_path / "dummy.json.zst")
+    with open(p_dummy_zst, "wb") as bf:
+        bf.write(b'{"key": "fallback"}')
+    with mock.patch("importlib.import_module", side_effect=ImportError("no zstandard")):
+        assert load_json_data(p_dummy_zst) == {"key": "fallback"}
+
+    # 4. stream_snapshot_items
+    items = list(stream_snapshot_items(p_plain))
+    assert len(items) == 3
+    assert {it["name"] for it in items} == {"op1", "op2", "op3"}
+
+    # 5. stream_snapshot_items with raw list and non-dict items
+    p_list = str(tmp_path / "raw_list.json")
+    with open(p_list, "w", encoding="utf-8") as f:
+        json.dump([{"name": "list_op"}, "not_a_dict"], f)
+    list_items = list(stream_snapshot_items(p_list))
+    assert len(list_items) == 1
+    assert list_items[0]["name"] == "list_op"
+
+    # 6. stream_snapshot_items with non-dict/list payload
+    p_int = str(tmp_path / "int_payload.json")
+    with open(p_int, "w", encoding="utf-8") as f:
+        json.dump(12345, f)
+    assert list(stream_snapshot_items(p_int)) == []
+
+    # 7. stream_snapshot_items with non-dict category items
+    p_bad_cat = str(tmp_path / "bad_cat.json")
+    with open(p_bad_cat, "w", encoding="utf-8") as f:
+        json.dump({"categories": {"ops": ["not_a_dict"]}, "items": ["not_a_dict"]}, f)
+    assert list(stream_snapshot_items(p_bad_cat)) == []
