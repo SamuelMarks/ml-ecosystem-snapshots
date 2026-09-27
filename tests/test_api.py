@@ -1340,3 +1340,39 @@ def test_write_snapshot_compression_and_streaming(tmp_path: Any) -> None:
     with open(p_bad_cat, "w", encoding="utf-8") as f:
         json.dump({"categories": {"ops": ["not_a_dict"]}, "items": ["not_a_dict"]}, f)
     assert list(stream_snapshot_items(p_bad_cat)) == []
+
+    # 8. stream_snapshot_items with non-dict categories value (covers branch 810->816)
+    p_nonlist_cat = str(tmp_path / "nondict_cat.json")
+    with open(p_nonlist_cat, "w", encoding="utf-8") as f:
+        json.dump({"categories": "not_a_dict"}, f)
+    assert list(stream_snapshot_items(p_nonlist_cat)) == []
+
+    # 8b. stream_snapshot_items with non-list category value (covers branch 812->811)
+    p_bad_cat_entry = str(tmp_path / "bad_cat_entry.json")
+    with open(p_bad_cat_entry, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "categories": {
+                    "bad_cat": "not_a_list",
+                    "good_cat": [{"name": "valid_cat_op"}],
+                }
+            },
+            f,
+        )
+    cat_items = list(stream_snapshot_items(p_bad_cat_entry))
+    assert len(cat_items) == 1
+    assert cat_items[0]["name"] == "valid_cat_op"
+
+    # 9. stream_snapshot_items with non-dict followed by valid dict (covers branch 812->811)
+    p_mixed_cat = str(tmp_path / "mixed_cat.json")
+    with open(p_mixed_cat, "w", encoding="utf-8") as f:
+        json.dump({"categories": {"ops": ["not_a_dict", {"name": "valid_op"}]}}, f)
+    res_mixed = list(stream_snapshot_items(p_mixed_cat))
+    assert len(res_mixed) == 1
+    assert res_mixed[0]["name"] == "valid_op"
+
+    # 10. stream_snapshot_items with non-list items value (covers branch 817->exit)
+    p_nonlist_items = str(tmp_path / "nonlist_items.json")
+    with open(p_nonlist_items, "w", encoding="utf-8") as f:
+        json.dump({"items": "not_a_list"}, f)
+    assert list(stream_snapshot_items(p_nonlist_items)) == []

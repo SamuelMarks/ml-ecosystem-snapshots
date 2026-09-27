@@ -1039,6 +1039,45 @@ def test_cli_check_ptx_and_new_export_formats(
     captured = capsys.readouterr()
     assert "PTX Instruction 'add' is valid." in captured.out
 
+    # 1b. check-ptx instruction with supported_types (covers line 920)
+    mocker.patch(
+        "sys.argv",
+        [
+            "ml_ecosystem_snapshots",
+            "check-ptx",
+            "fma",
+        ],
+    )
+    main()
+    captured_fma = capsys.readouterr()
+    assert "PTX Instruction 'fma' is valid." in captured_fma.out
+    assert "Supported Types:" in captured_fma.out
+
+    # 1c. check-ptx when min_sm is None (covers branch 917->919)
+    from unittest.mock import patch
+
+    with patch(
+        "ml_ecosystem_snapshots.mcp_server.check_ptx_instruction",
+        return_value={
+            "is_valid": True,
+            "min_sm": None,
+            "supported_types": [],
+            "errors": [],
+        },
+    ):
+        mocker.patch(
+            "sys.argv",
+            [
+                "ml_ecosystem_snapshots",
+                "check-ptx",
+                "dummy_valid",
+            ],
+        )
+        main()
+        captured_dummy = capsys.readouterr()
+        assert "PTX Instruction 'dummy_valid' is valid." in captured_dummy.out
+        assert "Minimum SM Architecture:" not in captured_dummy.out
+
     # 2. check-ptx invalid instruction
     mocker.patch(
         "sys.argv",
