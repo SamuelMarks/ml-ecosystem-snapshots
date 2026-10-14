@@ -102,7 +102,8 @@ def test_scrape_nvidia_sass() -> None:
             mock_open.side_effect = side_effect
 
             # Run the main function
-            scrape_nvidia_sass.main()
+            with mock.patch.dict(os.environ, {"NVIDIA_SASS_INPUT_PATH": input_path}):
+                scrape_nvidia_sass.main()
 
         # Verify output
         assert os.path.exists(output_path)

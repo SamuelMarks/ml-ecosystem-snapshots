@@ -14,8 +14,8 @@ def create_module(name: str, attrs: dict[str, Any]) -> types.ModuleType:
     """Create a mock module with given attributes.
 
     Args:
-        name: Parameter.
-        attrs: Parameter.
+        name: Input parameter value.
+        attrs: Input parameter value.
 
     Returns:
         The created mock module.
@@ -30,7 +30,7 @@ def test_cupy_collect(mocker: Any) -> None:
     """Test cupy_fw.collect_api function.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     # Test when cp is None
     mocker.patch("ml_ecosystem_snapshots.frameworks.cupy.cp", None)
@@ -68,18 +68,15 @@ def test_cupy_collect(mocker: Any) -> None:
     orig_inspect = GhostInspector.inspect
 
     def mock_inspect(obj: Any, fqn: str, is_public: bool) -> Any:
-        """Mock inspect to simulate an error.
+        """Mock inspect function.
 
         Args:
-            obj: Parameter.
-            fqn: Parameter.
-            is_public: Parameter.
+            obj: Input parameter value.
+            fqn: Input parameter value.
+            is_public: Input parameter value.
 
         Returns:
-            The inspected object.
-
-        Raises:
-            ValueError: On error.
+            A mocked GhostRef.
         """
         if fqn == "cupy.exp":
             raise ValueError("mock error")
@@ -109,7 +106,7 @@ def test_dask_collect(mocker: Any) -> None:
     """Test dask_fw.collect_api function.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     # Test when da is None
     mocker.patch("ml_ecosystem_snapshots.frameworks.dask.da", None)
@@ -136,18 +133,15 @@ def test_dask_collect(mocker: Any) -> None:
     orig_inspect = GhostInspector.inspect
 
     def mock_inspect(obj: Any, fqn: str, is_public: bool) -> Any:
-        """Mock inspect to simulate an error.
+        """Mock inspect function.
 
         Args:
-            obj: Parameter.
-            fqn: Parameter.
-            is_public: Parameter.
+            obj: Input parameter value.
+            fqn: Input parameter value.
+            is_public: Input parameter value.
 
         Returns:
-            The inspected object.
-
-        Raises:
-            ValueError: On error.
+            A mocked GhostRef.
         """
         if fqn == "dask.array._private":
             raise ValueError("mock error")
@@ -215,7 +209,7 @@ def test_cupy_import_success(mocker: Any) -> None:
     """Test cupy import logic when module is available.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     import sys
 
@@ -236,7 +230,7 @@ def test_cupy_import_error(mocker: Any) -> None:
     """Test cupy import logic when module is not available.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     import sys
 
@@ -253,7 +247,7 @@ def test_dask_import_error(mocker: Any) -> None:
     """Test dask import logic when module is available and unavailable.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     import importlib
     import sys

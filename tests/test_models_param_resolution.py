@@ -59,7 +59,12 @@ def test_ghost_inspector_opaque_c_extension_none_env_tags() -> None:
     """Test opaque C-extension handling when environment_tags is None."""
 
     def opaque_fn(*args: Any, **kwargs: Any) -> None:
-        """Opaque function without signature or docstring."""
+        """Opaque function without signature or docstring.
+
+        Args:
+            args: Variadic positional arguments or CLI namespace.
+            kwargs: Variadic keyword arguments.
+        """
         pass
 
     with (
@@ -85,7 +90,12 @@ class SampleParentForSuper:
     """Parent class."""
 
     def __init__(self, a: int, b: str = "default") -> None:
-        """Initialize Parent."""
+        """Initialize Parent.
+
+        Args:
+            a: First parameter value.
+            b: Second parameter value.
+        """
         pass
 
 
@@ -93,7 +103,12 @@ class SampleChildForSuper(SampleParentForSuper):
     """Child class."""
 
     def __init__(self, a: int, **kwargs: Any) -> None:
-        """Initialize Child."""
+        """Initialize Child.
+
+        Args:
+            a: First parameter value.
+            kwargs: Variadic keyword arguments.
+        """
         super().__init__(a=a, **kwargs)
 
 

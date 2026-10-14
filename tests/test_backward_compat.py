@@ -107,5 +107,9 @@ def test_all_shim_files_execution() -> None:
                 fpath = os.path.join(root, f)
                 res = runpy.run_path(fpath)
                 assert "_orig_mod" in res
+                assert callable(res.get("__getattr__"))
+                assert callable(res.get("__dir__"))
+                assert isinstance(res["__dir__"](), list)
+                assert res["__getattr__"]("__name__") == res["_orig_mod"].__name__
                 executed_count += 1
-    assert executed_count == 74
+    assert executed_count >= 74

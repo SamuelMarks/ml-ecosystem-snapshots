@@ -170,12 +170,12 @@ def test_cmd_check_no_missing_mismatched(
 
 
 def test_cmd_check_output_formatting(mocker: Any, capsys: Any, tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify cmd check output formatting behavior.
 
     Args:
-        capsys: Parameter.
-        mocker: Parameter.
-        tmp_path: Parameter.
+        capsys: Input parameter value.
+        mocker: Input parameter value.
+        tmp_path: Input parameter value.
     """
     from ml_ecosystem_snapshots.cli import cmd_check
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
@@ -307,7 +307,12 @@ def test_cmd_check_rdna_no_encoding(mocker: Any, capsys: Any) -> None:
 
 
 def test_cmd_check_non_python_auto_detect(mocker: Any, capsys: Any) -> None:
-    """Test cmd_check auto-detecting .sass, .s, and .mlir file extensions."""
+    """Test cmd_check auto-detecting .sass, .s, and .mlir file extensions.
+
+    Args:
+        mocker: Pytest mocker fixture.
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     import pytest
     from ml_ecosystem_snapshots.cli import cmd_check
 

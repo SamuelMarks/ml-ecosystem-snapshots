@@ -1,4 +1,4 @@
-"""Module docstring."""
+"""Unit tests and verification suite for api."""
 
 from pathlib import Path
 from typing import Any, Dict
@@ -20,30 +20,30 @@ from ml_switcheroo_ir.schema.ghost import GhostRef
 
 
 def test_get_all_members() -> None:
-    """Function docstring."""
+    """Verify get all members behavior."""
 
     class LazyModule:
-        """Class docstring."""
+        """Mock or helper class LazyModule for unit testing."""
 
         def __init__(self) -> None:
-            """Function docstring."""
+            """Execute helper init  ."""
             self.__all__ = ["hidden_func", "VisibleClass", "broken_all"]
             self.VisibleClass = int
             self._cache = {"hidden_func": lambda: 42}
 
         def __dir__(self) -> Any:
-            """Function docstring.
+            """Execute helper dir  .
 
             Returns:
-                Return value.
+                Computed result.
             """
             return ["VisibleClass", "__all__", "broken_dir"]
 
         def __getattr__(self, name: Any) -> Any:
-            """Function docstring.
+            """Execute helper getattr  .
 
             Args:
-                name: description
+                name: Input parameter value.
 
 
             Raises:
@@ -51,7 +51,7 @@ def test_get_all_members() -> None:
                 Exception: Exception.
 
             Returns:
-                Return value.
+                Computed result.
             """
             if name == "broken_all" or name == "broken_dir":
                 raise Exception("simulated error")
@@ -71,10 +71,10 @@ def test_get_all_members() -> None:
 
 
 def test_get_pkg_version(mocker: Any) -> None:
-    """Function docstring.
+    """Verify get pkg version behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     mocker.patch("importlib.metadata.version", return_value="1.2.3")
     assert get_pkg_version("torch") == "1.2.3"
@@ -86,10 +86,10 @@ def test_get_pkg_version(mocker: Any) -> None:
 
 
 def test_extract_snapshot(mocker: Any) -> None:
-    """Function docstring.
+    """Verify extract snapshot behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     # unknown framework
     assert extract_snapshot("nonexistent") == {}
@@ -104,18 +104,18 @@ def test_extract_snapshot(mocker: Any) -> None:
     mock_ref = GhostRef(name="MSELoss", api_path="torch.nn.MSELoss", kind="class")
 
     def fake_collect(cat: Any, include_nonpublic: bool = False) -> Any:
-        """Function docstring.
+        """Execute helper fake collect.
 
         Args:
-            cat: description
-            include_nonpublic: description
+            cat: Input parameter value.
+            include_nonpublic: Input parameter value.
 
 
         Raises:
             Exception: Exception.
 
         Returns:
-            Return value.
+            Computed result.
         """
         if cat == SemanticTier.LOSS:
             return [mock_ref]
@@ -133,15 +133,15 @@ def test_extract_snapshot(mocker: Any) -> None:
 
     # test no data found
     def fake_empty(cat: Any, include_nonpublic: bool = False) -> Any:
-        """Function docstring.
+        """Execute helper fake empty.
 
         Args:
-            cat: description
-            include_nonpublic: description
+            cat: Input parameter value.
+            include_nonpublic: Input parameter value.
 
 
         Returns:
-            Return value.
+            Computed result.
         """
         return []
 
@@ -150,10 +150,10 @@ def test_extract_snapshot(mocker: Any) -> None:
 
 
 def test_extract_all_snapshots(mocker: Any) -> None:
-    """Function docstring.
+    """Verify extract all snapshots behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     mocker.patch(
         "ml_ecosystem_snapshots.api.extract_snapshot",
@@ -167,10 +167,10 @@ def test_extract_all_snapshots(mocker: Any) -> None:
 
 
 def test_write_snapshot(tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify write snapshot behavior.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     data = {"version": "2.0.0+cpu", "categories": {}}
     out_dir = Path(os.path.join(tmp_path, "out"))
@@ -208,6 +208,16 @@ def test_get_available_frameworks_discovery() -> None:
     ):
 
         def mock_import(name: Any) -> Any:
+            """Mock import function.
+
+            Args:
+                name: The module name.
+                *args: Variable length argument list.
+                **kwargs: Arbitrary keyword arguments.
+
+            Returns:
+                The imported module or raises.
+            """
             """Mock import.
 
             Args:
@@ -247,6 +257,16 @@ def test_get_available_frameworks_aliases() -> None:
     ):
 
         def mock_import(name: Any) -> Any:
+            """Mock import function.
+
+            Args:
+                name: The module name.
+                *args: Variable length argument list.
+                **kwargs: Arbitrary keyword arguments.
+
+            Returns:
+                The imported module or raises.
+            """
             """Mock import.
 
             Args:
@@ -275,6 +295,16 @@ def test_get_available_frameworks_not_startswith_collect() -> None:
     with patch("pkgutil.iter_modules", return_value=[(None, "foo", False)]):
 
         def mock_import(name: Any) -> Any:
+            """Mock import function.
+
+            Args:
+                name: The module name.
+                *args: Variable length argument list.
+                **kwargs: Arbitrary keyword arguments.
+
+            Returns:
+                The imported module or raises.
+            """
             """Mock import.
 
             Args:
@@ -364,30 +394,29 @@ def test_extract_all_snapshots_no_data() -> None:
 
 
 def test_get_available_frameworks_not_collect() -> None:
-    """Test function."""
+    """Verify get_available_frameworks ignores module attributes named literally 'collect_'."""
     from ml_ecosystem_snapshots.api import get_available_frameworks
     from unittest.mock import patch, MagicMock
 
     with patch("pkgutil.iter_modules", return_value=[(None, "bar", False)]):
 
         def mock_import(name: Any) -> Any:
-            """Mock import.
+            """Return a dummy module with a bare 'collect_' attribute.
 
             Args:
-                name: name.
-
+                name: The module name to import.
 
             Returns:
-                Return value.
+                A MagicMock module instance.
             """
             m = MagicMock()
             m.collect_ = lambda *args: []
             return m
 
         with patch("importlib.import_module", side_effect=mock_import):
-            get_available_frameworks()
-            # Because it is exactly "collect_", identifier is empty or skips?
-            # Wait, line 60 is `else: continue`
+            frameworks = get_available_frameworks()
+            assert "bar" not in frameworks
+            assert "" not in frameworks
             # Line 55: `if name == "collect_api": identifier = module_name`
             # Line 57: `elif name.startswith("collect_"): identifier = f"{module_name}_{name[8:]}"`
             # If name is exactly "collect_", it goes to 57 and identifier is `module_name_` which is "bar_".
@@ -440,10 +469,10 @@ def test_consolidate_aliases_same_length() -> None:
 
 
 def test_api_version_aliases(mocker: Any) -> None:
-    """Function docstring.
+    """Verify api version aliases behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     import ml_ecosystem_snapshots.api as api
 
@@ -664,7 +693,11 @@ def test_validate_snapshot_envelope_and_extraction_metadata() -> None:
 
 
 def test_get_pkg_version_hardware_and_mlir_fallbacks(mocker: Any) -> None:
-    """Test get_pkg_version for mlir and hardware targets with file present and missing."""
+    """Test get_pkg_version for mlir and hardware targets with file present and missing.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
     import unittest.mock as mock
     from ml_ecosystem_snapshots.api import get_pkg_version
 
@@ -757,7 +790,11 @@ def test_extract_snapshot_isolated() -> None:
 
 
 def test_init_import_error(monkeypatch: Any) -> None:
-    """Test fallback when importing api in __init__ raises ImportError."""
+    """Test fallback when importing api in __init__ raises ImportError.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     import builtins
     import importlib
     import ml_ecosystem_snapshots
@@ -1200,6 +1237,16 @@ def test_get_pkg_version_import_fallbacks(monkeypatch: pytest.MonkeyPatch) -> No
         monkeypatch.delitem(sys.modules, name, raising=False)
 
     def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         """Mock import raising error for targets.
 
         Args:

@@ -63,7 +63,11 @@ def test_grounding_models() -> None:
 
 
 def test_grounding_engine_custom_dir(tmp_path: Any) -> None:
-    """Test GroundingEngine loading from custom directory with json and json.gz."""
+    """Test GroundingEngine loading from custom directory with json and json.gz.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+    """
     custom_dir = str(tmp_path / "custom_snaps")
     os.makedirs(custom_dir, exist_ok=True)
 
@@ -182,7 +186,11 @@ def test_grounding_engine_custom_dir(tmp_path: Any) -> None:
 
 
 def test_grounding_engine_suggestions_and_fuzzy(tmp_path: Any) -> None:
-    """Test suggestion and fuzzy searching in GroundingEngine."""
+    """Test suggestion and fuzzy searching in GroundingEngine.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+    """
     custom_dir = str(tmp_path / "fuzzy_dir")
     os.makedirs(custom_dir, exist_ok=True)
 
@@ -407,7 +415,11 @@ def test_validate_mlir_op() -> None:
 
 
 def test_validate_python_call(tmp_path: Any) -> None:
-    """Test validate_python_call with mock framework snapshot."""
+    """Test validate_python_call with mock framework snapshot.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+    """
     custom_dir = str(tmp_path / "py_dir")
     os.makedirs(custom_dir, exist_ok=True)
 
@@ -556,7 +568,12 @@ def test_validate_python_call(tmp_path: Any) -> None:
 
 
 def test_grounding_engine_edge_branches(tmp_path: Any, monkeypatch: Any) -> None:
-    """Test edge branches in compiler, hardware, and engine modules."""
+    """Test edge branches in compiler, hardware, and engine modules.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     # 1. Compiler: convolution with dimension_numbers present and zero expected operands
     conv_report = validate_stablehlo_op(
         op_name="stablehlo.convolution",

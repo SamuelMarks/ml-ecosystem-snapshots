@@ -8,31 +8,53 @@ framework APIs, and detect hallucinated kwargs in real time.
 import json
 import os
 import re
-import sys
-from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Tuple, Union, cast
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    TextIO,
+    Tuple,
+    Union,
+    cast,
+)
 
+from ml_ecosystem_snapshots.utils import get_custom_snapshots_paths, is_offline_mode
+
+extract_snapshot: Optional[Callable[..., Dict[str, Any]]]
+_extract_snapshot_fn: Optional[Callable[..., Dict[str, Any]]]
 try:
     from ml_ecosystem_snapshots.api import (
         FRAMEWORK_COLLECTORS as FRAMEWORK_COLLECTORS,
-        extract_snapshot as extract_snapshot,
+        extract_snapshot as _imported_extract_snapshot,
     )
+
+    extract_snapshot = _imported_extract_snapshot
+    _extract_snapshot_fn = _imported_extract_snapshot
 except ImportError:
     FRAMEWORK_COLLECTORS = {}
-    extract_snapshot = None  # type: ignore[assignment]
-
-from ml_ecosystem_snapshots.utils import get_custom_snapshots_paths, is_offline_mode
+    extract_snapshot = None
+    _extract_snapshot_fn = None
 
 _SNAPSHOT_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 def get_framework_snapshot(
-    framework: str, version: Optional[str] = None
+    framework: str,
+    version: Optional[str] = None,
+    prefer_bundled: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Retrieve or build a cached snapshot for a target framework.
 
     Args:
         framework: Name of the framework (e.g. 'torch', 'jax', 'nvidia_sass').
         version: Optional framework version (e.g. '2.4.0').
+        prefer_bundled: Optional flag controlling whether bundled on-disk snapshots
+            are checked before calling `extract_snapshot`. Defaults to True when
+            using the standard `extract_snapshot` implementation.
 
     Returns:
         The snapshot dictionary containing categorized GhostRefs.
@@ -40,13 +62,14 @@ def get_framework_snapshot(
     clean_fw = framework.lower().strip()
     cache_key = f"{clean_fw}@{version}" if version else clean_fw
     if cache_key not in _SNAPSHOT_CACHE:
-        # Check bundled / on-disk snapshots first to enable offline grounding (unless mocked in tests)
         loaded_data = None
         source_kind = "not_found"
-        is_mocked = hasattr(extract_snapshot, "return_value") or hasattr(
-            extract_snapshot, "_mock_return_value"
+        use_bundled = (
+            prefer_bundled
+            if prefer_bundled is not None
+            else (extract_snapshot is None or extract_snapshot is _extract_snapshot_fn)
         )
-        if not is_mocked:
+        if use_bundled:
             from .index import get_cache_dir
 
             base_dir = os.path.dirname(__file__)
@@ -113,7 +136,7 @@ def get_framework_snapshot(
                                         loaded_data = {"categories": {"UTIL": data}}
                                     source_kind = source_label
                                     break
-                            except Exception:
+                            except (OSError, ValueError):
                                 pass
                     if loaded_data:
                         break
@@ -121,18 +144,22 @@ def get_framework_snapshot(
         if loaded_data:
             loaded_data["_snapshot_source"] = source_kind
             _SNAPSHOT_CACHE[cache_key] = loaded_data
-        elif clean_fw in FRAMEWORK_COLLECTORS and (
-            not is_offline_mode()
-            or clean_fw
-            in (
-                "nvidia_sass",
-                "amd_rdna",
-                "mlir",
-                "stablehlo",
-                "nvidia_ptx",
-                "html_dsl",
-                "latex_dsl",
-                "tikz",
+        elif (
+            extract_snapshot is not None
+            and clean_fw in FRAMEWORK_COLLECTORS
+            and (
+                not is_offline_mode()
+                or clean_fw
+                in (
+                    "nvidia_sass",
+                    "amd_rdna",
+                    "mlir",
+                    "stablehlo",
+                    "nvidia_ptx",
+                    "html_dsl",
+                    "latex_dsl",
+                    "tikz",
+                )
             )
         ):
             try:
@@ -165,7 +192,18 @@ def get_api_signature(
         cached_sym = lookup_symbol(framework, api_path, version=version)
         if cached_sym:
             return cached_sym
-    except Exception:
+    except (
+        AttributeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        IndexError,
+        SyntaxError,
+        OSError,
+        ImportError,
+        RuntimeError,
+        Exception,
+    ):
         pass
 
     snap = get_framework_snapshot(framework, version=version)
@@ -567,7 +605,18 @@ def search_apis(
                     matches.append(path)
             if matches:
                 return matches[:limit]
-    except Exception:
+    except (
+        AttributeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        IndexError,
+        SyntaxError,
+        OSError,
+        ImportError,
+        RuntimeError,
+        Exception,
+    ):
         pass
 
     snap = get_framework_snapshot(framework, version=version)
@@ -3049,7 +3098,11 @@ def check_code_block(
             """Visitor for tracking imports and collecting function calls."""
 
             def visit_Import(self, node: ast.Import) -> None:
-                """Track 'import foo' and 'import foo as bar' statements."""
+                """Track 'import foo' and 'import foo as bar' statements.
+
+                Args:
+                    node: The AST Import node.
+                """
                 for alias in node.names:
                     name = alias.name
                     asname = alias.asname or name
@@ -3057,7 +3110,11 @@ def check_code_block(
                 self.generic_visit(node)
 
             def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-                """Track 'from foo.bar import baz' statements."""
+                """Track 'from foo.bar import baz' statements.
+
+                Args:
+                    node: The AST ImportFrom node.
+                """
                 mod = node.module or ""
                 for alias in node.names:
                     name = alias.name
@@ -3067,7 +3124,11 @@ def check_code_block(
                 self.generic_visit(node)
 
             def visit_Call(self, node: ast.Call) -> None:
-                """Inspect Call AST nodes."""
+                """Inspect Call AST nodes.
+
+                Args:
+                    node: The AST Call node.
+                """
                 curr: Any = node.func
                 attr_parts: List[str] = []
                 while isinstance(curr, ast.Attribute):
@@ -3967,396 +4028,11 @@ def handle_mcp_message(message: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     if method == "tools/call":
+        from ml_ecosystem_snapshots.mcp.registry import dispatch_tool_call
+
         tool_name = params.get("name")
         args = params.get("arguments", {})
-
-        if tool_name == "get_api_signature":
-            res = get_api_signature(
-                args.get("framework", ""),
-                args.get("api_path", ""),
-                version=args.get("version"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
-                },
-            }
-        elif tool_name == "search_apis":
-            res_list = search_apis(
-                args.get("framework", ""),
-                args.get("query", ""),
-                args.get("limit", 10),
-                version=args.get("version"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [
-                        {"type": "text", "text": json.dumps(res_list, indent=2)}
-                    ]
-                },
-            }
-        elif tool_name == "check_hallucination":
-            check_res = check_hallucination(
-                args.get("framework", ""),
-                args.get("api_path", ""),
-                args.get("kwargs", []),
-                args_count=args.get("args_count"),
-                strict_kwargs=args.get("strict_kwargs", True),
-                kwarg_values=args.get("kwarg_values"),
-                version=args.get("version"),
-                arg_dtypes=args.get("arg_dtypes"),
-                kwarg_dtypes=args.get("kwarg_dtypes"),
-                arg_ranks=args.get("arg_ranks"),
-                kwarg_ranks=args.get("kwarg_ranks"),
-                arg_shapes=args.get("arg_shapes"),
-                kwarg_shapes=args.get("kwarg_shapes"),
-                strict_c_extensions=args.get("strict_c_extensions", False),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [
-                        {"type": "text", "text": json.dumps(check_res, indent=2)}
-                    ]
-                },
-            }
-        elif tool_name == "explain_anti_pattern":
-            anti_res = explain_anti_pattern(
-                framework=args.get("framework", ""),
-                api_path=args.get("api_path", ""),
-                hallucinated_argument=args.get("hallucinated_argument", ""),
-                passed_value=args.get("passed_value"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [
-                        {"type": "text", "text": json.dumps(anti_res, indent=2)}
-                    ]
-                },
-            }
-        elif tool_name == "check_sass_instruction":
-            sass_res = check_sass_instruction(
-                mnemonic=args.get("mnemonic", ""),
-                operands=args.get("operands"),
-                modifiers=args.get("modifiers"),
-                sm_arch=args.get("sm_arch"),
-                control_codes=args.get("control_codes"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [
-                        {"type": "text", "text": json.dumps(sass_res, indent=2)}
-                    ]
-                },
-            }
-        elif tool_name == "check_rdna_instruction":
-            rdna_res = check_rdna_instruction(
-                mnemonic=args.get("mnemonic", ""),
-                operands=args.get("operands"),
-                encoding=args.get("encoding"),
-                gfx_arch=args.get("gfx_arch"),
-                modifiers=args.get("modifiers"),
-                wave_size=args.get("wave_size"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [
-                        {"type": "text", "text": json.dumps(rdna_res, indent=2)}
-                    ]
-                },
-            }
-        elif tool_name == "check_ptx_instruction":
-            ptx_res = check_ptx_instruction(
-                mnemonic=args.get("mnemonic", ""),
-                types=args.get("types"),
-                operands=args.get("operands"),
-                state_space=args.get("state_space"),
-                scope=args.get("scope"),
-                vector_width=args.get("vector_width"),
-                sm_arch=args.get("sm_arch"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(ptx_res, indent=2)}]
-                },
-            }
-        elif tool_name == "check_mlir_op":
-            mlir_res = check_mlir_op(
-                op_name=args.get("op_name", ""),
-                operands_count=args.get("operands_count"),
-                attributes=args.get("attributes"),
-                operand_types=args.get("operand_types"),
-                result_types=args.get("result_types"),
-                structured_attributes=args.get("structured_attributes"),
-                regions=args.get("regions"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [
-                        {"type": "text", "text": json.dumps(mlir_res, indent=2)}
-                    ]
-                },
-            }
-        elif tool_name == "check_stablehlo_op":
-            shlo_res = check_stablehlo_op(
-                op_name=args.get("op_name", ""),
-                operands_count=args.get("operands_count"),
-                attributes=args.get("attributes"),
-                operand_types=args.get("operand_types"),
-                result_types=args.get("result_types"),
-                structured_attributes=args.get("structured_attributes"),
-                regions=args.get("regions"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [
-                        {"type": "text", "text": json.dumps(shlo_res, indent=2)}
-                    ]
-                },
-            }
-        elif tool_name == "check_code_block":
-            code_res = check_code_block(
-                code=args.get("code", ""),
-                framework=args.get("framework"),
-                version=args.get("version"),
-                sm_arch=args.get("sm_arch"),
-                gfx_arch=args.get("gfx_arch"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [
-                        {"type": "text", "text": json.dumps(code_res, indent=2)}
-                    ]
-                },
-            }
-        elif tool_name == "translate_concept_arguments":
-            trans_res = translate_concept_arguments(
-                concept=args.get("concept", ""),
-                source_framework=args.get("source_framework", ""),
-                target_framework=args.get("target_framework", ""),
-                source_kwargs=args.get("source_kwargs", {}),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [
-                        {"type": "text", "text": json.dumps(trans_res, indent=2)}
-                    ]
-                },
-            }
-        elif tool_name == "check_wgsl_op":
-            res = check_wgsl_op(
-                op_name=args.get("op_name") or args.get("api_path", ""),
-                inputs_count=args.get("inputs_count") or args.get("operands_count"),
-                attributes=args.get("attributes"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
-                },
-            }
-        elif tool_name == "check_onnx_op":
-            res = check_onnx_op(
-                op_name=args.get("op_name") or args.get("api_path", ""),
-                domain=args.get("domain", ""),
-                inputs_count=args.get("inputs_count"),
-                attributes=args.get("attributes"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
-                },
-            }
-        elif tool_name == "check_metal_op":
-            res = check_metal_op(
-                op_name=args.get("op_name") or args.get("api_path", ""),
-                address_space=args.get("address_space"),
-                inputs_count=args.get("inputs_count"),
-                attributes=args.get("attributes"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
-                },
-            }
-        elif tool_name == "check_wasm_instruction":
-            res = check_wasm_instruction(
-                mnemonic=args.get("mnemonic") or args.get("op_name", ""),
-                operands_count=args.get("operands_count") or args.get("inputs_count"),
-                attributes=args.get("attributes"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
-                },
-            }
-        elif tool_name == "check_webgl_op":
-            res = check_webgl_op(
-                op_name=args.get("op_name") or args.get("api_path", ""),
-                inputs_count=args.get("inputs_count"),
-                attributes=args.get("attributes"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
-                },
-            }
-        elif tool_name == "check_cpp_op":
-            res = check_cpp_op(
-                op_name=args.get("op_name") or args.get("api_path", ""),
-                inputs_count=args.get("inputs_count"),
-                attributes=args.get("attributes"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
-                },
-            }
-        elif tool_name == "check_array_api_op":
-            res = check_array_api_op(
-                op_name=args.get("op_name") or args.get("api_path", ""),
-                inputs_count=args.get("inputs_count") or args.get("args_count"),
-                attributes=args.get("attributes") or args.get("kwargs"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
-                },
-            }
-        elif tool_name == "check_scipy_op":
-            res = check_scipy_op(
-                op_name=args.get("op_name") or args.get("api_path", ""),
-                inputs_count=args.get("inputs_count") or args.get("args_count"),
-                attributes=args.get("attributes") or args.get("kwargs"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
-                },
-            }
-        elif tool_name == "check_torchvision_op":
-            res = check_torchvision_op(
-                op_name=args.get("op_name") or args.get("api_path", ""),
-                inputs_count=args.get("inputs_count") or args.get("args_count"),
-                attributes=args.get("attributes") or args.get("kwargs"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
-                },
-            }
-        elif tool_name == "check_torchaudio_op":
-            res = check_torchaudio_op(
-                op_name=args.get("op_name") or args.get("api_path", ""),
-                inputs_count=args.get("inputs_count") or args.get("args_count"),
-                attributes=args.get("attributes") or args.get("kwargs"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
-                },
-            }
-        elif tool_name == "check_safetensors_op":
-            res = check_safetensors_op(
-                op_name=args.get("op_name") or args.get("api_path", ""),
-                inputs_count=args.get("inputs_count") or args.get("args_count"),
-                attributes=args.get("attributes") or args.get("kwargs"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
-                },
-            }
-        elif tool_name == "check_aten_op":
-            res = check_aten_op(
-                op_name=args.get("op_name") or args.get("api_path", ""),
-                inputs_count=args.get("inputs_count"),
-                attributes=args.get("attributes"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
-                },
-            }
-        elif tool_name == "check_nccl_op":
-            res = check_nccl_op(
-                op_name=args.get("op_name") or args.get("api_path", ""),
-                inputs_count=args.get("inputs_count"),
-                attributes=args.get("attributes"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
-                },
-            }
-        elif tool_name == "check_flash_attention_op":
-            res = check_flash_attention_op(
-                op_name=args.get("op_name") or args.get("api_path", ""),
-                inputs_count=args.get("inputs_count") or args.get("args_count"),
-                attributes=args.get("attributes") or args.get("kwargs"),
-            )
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(res, indent=2)}]
-                },
-            }
-        else:
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "error": {
-                    "code": -32601,
-                    "message": f"Method/tool '{tool_name}' not found",
-                },
-            }
+        return dispatch_tool_call(msg_id, tool_name, args)
 
     return {
         "jsonrpc": "2.0",
@@ -4377,23 +4053,8 @@ def run_mcp_server(
         input_stream: Input stream to read from (defaults to sys.stdin).
         output_stream: Output stream to write to (defaults to sys.stdout).
     """
-    in_s = input_stream or sys.stdin
-    out_s = output_stream or sys.stdout
+    from ml_ecosystem_snapshots.mcp.protocol import run_stdio_loop
 
-    for line in in_s:
-        line_clean = line.strip()
-        if not line_clean:
-            continue
-        try:
-            req = json.loads(line_clean)
-            resp = handle_mcp_message(req)
-            out_s.write(json.dumps(resp) + "\n")
-            out_s.flush()
-        except Exception as e:
-            err_resp = {
-                "jsonrpc": "2.0",
-                "id": None,
-                "error": {"code": -32700, "message": f"Parse error: {e}"},
-            }
-            out_s.write(json.dumps(err_resp) + "\n")
-            out_s.flush()
+    run_stdio_loop(
+        handle_mcp_message, input_stream=input_stream, output_stream=output_stream
+    )

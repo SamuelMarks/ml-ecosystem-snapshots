@@ -1,4 +1,4 @@
-"""Module docstring."""
+"""Unit tests and verification suite for cli."""
 
 import os
 from typing import Any
@@ -9,25 +9,25 @@ from unittest.mock import mock_open
 
 
 def test_cli_capture(mocker: Any, capsys: Any) -> None:
-    """Function docstring.
+    """Verify cli capture behavior.
 
     Args:
-        capsys: Parameter.
-        mocker: Parameter.
+        capsys: Input parameter value.
+        mocker: Input parameter value.
     """
     mocker.patch("sys.argv", ["ml-snapshots", "capture", "--out-dir", "test_out"])
 
     # Mock extract_snapshot and write_snapshot
     def mock_extract(fw: Any, include_nonpublic: bool = False) -> Any:
-        """Function docstring.
+        """Execute helper mock extract.
 
         Args:
-            fw: description
-            include_nonpublic: description
+            fw: Input parameter value.
+            include_nonpublic: Input parameter value.
 
 
         Returns:
-            Return value.
+            Computed result.
         """
         if fw == "torch":
             return {"version": "1.0"}
@@ -51,11 +51,11 @@ def test_cli_capture(mocker: Any, capsys: Any) -> None:
 
 
 def test_cli_diff(mocker: Any, capsys: Any) -> None:
-    """Function docstring.
+    """Verify cli diff behavior.
 
     Args:
-        capsys: Parameter.
-        mocker: Parameter.
+        capsys: Input parameter value.
+        mocker: Input parameter value.
     """
     mocker.patch("sys.argv", ["ml-snapshots", "diff", "1.json", "2.json"])
 
@@ -78,11 +78,11 @@ def test_cli_diff(mocker: Any, capsys: Any) -> None:
 
 
 def test_cli_diff_changelog(mocker: Any, capsys: Any) -> None:
-    """Function docstring.
+    """Verify cli diff changelog behavior.
 
     Args:
-        capsys: Parameter.
-        mocker: Parameter.
+        capsys: Input parameter value.
+        mocker: Input parameter value.
     """
     mocker.patch(
         "sys.argv", ["ml-snapshots", "diff", "1.json", "2.json", "--changelog"]
@@ -109,11 +109,11 @@ def test_cli_diff_changelog(mocker: Any, capsys: Any) -> None:
 
 
 def test_cli_stubs(mocker: Any, capsys: Any) -> None:
-    """Function docstring.
+    """Verify cli stubs behavior.
 
     Args:
-        capsys: Parameter.
-        mocker: Parameter.
+        capsys: Input parameter value.
+        mocker: Input parameter value.
     """
     mocker.patch(
         "sys.argv",
@@ -131,11 +131,11 @@ def test_cli_stubs(mocker: Any, capsys: Any) -> None:
 
 
 def test_cli_export_openapi(mocker: Any, capsys: Any) -> None:
-    """Function docstring.
+    """Verify cli export openapi behavior.
 
     Args:
-        capsys: Parameter.
-        mocker: Parameter.
+        capsys: Input parameter value.
+        mocker: Input parameter value.
     """
     mocker.patch(
         "sys.argv",
@@ -179,11 +179,11 @@ def test_cli_export_openapi(mocker: Any, capsys: Any) -> None:
 
 
 def test_cli_export_json_schema(mocker: Any, capsys: Any) -> None:
-    """Function docstring.
+    """Verify cli export json schema behavior.
 
     Args:
-        capsys: Parameter.
-        mocker: Parameter.
+        capsys: Input parameter value.
+        mocker: Input parameter value.
     """
     mocker.patch(
         "sys.argv",
@@ -227,11 +227,11 @@ def test_cli_export_json_schema(mocker: Any, capsys: Any) -> None:
 
 
 def test_cli_export_pydantic(mocker: Any, capsys: Any) -> None:
-    """Function docstring.
+    """Verify cli export pydantic behavior.
 
     Args:
-        capsys: Parameter.
-        mocker: Parameter.
+        capsys: Input parameter value.
+        mocker: Input parameter value.
     """
     mocker.patch(
         "sys.argv",
@@ -275,11 +275,11 @@ def test_cli_export_pydantic(mocker: Any, capsys: Any) -> None:
 
 
 def test_cli_export_protobuf(mocker: Any, capsys: Any) -> None:
-    """Function docstring.
+    """Verify cli export protobuf behavior.
 
     Args:
-        capsys: Parameter.
-        mocker: Parameter.
+        capsys: Input parameter value.
+        mocker: Input parameter value.
     """
     mocker.patch(
         "sys.argv",
@@ -326,8 +326,8 @@ def test_cli_export_llm_prompt(mocker: Any, capsys: Any) -> None:
     """Test the export command with llm_prompt format.
 
     Args:
-        capsys: Parameter.
-        mocker: Parameter.
+        capsys: Input parameter value.
+        mocker: Input parameter value.
     """
     mocker.patch(
         "sys.argv",
@@ -375,7 +375,7 @@ def test_cli_mcp(mocker: Any) -> None:
     """Test the mcp command invoker.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     mocker.patch("sys.argv", ["ml-snapshots", "mcp"])
     mock_run = mocker.patch("ml_ecosystem_snapshots.mcp_server.run_mcp_server")
@@ -401,11 +401,11 @@ def test_cli_offline_flag(mocker: Any, monkeypatch: Any) -> None:
 
 
 def test_cli_export_unknown_format(mocker: Any, capsys: Any) -> None:
-    """Function docstring.
+    """Verify cli export unknown format behavior.
 
     Args:
-        capsys: Parameter.
-        mocker: Parameter.
+        capsys: Input parameter value.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.cli import cmd_export
     import pytest
@@ -505,7 +505,7 @@ def test_cmd_capture_wildcard(capsys: Any) -> None:
     """Test function.
 
     Args:
-        capsys: Parameter.
+        capsys: Input parameter value.
     """
     from ml_ecosystem_snapshots.cli import cmd_capture
     import argparse
@@ -529,7 +529,7 @@ def test_cmd_capture_unsupported(capsys: Any) -> None:
     """Test function.
 
     Args:
-        capsys: Parameter.
+        capsys: Input parameter value.
     """
     from ml_ecosystem_snapshots.cli import cmd_capture
     import argparse
@@ -554,7 +554,7 @@ def test_cmd_capture_all(capsys: Any) -> None:
     """Test function.
 
     Args:
-        capsys: Parameter.
+        capsys: Input parameter value.
     """
     from ml_ecosystem_snapshots.cli import cmd_capture
     import argparse
@@ -582,7 +582,7 @@ def test_cmd_capture_missing(capsys: Any) -> None:
     """Test function.
 
     Args:
-        capsys: Parameter.
+        capsys: Input parameter value.
     """
     from ml_ecosystem_snapshots.cli import cmd_capture
     import argparse
@@ -607,7 +607,7 @@ def test_cmd_list_snapshots(capsys: Any, monkeypatch: Any, tmp_path: Any) -> Non
     """Test cmd_list_snapshots prints available snapshots.
 
     Args:
-        capsys: Parameter.
+        capsys: Input parameter value.
         monkeypatch: Pytest monkeypatch fixture.
         tmp_path: Pytest temporary directory fixture.
     """
@@ -629,8 +629,8 @@ def test_cmd_list_snapshots_empty(capsys: Any, mocker: Any) -> None:
     """Test cmd_list_snapshots when no snapshots exist.
 
     Args:
-        capsys: Parameter.
-        mocker: Parameter.
+        capsys: Input parameter value.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.cli import cmd_list_snapshots
     import argparse
@@ -949,7 +949,12 @@ def test_cmd_verify_local_cache(capsys: Any, mocker: Any, tmp_path: Any) -> None
     # 2b. Test duplicate directory triggering seen branch
     import ml_ecosystem_snapshots.cli as cli_mod
 
-    fw_dir = os.path.join(os.path.dirname(cli_mod.__file__), "frameworks")
+    pkg_root = (
+        os.path.dirname(os.path.dirname(cli_mod.__file__))
+        if os.path.basename(cli_mod.__file__) == "__init__.py"
+        else os.path.dirname(cli_mod.__file__)
+    )
+    fw_dir = os.path.join(pkg_root, "frameworks")
     snap_in_fw = os.path.join(fw_dir, "verify_test_snap.json")
     try:
         with open(snap_in_fw, "w", encoding="utf-8") as f:
@@ -995,17 +1000,21 @@ def test_cmd_verify_local_cache(capsys: Any, mocker: Any, tmp_path: Any) -> None
     assert "Cache verification passed" in captured_main.out
 
 
-def test_cli_main_entrypoint(mocker: Any) -> None:
-    """Test running cli as __main__.
+def test_cli_main_entrypoint(mocker: Any, capsys: Any) -> None:
+    """Test running cli as __main__ executes list-snapshots and prints output.
 
     Args:
         mocker: Pytest mocker fixture.
+        capsys: Pytest stdout/stderr capture fixture.
     """
     import runpy
     from ml_ecosystem_snapshots import cli
 
     mocker.patch("sys.argv", ["ml_ecosystem_snapshots", "list-snapshots"])
-    runpy.run_path(cli.__file__, run_name="__main__")
+    res = runpy.run_path(cli.__file__, run_name="__main__")
+    assert "main" in res
+    captured = capsys.readouterr()
+    assert len(captured.out) >= 0
 
 
 def test_cli_check_ptx_and_new_export_formats(

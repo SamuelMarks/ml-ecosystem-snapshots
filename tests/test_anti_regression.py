@@ -261,3 +261,123 @@ def test_all_new_snapshots_exist_and_nonempty() -> None:
                 assert (
                     "categories" in data
                 ), f"Snapshot {fname} missing 'categories' envelope key"
+
+
+def test_no_mock_introspection_or_type_ignores_in_src() -> None:
+    """Verify production code under src/ contains zero mock-sniffing or # type: ignore directives."""
+    import glob
+    from ml_ecosystem_snapshots.exceptions import (
+        CExtensionSignatureError,
+        ComplianceVerificationError,
+        GroundingValidationError,
+        IntrospectionError,
+        OfflineModeNetworkError,
+        SnapshotError,
+        SnapshotNotFoundError,
+        SnapshotSchemaError,
+    )
+
+    assert issubclass(SnapshotNotFoundError, SnapshotError)
+    assert issubclass(SnapshotSchemaError, SnapshotError)
+    assert issubclass(IntrospectionError, SnapshotError)
+    assert issubclass(CExtensionSignatureError, IntrospectionError)
+    assert issubclass(ComplianceVerificationError, SnapshotError)
+    assert issubclass(GroundingValidationError, SnapshotError)
+    assert issubclass(OfflineModeNetworkError, SnapshotError)
+
+    src_files = sorted(glob.glob("src/ml_ecosystem_snapshots/**/*.py", recursive=True))
+    banned_tokens = [
+        "_mock_return_value",
+        "MagicMock",
+        "unittest.mock",
+        "type: ignore",
+    ]
+    for fpath in src_files:
+        with open(fpath, "r", encoding="utf-8") as fp:
+            content = fp.read()
+        for token in banned_tokens:
+            assert (
+                token not in content
+            ), f"Banned token '{token}' found in production module {fpath}"
+
+
+def test_every_test_function_has_assertions() -> None:
+    """Verify every test_* function in tests/ contains at least one explicit assertion or raises check."""
+    import ast
+    import glob
+
+    test_files = sorted(glob.glob("tests/**/*.py", recursive=True))
+    for fpath in test_files:
+        with open(fpath, "r", encoding="utf-8") as fp:
+            tree = ast.parse(fp.read(), filename=fpath)
+        for node in ast.walk(tree):
+            if isinstance(
+                node, (ast.FunctionDef, ast.AsyncFunctionDef)
+            ) and node.name.startswith("test_"):
+                has_assert = False
+                for sub in ast.walk(node):
+                    if isinstance(sub, ast.Assert):
+                        has_assert = True
+                        break
+                    if isinstance(sub, ast.Call):
+                        call_str = ast.unparse(sub.func)
+                        if any(
+                            k in call_str for k in ("raises", "assert", "warns", "fail")
+                        ):
+                            has_assert = True
+                            break
+                assert (
+                    has_assert
+                ), f"Zero-assertion test detected: {fpath}:{node.lineno} ({node.name})"
+
+
+def test_codebase_100_percent_docstring_and_arg_coverage() -> None:
+    """Verify 100% module, class, function, and parameter docstring coverage with zero placeholders."""
+    import ast
+    import glob
+    import re
+
+    files = sorted(
+        glob.glob("src/ml_ecosystem_snapshots/**/*.py", recursive=True)
+        + glob.glob("tests/**/*.py", recursive=True)
+        + glob.glob("scripts/**/*.py", recursive=True)
+    )
+    banned_placeholders = (
+        "Function docstring.",
+        "Class docstring.",
+        "Module docstring.",
+        ": Parameter.",
+        ": description",
+        "Return value.",
+    )
+    for fpath in files:
+        with open(fpath, "r", encoding="utf-8") as fp:
+            src = fp.read()
+        tree = ast.parse(src, filename=fpath)
+        mod_doc = ast.get_docstring(tree)
+        assert mod_doc, f"Missing module docstring in {fpath}"
+        for bp in banned_placeholders:
+            assert (
+                bp not in mod_doc
+            ), f"Placeholder '{bp}' in module docstring of {fpath}"
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                doc = ast.get_docstring(node)
+                assert doc, f"Missing docstring on {node.name} at {fpath}:{node.lineno}"
+                for bp in banned_placeholders:
+                    assert (
+                        bp not in doc
+                    ), f"Placeholder '{bp}' in docstring of {node.name} at {fpath}:{node.lineno}"
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    args = [
+                        a.arg for a in node.args.args if a.arg not in ("self", "cls")
+                    ]
+                    args += [a.arg for a in node.args.kwonlyargs]
+                    if node.args.vararg:
+                        args.append(node.args.vararg.arg)
+                    if node.args.kwarg:
+                        args.append(node.args.kwarg.arg)
+                    for arg_name in args:
+                        assert re.search(
+                            rf"\b{re.escape(arg_name)}\b\s*(\([^)]*\))?\s*:", doc
+                        ), f"Missing arg '{arg_name}' in docstring of {node.name} at {fpath}:{node.lineno}"

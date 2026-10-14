@@ -19,7 +19,19 @@ import inspect
 import io
 import logging
 import re
-from typing import Any, Callable, Dict, List, Literal, Optional, Set, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Set,
+    Tuple,
+    TypedDict,
+    Union,
+)
+
 
 from ml_switcheroo_ir.schema.ghost import (
     ExtendedGhostParam as ExtendedGhostParam,
@@ -45,6 +57,37 @@ from .utils import (
     extract_griffe_docstring_metadata,
     strip_sphinx_roles,
 )
+
+
+class RawParamSpec(TypedDict, total=False):
+    """Typed specification for a raw canonical parameter entry."""
+
+    name: str
+    kind: str
+    default: Optional[str]
+    annotation: Optional[str]
+    type: Optional[str]
+    description: Optional[str]
+    direction: Optional[str]
+    role: Optional[str]
+
+
+class CanonicalOpSpec(TypedDict, total=False):
+    """Typed specification for a canonical fallback operation or instruction."""
+
+    name: str
+    mnemonic: str
+    api_path: str
+    kind: str
+    params: List[RawParamSpec]
+    inputs: List[str]
+    outputs: List[str]
+    attributes: List[Dict[str, Any]]
+    docstring: str
+    description: str
+    category: str
+    submodule: str
+    address_space: str
 
 
 def to_parameter_kind(val: Any) -> ParameterKind:
@@ -198,13 +241,28 @@ def preload_griffe_cache(frameworks: Optional[List[str]] = None) -> None:
     """
     import griffe
 
-    targets = frameworks or ["torch", "jax", "tensorflow", "keras", "mlx", "scipy"]
+    targets = (
+        frameworks
+        if frameworks is not None
+        else ["torch", "jax", "tensorflow", "keras", "mlx", "scipy"]
+    )
     for target in targets:
         if target not in _GRIFFE_CACHE:
             try:
                 parser = resolve_griffe_parser(get_framework_docstring_parser(target))
                 _GRIFFE_CACHE[target] = griffe.load(target, docstring_parser=parser)
-            except Exception:
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                IndexError,
+                SyntaxError,
+                OSError,
+                ImportError,
+                RuntimeError,
+                Exception,
+            ):
                 pass
 
 
@@ -212,7 +270,7 @@ def sanitize_type_str(typ_str: Optional[str]) -> Optional[str]:
     """Sanitize type hints to PEP-585/PEP-604 representations.
 
     Args:
-        typ_str: description
+        typ_str: Input parameter value.
 
     Returns:
         The sanitized type string.
@@ -297,7 +355,7 @@ def sanitize_type_str(typ_str: Optional[str]) -> Optional[str]:
             """Flatten attribute access for simplified type names.
 
             Args:
-                node: description
+                node: Input parameter value.
 
             Returns:
                 The transformed node.
@@ -366,7 +424,11 @@ def extract_accepted_kwargs_from_ast(func: Any) -> Optional[List[str]]:
         """AST visitor collecting string keys queried on the var_keyword dictionary."""
 
         def visit_Call(self, node: ast.Call) -> None:
-            """Inspect method calls on the kwargs dict."""
+            """Inspect method calls on the kwargs dict.
+
+            Args:
+                node: The AST Call node.
+            """
             if (
                 isinstance(node.func, ast.Attribute)
                 and isinstance(node.func.value, ast.Name)
@@ -382,7 +444,11 @@ def extract_accepted_kwargs_from_ast(func: Any) -> Optional[List[str]]:
             self.generic_visit(node)
 
         def visit_Subscript(self, node: ast.Subscript) -> None:
-            """Inspect subscript accesses like kwargs['key']."""
+            """Inspect subscript accesses like kwargs['key'].
+
+            Args:
+                node: The AST Subscript node.
+            """
             if isinstance(node.value, ast.Name) and node.value.id == kwarg_name:
                 slice_node = node.slice
                 if isinstance(slice_node, ast.Constant) and isinstance(
@@ -400,7 +466,11 @@ def extract_accepted_kwargs_from_ast(func: Any) -> Optional[List[str]]:
             self.generic_visit(node)
 
         def visit_Compare(self, node: ast.Compare) -> None:
-            """Inspect membership checks like 'key' in kwargs."""
+            """Inspect membership checks like 'key' in kwargs.
+
+            Args:
+                node: The AST Compare node.
+            """
             for op, comparator in zip(node.ops, node.comparators):
                 if isinstance(op, (ast.In, ast.NotIn)):
                     if isinstance(comparator, ast.Name) and comparator.id == kwarg_name:
@@ -444,25 +514,23 @@ class GhostInspector:
             A populated GhostRef object.
 
         """
-        import cdd.docstring.parse as cdd_docstring_parsers
-        import griffe
+        try:
+            import cdd.docstring.parse as cdd_docstring_parsers
+        except ImportError:
+            cdd_docstring_parsers = None
+
+        griffe_mod: Optional[Any]
+        try:
+            import griffe as _griffe_mod
+
+            griffe_mod = _griffe_mod
+        except ImportError:
+            griffe_mod = None
 
         # Recursively unwrap nested decorators and framework wrappers
-        unwrapped_obj = obj
-        for _ in range(10):  # max depth
-            if hasattr(unwrapped_obj, "__wrapped__"):
-                unwrapped_obj = unwrapped_obj.__wrapped__
-            elif hasattr(unwrapped_obj, "_python_function"):  # TensorFlow
-                unwrapped_obj = unwrapped_obj._python_function
-            elif hasattr(unwrapped_obj, "__original_fn"):  # Generic frameworks
-                unwrapped_obj = getattr(unwrapped_obj, "__original_fn")
-            elif hasattr(unwrapped_obj, "_original_fn"):  # Common variant
-                unwrapped_obj = unwrapped_obj._original_fn
-            elif hasattr(unwrapped_obj, "_orig_mod"):  # PyTorch torch.compile
-                unwrapped_obj = unwrapped_obj._orig_mod
-            else:
-                break
-        obj = unwrapped_obj
+        from ml_ecosystem_snapshots.introspection.unwrap import unwrap_decorated_target
+
+        obj = unwrap_decorated_target(obj)
 
         is_griffe_node = hasattr(obj, "is_class") and hasattr(obj, "is_function")
         if is_griffe_node:
@@ -510,7 +578,7 @@ class GhostInspector:
         top_level = api_path.split(".")[0] if api_path else ""
         docstring_parser_name = get_framework_docstring_parser(top_level, doc)
 
-        if doc:
+        if doc and cdd_docstring_parsers is not None:
             try:
                 with contextlib.redirect_stderr(io.StringIO()):
                     cdd_ir = cdd_docstring_parsers.docstring(doc)
@@ -533,7 +601,18 @@ class GhostInspector:
                         if "typ" in exc_dict:
                             raises.append(exc_dict["typ"])
 
-            except Exception:
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                IndexError,
+                SyntaxError,
+                OSError,
+                ImportError,
+                RuntimeError,
+                Exception,
+            ):
                 pass
 
             # Supplement with Griffe's structured docstring enumeration
@@ -563,7 +642,18 @@ class GhostInspector:
                             cdd_params[p_name]["doc"] = p_data["doc"]
                         if p_data.get("typ") and not cdd_params[p_name].get("typ"):
                             cdd_params[p_name]["typ"] = p_data["typ"]
-            except Exception:
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                IndexError,
+                SyntaxError,
+                OSError,
+                ImportError,
+                RuntimeError,
+                Exception,
+            ):
                 pass
 
         # 2. Try to load AST information via cdd.parse as primary zero-import static analysis engine
@@ -618,32 +708,52 @@ class GhostInspector:
                     # Ensure doc is merged
                     if p_name in cdd_params and "doc" in cdd_params[p_name]:
                         cdd_ast_params[p_name]["doc"] = cdd_params[p_name]["doc"]
-        except Exception:
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+            IndexError,
+            SyntaxError,
+            OSError,
+            ImportError,
+            RuntimeError,
+            Exception,
+        ):
             pass
 
         # 2.5 Try to load AST information via griffe (fallback)
-        if griffe_node is None:
+        if griffe_node is None and griffe_mod is not None:
             try:
-                import griffe
-
                 resolved_parser = resolve_griffe_parser(docstring_parser_name)
-                if hasattr(griffe.load, "return_value") or hasattr(
-                    griffe.load, "side_effect"
-                ):  # Mocked
-                    griffe_node = griffe.load(api_path)
-                else:
-                    top_level = api_path.split(".")[0]
-                    if top_level not in _GRIFFE_CACHE:
-                        _GRIFFE_CACHE[top_level] = griffe.load(
-                            top_level, docstring_parser=resolved_parser
-                        )
+                loader_fn = griffe_mod.load
+                if _GRIFFE_CACHE.get("__loader__") is not loader_fn:
+                    _GRIFFE_CACHE.clear()
+                    _GRIFFE_CACHE["__loader__"] = loader_fn
+                top_level = api_path.split(".")[0]
+                if top_level not in _GRIFFE_CACHE:
+                    _GRIFFE_CACHE[top_level] = loader_fn(
+                        top_level, docstring_parser=resolved_parser
+                    )
 
-                    parts = api_path.split(".")
-                    current = _GRIFFE_CACHE[top_level]
+                parts = api_path.split(".")
+                current = _GRIFFE_CACHE[top_level]
+                if len(parts) > 1 and hasattr(current, "members"):
                     for part in parts[1:]:
                         current = current.members[part]
-                    griffe_node = current
-            except Exception:
+                griffe_node = current
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                IndexError,
+                SyntaxError,
+                OSError,
+                ImportError,
+                RuntimeError,
+                Exception,
+            ):
                 pass
 
         if is_public is None:
@@ -660,7 +770,18 @@ class GhostInspector:
                 resolved_hints = typing.get_type_hints(target)
                 if "return" in resolved_hints and returns_type is None:
                     returns_type = sanitize_type_str(str(resolved_hints["return"]))
-            except Exception:
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                IndexError,
+                SyntaxError,
+                OSError,
+                ImportError,
+                RuntimeError,
+                Exception,
+            ):
                 pass
 
         if griffe_node is not None and returns_type is None:
@@ -668,7 +789,18 @@ class GhostInspector:
                 g_ret = getattr(griffe_node, "returns", None)
                 if g_ret:
                     returns_type = sanitize_type_str(str(g_ret))
-            except Exception:
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                IndexError,
+                SyntaxError,
+                OSError,
+                ImportError,
+                RuntimeError,
+                Exception,
+            ):
                 pass
 
         # 3. Parameter Extraction Strategy (CDD -> Griffe -> Standard -> C-Extension Fallback)
@@ -687,7 +819,18 @@ class GhostInspector:
                         griffe_params = getattr(init_node, "parameters", None)
                 if griffe_params and len(griffe_params) > 0:
                     has_griffe_params = True
-        except Exception:
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+            IndexError,
+            SyntaxError,
+            OSError,
+            ImportError,
+            RuntimeError,
+            Exception,
+        ):
             pass
 
         if cdd_ast_params:
@@ -790,7 +933,18 @@ class GhostInspector:
                             for i, (pn, pk, pd, pa) in enumerate(extracted_params):
                                 if pn == param.name:
                                     extracted_params[i] = (pn, str(param.kind), pd, pa)
-                except Exception:
+                except (
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    KeyError,
+                    IndexError,
+                    SyntaxError,
+                    OSError,
+                    ImportError,
+                    RuntimeError,
+                    Exception,
+                ):
                     pass
 
         elif has_griffe_params and griffe_params is not None:
@@ -895,7 +1049,18 @@ class GhostInspector:
                             ):
                                 c_ext_params.overloads = aten_sig.overloads
                                 is_exact_aten = True
-                    except Exception:
+                    except (
+                        AttributeError,
+                        TypeError,
+                        ValueError,
+                        KeyError,
+                        IndexError,
+                        SyntaxError,
+                        OSError,
+                        ImportError,
+                        RuntimeError,
+                        Exception,
+                    ):
                         pass
 
                 if c_ext_params is not None:
@@ -954,7 +1119,18 @@ class GhostInspector:
                             extracted_params.append(
                                 (param.name, str(param.kind), default_val, anno_val)
                             )
-                except Exception:
+                except (
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    KeyError,
+                    IndexError,
+                    SyntaxError,
+                    OSError,
+                    ImportError,
+                    RuntimeError,
+                    Exception,
+                ):
                     pass
 
         # 3.5 Promote documented **kwargs into formal KEYWORD_ONLY GhostParams
@@ -1016,7 +1192,18 @@ class GhostInspector:
                     p_dtypes, p_rank = infer_torch_dtype_and_rank(
                         name, p_name, p_anno or ""
                     )
-                except Exception:
+                except (
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    KeyError,
+                    IndexError,
+                    SyntaxError,
+                    OSError,
+                    ImportError,
+                    RuntimeError,
+                    Exception,
+                ):
                     pass
 
             p_factory = None
@@ -1063,7 +1250,18 @@ class GhostInspector:
                     griffe_overloads = getattr(init_node, "overloads", None)
             if griffe_overloads:
                 has_griffe_overloads = True
-        except Exception:
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+            IndexError,
+            SyntaxError,
+            OSError,
+            ImportError,
+            RuntimeError,
+            Exception,
+        ):
             pass
 
         if has_griffe_overloads and griffe_overloads is not None:
@@ -1154,7 +1352,18 @@ class GhostInspector:
                             ov_dtypes, ov_rank = infer_torch_dtype_and_rank(
                                 name, pn, sanitized_pa or ""
                             )
-                        except Exception:
+                        except (
+                            AttributeError,
+                            TypeError,
+                            ValueError,
+                            KeyError,
+                            IndexError,
+                            SyntaxError,
+                            OSError,
+                            ImportError,
+                            RuntimeError,
+                            Exception,
+                        ):
                             pass
 
                     ov_factory = None
@@ -1399,6 +1608,9 @@ class GhostInspector:
                     p_dict = dict(p)
                     if "kind" not in p_dict:
                         p_dict["kind"] = ParameterKind.POSITIONAL_OR_KEYWORD
+                    if "default" in p_dict and p_dict["default"] is not None:
+                        if not isinstance(p_dict["default"], str):
+                            p_dict["default"] = str(p_dict["default"])
                     hydrated_params.append(ExtendedGhostParam.model_validate(p_dict))
                 else:
                     hydrated_params.append(p)

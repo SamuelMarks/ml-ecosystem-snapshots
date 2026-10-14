@@ -7,12 +7,10 @@ and accelerated linear algebra routines from the Bohrium runtime engine.
 from typing import Any, Dict, List
 
 from ml_switcheroo_ir.schema.ghost import (
-    GhostParam,
     GhostRef,
-    ParameterKind,
     SemanticTier,
 )
-from ..models import GhostInspector, GhostPythonRef
+from ..models import GhostInspector
 
 
 CANONICAL_BOHRIUM_OPS: List[Dict[str, Any]] = [
@@ -138,32 +136,8 @@ def collect_api(
     ):
         return []
 
-    bh = _get_bohrium()
-    if bh is None:
-        refs: List[GhostRef] = []
-        for op in CANONICAL_BOHRIUM_OPS:
-            params = [
-                GhostParam(
-                    name=p["name"],
-                    kind=getattr(ParameterKind, p.get("kind", "POSITIONAL_OR_KEYWORD")),
-                    default=p.get("default"),
-                )
-                for p in op.get("params", [])
-            ]
-            refs.append(
-                GhostPythonRef(
-                    name=op["name"],
-                    api_path=op["api_path"],
-                    kind=op.get("kind", "function"),
-                    params=params,
-                    docstring=op.get("docstring", f"Bohrium {op['name']} API."),
-                    environment_tags=["bohrium", "runtime"],
-                    domain_metadata={},
-                )
-            )
-        return refs
+    from ml_ecosystem_snapshots.frameworks._base import collect_from_canonical_or_live
 
-    results: List[GhostRef] = []
     target_names = [
         "array",
         "empty",
@@ -177,18 +151,12 @@ def collect_api(
         "mean",
         "reshape",
     ]
-
-    for name in target_names:
-        if hasattr(bh, name):
-            obj = getattr(bh, name)
-            try:
-                ref = GhostInspector.inspect(obj, f"bohrium.{name}", is_public=True)
-                ref.environment_tags = list(ref.environment_tags or ()) + [
-                    "bohrium",
-                    "runtime",
-                ]
-                results.append(ref)
-            except Exception:
-                pass
-
-    return results
+    return collect_from_canonical_or_live(
+        live_module=_get_bohrium(),
+        module_prefix="bohrium",
+        target_names=target_names,
+        canonical_ops=CANONICAL_BOHRIUM_OPS,
+        default_doc_prefix="Bohrium",
+        environment_tags=("bohrium", "runtime"),
+        inspector_fn=GhostInspector.inspect,
+    )

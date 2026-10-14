@@ -1,10 +1,10 @@
-"""Module docstring."""
+"""Unit tests and verification suite for stubs sanitize."""
 
 from ml_ecosystem_snapshots.stubs import _sanitize_default
 
 
 def test_sanitize_default() -> None:
-    """Function docstring."""
+    """Verify sanitize default behavior."""
     assert _sanitize_default("<unrepresentable>") == "..."
     assert _sanitize_default("'linear'") == "'linear'"
     assert _sanitize_default("10") == "10"

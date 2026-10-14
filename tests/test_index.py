@@ -640,7 +640,11 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Any) -> None:
             return self
 
         def __exit__(self, *args: Any) -> None:
-            """Exit context manager."""
+            """Exit context manager.
+
+            Args:
+                args: Variadic positional arguments or CLI namespace.
+            """
             pass
 
     with patch("ml_ecosystem_snapshots.index.sqlite3.connect", return_value=MockConn()):

@@ -16,8 +16,8 @@ def test_build_and_run(mocker: Any, tmp_path: Path) -> None:
     """Test build_and_run function.
 
     Args:
-        mocker: Parameter.
-        tmp_path: Parameter.
+        mocker: Input parameter value.
+        tmp_path: Input parameter value.
     """
     mock_run = mocker.patch("subprocess.run")
 
@@ -33,8 +33,8 @@ def test_upload_to_s3_success(mocker: Any, tmp_path: Path) -> None:
     """Test upload_to_s3 function with boto3.
 
     Args:
-        mocker: Parameter.
-        tmp_path: Parameter.
+        mocker: Input parameter value.
+        tmp_path: Input parameter value.
     """
     mock_boto3 = mocker.MagicMock()
     mock_s3 = mocker.MagicMock()
@@ -65,8 +65,8 @@ def test_upload_to_s3_empty_dir(mocker: Any, tmp_path: Path) -> None:
     """Test upload_to_s3 with empty directory.
 
     Args:
-        mocker: Parameter.
-        tmp_path: Parameter.
+        mocker: Input parameter value.
+        tmp_path: Input parameter value.
     """
     mock_boto3 = mocker.MagicMock()
     mock_s3 = mocker.MagicMock()
@@ -84,8 +84,8 @@ def test_upload_to_s3_import_error(mocker: Any, tmp_path: Path) -> None:
     """Test upload_to_s3 function without boto3.
 
     Args:
-        mocker: Parameter.
-        tmp_path: Parameter.
+        mocker: Input parameter value.
+        tmp_path: Input parameter value.
     """
     mocker.patch.dict("sys.modules", {"boto3": None})
     mock_print = mocker.patch("builtins.print")
@@ -98,8 +98,8 @@ def test_upload_to_s3_other_error(mocker: Any, tmp_path: Path) -> None:
     """Test upload_to_s3 function handling generic exceptions.
 
     Args:
-        mocker: Parameter.
-        tmp_path: Parameter.
+        mocker: Input parameter value.
+        tmp_path: Input parameter value.
     """
     mock_boto3 = mocker.MagicMock()
     mock_boto3.client.side_effect = Exception("Test error")
@@ -115,8 +115,8 @@ def test_main_default(mocker: Any, tmp_path: Path) -> None:
     """Test main function with default args.
 
     Args:
-        mocker: Parameter.
-        tmp_path: Parameter.
+        mocker: Input parameter value.
+        tmp_path: Input parameter value.
     """
     mocker.patch("sys.argv", ["matrix_runner.py", "--output-dir", str(tmp_path)])
     mock_build = mocker.patch(
@@ -134,8 +134,8 @@ def test_main_with_matrix_and_s3(mocker: Any, tmp_path: Path) -> None:
     """Test main function with custom matrix and s3.
 
     Args:
-        mocker: Parameter.
-        tmp_path: Parameter.
+        mocker: Input parameter value.
+        tmp_path: Input parameter value.
     """
     matrix_file = tmp_path / "matrix.json"
     matrix_file.write_text(json.dumps({"test_fw": ["1.0"]}))
@@ -166,12 +166,17 @@ def test_main_with_matrix_and_s3(mocker: Any, tmp_path: Path) -> None:
 
 
 def test_matrix_runner_main_entrypoint(mocker: Any, tmp_path: Path) -> None:
-    """Test running matrix_runner as __main__."""
+    """Test running matrix_runner as __main__ executes without error on an empty matrix.
+
+    Args:
+        mocker: Pytest mocker fixture.
+        tmp_path: Temporary directory path fixture.
+    """
     import runpy
     import sys
     from ml_ecosystem_snapshots.tools import matrix_runner
 
-    mocker.patch("subprocess.run")
+    mock_subproc = mocker.patch("subprocess.run")
     matrix_file = tmp_path / "empty_matrix.json"
     matrix_file.write_text("{}", encoding="utf-8")
     mocker.patch.object(
@@ -185,4 +190,6 @@ def test_matrix_runner_main_entrypoint(mocker: Any, tmp_path: Path) -> None:
             str(matrix_file),
         ],
     )
-    runpy.run_path(matrix_runner.__file__, run_name="__main__")
+    res = runpy.run_path(matrix_runner.__file__, run_name="__main__")
+    assert "main" in res
+    mock_subproc.assert_not_called()

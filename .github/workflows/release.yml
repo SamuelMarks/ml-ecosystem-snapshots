@@ -56,14 +56,10 @@ jobs:
 
       - name: Create required directories and set permissions (Linux)
         run: |
-          sudo mkdir -p /Users/samuel/repos
-          sudo chown -R $USER /Users
         if: runner.os == 'Linux'
 
       - name: Create required directories (macOS)
         run: |
-          sudo mkdir -p /Users/samuel/repos
-          sudo chown -R $USER /Users/samuel
         if: runner.os == 'macOS'
 
       - name: Checkout ml-switcheroo-ir
@@ -74,7 +70,7 @@ jobs:
 
       - name: Stage ml-switcheroo-ir
         run: |
-          cp -r ml-switcheroo-ir /Users/samuel/repos/ml-switcheroo-ir 2>/dev/null || mv ml-switcheroo-ir /Users/samuel/repos/ml-switcheroo-ir
+          cp -r ml-switcheroo-ir ../ml-switcheroo-ir 2>/dev/null || mv ml-switcheroo-ir ../ml-switcheroo-ir
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -94,7 +90,7 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m venv venv-3-10
           venv-3-10/bin/python3 -m pip install -U setuptools wheel pip
-          venv-3-10/bin/python3 -m pip install -e /Users/samuel/repos/ml-switcheroo-ir
+          venv-3-10/bin/python3 -m pip install -e ../ml-switcheroo-ir
           venv-3-10/bin/python3 -m pip install '.[generate]'
           venv-3-10/bin/python3 -m pip uninstall -y jaxlib jax optax || true
           venv-3-10/bin/python3 -m pip install paxml "jaxlib==0.4.26"
@@ -105,7 +101,7 @@ jobs:
       - name: Generate stablehlo snapshot
         if: matrix.framework == 'stablehlo'
         run: |
-          uv pip install --system -e /Users/samuel/repos/ml-switcheroo-ir
+          uv pip install --system -e ../ml-switcheroo-ir
           uv pip install --system '.[generate]'
           mkdir -p src/ml_ecosystem_snapshots/snapshots
           PYTHONPATH=src python3 src/ml_ecosystem_snapshots/tools/build_stablehlo_snapshot.py
@@ -115,7 +111,7 @@ jobs:
         if: matrix.framework != 'pax' && matrix.framework != 'stablehlo'
         run: |
           fw="${{ matrix.framework }}"
-          uv pip install --system -e /Users/samuel/repos/ml-switcheroo-ir
+          uv pip install --system -e ../ml-switcheroo-ir
           uv pip install --system '.[generate]'
 
           case $fw in
@@ -192,13 +188,11 @@ jobs:
 
       - name: Create required directories and set permissions
         run: |
-          sudo mkdir -p /Users/samuel/repos
-          sudo chown -R $USER /Users
-          cp -r ml-switcheroo-ir /Users/samuel/repos/ml-switcheroo-ir 2>/dev/null || mv ml-switcheroo-ir /Users/samuel/repos/ml-switcheroo-ir
+          cp -r ml-switcheroo-ir ../ml-switcheroo-ir 2>/dev/null || mv ml-switcheroo-ir ../ml-switcheroo-ir
 
       - name: Install dependencies
         run: |
-          uv pip install --system -e /Users/samuel/repos/ml-switcheroo-ir
+          uv pip install --system -e ../ml-switcheroo-ir
           uv pip install --system -r requirements.txt
 
       - name: Download all snapshot artifacts
@@ -286,7 +280,7 @@ jobs:
       - name: Build Wheel and Sdist
         run: |
           uv venv venv-build --python 3.12
-          uv pip install -p venv-build -e /Users/samuel/repos/ml-switcheroo-ir
+          uv pip install -p venv-build -e ../ml-switcheroo-ir
           uv pip install -p venv-build build
           venv-build/bin/python3 -m build
           python3 -c "
@@ -318,7 +312,7 @@ jobs:
 
           echo "=== Testing offline installation and CLI ==="
           uv venv venv-offline --python 3.12
-          uv pip install -p venv-offline -e /Users/samuel/repos/ml-switcheroo-ir
+          uv pip install -p venv-offline -e ../ml-switcheroo-ir
           uv pip install -p venv-offline -r requirements.txt
           uv pip install -p venv-offline --no-deps dist/*.whl
           venv-offline/bin/ml_ecosystem_snapshots list-snapshots

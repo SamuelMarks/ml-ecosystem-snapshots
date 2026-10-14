@@ -40,20 +40,29 @@ def collect_api(
                             obj, f"cupy.{name}", is_public=True
                         )
                         results.append(res)
-                    except Exception:
+                    except (
+                        AttributeError,
+                        TypeError,
+                        ValueError,
+                        KeyError,
+                        IndexError,
+                        SyntaxError,
+                        OSError,
+                        ImportError,
+                        RuntimeError,
+                        Exception,
+                    ):
                         pass
     elif category == SemanticTier.ARRAY_API:
-        for name in dir(cp):
-            if not include_nonpublic and name.startswith("_"):
-                continue
-            obj = getattr(cp, name)
-            if callable(obj):
-                try:
-                    res = GhostInspector.inspect(
-                        obj, f"cupy.{name}", is_public=not name.startswith("_")
-                    )
-                    results.append(res)
-                except Exception:
-                    pass
+        from ml_ecosystem_snapshots.frameworks._base import collect_dir_callables
+
+        results.extend(
+            collect_dir_callables(
+                mod_obj=cp,
+                api_prefix="cupy",
+                include_nonpublic=include_nonpublic,
+                inspector_fn=GhostInspector.inspect,
+            )
+        )
 
     return results

@@ -80,7 +80,7 @@ def target_fn_sig_failure(x: int) -> None:
     """Target function for signature failure in CDD branch.
 
     Args:
-        x: Parameter.
+        x: Input parameter value.
     """
     pass
 

@@ -67,7 +67,11 @@ def test_collect_api_live_mode() -> None:
     fake_utils = types.SimpleNamespace(draw_bounding_boxes=lambda img, boxes: img)
 
     def fake_get_submodule(sub: str) -> Any:
-        """Return fake submodule by name."""
+        """Return fake submodule by name.
+
+        Args:
+            sub: Input sub parameter.
+        """
         if sub == "ops":
             return fake_ops
         if sub == "transforms.functional":
@@ -91,7 +95,11 @@ def test_collect_api_inspection_exception_handled() -> None:
     fake_ops = types.SimpleNamespace(nms="not_inspectable")
 
     def fake_get_submodule(sub: str) -> Any:
-        """Return fake ops submodule."""
+        """Return fake ops submodule.
+
+        Args:
+            sub: Input sub parameter.
+        """
         return fake_ops if sub == "ops" else None
 
     with patch(
@@ -147,7 +155,11 @@ def test_check_torchvision_op_mcp() -> None:
 
 
 def test_cmd_check_torchvision_cli_valid(capsys: Any) -> None:
-    """Verify CLI command execution on valid TorchVision operation."""
+    """Verify CLI command execution on valid TorchVision operation.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     args = argparse.Namespace(
         op_name="box_iou",
         inputs_count=2,
@@ -160,7 +172,11 @@ def test_cmd_check_torchvision_cli_valid(capsys: Any) -> None:
 
 
 def test_cmd_check_torchvision_cli_invalid_exits(capsys: Any) -> None:
-    """Verify CLI command exits with non-zero code on invalid operator."""
+    """Verify CLI command exits with non-zero code on invalid operator.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     args = argparse.Namespace(
         op_name="invalid_op",
         inputs_count=None,
@@ -175,9 +191,20 @@ def test_cmd_check_torchvision_cli_invalid_exits(capsys: Any) -> None:
 
 def test_get_torchvision_submodule_branches() -> None:
     """Verify module lookup branches for _get_torchvision_submodule."""
+
     # Case where module is found
-    mod = torchvision._get_torchvision_submodule("ops")
-    assert mod is not None or mod is None
+    class DummyModule:
+        """Mock TorchVision submodule placeholder."""
+
+        pass
+
+    with patch(
+        "ml_ecosystem_snapshots.frameworks.torchvision.importlib.import_module",
+        return_value=DummyModule(),
+    ):
+        mod = torchvision._get_torchvision_submodule("ops")
+        assert mod is not None
+        assert isinstance(mod, DummyModule)
 
     # Case where all fail
     with patch(

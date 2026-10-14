@@ -178,10 +178,10 @@ def test_score_compliance_varargs_fallback_special_cases() -> None:
 
 
 def test_extract_target_refs_string_path(tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify extract target refs string path behavior.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     from ml_ecosystem_snapshots.compliance import extract_target_refs
 
@@ -197,10 +197,10 @@ def test_extract_target_refs_string_path(tmp_path: Any) -> None:
 
 
 def test_get_module_info_from_path_no_src_dir(tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify get module info from path no src dir behavior.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     from ml_ecosystem_snapshots.compliance import get_module_info_from_path
 
@@ -211,10 +211,10 @@ def test_get_module_info_from_path_no_src_dir(tmp_path: Any) -> None:
 
 
 def test_extract_target_refs_list_path(tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify extract target refs list path behavior.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     from ml_ecosystem_snapshots.compliance import extract_target_refs
 
@@ -447,7 +447,11 @@ def test_validate_broadcast_and_matmul_shapes() -> None:
 
 
 def test_compliance_edge_branches(tmp_path: Any) -> None:
-    """Test edge branches in align_namespace and extract_target_refs_single."""
+    """Test edge branches in align_namespace and extract_target_refs_single.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+    """
     from ml_ecosystem_snapshots.compliance import (
         align_namespace,
         extract_target_refs_single,
@@ -528,7 +532,12 @@ def test_score_compliance_opaque_c_extensions() -> None:
 
 
 def test_extract_target_refs_single_root_function(tmp_path: Any, mocker: Any) -> None:
-    """Test extract_target_refs_single when root node is a Function."""
+    """Test extract_target_refs_single when root node is a Function.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+        mocker: Pytest mocker fixture.
+    """
     import griffe
     from ml_ecosystem_snapshots.compliance import extract_target_refs_single
 

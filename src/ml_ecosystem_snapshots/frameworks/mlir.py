@@ -587,6 +587,19 @@ def _get_canonical_mlir_records() -> List[Dict[str, Any]]:
             "summary": "Create empty uninitialized tensor",
         },
         {
+            "class_name": "ExtractOp",
+            "api_path": "tensor.extract",
+            "dialect": "tensor",
+            "operands": [
+                {"name": "tensor", "type": "AnyTensor"},
+                {"name": "indices", "type": "Variadic<Index>"},
+            ],
+            "results": [{"name": "result", "type": "AnyType"}],
+            "attributes": [],
+            "traits": ["Pure"],
+            "summary": "Element extraction operation",
+        },
+        {
             "class_name": "MatmulOp",
             "api_path": "linalg.matmul",
             "dialect": "linalg",

@@ -7,16 +7,10 @@ matrix operations (matrixCompMult, transpose), and transcendental functions.
 from typing import Any, Dict, List
 
 from ml_switcheroo_ir.schema.ghost import (
-    GhostOperationRef,
-    GhostParam,
     GhostRef,
-    GhostResult,
-    IRParameterRole,
     OperandDirection,
-    ParameterKind,
     SemanticTier,
 )
-from ..models import ExtendedGhostParam
 
 
 CANONICAL_WEBGL_OPS: List[Dict[str, Any]] = [
@@ -155,77 +149,26 @@ def collect_api(
     ):
         return []
 
+    from ml_ecosystem_snapshots.frameworks._base import build_ssa_operation_refs
+
     ops = _load_webgl_ops()
-    refs: List[GhostRef] = []
-
-    for op in ops:
-        op_name = op["name"]
-        api_path = f"webgl.{op_name}"
-        params: List[GhostParam] = []
-
-        # SSA operands
-        for inp in op.get("inputs", []):
-            params.append(
-                ExtendedGhostParam(
-                    name=inp,
-                    kind=ParameterKind.POSITIONAL_ONLY,
-                    annotation="vec4" if inp in ("x", "y", "a", "b", "c") else "any",
-                    standardized_name=inp,
-                    description=f"WebGL operand {inp}",
-                    direction=OperandDirection.READ,
-                    role=IRParameterRole.OPERAND,
-                )
-            )
-
-        # Attributes
-        attrs_meta: Dict[str, Any] = {}
-        for attr in op.get("attributes", []):
-            attr_name = attr.get("name", "attr")
-            attr_type = attr.get("type", "Any")
-            attr_def = attr.get("default")
-            params.append(
-                ExtendedGhostParam(
-                    name=attr_name,
-                    kind=ParameterKind.KEYWORD_ONLY,
-                    annotation=attr_type,
-                    default=str(attr_def) if attr_def is not None else None,
-                    standardized_name=attr_name,
-                    description=f"WebGL attribute {attr_name}",
-                    role=IRParameterRole.ATTRIBUTE,
-                )
-            )
-            attrs_meta[attr_name] = attr
-
-        returns: List[GhostResult] = []
-        for out in op.get("outputs", []):
-            returns.append(GhostResult(name=out, type="vec4"))
-
-        returns_type = "vec4" if returns else "None"
-
-        provenance = {
+    return build_ssa_operation_refs(
+        ops=ops,
+        api_prefix="webgl",
+        name_key="name",
+        operand_annotation_fn=lambda op, inp: (
+            "vec4" if inp in ("x", "y", "a", "b", "c") else "any"
+        ),
+        operand_description_fn=lambda op, inp: f"WebGL operand {inp}",
+        operand_direction_fn=lambda op, inp: OperandDirection.READ,
+        attr_description_prefix="WebGL attribute",
+        result_type="vec4",
+        empty_return_type="None",
+        provenance_fn=lambda op: {
             "source_type": "webgl_spec",
             "upstream_version": "2.0",
             "category": op.get("category", "compute"),
-        }
-
-        refs.append(
-            GhostOperationRef(
-                name=op_name,
-                api_path=api_path,
-                kind="function",
-                params=params,
-                operands=[
-                    p
-                    for p in params
-                    if getattr(p, "role", None) == IRParameterRole.OPERAND
-                ],
-                returns=returns,
-                returns_type=returns_type,
-                docstring=op.get("description", f"WebGL {op_name} operation."),
-                environment_tags=["webgl", "glsl", "webgl2"],
-                domain_metadata=provenance,
-                attributes=attrs_meta if attrs_meta else None,
-            )
-        )
-
-    return refs
+        },
+        default_doc_fn=lambda op_name: f"WebGL {op_name} operation.",
+        environment_tags=("webgl", "glsl", "webgl2"),
+    )

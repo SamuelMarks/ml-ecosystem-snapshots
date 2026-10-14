@@ -11,10 +11,7 @@ import importlib
 from typing import Any, Dict, List
 
 from ml_switcheroo_ir.schema.ghost import (
-    GhostParam,
-    GhostPythonRef,
     GhostRef,
-    ParameterKind,
     SemanticTier,
 )
 from ..models import GhostInspector
@@ -663,72 +660,15 @@ def collect_api(
         if mod is not None:
             loaded_submods[sub] = mod
 
-    if not loaded_submods:
-        refs: List[GhostRef] = []
-        for op in CANONICAL_SCIPY_OPS:
-            params = [
-                GhostParam(
-                    name=p["name"],
-                    kind=getattr(ParameterKind, p.get("kind", "POSITIONAL_OR_KEYWORD")),
-                    default=p.get("default"),
-                )
-                for p in op.get("params", [])
-            ]
-            refs.append(
-                GhostPythonRef(
-                    name=op["name"],
-                    api_path=op["api_path"],
-                    kind="function",
-                    params=params,
-                    docstring=op.get("docstring", f"SciPy {op['name']} API."),
-                    environment_tags=["scipy", op.get("submodule", "special")],
-                    domain_metadata={"submodule": op.get("submodule", "special")},
-                )
-            )
-        return refs
+    from ml_ecosystem_snapshots.frameworks._base import (
+        collect_from_submodules_or_canonical,
+    )
 
-    results: List[GhostRef] = []
-    seen: set[str] = set()
-
-    for op in CANONICAL_SCIPY_OPS:
-        sub = op.get("submodule", "special")
-        if sub in loaded_submods:
-            mod = loaded_submods[sub]
-            name = op["name"]
-            if hasattr(mod, name):
-                obj = getattr(mod, name)
-                try:
-                    ref = GhostInspector.inspect(obj, op["api_path"], is_public=True)
-                    ref.environment_tags = list(ref.environment_tags or ()) + [
-                        "scipy",
-                        sub,
-                    ]
-                    results.append(ref)
-                    seen.add(op["api_path"])
-                except Exception:
-                    pass
-
-    # Fill any missed ops from canonical definitions
-    for op in CANONICAL_SCIPY_OPS:
-        if op["api_path"] not in seen:
-            params = [
-                GhostParam(
-                    name=p["name"],
-                    kind=getattr(ParameterKind, p.get("kind", "POSITIONAL_OR_KEYWORD")),
-                    default=p.get("default"),
-                )
-                for p in op.get("params", [])
-            ]
-            results.append(
-                GhostPythonRef(
-                    name=op["name"],
-                    api_path=op["api_path"],
-                    kind="function",
-                    params=params,
-                    docstring=op.get("docstring", f"SciPy {op['name']} API."),
-                    environment_tags=["scipy", op.get("submodule", "special")],
-                    domain_metadata={"submodule": op.get("submodule", "special")},
-                )
-            )
-
-    return results
+    return collect_from_submodules_or_canonical(
+        loaded_submods=loaded_submods,
+        canonical_ops=CANONICAL_SCIPY_OPS,
+        framework_tag="scipy",
+        default_submodule="special",
+        default_doc_prefix="SciPy",
+        inspector_fn=GhostInspector.inspect,
+    )

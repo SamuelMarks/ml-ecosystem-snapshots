@@ -2119,7 +2119,11 @@ def test_mcp_server_versioned(tmp_path: Any, monkeypatch: Any) -> None:
 
 
 def test_opaque_c_extension_guardrails(mocker: Any) -> None:
-    """Verify anti-hallucination guardrails and warnings for opaque C-extension signatures."""
+    """Verify anti-hallucination guardrails and warnings for opaque C-extension signatures.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
     mock_snap = {
         "categories": {
             "ops": [

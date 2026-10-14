@@ -379,7 +379,11 @@ def test_parse_llvm_tblgen_json() -> None:
 
 
 def test_scrape_amd_rdna_with_tblgen_json(tmp_path: typing.Any) -> None:
-    """Test scrape_amd_rdna reading from a TableGen JSON export file."""
+    """Test scrape_amd_rdna reading from a TableGen JSON export file.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+    """
     mock_tblgen = {
         "V_ADD_F32_e32": {
             "!superclasses": ["VOP2Inst", "GFX10"],
@@ -437,7 +441,11 @@ def test_parse_llvm_tblgen_json_operand_and_encoding_fallbacks() -> None:
 
 
 def test_scrape_amd_rdna_duplicate_operand_signatures(tmp_path: typing.Any) -> None:
-    """Test scrape_amd_rdna when multiple records produce duplicate operand signatures."""
+    """Test scrape_amd_rdna when multiple records produce duplicate operand signatures.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+    """
     mock_tblgen = {
         "V_ADD_F32_e32_1": {
             "!superclasses": ["VOP2Inst", "GFX10"],
@@ -465,7 +473,11 @@ def test_scrape_amd_rdna_duplicate_operand_signatures(tmp_path: typing.Any) -> N
 
 
 def test_fetch_td_file_local_dir(tmp_path: typing.Any) -> None:
-    """Test fetching TableGen file from local checkout directory."""
+    """Test fetching TableGen file from local checkout directory.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+    """
     local_td = tmp_path / "VOPDInstructions.td"
     local_td.write_text('def V_DUAL_ADD : VOPD<"v_dual_add">;', encoding="utf-8")
 
@@ -483,10 +495,15 @@ def test_fetch_td_file_local_dir(tmp_path: typing.Any) -> None:
 
 
 def test_scrape_amd_rdna_main_entrypoint(mocker: typing.Any) -> None:
-    """Test running scrape_amd_rdna as __main__."""
+    """Test running scrape_amd_rdna as __main__ writes output file.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
     import runpy
 
-    mocker.patch.object(scrape_amd_rdna, "main", return_value=None)
-    mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("urllib.request.urlopen")
-    runpy.run_path(scrape_amd_rdna.__file__, run_name="__main__")
+    mock_open = mocker.patch("builtins.open", mocker.mock_open())
+    mocker.patch("ml_ecosystem_snapshots.utils.fetch_url", return_value="")
+    res = runpy.run_path(scrape_amd_rdna.__file__, run_name="__main__")
+    assert "main" in res
+    assert mock_open.called

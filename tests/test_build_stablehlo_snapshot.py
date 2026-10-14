@@ -15,7 +15,7 @@ def test_is_attribute() -> None:
     assert not build_stablehlo_snapshot.is_attribute("tensor or quantized tensor")
 
 
-@mock.patch("urllib.request.urlopen")
+@mock.patch("ml_ecosystem_snapshots.utils.fetch_url")
 def test_extract_ops(mock_urlopen: mock.MagicMock) -> None:
     """Test extract ops.
 
@@ -75,9 +75,7 @@ Dot general op.
 | `result` | tensor | (C1) |
 
 """
-    mock_response = mock.MagicMock()
-    mock_response.read.return_value = mock_content
-    mock_urlopen.return_value = mock_response
+    mock_urlopen.return_value = mock_content.decode("utf-8")
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 3
@@ -130,7 +128,7 @@ def test_main(mock_open: mock.MagicMock, mock_extract: mock.MagicMock) -> None:
     assert "fake_op" in written_content
 
 
-@mock.patch("urllib.request.urlopen")
+@mock.patch("ml_ecosystem_snapshots.utils.fetch_url")
 def test_extract_ops_empty_op(mock_urlopen: mock.MagicMock) -> None:
     """Test extract ops empty op.
 
@@ -146,15 +144,13 @@ def test_extract_ops_empty_op(mock_urlopen: mock.MagicMock) -> None:
 #### Semantics
 Empty op.
 """
-    mock_response = mock.MagicMock()
-    mock_response.read.return_value = mock_content
-    mock_urlopen.return_value = mock_response
+    mock_urlopen.return_value = mock_content.decode("utf-8")
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 0
 
 
-@mock.patch("urllib.request.urlopen")
+@mock.patch("ml_ecosystem_snapshots.utils.fetch_url")
 def test_extract_ops_missing_semantics(mock_urlopen: mock.MagicMock) -> None:
     """Test extract ops missing semantics.
 
@@ -173,16 +169,14 @@ def test_extract_ops_missing_semantics(mock_urlopen: mock.MagicMock) -> None:
 |-------|------|------|-------------|
 | (I1) | `lhs` | tensor | (C1) |
 """
-    mock_response = mock.MagicMock()
-    mock_response.read.return_value = mock_content
-    mock_urlopen.return_value = mock_response
+    mock_urlopen.return_value = mock_content.decode("utf-8")
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
     assert ghost_refs[0]["docstring"] is None
 
 
-@mock.patch("urllib.request.urlopen")
+@mock.patch("ml_ecosystem_snapshots.utils.fetch_url")
 def test_extract_ops_multi_output(mock_urlopen: mock.MagicMock) -> None:
     """Test extract ops multi output.
 
@@ -207,16 +201,14 @@ def test_extract_ops_multi_output(mock_urlopen: mock.MagicMock) -> None:
 | `res1` | tensor |
 | `res2` | tensor |
 """
-    mock_response = mock.MagicMock()
-    mock_response.read.return_value = mock_content
-    mock_urlopen.return_value = mock_response
+    mock_urlopen.return_value = mock_content.decode("utf-8")
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
     assert ghost_refs[0]["returns_type"] == "tuple[tensor, tensor]"
 
 
-@mock.patch("urllib.request.urlopen")
+@mock.patch("ml_ecosystem_snapshots.utils.fetch_url")
 def test_extract_ops_ignore_unnamed_columns(mock_urlopen: mock.MagicMock) -> None:
     """Test extract ops ignore unnamed columns.
 
@@ -240,16 +232,14 @@ def test_extract_ops_ignore_unnamed_columns(mock_urlopen: mock.MagicMock) -> Non
 | Label | Name | Type | Constraints |
 | (I1) | `res` | tensor | (C1) |
 """
-    mock_response = mock.MagicMock()
-    mock_response.read.return_value = mock_content
-    mock_urlopen.return_value = mock_response
+    mock_urlopen.return_value = mock_content.decode("utf-8")
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
     assert ghost_refs[0]["returns_type"] in ["tensor", "", "`res`", None]
 
 
-@mock.patch("urllib.request.urlopen")
+@mock.patch("ml_ecosystem_snapshots.utils.fetch_url")
 def test_extract_ops_missing_type_column_outputs(mock_urlopen: mock.MagicMock) -> None:
     """Test extract ops missing type column outputs.
 
@@ -272,16 +262,14 @@ def test_extract_ops_missing_type_column_outputs(mock_urlopen: mock.MagicMock) -
 |------|
 | `res` |
 """
-    mock_response = mock.MagicMock()
-    mock_response.read.return_value = mock_content
-    mock_urlopen.return_value = mock_response
+    mock_urlopen.return_value = mock_content.decode("utf-8")
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
     assert ghost_refs[0]["returns_type"] in ["tensor", "", "`res`", None]
 
 
-@mock.patch("urllib.request.urlopen")
+@mock.patch("ml_ecosystem_snapshots.utils.fetch_url")
 def test_extract_ops_unmatched_lines(mock_urlopen: mock.MagicMock) -> None:
     """Test extract_ops handling of unmatched lines and HTTP error fallbacks.
 
@@ -310,9 +298,7 @@ def test_extract_ops_unmatched_lines(mock_urlopen: mock.MagicMock) -> None:
 Some extra text
 
 """
-    mock_response = mock.MagicMock()
-    mock_response.read.return_value = mock_content
-    mock_urlopen.return_value = mock_response
+    mock_urlopen.return_value = mock_content.decode("utf-8")
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
@@ -859,15 +845,20 @@ def test_build_stablehlo_snapshot_sys_path_insert() -> None:
 
 
 def test_extract_ops_tablegen_failure_fallback(mocker: mock.MagicMock) -> None:
-    """Test extract_ops falls back to SPEC_URL when TABLEGEN_URL fails."""
-    mock_response = mock.MagicMock()
-    mock_response.read.return_value = (
-        b"# StableHLO Spec\n### abs\n#### Semantics\nAbs op.\n#### Inputs\n"
-        b"| (I1) | `x` | tensor | (C1) |\n#### Outputs\n| `res` | tensor | (C1) |\n"
-    )
+    """Test extract_ops falls back to SPEC_URL when TABLEGEN_URL fails.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
     mock_urlopen = mocker.patch(
-        "urllib.request.urlopen",
-        side_effect=[Exception("TableGen 404"), mock_response],
+        "ml_ecosystem_snapshots.utils.fetch_url",
+        side_effect=[
+            None,
+            (
+                "# StableHLO Spec\n### abs\n#### Semantics\nAbs op.\n#### Inputs\n"
+                "| (I1) | `x` | tensor | (C1) |\n#### Outputs\n| `res` | tensor | (C1) |\n"
+            ),
+        ],
     )
     ops = build_stablehlo_snapshot.extract_ops()
     assert len(ops) == 1
@@ -875,13 +866,18 @@ def test_extract_ops_tablegen_failure_fallback(mocker: mock.MagicMock) -> None:
 
 
 def test_main_entrypoint(mocker: mock.MagicMock) -> None:
-    """Test running build_stablehlo_snapshot as __main__."""
+    """Test running build_stablehlo_snapshot as __main__ invokes file output.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
     import runpy
 
-    mocker.patch.object(build_stablehlo_snapshot, "main", return_value=None)
-    mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("urllib.request.urlopen")
-    runpy.run_path(
+    mock_open = mocker.patch("builtins.open", mocker.mock_open())
+    mocker.patch("ml_ecosystem_snapshots.utils.fetch_url", return_value="")
+    res = runpy.run_path(
         build_stablehlo_snapshot.__file__,
         run_name="__main__",
     )
+    assert "main" in res
+    assert mock_open.called

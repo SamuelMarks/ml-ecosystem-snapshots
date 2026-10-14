@@ -1,4 +1,4 @@
-"""Module docstring."""
+"""Unit tests and verification suite for models inspector."""
 
 from typing import Any
 
@@ -33,13 +33,13 @@ def dummy_func_sphinx_docstring(y: Any) -> None:
     :raises TypeError: If wrong.
 
     Args:
-        y: Parameter.
+        y: Input parameter value.
     """
     pass
 
 
 def test_cdd_returns_and_params() -> None:
-    """Function docstring."""
+    """Verify cdd returns and params behavior."""
     ref = GhostInspector.inspect(
         dummy_func_with_docstring, "tests.dummy_func_with_docstring"
     )
@@ -49,7 +49,7 @@ def test_cdd_returns_and_params() -> None:
 
 
 def test_cdd_sphinx_raises() -> None:
-    """Function docstring."""
+    """Verify cdd sphinx raises behavior."""
     ref = GhostInspector.inspect(
         dummy_func_sphinx_docstring, "tests.dummy_func_sphinx_docstring"
     )
@@ -58,7 +58,7 @@ def test_cdd_sphinx_raises() -> None:
 
 
 def test_griffe_parsing() -> None:
-    """Function docstring."""
+    """Verify griffe parsing behavior."""
     import urllib.parse
 
     ref = GhostInspector.inspect(urllib.parse.urljoin, "urllib.parse.urljoin")
@@ -68,10 +68,10 @@ def test_griffe_parsing() -> None:
 
 
 def test_cdd_exception_handling(mocker: Any) -> None:
-    """Function docstring.
+    """Verify cdd exception handling behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     mocker.patch("cdd.docstring.parse.docstring", side_effect=ValueError)
     ref = GhostInspector.inspect(
@@ -81,10 +81,10 @@ def test_cdd_exception_handling(mocker: Any) -> None:
 
 
 def test_cdd_direct_raises(mocker: Any) -> None:
-    """Function docstring.
+    """Verify cdd direct raises behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     # Mock cdd to return direct raises list
     mocker.patch(
@@ -99,19 +99,19 @@ def test_cdd_direct_raises(mocker: Any) -> None:
 
 
 def test_inspect_annotation_fallback() -> None:
-    """Function docstring."""
+    """Verify inspect annotation fallback behavior."""
 
     class ForwardRefStr:
-        """Class docstring."""
+        """Mock or helper class ForwardRefStr for unit testing."""
 
         # A class that lacks __name__ but is passed as annotation
         pass
 
     def func_annotated(a: Any) -> None:
-        """Function docstring.
+        """Execute helper func annotated.
 
         Args:
-            a: description
+            a: Input parameter value.
         """
         pass
 
@@ -123,17 +123,17 @@ def test_inspect_annotation_fallback() -> None:
 
 
 def test_griffe_self_skip() -> None:
-    """Function docstring."""
+    """Verify griffe self skip behavior."""
 
     # griffe self skipping
     class A:
-        """Class docstring."""
+        """Mock or helper class A for unit testing."""
 
         def m(self, x: Any) -> Any:
-            """Function docstring.
+            """Execute helper m.
 
             Args:
-                x: description
+                x: Input parameter value.
             """
             pass
 
@@ -148,7 +148,7 @@ def test_griffe_self_skip() -> None:
 
 
 def test_griffe_varargs() -> None:
-    """Function docstring."""
+    """Verify griffe varargs behavior."""
     import subprocess
 
     ref = GhostInspector.inspect(subprocess.run, "subprocess.run")
@@ -156,10 +156,10 @@ def test_griffe_varargs() -> None:
 
 
 def test_models_raises_no_typ(mocker: Any) -> None:
-    """Function docstring.
+    """Verify models raises no typ behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     mocker.patch(
         "cdd.docstring.parse.docstring",

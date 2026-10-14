@@ -23,7 +23,10 @@ def test_pytest_configure_already_high() -> None:
 
 
 def test_pytest_configure_exception() -> None:
-    """Test pytest_configure handles OSError gracefully."""
+    """Test pytest_configure handles OSError gracefully without raising."""
     mock_config = mock.MagicMock()
-    with mock.patch("resource.getrlimit", side_effect=OSError("Limit error")):
+    with mock.patch(
+        "resource.getrlimit", side_effect=OSError("Limit error")
+    ) as mock_getrlimit:
         pytest_configure(mock_config)
+        mock_getrlimit.assert_called_once()

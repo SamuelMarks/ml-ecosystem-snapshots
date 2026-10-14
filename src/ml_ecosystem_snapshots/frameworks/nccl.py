@@ -10,10 +10,7 @@ import ctypes
 from typing import Any, Dict, List, Optional
 
 from ml_switcheroo_ir.schema.ghost import (
-    GhostParam,
-    GhostPythonRef,
     GhostRef,
-    ParameterKind,
     SemanticTier,
 )
 
@@ -191,31 +188,17 @@ def collect_api(
     ):
         return []
 
-    refs: List[GhostRef] = []
+    from ml_ecosystem_snapshots.frameworks._base import build_canonical_python_ref
+
     lib = _discover_nccl_library()
     hardware_tag = "rccl" if (lib and "rccl" in str(lib)) else "nccl"
 
-    for op in CANONICAL_NCCL_OPS:
-        params = [
-            GhostParam(
-                name=p["name"],
-                kind=getattr(ParameterKind, p.get("kind", "POSITIONAL_OR_KEYWORD")),
-                default=p.get("default"),
-            )
-            for p in op.get("params", [])
-        ]
-        refs.append(
-            GhostPythonRef(
-                name=op["name"],
-                api_path=op["api_path"],
-                kind="function",
-                params=params,
-                docstring=op.get(
-                    "docstring", f"NCCL {op['name']} collective operation."
-                ),
-                environment_tags=["collective", hardware_tag, "gpu_communication"],
-                domain_metadata={"domain": "collective", "hardware": hardware_tag},
-            )
+    return [
+        build_canonical_python_ref(
+            op,
+            default_doc_prefix="NCCL",
+            environment_tags=("collective", hardware_tag, "gpu_communication"),
+            domain_metadata={"domain": "collective", "hardware": hardware_tag},
         )
-
-    return refs
+        for op in CANONICAL_NCCL_OPS
+    ]

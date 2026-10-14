@@ -347,7 +347,12 @@ def test_check_rdna_instruction_extended() -> None:
 
 
 def test_cli_check_rdna(capsys: Any, tmp_path: Any) -> None:
-    """Test CLI check-rdna subcommand with file, mnemonic, and errors."""
+    """Test CLI check-rdna subcommand with file, mnemonic, and errors.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+        tmp_path: Temporary directory path fixture.
+    """
     from ml_ecosystem_snapshots.cli import cmd_check_rdna
     import argparse
     import pytest

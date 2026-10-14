@@ -1,4 +1,4 @@
-"""Module docstring."""
+"""Unit tests and verification suite for stubs."""
 
 from pathlib import Path
 import os
@@ -10,10 +10,10 @@ from ml_ecosystem_snapshots.stubs import generate_stubs
 
 
 def test_generate_stubs(tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify generate stubs behavior.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     snap = {
         "categories": {
@@ -114,10 +114,10 @@ def test_generate_stubs(tmp_path: Any) -> None:
 
 
 def test_generate_stubs_empty(tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify generate stubs empty behavior.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     out_dir = Path(os.path.join(tmp_path, "stubs"))
     generate_stubs({}, str(out_dir))
@@ -125,10 +125,10 @@ def test_generate_stubs_empty(tmp_path: Any) -> None:
 
 
 def test_generate_stubs_default_vals(tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify generate stubs default vals behavior.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     snap = {
         "categories": {
@@ -162,10 +162,10 @@ def test_generate_stubs_default_vals(tmp_path: Any) -> None:
 
 
 def test_generate_stubs_no_module(tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify generate stubs no module behavior.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     data = {
         "categories": {
@@ -186,10 +186,10 @@ def test_generate_stubs_no_module(tmp_path: Any) -> None:
 
 
 def test_generate_stubs_include_nonpublic(tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify generate stubs include nonpublic behavior.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     snap = {
         "categories": {
@@ -256,7 +256,11 @@ def test_generate_stubs_list_and_non_dict(tmp_path: Any) -> None:
 
 
 def test_generate_stubs_overloads_and_dsl(tmp_path: Any) -> None:
-    """Test stub generation with overloads and non-Python domain DSL items."""
+    """Test stub generation with overloads and non-Python domain DSL items.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+    """
     snap = {
         "categories": {
             "ops": [

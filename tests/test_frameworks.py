@@ -1,4 +1,4 @@
-"""Module docstring."""
+"""Unit tests and verification suite for frameworks."""
 
 import types
 from typing import Any
@@ -12,15 +12,15 @@ pytestmark = [pytest.mark.frameworks]
 
 
 def create_module(name: str, attrs: dict[str, Any]) -> types.ModuleType:
-    """Function docstring.
+    """Execute helper create module.
 
     Args:
-        name: description
-        attrs: description
+        name: Input parameter value.
+        attrs: Input parameter value.
 
 
     Returns:
-        Return value.
+        Computed result.
     """
     mod = types.ModuleType(name)
     for k, v in attrs.items():
@@ -29,103 +29,103 @@ def create_module(name: str, attrs: dict[str, Any]) -> types.ModuleType:
 
 
 def test_torch_collect(mocker: Any) -> None:
-    """Function docstring.
+    """Verify torch collect behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     class Module:
-        """Class docstring."""
+        """Mock or helper class Module for unit testing."""
 
         pass
 
     class MSELoss(Module):
-        """Class docstring."""
+        """Mock or helper class MSELoss for unit testing."""
 
         pass
 
     class _Loss(Module):
-        """Class docstring."""
+        """Mock or helper class _Loss for unit testing."""
 
         pass
 
     class _PrivateLoss(Module):
-        """Class docstring."""
+        """Mock or helper class _PrivateLoss for unit testing."""
 
         pass
 
     class Optimizer:
-        """Class docstring."""
+        """Mock or helper class Optimizer for unit testing."""
 
         pass
 
     class Adam(Optimizer):
-        """Class docstring."""
+        """Mock or helper class Adam for unit testing."""
 
         pass
 
     class _PrivateOptim(Optimizer):
-        """Class docstring."""
+        """Mock or helper class _PrivateOptim for unit testing."""
 
         pass
 
     class OtherClass:
-        """Class docstring."""
+        """Mock or helper class OtherClass for unit testing."""
 
         pass
 
     class ReLU(Module):
-        """Class docstring."""
+        """Mock or helper class ReLU for unit testing."""
 
         pass
 
     class Linear(Module):
-        """Class docstring."""
+        """Mock or helper class Linear for unit testing."""
 
         pass
 
     class _PrivateLayer(Module):
-        """Class docstring."""
+        """Mock or helper class _PrivateLayer for unit testing."""
 
         pass
 
     class NotModuleLoss:
-        """Class docstring."""
+        """Mock or helper class NotModuleLoss for unit testing."""
 
         pass
 
     class LRScheduler:
-        """Class docstring."""
+        """Mock or helper class LRScheduler for unit testing."""
 
         pass
 
     class StepLR(LRScheduler):
-        """Class docstring."""
+        """Mock or helper class StepLR for unit testing."""
 
         pass
 
     class _PrivateScheduler(LRScheduler):
-        """Class docstring."""
+        """Mock or helper class _PrivateScheduler for unit testing."""
 
         pass
 
     def xavier_uniform_() -> Any:
-        """Function docstring."""
+        """Execute helper xavier uniform ."""
         pass
 
     def _private_init() -> Any:
-        """Function docstring."""
+        """Execute helper private init."""
         pass
 
     class DataLoader:
-        """Class docstring."""
+        """Mock or helper class DataLoader for unit testing."""
 
         pass
 
     class _PrivateLoader:
-        """Class docstring."""
+        """Mock or helper class _PrivateLoader for unit testing."""
 
         pass
 
@@ -393,10 +393,10 @@ def test_torch_collect_in_place_mutation_already_tagged(mocker: Any) -> None:
 
 
 def test_torch_import_error(mocker: Any) -> None:
-    """Function docstring.
+    """Verify torch import error behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
@@ -422,15 +422,15 @@ def test_torch_import_error(mocker: Any) -> None:
 
 
 def test_torch_typeerror(mocker: Any) -> None:
-    """Function docstring.
+    """Verify torch typeerror behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     class BadLoss:
-        """Class docstring."""
+        """Mock or helper class BadLoss for unit testing."""
 
         pass
 
@@ -456,68 +456,68 @@ def test_torch_typeerror(mocker: Any) -> None:
 
 
 def test_tensorflow_collect(mocker: Any) -> None:
-    """Function docstring.
+    """Verify tensorflow collect behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
 
     def relu() -> Any:
-        """Function docstring."""
+        """Execute helper relu."""
         pass
 
     class DenseLayer:
-        """Class docstring."""
+        """Mock or helper class DenseLayer for unit testing."""
 
         pass
 
     class _PrivateLayer:
-        """Class docstring."""
+        """Mock or helper class _PrivateLayer for unit testing."""
 
         pass
 
     class MSELoss:
-        """Class docstring."""
+        """Mock or helper class MSELoss for unit testing."""
 
         pass
 
     class Adam:
-        """Class docstring."""
+        """Mock or helper class Adam for unit testing."""
 
         pass
 
     class CosineDecay:
-        """Class docstring."""
+        """Mock or helper class CosineDecay for unit testing."""
 
         pass
 
     class GlorotUniform:
-        """Class docstring."""
+        """Mock or helper class GlorotUniform for unit testing."""
 
         pass
 
     class Accuracy:
-        """Class docstring."""
+        """Mock or helper class Accuracy for unit testing."""
 
         pass
 
     class Dataset:
-        """Class docstring."""
+        """Mock or helper class Dataset for unit testing."""
 
         pass
 
     class _PrivateDataset:
-        """Class docstring."""
+        """Mock or helper class _PrivateDataset for unit testing."""
 
         pass
 
     def abs() -> Any:
-        """Function docstring."""
+        """Execute helper abs."""
         pass
 
     def matmul() -> Any:
-        """Function docstring."""
+        """Execute helper matmul."""
         pass
 
     fake_math = create_module("tf.math", {"abs": abs})
@@ -555,15 +555,15 @@ def test_tensorflow_collect(mocker: Any) -> None:
     )
 
     def concat() -> Any:
-        """Function docstring."""
+        """Execute helper concat."""
         pass
 
     def Add() -> Any:
-        """Function docstring."""
+        """Execute helper Add."""
         pass
 
     def custom_tensor_op() -> Any:
-        """Function docstring."""
+        """Execute helper custom tensor op."""
         pass
 
     class FakeTensor:
@@ -771,10 +771,10 @@ def test_tf_collect_outer_exception(mocker: Any) -> None:
 
 
 def test_keras_collect(mocker: Any) -> None:
-    """Function docstring.
+    """Verify keras collect behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks import keras as keras_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -921,7 +921,11 @@ def test_keras_collect(mocker: Any) -> None:
 
 
 def test_keras_collect_static_none_env_tags(mocker: Any) -> None:
-    """Test _collect_static for ARRAY_API when ref.environment_tags is None."""
+    """Test _collect_static for ARRAY_API when ref.environment_tags is None.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
     from ml_ecosystem_snapshots.frameworks import keras as keras_fw
     from ml_ecosystem_snapshots.frameworks.keras import _collect_static
     from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
@@ -943,28 +947,28 @@ def test_keras_collect_static_none_env_tags(mocker: Any) -> None:
 
 
 def test_mlx_collect(mocker: Any) -> None:
-    """Function docstring.
+    """Verify mlx collect behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks import mlx as mlx_fw
 
     class Dense:
-        """Class docstring."""
+        """Mock or helper class Dense for unit testing."""
 
         pass
 
     def relu() -> Any:
-        """Function docstring."""
+        """Execute helper relu."""
         pass
 
     def mse_loss() -> Any:
-        """Function docstring."""
+        """Execute helper mse loss."""
         pass
 
     class Adam:
-        """Class docstring."""
+        """Mock or helper class Adam for unit testing."""
 
         pass
 
@@ -1043,24 +1047,24 @@ def test_mlx_collect(mocker: Any) -> None:
 
 
 def test_jax_collect(mocker: Any) -> None:
-    """Function docstring.
+    """Verify jax collect behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks import jax as jax_fw
     from ml_ecosystem_snapshots.frameworks.optax_shim import OptaxScanner
 
     def relu() -> Any:
-        """Function docstring."""
+        """Execute helper relu."""
         pass
 
     def _priv() -> Any:
-        """Function docstring."""
+        """Execute helper priv."""
         pass
 
     def glorot() -> Any:
-        """Function docstring."""
+        """Execute helper glorot."""
         pass
 
     mocker.patch.object(jax_fw, "jax", True)
@@ -1097,7 +1101,12 @@ def test_jax_collect(mocker: Any) -> None:
     )
 
     def static_func(axis: int, data: Any) -> None:
-        """Static arg test function."""
+        """Static arg test function.
+
+        Args:
+            axis: Input axis parameter.
+            data: Input data payload.
+        """
         pass
 
     setattr(static_func, "_static_argnums", (0,))
@@ -1182,7 +1191,11 @@ def test_jax_collect(mocker: Any) -> None:
 
 
 def test_jax_static_arg_metadata_none_environment_tags(mocker: Any) -> None:
-    """Test _attach_jax_static_arg_metadata when environment_tags is None."""
+    """Test _attach_jax_static_arg_metadata when environment_tags is None.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
     from ml_ecosystem_snapshots.frameworks import jax as jax_fw
     from ml_ecosystem_snapshots.frameworks.jax import _attach_jax_static_arg_metadata
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
@@ -1249,30 +1262,30 @@ def test_jax_static_arg_metadata_none_environment_tags(mocker: Any) -> None:
 
 
 def test_flax_nnx_collect(mocker: Any) -> None:
-    """Function docstring.
+    """Verify flax nnx collect behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks import flax_nnx as flax_fw
 
     class Module:
-        """Class docstring."""
+        """Mock or helper class Module for unit testing."""
 
         pass
 
     class Dense(Module):
-        """Class docstring."""
+        """Mock or helper class Dense for unit testing."""
 
         pass
 
     class _Priv(Module):
-        """Class docstring."""
+        """Mock or helper class _Priv for unit testing."""
 
         pass
 
     class NotAModule:
-        """Class docstring."""
+        """Mock or helper class NotAModule for unit testing."""
 
         pass
 
@@ -1317,51 +1330,51 @@ def test_flax_nnx_collect(mocker: Any) -> None:
 
 
 def test_optax_shim_collect(mocker: Any) -> None:
-    """Function docstring.
+    """Verify optax shim collect behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     import ml_ecosystem_snapshots.frameworks.optax_shim as o_shim
 
     def adam() -> Any:
-        """Function docstring."""
+        """Execute helper adam."""
         pass
 
     def sgd() -> Any:
-        """Function docstring."""
+        """Execute helper sgd."""
         pass
 
     def my_optimizer() -> Any:
-        """Function docstring."""
+        """Execute helper my optimizer."""
         pass
 
     def _priv() -> Any:
-        """Function docstring."""
+        """Execute helper priv."""
         pass
 
     def mse_loss() -> Any:
-        """Function docstring."""
+        """Execute helper mse loss."""
         pass
 
     def other_error() -> Any:
-        """Function docstring."""
+        """Execute helper other error."""
         pass
 
     def kl_entropy() -> Any:
-        """Function docstring."""
+        """Execute helper kl entropy."""
         pass
 
     def _priv_loss() -> Any:
-        """Function docstring."""
+        """Execute helper priv loss."""
         pass
 
     def some_other_func() -> Any:
-        """Function docstring."""
+        """Execute helper some other func."""
         pass
 
     def cosine() -> Any:
-        """Function docstring."""
+        """Execute helper cosine."""
         pass
 
     fake_losses = create_module(
@@ -1381,7 +1394,7 @@ def test_optax_shim_collect(mocker: Any) -> None:
     )
 
     def not_a_thing() -> Any:
-        """Function docstring."""
+        """Execute helper not a thing."""
         pass
 
     fake_optax = create_module(
@@ -1430,42 +1443,42 @@ def test_optax_shim_collect(mocker: Any) -> None:
 
 
 def test_sklearn_collect(mocker: Any) -> None:
-    """Function docstring.
+    """Verify sklearn collect behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
     import types
 
     class BaseEstimator:
-        """Class docstring."""
+        """Mock or helper class BaseEstimator for unit testing."""
 
         pass
 
     class RandomForestClassifier(BaseEstimator):
-        """Class docstring."""
+        """Mock or helper class RandomForestClassifier for unit testing."""
 
         def __init__(self, n_estimators: int = 100) -> None:
-            """Function docstring.
+            """Execute helper init  .
 
             Args:
-                n_estimators: description
+                n_estimators: Input parameter value.
             """
             pass
 
     class NotAnEstimator:
-        """Class docstring."""
+        """Mock or helper class NotAnEstimator for unit testing."""
 
         pass
 
     def accuracy_score(y_true: Any, y_pred: Any) -> Any:
-        """Function docstring.
+        """Execute helper accuracy score.
 
         Args:
-            y_true: description
-            y_pred: description
+            y_true: Input parameter value.
+            y_pred: Input parameter value.
         """
         pass
 
@@ -1518,10 +1531,10 @@ def test_sklearn_collect(mocker: Any) -> None:
 
 
 def test_sklearn_import_error(mocker: Any) -> None:
-    """Function docstring.
+    """Verify sklearn import error behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -1533,10 +1546,10 @@ def test_sklearn_import_error(mocker: Any) -> None:
 
 
 def test_sklearn_module_import_error(mocker: Any) -> None:
-    """Function docstring.
+    """Verify sklearn module import error behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -1549,6 +1562,16 @@ def test_sklearn_module_import_error(mocker: Any) -> None:
     original_import = builtins.__import__
 
     def mock_import(name: Any, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         """Function docstring.
 
         Args:
@@ -1577,10 +1600,10 @@ def test_sklearn_module_import_error(mocker: Any) -> None:
 
 
 def test_sklearn_scan_module_edge_cases(mocker: Any) -> None:
-    """Function docstring.
+    """Verify sklearn scan module edge cases behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
     import types
@@ -1593,11 +1616,11 @@ def test_sklearn_scan_module_edge_cases(mocker: Any) -> None:
 
     # To cause getmembers to fail, we can make an attribute raise Exception
     class BadObj:
-        """Class docstring."""
+        """Mock or helper class BadObj for unit testing."""
 
         @property
         def bad(self) -> Any:
-            """Function docstring.
+            """Execute helper bad.
 
             Raises:
                 RuntimeError: Exception.
@@ -1615,7 +1638,7 @@ def test_sklearn_scan_module_edge_cases(mocker: Any) -> None:
     mock_mod2 = types.ModuleType("mock_mod2")
 
     class ValidObj:
-        """Class docstring."""
+        """Mock or helper class ValidObj for unit testing."""
 
         pass
 
@@ -1631,10 +1654,10 @@ def test_sklearn_scan_module_edge_cases(mocker: Any) -> None:
 
 
 def test_sklearn_scan_module_branches(mocker: Any) -> None:
-    """Function docstring.
+    """Verify sklearn scan module branches behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
     import types
@@ -1642,12 +1665,12 @@ def test_sklearn_scan_module_branches(mocker: Any) -> None:
     mock_mod = types.ModuleType("mock_mod")
 
     class ValidObj:
-        """Class docstring."""
+        """Mock or helper class ValidObj for unit testing."""
 
         pass
 
     def valid_func() -> Any:
-        """Function docstring."""
+        """Execute helper valid func."""
         pass
 
     # 1. kind="class", is_estimator=False
@@ -1671,10 +1694,10 @@ def test_sklearn_scan_module_branches(mocker: Any) -> None:
 
 
 def test_sklearn_scan_module_exception(mocker: Any) -> None:
-    """Function docstring.
+    """Verify sklearn scan module exception behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
     import types
@@ -1689,10 +1712,10 @@ def test_sklearn_scan_module_exception(mocker: Any) -> None:
 
 
 def test_numpy_collect(mocker: Any) -> None:
-    """Function docstring.
+    """Verify numpy collect behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     import ml_ecosystem_snapshots.frameworks.numpy as np_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -1730,18 +1753,15 @@ def test_numpy_collect(mocker: Any) -> None:
     original_inspect = GhostInspector.inspect
 
     def mock_inspect(obj: Any, api_path: Any, **kwargs: Any) -> Any:
-        """Docstring.
+        """Mock inspect function.
 
         Args:
-            **kwargs: Parameter.
-            api_path: Parameter.
-            obj: Parameter.
-
-        Raises:
-            ValueError: Exception.
+            obj: Input parameter value.
+            api_path: Input parameter value.
+            **kwargs: Variable arguments.
 
         Returns:
-            Return value.
+            A mocked GhostRef.
         """
         if "minimum" in api_path:
             raise ValueError("mock error")
@@ -1777,10 +1797,10 @@ def test_numpy_collect(mocker: Any) -> None:
 
 
 def test_orbax_collect(mocker: Any) -> None:
-    """Function docstring.
+    """Verify orbax collect behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     import ml_ecosystem_snapshots.frameworks.orbax_checkpoint as ocp_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -1818,18 +1838,15 @@ def test_orbax_collect(mocker: Any) -> None:
     original_inspect = GhostInspector.inspect
 
     def mock_inspect(obj: Any, api_path: Any, **kwargs: Any) -> Any:
-        """Docstring.
+        """Mock inspect function.
 
         Args:
-            **kwargs: Parameter.
-            api_path: Parameter.
-            obj: Parameter.
-
-        Raises:
-            ValueError: Exception.
+            obj: Input parameter value.
+            api_path: Input parameter value.
+            **kwargs: Variable arguments.
 
         Returns:
-            Return value.
+            A mocked GhostRef.
         """
         if "error_func" in api_path:
             raise ValueError("mock error")
@@ -1861,10 +1878,10 @@ def test_orbax_collect(mocker: Any) -> None:
 
 
 def test_pax_collect(mocker: Any) -> None:
-    """Function docstring.
+    """Verify pax collect behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     import ml_ecosystem_snapshots.frameworks.pax as pax_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -1904,18 +1921,15 @@ def test_pax_collect(mocker: Any) -> None:
     original_inspect = GhostInspector.inspect
 
     def mock_inspect(obj: Any, api_path: Any, **kwargs: Any) -> Any:
-        """Docstring.
+        """Mock inspect function.
 
         Args:
-            **kwargs: Parameter.
-            api_path: Parameter.
-            obj: Parameter.
-
-        Raises:
-            ValueError: Exception.
+            obj: Input parameter value.
+            api_path: Input parameter value.
+            **kwargs: Variable arguments.
 
         Returns:
-            Return value.
+            A mocked GhostRef.
         """
         if "ErrorClass" in api_path:
             raise ValueError("mock error")
@@ -1941,10 +1955,10 @@ def test_pax_collect(mocker: Any) -> None:
 
 
 def test_triton_collect(mocker: Any) -> None:
-    """Function docstring.
+    """Verify triton collect behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     import ml_ecosystem_snapshots.frameworks.triton as triton_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -1961,6 +1975,16 @@ def test_triton_collect(mocker: Any) -> None:
     original_import = importlib.import_module
 
     def mock_import(name: Any, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         """Docstring.
 
         Args:
@@ -1993,10 +2017,10 @@ def test_triton_collect(mocker: Any) -> None:
 
 
 def test_deepspeed_collect(mocker: Any) -> None:
-    """Function docstring.
+    """Verify deepspeed collect behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     import ml_ecosystem_snapshots.frameworks.deepspeed as ds_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -2020,6 +2044,16 @@ def test_deepspeed_collect(mocker: Any) -> None:
     original_import = importlib.import_module
 
     def mock_import(name: Any, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         """Docstring.
 
         Args:
@@ -2049,10 +2083,10 @@ def test_deepspeed_collect(mocker: Any) -> None:
 
 
 def test_onnxruntime_collect(mocker: Any) -> None:
-    """Function docstring.
+    """Verify onnxruntime collect behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     import ml_ecosystem_snapshots.frameworks.onnxruntime as ort_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier, GhostRef
@@ -2077,6 +2111,16 @@ def test_onnxruntime_collect(mocker: Any) -> None:
     original_import = importlib.import_module
 
     def mock_import(name: Any, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         """Docstring.
 
         Args:
@@ -2115,10 +2159,10 @@ def test_onnxruntime_collect(mocker: Any) -> None:
 
 
 def test_huggingface_collect(mocker: Any) -> None:
-    """Function docstring.
+    """Verify huggingface collect behavior.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     import ml_ecosystem_snapshots.frameworks.huggingface as hf_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -2141,6 +2185,16 @@ def test_huggingface_collect(mocker: Any) -> None:
     original_import = importlib.import_module
 
     def mock_import(name: Any, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         """Docstring.
 
         Args:
@@ -2172,7 +2226,7 @@ def test_maxtext_collect(mocker: Any) -> None:
     """Test the maxtext API collector.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks import maxtext as maxtext_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -2230,7 +2284,7 @@ def test_mlir_collect(mocker: Any) -> None:
     """Test the mlir API collector.
 
     Args:
-        mocker: Parameter.
+        mocker: Input parameter value.
     """
     from ml_ecosystem_snapshots.frameworks import mlir as mlir_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -2560,7 +2614,11 @@ def test_tensor_instance_methods_extraction() -> None:
 
 
 def test_keras_griffe_missing(monkeypatch: Any) -> None:
-    """Test keras import logic when griffe is not available."""
+    """Test keras import logic when griffe is not available.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     import importlib
     import sys
     import ml_ecosystem_snapshots.frameworks.keras as k_fw
@@ -2576,7 +2634,11 @@ def test_keras_griffe_missing(monkeypatch: Any) -> None:
 
 
 def test_maxtext_import_fallback(monkeypatch: Any) -> None:
-    """Test maxtext import logic when module is available and unavailable."""
+    """Test maxtext import logic when module is available and unavailable.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     import importlib
     import sys
     import types

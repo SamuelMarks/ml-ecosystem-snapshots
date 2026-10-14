@@ -1,24 +1,24 @@
-"""Module docstring."""
+"""Unit tests and verification suite for models forwardref."""
 
 import sys
 from ml_ecosystem_snapshots.models import GhostInspector
 
 
 class TensorRef:
-    """Class docstring."""
+    """Mock or helper class TensorRef for unit testing."""
 
     pass
 
 
 def forward(x: "TensorRef") -> "TensorRef":
-    """Function docstring.
+    """Execute helper forward.
 
     Args:
-        x: description
+        x: Input parameter value.
 
 
     Returns:
-        Return value.
+        Computed result.
     """
     return x
 
@@ -27,7 +27,7 @@ setattr(sys.modules[__name__], "TensorRef", TensorRef)
 
 
 def test_resolve_forward_ref() -> None:
-    """Function docstring."""
+    """Verify resolve forward ref behavior."""
     ref = GhostInspector.inspect(forward, "forward")
     assert ref.has_arg("x")
     # Due to stringification and sanitization, <class 'test_models_forwardref.TensorRef'>

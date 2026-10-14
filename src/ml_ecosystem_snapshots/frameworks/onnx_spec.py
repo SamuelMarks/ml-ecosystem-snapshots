@@ -266,7 +266,18 @@ def _load_onnx_ops() -> List[Dict[str, Any]]:
             )
         if ops:
             return ops
-    except Exception:
+    except (
+        AttributeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        IndexError,
+        SyntaxError,
+        OSError,
+        ImportError,
+        RuntimeError,
+        Exception,
+    ):
         pass
 
     return CANONICAL_ONNX_OPS

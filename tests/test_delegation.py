@@ -1,4 +1,4 @@
-"""Module docstring."""
+"""Unit tests and verification suite for delegation."""
 
 from typing import Any
 
@@ -7,33 +7,33 @@ from ml_ecosystem_snapshots.models import GhostInspector
 
 
 class BaseLayer:
-    """Class docstring."""
+    """Mock or helper class BaseLayer for unit testing."""
 
     def __init__(self, hidden_dim: int = 256, dropout: float = 0.1) -> None:
-        """Function docstring.
+        """Execute helper init  .
 
         Args:
-            hidden_dim: description
-            dropout: description
+            hidden_dim: Input parameter value.
+            dropout: Input parameter value.
         """
         pass
 
 
 class SubLayer(BaseLayer):
-    """Class docstring."""
+    """Mock or helper class SubLayer for unit testing."""
 
     def __init__(self, name: str, **kwargs: Any) -> None:
-        """Function docstring.
+        """Execute helper init  .
 
         Args:
-            name: description
-            kwargs: description
+            name: Input parameter value.
+            kwargs: Input parameter value.
         """
         super().__init__(**kwargs)
 
 
 def test_delegation_tracing() -> None:
-    """Function docstring."""
+    """Verify delegation tracing behavior."""
     ref = GhostInspector.inspect(SubLayer, "SubLayer")
 
     assert ref.name == "SubLayer"

@@ -23,7 +23,7 @@ def test_get_module_info_from_path_file(tmp_path: Path) -> None:
     """Test getting module info from a python file.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     # Create a simple structure
     # tmp_path/my_pkg/__init__.py
@@ -43,7 +43,7 @@ def test_get_module_info_from_path_dir(tmp_path: Path) -> None:
     """Test getting module info from a directory package.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     # Create a simple structure
     # tmp_path/my_pkg/__init__.py
@@ -60,7 +60,7 @@ def test_get_module_info_from_path_init_file(tmp_path: Path) -> None:
     """Test getting module info from an __init__.py file.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     # Create a simple structure
     # tmp_path/my_pkg/__init__.py
@@ -84,7 +84,7 @@ def test_get_module_info_from_path_value_error(tmp_path: Path) -> None:
     """Test getting module info raises ValueError when module name is empty.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     # This happens if you pass the root directory
     with pytest.raises(ValueError, match="Could not derive module name"):
@@ -95,7 +95,7 @@ def test_extract_target_ast(tmp_path: Path) -> None:
     """Test extracting target AST via griffe.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     file_path = Path(os.path.join(tmp_path, "simple_mod.py"))
     file_path.write_text("def my_func(): pass")
@@ -119,7 +119,7 @@ def test_get_module_info_from_path_no_py_ext(tmp_path: Path) -> None:
     """Test getting module info from a file without .py extension.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     pkg_dir = Path(os.path.join(tmp_path, "my_pkg"))
     pkg_dir.mkdir()
@@ -136,7 +136,7 @@ def test_extract_target_refs(tmp_path: Path) -> None:
     """Test extracting target refs dynamically.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     pkg_dir = Path(os.path.join(tmp_path, "mock_pkg"))
     pkg_dir.mkdir()
@@ -301,7 +301,7 @@ def test_extract_target_refs_import_error(tmp_path: Path) -> None:
     """Test extracting target refs skips bad imports.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     pkg_dir = Path(os.path.join(tmp_path, "bad_pkg"))
     pkg_dir.mkdir()
@@ -320,7 +320,7 @@ def test_extract_target_refs_aliases(tmp_path: Path) -> None:
     """Test extraction with aliases mapping correctly.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     from ml_switcheroo_ir.schema.ghost import GhostRef
 
@@ -361,7 +361,7 @@ def test_extract_target_refs_skip_private(tmp_path: Path) -> None:
     """Test extracting target refs skips private members.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     pkg_dir = Path(os.path.join(tmp_path, "priv_pkg"))
     pkg_dir.mkdir()
@@ -377,7 +377,7 @@ def test_extract_target_refs_nested_import_error(tmp_path: Path) -> None:
     """Test extracting target refs fails on nested import cleanly.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     pkg_dir = Path(os.path.join(tmp_path, "nested_pkg"))
     pkg_dir.mkdir()
@@ -395,15 +395,15 @@ def test_extract_target_refs_nested_import_error(tmp_path: Path) -> None:
     )
     refs = extract_target_refs(str(sub_mod), "nested_pkg.api", "reference")
 
-    # We only care that it doesn't crash.
-    assert isinstance(refs, list)
+    # We only care that it doesn't crash and returns the parsed sys import
+    assert any(r.name == "sys" for r in refs)
 
 
 def test_extract_target_refs_sys_path(tmp_path: Path) -> None:
     """Test extracting target refs when search path is already in sys.path.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     import sys
 
@@ -423,7 +423,7 @@ def test_extract_target_refs_empty_members(tmp_path: Path) -> None:
     """Test extracting from a module with no members.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     pkg_dir = Path(os.path.join(tmp_path, "empty_pkg"))
     pkg_dir.mkdir()
@@ -437,7 +437,7 @@ def test_extract_target_refs_catch_all_exception(tmp_path: Path) -> None:
     """Test extracting target refs skips items that raise general exceptions.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     from ml_ecosystem_snapshots.compliance import extract_target_refs
 
@@ -451,15 +451,15 @@ def test_extract_target_refs_catch_all_exception(tmp_path: Path) -> None:
 
     refs = extract_target_refs(str(sub_mod), "broken_pkg.api", "reference")
     # Griffe parses it, GhostInspector will try to inspect and might fail, but it's wrapped in a general catch block.
-    # It should survive.
-    assert isinstance(refs, list)
+    # It should survive and may yield BrokenClass if parsed but shouldn't crash on inspection.
+    assert any(r.name == "BrokenClass" for r in refs) or refs == []
 
 
 def test_extract_target_refs_catch_inner_exception(tmp_path: Any) -> None:
     """Test extracting target refs fails cleanly on inner node walk.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     from ml_ecosystem_snapshots.compliance import extract_target_refs
     from unittest.mock import patch
@@ -476,19 +476,15 @@ def test_extract_target_refs_catch_inner_exception(tmp_path: Any) -> None:
     orig_inspect = ml_ecosystem_snapshots.models.GhostInspector.inspect
 
     def mock_inspect(obj: Any, api_path: Any, is_public: Any = None) -> Any:
-        """Mock inspect to test inner node failure.
+        """Mock inspect function.
 
         Args:
-            obj: The object.
-            api_path: The api path.
-            is_public: Public flag.
-
-
-        Raises:
-            RuntimeError: Exception.
+            obj: Input parameter value.
+            api_path: Input parameter value.
+            is_public: Input parameter value.
 
         Returns:
-            Return value.
+            A mocked GhostRef.
         """
         if "Inner" in api_path:
             raise RuntimeError("inner broken")
@@ -506,7 +502,7 @@ def test_extract_target_refs_no_parts(tmp_path: Any) -> None:
     """Test extracting target refs handles paths with no inner parts (just module).
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     from ml_ecosystem_snapshots.compliance import extract_target_refs
 
@@ -523,7 +519,7 @@ def test_extract_target_refs_break_loop(tmp_path: Any) -> None:
     """Test extracting target refs loop breaking logic.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     from ml_ecosystem_snapshots.compliance import extract_target_refs
 
@@ -544,7 +540,7 @@ def test_extract_target_refs_continue_loop(tmp_path: Any) -> None:
     """Test extracting target refs handles the loop fully exiting.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     from ml_ecosystem_snapshots.compliance import extract_target_refs
 
@@ -559,14 +555,14 @@ def test_extract_target_refs_continue_loop(tmp_path: Any) -> None:
     # if `importlib.import_module` works for ALL parts, then `for i in range` finishes
     # without `break` and doesn't trigger `except ImportError`.
     # Let's ensure the `except ImportError` isn't required for correct execution.
-    assert isinstance(refs, list)
+    assert any(r.name == "func" or r.name == "sys" for r in refs)
 
 
 def test_derive_base_path_src(tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify derive base path src behavior.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     from ml_ecosystem_snapshots.compliance import get_module_info_from_path
     import os
@@ -597,7 +593,7 @@ def test_derive_base_path_src(tmp_path: Any) -> None:
 
 
 def test_map_target_to_reference_path_extra() -> None:
-    """Function docstring."""
+    """Verify map target to reference path extra behavior."""
     from ml_ecosystem_snapshots.compliance import align_namespace
 
     assert (

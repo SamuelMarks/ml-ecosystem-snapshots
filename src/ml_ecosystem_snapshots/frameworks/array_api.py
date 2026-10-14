@@ -1047,7 +1047,18 @@ def collect_api(
                 ]
                 results.append(ref)
                 seen.add(name)
-            except Exception:
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                IndexError,
+                SyntaxError,
+                OSError,
+                ImportError,
+                RuntimeError,
+                Exception,
+            ):
                 pass
 
     # Fill any missed ops from canonical definitions

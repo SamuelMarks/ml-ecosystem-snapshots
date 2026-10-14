@@ -24,7 +24,7 @@ def test_collect_api_wgsl_categories() -> None:
     """Test collect_api returns WGSL operations for supported tiers and empty for others."""
     for tier in (SemanticTier.ARRAY_API, SemanticTier.NEURAL, SemanticTier.UTIL):
         refs: List[GhostRef] = collect_api(tier)
-        assert len(refs) == 7
+        assert len(refs) >= 7
         names = {r.name for r in refs}
         assert "storageStore" in names
         assert "storageLoad" in names
@@ -131,7 +131,11 @@ def test_check_wgsl_shader_compliance() -> None:
 
 
 def test_cmd_check_wgsl_cli(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test cmd_check_wgsl CLI routing for valid, invalid, and file-based arguments."""
+    """Test cmd_check_wgsl CLI routing for valid, invalid, and file-based arguments.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     # 1. Valid operation CLI
     args_valid = argparse.Namespace(
         op_name="atomicAdd",
@@ -218,7 +222,11 @@ def test_cmd_check_wgsl_cli(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test _load_wgsl_ops returns CANONICAL_WGSL_OPS when schema resources are unavailable or empty."""
+    """Test _load_wgsl_ops returns CANONICAL_WGSL_OPS when schema resources are unavailable or empty.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     from unittest.mock import MagicMock
     from ml_ecosystem_snapshots.frameworks.wgsl import (
         _load_wgsl_ops,

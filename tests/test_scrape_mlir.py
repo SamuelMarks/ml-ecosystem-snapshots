@@ -244,6 +244,16 @@ def test_inspect_mlir_python_module(mocker: Any) -> None:
     mock_mod = MockDialectModule()
 
     def mock_import(name: str) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         """Mock import_module for MLIR dialects.
 
         Args:
@@ -779,7 +789,7 @@ def test_fetch_html_exception() -> None:
     Returns:
         None.
     """
-    with mock.patch("urllib.request.urlopen", side_effect=Exception("network error")):
+    with mock.patch("ml_ecosystem_snapshots.utils.fetch_url", return_value=None):
         assert scrape_mlir.fetch_html("https://invalid.url") == ""
 
 
@@ -860,24 +870,22 @@ def test_main_docs_with_ops_and_duplicates(mocker: Any) -> None:
 
 
 def test_scrape_mlir_main_entrypoint(mocker: Any) -> None:
-    """Test running scrape_mlir as __main__.
+    """Test running scrape_mlir as __main__ writes output snapshot.
 
     Args:
         mocker: Pytest mocker fixture.
-
-    Returns:
-        None.
     """
     import runpy
 
-    mocker.patch.object(scrape_mlir, "main", return_value=None)
-    mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("urllib.request.urlopen")
+    mock_open = mocker.patch("builtins.open", mocker.mock_open())
+    mocker.patch("ml_ecosystem_snapshots.utils.fetch_url", return_value="<html></html>")
     mocker.patch(
         "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html",
         return_value="<html></html>",
     )
-    runpy.run_path(scrape_mlir.__file__, run_name="__main__")
+    res = runpy.run_path(scrape_mlir.__file__, run_name="__main__")
+    assert "main" in res
+    assert mock_open.called
 
 
 def test_parse_mlir_tablegen_unary_fallback() -> None:

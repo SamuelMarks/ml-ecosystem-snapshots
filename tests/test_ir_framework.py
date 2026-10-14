@@ -97,12 +97,26 @@ def test_get_pkg_version_ir() -> None:
 
 
 def test_get_pkg_version_ir_fallback(monkeypatch: Any) -> None:
-    """Test get_pkg_version fallback when importing ml_switcheroo_ir raises Exception."""
+    """Test get_pkg_version fallback when importing ml_switcheroo_ir raises Exception.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     import builtins
 
     real_import = builtins.__import__
 
     def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         """Simulate missing ml_switcheroo_ir."""
         if name == "ml_switcheroo_ir":
             raise ImportError("simulated error")

@@ -7,16 +7,10 @@ and PyBind11/LibTorch tensor buffer access functions.
 from typing import Any, Dict, List
 
 from ml_switcheroo_ir.schema.ghost import (
-    GhostOperationRef,
-    GhostParam,
     GhostRef,
-    GhostResult,
-    IRParameterRole,
     OperandDirection,
-    ParameterKind,
     SemanticTier,
 )
-from ..models import ExtendedGhostParam
 
 
 CANONICAL_CPP_RUNTIME_OPS: List[Dict[str, Any]] = [
@@ -119,84 +113,30 @@ def collect_api(
     ):
         return []
 
+    from ml_ecosystem_snapshots.frameworks._base import build_ssa_operation_refs
+
     ops = _load_cpp_runtime_ops()
-    refs: List[GhostRef] = []
-
-    for op in ops:
-        op_name = op["name"]
-        api_path = f"cpp.{op_name}"
-        params: List[GhostParam] = []
-
-        # SSA operands
-        for inp in op.get("inputs", []):
-            direction = (
-                OperandDirection.WRITE
-                if op_name in ("from_blob", "data_ptr") and inp == "data"
-                else OperandDirection.READ
-            )
-            params.append(
-                ExtendedGhostParam(
-                    name=inp,
-                    kind=ParameterKind.POSITIONAL_ONLY,
-                    annotation="float"
-                    if inp in ("v", "lo", "hi", "x", "y", "z", "arg")
-                    else "auto",
-                    standardized_name=inp,
-                    description=f"C++ operand {inp}",
-                    direction=direction,
-                    role=IRParameterRole.OPERAND,
-                )
-            )
-
-        # Attributes
-        attrs_meta: Dict[str, Any] = {}
-        for attr in op.get("attributes", []):
-            attr_name = attr.get("name", "attr")
-            attr_type = attr.get("type", "Any")
-            attr_def = attr.get("default")
-            params.append(
-                ExtendedGhostParam(
-                    name=attr_name,
-                    kind=ParameterKind.KEYWORD_ONLY,
-                    annotation=attr_type,
-                    default=str(attr_def) if attr_def is not None else None,
-                    standardized_name=attr_name,
-                    description=f"C++ attribute {attr_name}",
-                    role=IRParameterRole.ATTRIBUTE,
-                )
-            )
-            attrs_meta[attr_name] = attr
-
-        returns: List[GhostResult] = []
-        for out in op.get("outputs", []):
-            returns.append(GhostResult(name=out, type="auto"))
-
-        returns_type = "auto" if returns else "void"
-
-        provenance = {
+    return build_ssa_operation_refs(
+        ops=ops,
+        api_prefix="cpp",
+        name_key="name",
+        operand_annotation_fn=lambda op, inp: (
+            "float" if inp in ("v", "lo", "hi", "x", "y", "z", "arg") else "auto"
+        ),
+        operand_description_fn=lambda op, inp: f"C++ operand {inp}",
+        operand_direction_fn=lambda op, inp: (
+            OperandDirection.WRITE
+            if op["name"] in ("from_blob", "data_ptr") and inp == "data"
+            else OperandDirection.READ
+        ),
+        attr_description_prefix="C++ attribute",
+        result_type="auto",
+        empty_return_type="void",
+        provenance_fn=lambda op: {
             "source_type": "cpp_spec",
             "upstream_version": "17",
             "category": op.get("category", "runtime"),
-        }
-
-        refs.append(
-            GhostOperationRef(
-                name=op_name,
-                api_path=api_path,
-                kind="function",
-                params=params,
-                operands=[
-                    p
-                    for p in params
-                    if getattr(p, "role", None) == IRParameterRole.OPERAND
-                ],
-                returns=returns,
-                returns_type=returns_type,
-                docstring=op.get("description", f"C++ {op_name} operation."),
-                environment_tags=["cpp", "cpp17", "pybind11"],
-                domain_metadata=provenance,
-                attributes=attrs_meta if attrs_meta else None,
-            )
-        )
-
-    return refs
+        },
+        default_doc_fn=lambda op_name: f"C++ {op_name} operation.",
+        environment_tags=("cpp", "cpp17", "pybind11"),
+    )

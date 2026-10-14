@@ -7,12 +7,10 @@ parallel primitives (prange), and typing primitives from Numba.
 from typing import Any, Dict, List
 
 from ml_switcheroo_ir.schema.ghost import (
-    GhostParam,
     GhostRef,
-    ParameterKind,
     SemanticTier,
 )
-from ..models import GhostInspector, GhostPythonRef
+from ..models import GhostInspector
 
 
 CANONICAL_NUMBA_OPS: List[Dict[str, Any]] = [
@@ -131,32 +129,8 @@ def collect_api(
     ):
         return []
 
-    nb = _get_numba()
-    if nb is None:
-        refs: List[GhostRef] = []
-        for op in CANONICAL_NUMBA_OPS:
-            params = [
-                GhostParam(
-                    name=p["name"],
-                    kind=getattr(ParameterKind, p.get("kind", "POSITIONAL_OR_KEYWORD")),
-                    default=p.get("default"),
-                )
-                for p in op.get("params", [])
-            ]
-            refs.append(
-                GhostPythonRef(
-                    name=op["name"],
-                    api_path=op["api_path"],
-                    kind=op.get("kind", "function"),
-                    params=params,
-                    docstring=op.get("docstring", f"Numba {op['name']} API."),
-                    environment_tags=["numba", "jit"],
-                    domain_metadata={},
-                )
-            )
-        return refs
+    from ml_ecosystem_snapshots.frameworks._base import collect_from_canonical_or_live
 
-    results: List[GhostRef] = []
     target_names = [
         "jit",
         "njit",
@@ -168,18 +142,12 @@ def collect_api(
         "typeof",
         "from_dtype",
     ]
-
-    for name in target_names:
-        if hasattr(nb, name):
-            obj = getattr(nb, name)
-            try:
-                ref = GhostInspector.inspect(obj, f"numba.{name}", is_public=True)
-                ref.environment_tags = list(ref.environment_tags or ()) + [
-                    "numba",
-                    "jit",
-                ]
-                results.append(ref)
-            except Exception:
-                pass
-
-    return results
+    return collect_from_canonical_or_live(
+        live_module=_get_numba(),
+        module_prefix="numba",
+        target_names=target_names,
+        canonical_ops=CANONICAL_NUMBA_OPS,
+        default_doc_prefix="Numba",
+        environment_tags=("numba", "jit"),
+        inspector_fn=GhostInspector.inspect,
+    )

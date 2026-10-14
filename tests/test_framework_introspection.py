@@ -130,14 +130,14 @@ def test_onnxruntime_collect_api_edge_branches(mocker: Any) -> None:
     providers_present = [False]
 
     def mock_inspect(obj: Any, path: str) -> Any:
-        """Mock inspect to trigger various inspection outcomes.
+        """Mock inspect function.
 
         Args:
-            obj: Target object.
-            path: Target path string.
+            obj: Input parameter value.
+            path: Input parameter value.
 
         Returns:
-            GhostRef or None, or raises exception.
+            A mocked GhostRef.
         """
         if "raise_exc" in path:
             raise RuntimeError("simulated inspect error")
@@ -356,6 +356,16 @@ def test_numpy_import_error_handling() -> None:
     real_import = builtins.__import__
 
     def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         """Mock import raising ImportError on numpy.
 
         Args:
@@ -529,14 +539,14 @@ def test_mlx_collect_api_all_branches(mocker: Any) -> None:
     mocker.patch.object(mlx_mod, "mlx", fake_mlx)
 
     def mock_inspect(obj: Any, path: str) -> Any:
-        """Mock inspect to simulate exceptions on targeted functions.
+        """Mock inspect function.
 
         Args:
-            obj: Target object.
-            path: Target path string.
+            obj: Input parameter value.
+            path: Input parameter value.
 
         Returns:
-            GhostRef or raises Exception.
+            A mocked GhostRef.
         """
         if (
             "fake_core_exc" in path
@@ -1225,15 +1235,15 @@ def test_jax_array_ops_inspect_exceptions(mocker: Any) -> None:
     )
 
     def mock_inspect(obj: Any, name: str, **kwargs: Any) -> Any:
-        """Mock inspect to simulate failure except for float32.
+        """Mock inspect function.
 
         Args:
-            obj: Target object.
-            name: Target path string.
-            **kwargs: Extra arguments.
+            obj: Input parameter value.
+            name: Input parameter value.
+            **kwargs: Variable arguments.
 
         Returns:
-            GhostRef or raises Exception.
+            A mocked GhostRef.
         """
         if name == "jax.numpy.float32":
             return GhostRef(name="float32", api_path="jax.numpy.float32", kind="class")
@@ -1280,6 +1290,16 @@ def test_jax_pallas_import_failure(mocker: Any) -> None:
     real_import = builtins.__import__
 
     def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         """Mock import raising on pallas.
 
         Args:
@@ -1296,7 +1316,8 @@ def test_jax_pallas_import_failure(mocker: Any) -> None:
 
     mocker.patch("builtins.__import__", side_effect=mock_import)
     refs = jax_fw.collect_api(SemanticTier.ARRAY_API)
-    assert isinstance(refs, list)
+    assert len(refs) > 0
+    assert any(ref.api_path == "jax.numpy.float32" for ref in refs)
 
 
 def test_jax_array_ops_import_error(mocker: Any) -> None:
@@ -1311,6 +1332,16 @@ def test_jax_array_ops_import_error(mocker: Any) -> None:
     real_import = builtins.__import__
 
     def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         """Mock import raising on jax.
 
         Args:

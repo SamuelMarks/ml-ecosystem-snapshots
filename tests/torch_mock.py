@@ -486,7 +486,7 @@ def create_mock_torch() -> types.ModuleType:
     optim_mod = types.ModuleType("torch.optim")
     data_mod = types.ModuleType("torch.utils.data")
     utils_mod = types.ModuleType("torch.utils")
-    utils_mod.data = data_mod  # type: ignore[attr-defined]
+    setattr(utils_mod, "data", data_mod)
 
     setattr(torch_mod, "nn", nn_mod)
     setattr(torch_mod, "optim", optim_mod)

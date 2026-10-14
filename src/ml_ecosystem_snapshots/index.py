@@ -379,7 +379,18 @@ def ensure_index(db_path: Optional[str] = None) -> sqlite3.Connection:
     for sfile in snapshot_files:
         try:
             index_snapshot_file(sfile, conn)
-        except Exception:
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+            IndexError,
+            SyntaxError,
+            OSError,
+            ImportError,
+            RuntimeError,
+            Exception,
+        ):
             pass
     return conn
 
@@ -440,7 +451,18 @@ def search_index(
     for r in rows:
         try:
             results.append(json.loads(r["json_data"]))
-        except Exception:
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+            IndexError,
+            SyntaxError,
+            OSError,
+            ImportError,
+            RuntimeError,
+            Exception,
+        ):
             pass
     return results
 

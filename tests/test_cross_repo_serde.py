@@ -105,8 +105,24 @@ def test_exhaustive_snapshot_loading_serde() -> None:
             continue
 
         with open(fpath, "r", encoding="utf-8") as f:
-            records = json.load(f)
+            raw_data = json.load(f)
 
+        if isinstance(raw_data, dict):
+            if "operations" in raw_data:
+                records = raw_data["operations"]
+            elif "ops" in raw_data:
+                records = raw_data["ops"]
+            elif "categories" in raw_data:
+                records = []
+                for cat in raw_data["categories"].values():
+                    if isinstance(cat, list):
+                        records.extend(cat)
+            else:
+                records = [raw_data]
+        else:
+            records = raw_data
+
+        assert isinstance(records, list)
         assert len(records) > 0, f"Snapshot {fname} is empty"
 
         for raw_item in records[:10]:

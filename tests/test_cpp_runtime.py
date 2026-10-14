@@ -87,7 +87,11 @@ def test_check_cpp_op_validation() -> None:
 
 
 def test_cmd_check_cpp_cli(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test the CLI command check-cpp for valid and invalid queries."""
+    """Test the CLI command check-cpp for valid and invalid queries.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     # 1. Valid invocation
     args_valid = argparse.Namespace(
         op_name="fma",

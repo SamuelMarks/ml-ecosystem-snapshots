@@ -35,15 +35,7 @@ allow-direct-references = true
 mypy_path = "src"
 ignore_missing_imports = true
 strict = true
-warn_unused_ignores = false
-
-[[tool.mypy.overrides]]
-module = "ml_ecosystem_snapshots.models"
-disallow_subclassing_any = false
-
-[[tool.mypy.overrides]]
-module = "ml_framework_snapshots.models"
-disallow_subclassing_any = false
+warn_unused_ignores = true
 
 [tool.hatch.build.targets.sdist]
 artifacts = [

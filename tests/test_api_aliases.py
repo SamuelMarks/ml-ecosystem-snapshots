@@ -1,4 +1,4 @@
-"""Module docstring."""
+"""Unit tests and verification suite for api aliases."""
 
 from unittest.mock import patch
 from ml_ecosystem_snapshots.api import _consolidate_aliases, get_pkg_version
@@ -12,7 +12,7 @@ from ml_switcheroo_ir.schema.ghost import (
 
 
 def test_consolidate_aliases() -> None:
-    """Function docstring."""
+    """Verify consolidate aliases behavior."""
     ref1 = GhostRef(
         name="relu",
         api_path="torch.nn.functional.relu",

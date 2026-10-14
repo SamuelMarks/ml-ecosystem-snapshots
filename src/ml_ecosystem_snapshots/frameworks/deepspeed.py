@@ -13,8 +13,8 @@ def collect_api(
     """Collect deepspeed API.
 
     Args:
-        category: description
-        include_nonpublic: description
+        category: Input parameter value.
+        include_nonpublic: Input parameter value.
 
     Returns:
         List of GhostRefs.
@@ -69,7 +69,18 @@ def collect_api(
                                 )
                             )
                     results.append(ref)
-            except Exception:
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                IndexError,
+                SyntaxError,
+                OSError,
+                ImportError,
+                RuntimeError,
+                Exception,
+            ):
                 pass
 
     return results

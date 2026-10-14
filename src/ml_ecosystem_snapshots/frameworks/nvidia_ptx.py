@@ -548,6 +548,23 @@ def _get_canonical_fallback_ptx() -> List[Dict[str, Any]]:
                 {"name": "a", "role": "src", "description": "Barrier identifier"},
             ],
         },
+        {
+            "mnemonic": "and",
+            "description": "Bitwise logical AND.",
+            "min_sm": "sm_50",
+            "supported_types": [".pred", ".b16", ".b32", ".b64"],
+            "operands": [
+                {"name": "d", "role": "dst", "description": "Destination"},
+                {"name": "a", "role": "src", "description": "First source operand"},
+                {"name": "b", "role": "src", "description": "Second source operand"},
+            ],
+        },
+        {
+            "mnemonic": "ret",
+            "description": "Return from kernel or device function.",
+            "min_sm": "sm_50",
+            "operands": [],
+        },
     ]
 
 

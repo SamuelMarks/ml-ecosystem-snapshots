@@ -65,7 +65,11 @@ def test_collect_api_live_mode() -> None:
     fake_torch = types.SimpleNamespace(save_file=lambda t, fn, metadata=None: None)
 
     def fake_get_submodule(sub: str) -> Any:
-        """Return fake submodule by name."""
+        """Return fake submodule by name.
+
+        Args:
+            sub: Input sub parameter.
+        """
         if sub == "core":
             return fake_core
         if sub == "torch":
@@ -87,7 +91,11 @@ def test_collect_api_inspection_exception_handled() -> None:
     fake_torch = types.SimpleNamespace(save_file="not_inspectable")
 
     def fake_get_submodule(sub: str) -> Any:
-        """Return fake torch submodule."""
+        """Return fake torch submodule.
+
+        Args:
+            sub: Input sub parameter.
+        """
         return fake_torch if sub == "torch" else None
 
     with patch(
@@ -143,7 +151,11 @@ def test_check_safetensors_op_mcp() -> None:
 
 
 def test_cmd_check_safetensors_cli_valid(capsys: Any) -> None:
-    """Verify CLI command execution on valid SafeTensors operation."""
+    """Verify CLI command execution on valid SafeTensors operation.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     args = argparse.Namespace(
         op_name="load_file",
         inputs_count=1,
@@ -156,7 +168,11 @@ def test_cmd_check_safetensors_cli_valid(capsys: Any) -> None:
 
 
 def test_cmd_check_safetensors_cli_invalid_exits(capsys: Any) -> None:
-    """Verify CLI command exits with non-zero code on invalid operator."""
+    """Verify CLI command exits with non-zero code on invalid operator.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     args = argparse.Namespace(
         op_name="invalid_op",
         inputs_count=None,
@@ -171,13 +187,25 @@ def test_cmd_check_safetensors_cli_invalid_exits(capsys: Any) -> None:
 
 def test_get_safetensors_submodule_branches() -> None:
     """Verify module lookup branches for _get_safetensors_submodule."""
-    # Core branch
-    core_mod = safetensors._get_safetensors_submodule("core")
-    assert core_mod is not None or core_mod is None
 
-    # Torch branch
-    torch_mod = safetensors._get_safetensors_submodule("torch")
-    assert torch_mod is not None or torch_mod is None
+    # Core branch
+    class DummyModule:
+        """Mock SafeTensors submodule placeholder."""
+
+        pass
+
+    with patch(
+        "ml_ecosystem_snapshots.frameworks.safetensors.importlib.import_module",
+        return_value=DummyModule(),
+    ):
+        core_mod = safetensors._get_safetensors_submodule("core")
+        assert core_mod is not None
+        assert isinstance(core_mod, DummyModule)
+
+        # Torch branch
+        torch_mod = safetensors._get_safetensors_submodule("torch")
+        assert torch_mod is not None
+        assert isinstance(torch_mod, DummyModule)
 
     # Case where all fail
     with patch(

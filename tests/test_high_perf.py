@@ -1,4 +1,4 @@
-"""Module docstring."""
+"""Unit tests and verification suite for high perf."""
 
 from typing import Any
 
@@ -11,7 +11,7 @@ from ml_ecosystem_snapshots.frameworks.deepspeed import collect_api as ds_collec
 
 
 def test_triton_collect() -> None:
-    """Function docstring."""
+    """Verify triton collect behavior."""
     mock_tl = MagicMock()
     setattr(
         mock_tl,
@@ -25,14 +25,14 @@ def test_triton_collect() -> None:
     )
 
     def constexpr() -> Any:
-        """Function docstring."""
+        """Execute helper constexpr."""
         pass
 
     constexpr.__module__ = "triton.language"
     constexpr.__name__ = "constexpr"
 
     def tensor() -> Any:
-        """Function docstring."""
+        """Execute helper tensor."""
         pass
 
     tensor.__module__ = "triton.language"
@@ -57,17 +57,17 @@ def test_triton_collect() -> None:
         with patch("importlib.import_module") as mock_import:
 
             def side_effect(name: Any) -> Any:
-                """Function docstring.
+                """Execute helper side effect.
 
                 Args:
-                    name: description
+                    name: Input parameter value.
 
 
                 Raises:
                     ImportError: Exception.
 
                 Returns:
-                    Return value.
+                    Computed result.
                 """
                 if name == "triton":
                     return MagicMock()
@@ -90,12 +90,12 @@ def test_triton_collect() -> None:
 
 
 def test_onnx_collect() -> None:
-    """Function docstring."""
+    """Verify onnx collect behavior."""
     mock_onnx = MagicMock()
     setattr(mock_onnx, "__dir__", lambda self: ["InferenceSession", "utils"])
 
     class InferenceSession:
-        """Class docstring."""
+        """Mock or helper class InferenceSession for unit testing."""
 
         pass
 
@@ -124,12 +124,12 @@ def test_onnx_collect() -> None:
 
 
 def test_ds_collect() -> None:
-    """Function docstring."""
+    """Verify ds collect behavior."""
     mock_ds = MagicMock()
     setattr(mock_ds, "__dir__", lambda self: ["initialize", "utils"])
 
     def initialize() -> Any:
-        """Function docstring."""
+        """Execute helper initialize."""
         pass
 
     mock_ds.initialize = initialize

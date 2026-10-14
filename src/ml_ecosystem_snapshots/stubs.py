@@ -5,9 +5,10 @@ Generate .pyi stub files from snapshot JSON data.
 
 import os
 
-from typing import Dict, Any, List, Tuple
+from typing import Any, Dict, List, Mapping, Sequence, Tuple, Union
 from pathlib import Path
 import ast
+from ml_switcheroo_ir.schema.ghost import SnapshotEnvelope
 
 
 def _sanitize_default(default_str: str) -> str:
@@ -91,7 +92,11 @@ def _format_param_list(
 
 
 def generate_stubs(
-    snapshot_data: Any, output_dir: str, include_nonpublic: bool = False
+    snapshot_data: Union[
+        SnapshotEnvelope, Mapping[str, Any], Sequence[Mapping[str, Any]], Any
+    ],
+    output_dir: str,
+    include_nonpublic: bool = False,
 ) -> None:
     """Generate .pyi stub files from a snapshot dictionary.
 

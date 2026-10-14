@@ -1270,7 +1270,11 @@ def test_translate_concept_arguments_direct_schema_key() -> None:
 
 
 def test_check_code_block_import_tracking(mocker: Any) -> None:
-    """Test check_code_block tracks import and from...import statements to resolve canonical API paths."""
+    """Test check_code_block tracks import and from...import statements to resolve canonical API paths.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
     mock_torch = {
         "categories": {
             "math": [

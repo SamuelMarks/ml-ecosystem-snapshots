@@ -91,7 +91,11 @@ def test_check_wasm_instruction_validation() -> None:
 
 
 def test_cmd_check_wasm_cli(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test the CLI command check-wasm for valid and invalid queries."""
+    """Test the CLI command check-wasm for valid and invalid queries.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     # 1. Valid invocation
     args_valid = argparse.Namespace(
         mnemonic="f32x4.mul",

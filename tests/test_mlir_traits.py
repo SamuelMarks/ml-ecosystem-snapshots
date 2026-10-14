@@ -219,7 +219,12 @@ def test_check_mlir_op_with_traits() -> None:
 
 
 def test_cli_check_mlir(capsys: Any, tmp_path: Any) -> None:
-    """Test CLI check-mlir subcommand."""
+    """Test CLI check-mlir subcommand.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+        tmp_path: Temporary directory path fixture.
+    """
     # 1. Valid op
     args_valid = argparse.Namespace(
         op_name="arith.addf",
@@ -286,7 +291,11 @@ def test_cli_check_mlir(capsys: Any, tmp_path: Any) -> None:
 
 
 def test_mlir_collect_api(mocker: Any) -> None:
-    """Test collect_api on MLIR framework module."""
+    """Test collect_api on MLIR framework module.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     # 1. Collect real

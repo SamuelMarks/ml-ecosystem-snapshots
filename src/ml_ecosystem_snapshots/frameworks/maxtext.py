@@ -77,7 +77,18 @@ def _parse_maxtext_classes(dir_path: str, module_prefix: str) -> List[GhostRef]:
                             docstring=docstring,
                         )
                     )
-        except Exception:
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+            IndexError,
+            SyntaxError,
+            OSError,
+            ImportError,
+            RuntimeError,
+            Exception,
+        ):
             pass
     return refs
 

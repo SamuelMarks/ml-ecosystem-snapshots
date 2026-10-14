@@ -7,12 +7,10 @@ and linear algebra routines from the PyData Sparse library.
 from typing import Any, Dict, List
 
 from ml_switcheroo_ir.schema.ghost import (
-    GhostParam,
     GhostRef,
-    ParameterKind,
     SemanticTier,
 )
-from ..models import GhostInspector, GhostPythonRef
+from ..models import GhostInspector
 
 
 CANONICAL_SPARSE_OPS: List[Dict[str, Any]] = [
@@ -160,32 +158,8 @@ def collect_api(
     ):
         return []
 
-    sp = _get_sparse()
-    if sp is None:
-        refs: List[GhostRef] = []
-        for op in CANONICAL_SPARSE_OPS:
-            params = [
-                GhostParam(
-                    name=p["name"],
-                    kind=getattr(ParameterKind, p.get("kind", "POSITIONAL_OR_KEYWORD")),
-                    default=p.get("default"),
-                )
-                for p in op.get("params", [])
-            ]
-            refs.append(
-                GhostPythonRef(
-                    name=op["name"],
-                    api_path=op["api_path"],
-                    kind=op.get("kind", "function"),
-                    params=params,
-                    docstring=op.get("docstring", f"Sparse {op['name']} API."),
-                    environment_tags=["sparse", "coo"],
-                    domain_metadata={},
-                )
-            )
-        return refs
+    from ml_ecosystem_snapshots.frameworks._base import collect_from_canonical_or_live
 
-    results: List[GhostRef] = []
     target_names = [
         "COO",
         "GCXS",
@@ -205,18 +179,12 @@ def collect_api(
         "ones",
         "full",
     ]
-
-    for name in target_names:
-        if hasattr(sp, name):
-            obj = getattr(sp, name)
-            try:
-                ref = GhostInspector.inspect(obj, f"sparse.{name}", is_public=True)
-                ref.environment_tags = list(ref.environment_tags or ()) + [
-                    "sparse",
-                    "coo",
-                ]
-                results.append(ref)
-            except Exception:
-                pass
-
-    return results
+    return collect_from_canonical_or_live(
+        live_module=_get_sparse(),
+        module_prefix="sparse",
+        target_names=target_names,
+        canonical_ops=CANONICAL_SPARSE_OPS,
+        default_doc_prefix="Sparse",
+        environment_tags=("sparse", "coo"),
+        inspector_fn=GhostInspector.inspect,
+    )

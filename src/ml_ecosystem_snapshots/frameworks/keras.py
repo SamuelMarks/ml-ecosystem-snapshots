@@ -10,11 +10,15 @@ from ml_ecosystem_snapshots.models import GhostInspector
 from ml_switcheroo_ir.schema.ghost import GhostRef
 from ml_switcheroo_ir.schema.ghost import SemanticTier
 
-griffe: Any
+griffe: Optional[Any]
 try:
-    import griffe
+    import griffe as _griffe_mod
+
+    griffe = _griffe_mod
+    HAS_GRIFFE = True
 except ImportError:
     griffe = None
+    HAS_GRIFFE = False
 
 
 def _scan_griffe_module(

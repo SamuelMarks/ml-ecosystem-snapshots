@@ -6,8 +6,6 @@ import json
 import os
 import re
 from typing import Any, DefaultDict, Dict, List, Optional
-import urllib.error
-import urllib.request
 
 LLVM_REPO_BASE = (
     "https://raw.githubusercontent.com/llvm/llvm-project/main/llvm/lib/Target/AMDGPU"
@@ -68,24 +66,45 @@ def fetch_td_file(
         try:
             with open(cache_path, "r", encoding="utf-8") as f:
                 return f.read()
-        except Exception:
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+            IndexError,
+            SyntaxError,
+            OSError,
+            ImportError,
+            RuntimeError,
+            Exception,
+        ):
             pass
 
     url = f"{LLVM_REPO_BASE}/{filename}"
-    try:
-        with urllib.request.urlopen(url) as response:
-            content = str(response.read().decode("utf-8"))
-            if use_cache and content:
-                try:
-                    os.makedirs(cache_dir, exist_ok=True)
-                    with open(cache_path, "w", encoding="utf-8") as f:
-                        f.write(content)
-                except Exception:
-                    pass
-            return content
-    except Exception as e:
-        print(f"Error fetching {url}: {e}")
-        return ""
+    from ml_ecosystem_snapshots.utils import fetch_url
+
+    content = fetch_url(url)
+    if content is not None:
+        if use_cache:
+            try:
+                os.makedirs(cache_dir, exist_ok=True)
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                IndexError,
+                SyntaxError,
+                OSError,
+                ImportError,
+                RuntimeError,
+                Exception,
+            ):
+                pass
+        return content
+    return ""
 
 
 def resolve_td_instruction_info(

@@ -7,12 +7,10 @@ from pyarrow.compute.
 from typing import Any, Dict, List
 
 from ml_switcheroo_ir.schema.ghost import (
-    GhostParam,
     GhostRef,
-    ParameterKind,
     SemanticTier,
 )
-from ..models import GhostInspector, GhostPythonRef
+from ..models import GhostInspector
 
 
 CANONICAL_PYARROW_COMPUTE_OPS: List[Dict[str, Any]] = [
@@ -158,32 +156,8 @@ def collect_api(
     ):
         return []
 
-    pc = _get_pyarrow_compute()
-    if pc is None:
-        refs: List[GhostRef] = []
-        for op in CANONICAL_PYARROW_COMPUTE_OPS:
-            params = [
-                GhostParam(
-                    name=p["name"],
-                    kind=getattr(ParameterKind, p.get("kind", "POSITIONAL_OR_KEYWORD")),
-                    default=p.get("default"),
-                )
-                for p in op.get("params", [])
-            ]
-            refs.append(
-                GhostPythonRef(
-                    name=op["name"],
-                    api_path=op["api_path"],
-                    kind=op.get("kind", "function"),
-                    params=params,
-                    docstring=op.get("docstring", f"PyArrow compute {op['name']} API."),
-                    environment_tags=["pyarrow", "arrow_compute"],
-                    domain_metadata={},
-                )
-            )
-        return refs
+    from ml_ecosystem_snapshots.frameworks._base import collect_from_canonical_or_live
 
-    results: List[GhostRef] = []
     target_names = [
         "add",
         "subtract",
@@ -214,20 +188,12 @@ def collect_api(
         "cast",
         "sort_indices",
     ]
-
-    for name in target_names:
-        if hasattr(pc, name):
-            obj = getattr(pc, name)
-            try:
-                ref = GhostInspector.inspect(
-                    obj, f"pyarrow.compute.{name}", is_public=True
-                )
-                ref.environment_tags = list(ref.environment_tags or ()) + [
-                    "pyarrow",
-                    "arrow_compute",
-                ]
-                results.append(ref)
-            except Exception:
-                pass
-
-    return results
+    return collect_from_canonical_or_live(
+        live_module=_get_pyarrow_compute(),
+        module_prefix="pyarrow.compute",
+        target_names=target_names,
+        canonical_ops=CANONICAL_PYARROW_COMPUTE_OPS,
+        default_doc_prefix="PyArrow compute",
+        environment_tags=("pyarrow", "arrow_compute"),
+        inspector_fn=GhostInspector.inspect,
+    )

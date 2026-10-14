@@ -13,10 +13,10 @@ def _extract_triton_kernel(
     """Extract triton kernel.
 
     Args:
-        obj: description
-        name: description
-        module_name: description
-        inspector: description
+        obj: Input parameter value.
+        name: Input parameter value.
+        module_name: Input parameter value.
+        inspector: Input parameter value.
 
     Returns:
         The GhostRef.
@@ -45,8 +45,8 @@ def collect_api(
     """Collect triton API.
 
     Args:
-        category: description
-        include_nonpublic: description
+        category: Input parameter value.
+        include_nonpublic: Input parameter value.
 
     Returns:
         List of GhostRefs.

@@ -33,6 +33,16 @@ def test_torch_module_import_reload() -> None:
     real_import = __import__
 
     def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         """Mock import raising ImportError on torch submodules.
 
         Args:

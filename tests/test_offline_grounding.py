@@ -413,7 +413,11 @@ def test_offline_stablehlo_op_validation() -> None:
 
 
 def test_offline_index_db_in_memory_fallback(monkeypatch: Any) -> None:
-    """Verify init_db falls back to in-memory database if disk directory creation fails."""
+    """Verify init_db falls back to in-memory database if disk directory creation fails.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     import os
     from ml_ecosystem_snapshots.index import init_db
 

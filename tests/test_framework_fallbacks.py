@@ -8,7 +8,7 @@ from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
 
 
 def test_deepspeed_missing() -> None:
-    """Function docstring."""
+    """Verify DeepSpeed collector fallback and parameter extraction when DeepSpeed is absent or mocked."""
     from ml_ecosystem_snapshots.frameworks.deepspeed import collect_api
 
     with patch("importlib.import_module", side_effect=ImportError):
@@ -16,22 +16,22 @@ def test_deepspeed_missing() -> None:
     assert collect_api(SemanticTier.LOSS) == []
 
     class DeepspeedMock:
-        """Class docstring."""
+        """Mock DeepSpeed module exposing initialize and nothing attributes."""
 
         def __dir__(self) -> Any:
-            """Function docstring.
+            """Return mock directory listing.
 
             Returns:
-                Return value.
+                List of mock member names.
             """
             return ["_hidden", "initialize", "nothing"]
 
         def initialize(self) -> Any:
-            """Function docstring."""
+            """Mock initialize method."""
             pass
 
         def nothing(self) -> Any:
-            """Function docstring."""
+            """Mock nothing method."""
             pass
 
     with patch(
@@ -43,19 +43,22 @@ def test_deepspeed_missing() -> None:
         ),
     ):
         with patch("importlib.import_module", return_value=DeepspeedMock()):
-            collect_api(SemanticTier.MODEL)
-            collect_api(SemanticTier.MODEL, include_nonpublic=True)
+            res_pub = collect_api(SemanticTier.MODEL)
+            assert len(res_pub) == 1
+            res_nonpub = collect_api(SemanticTier.MODEL, include_nonpublic=True)
+            assert len(res_nonpub) == 1
 
     with patch(
         "ml_ecosystem_snapshots.models.GhostInspector.inspect",
         return_value=MagicMock(params=[]),
     ):
         with patch("importlib.import_module", return_value=DeepspeedMock()):
-            collect_api(SemanticTier.MODEL)
+            res_empty = collect_api(SemanticTier.MODEL)
+            assert len(res_empty) == 1
 
 
 def test_onnxruntime_missing() -> None:
-    """Function docstring."""
+    """Verify ONNX Runtime collector fallback and InferenceSession extraction when mocked."""
     from ml_ecosystem_snapshots.frameworks.onnxruntime import collect_api
 
     with patch("importlib.import_module", side_effect=ImportError):
@@ -63,22 +66,22 @@ def test_onnxruntime_missing() -> None:
     assert collect_api(SemanticTier.LOSS) == []
 
     class OnnxMock:
-        """Class docstring."""
+        """Mock ONNX Runtime module exposing InferenceSession."""
 
         def __dir__(self) -> Any:
-            """Function docstring.
+            """Return mock directory listing.
 
             Returns:
-                Return value.
+                List of mock member names.
             """
             return ["_hidden", "InferenceSession", "nothing"]
 
         def InferenceSession(self) -> Any:
-            """Function docstring."""
+            """Mock InferenceSession constructor."""
             pass
 
         def nothing(self) -> Any:
-            """Function docstring."""
+            """Mock nothing attribute."""
             pass
 
     with patch(
@@ -90,19 +93,22 @@ def test_onnxruntime_missing() -> None:
         ),
     ):
         with patch("importlib.import_module", return_value=OnnxMock()):
-            collect_api(SemanticTier.MODEL)
-            collect_api(SemanticTier.MODEL, include_nonpublic=True)
+            res_pub = collect_api(SemanticTier.MODEL)
+            assert len(res_pub) == 1
+            res_nonpub = collect_api(SemanticTier.MODEL, include_nonpublic=True)
+            assert len(res_nonpub) == 1
 
     with patch(
         "ml_ecosystem_snapshots.models.GhostInspector.inspect",
         return_value=MagicMock(params=[]),
     ):
         with patch("importlib.import_module", return_value=OnnxMock()):
-            collect_api(SemanticTier.MODEL)
+            res_empty = collect_api(SemanticTier.MODEL)
+            assert len(res_empty) == 1
 
 
 def test_triton_missing() -> None:
-    """Function docstring."""
+    """Verify Triton collector fallback and constexpr kernel annotation extraction."""
     from ml_ecosystem_snapshots.frameworks.triton import collect_api
 
     with patch("importlib.import_module", side_effect=ImportError):
@@ -111,24 +117,25 @@ def test_triton_missing() -> None:
 
     mock_mod = MagicMock()
     with patch.dict("sys.modules", {"triton": mock_mod}):
-        collect_api(SemanticTier.UTIL)
+        res_sys = collect_api(SemanticTier.UTIL)
+        assert isinstance(res_sys, list)
 
     setattr(mock_mod, "__dir__", lambda self: ["_hidden", "fn", "not_ref"])
 
     def fake_fn(a: Any, b: Any, c: Any) -> Any:
-        """Function docstring.
+        """Mock Triton JIT function with constexpr annotation.
 
         Args:
-            a: description
-            b: description
-            c: description
+            a: First operand with constexpr annotation.
+            b: Second float operand.
+            c: Unannotated third operand.
         """
         pass
 
     fake_fn.__annotations__ = {"a": "int constexpr", "b": "float"}
 
     class Wrap:
-        """Class docstring."""
+        """Wrapper class holding a Triton JIT function."""
 
         fn = fake_fn
 
@@ -156,7 +163,8 @@ def test_triton_missing() -> None:
                 else ImportError("No")
             ),
         ):
-            collect_api(SemanticTier.UTIL)
+            res_triton = collect_api(SemanticTier.UTIL)
+            assert len(res_triton) >= 1
 
     from ml_ecosystem_snapshots.frameworks.triton import _extract_triton_kernel
     from ml_ecosystem_snapshots.models import GhostInspector
@@ -165,15 +173,24 @@ def test_triton_missing() -> None:
         """Kernel callable without annotations."""
 
         def __call__(self, x: Any) -> Any:
-            """Call method."""
+            """Execute kernel callable.
+
+            Args:
+                x: Input kernel argument.
+
+            Returns:
+                The unchanged input argument.
+            """
             return x
 
     no_anno = NoAnno()
-    _extract_triton_kernel(no_anno, "no_anno", "mod", GhostInspector())
+    ref_no_anno = _extract_triton_kernel(no_anno, "no_anno", "mod", GhostInspector())
+    assert ref_no_anno is not None
+    assert ref_no_anno.name == "no_anno"
 
 
 def test_sklearn_missing() -> None:
-    """Function docstring."""
+    """Verify scikit-learn collector returns empty list when member discovery raises an exception."""
     from ml_ecosystem_snapshots.frameworks.sklearn import collect_api
 
     with patch(
@@ -185,7 +202,7 @@ def test_sklearn_missing() -> None:
 
 
 def test_huggingface_missing() -> None:
-    """Function docstring."""
+    """Verify HuggingFace Transformers collector handles missing packages, generation kwargs, and PretrainedConfig."""
     from ml_ecosystem_snapshots.frameworks.huggingface import (
         _extract_generation_kwargs,
         _parse_pretrained_config,
@@ -195,43 +212,45 @@ def test_huggingface_missing() -> None:
     from ml_switcheroo_ir.schema.ghost import GhostRef
 
     class M:
-        """Class docstring."""
+        """Mock generation-capable model class."""
 
         def generate(self, input: Any, *args: Any, **kwargs: Any) -> Any:
-            """Function docstring.
+            """Mock generate method.
 
             Args:
-                input: description
-                args: description
-                kwargs: description
+                input: Input token ids.
+                args: Variadic positional arguments.
+                kwargs: Variadic keyword arguments.
             """
             pass
 
     r = GhostRef(name="A", api_path="A", kind="class", params=[])
     _extract_generation_kwargs(M(), r)
+    assert any(p.name == "input" for p in r.params)
 
     class M2:
-        """Class docstring."""
+        """Mock PretrainedConfig class with type annotations."""
 
         __annotations__ = {"a": int, "b": "str"}
 
     r2 = GhostRef(name="A", api_path="A", kind="class", params=[])
     _parse_pretrained_config(M2(), r2)
+    assert len(r2.params) == 2
 
     with patch("importlib.import_module", side_effect=ImportError):
-        collect_transformers(SemanticTier.MODEL)
+        assert collect_transformers(SemanticTier.MODEL) == []
 
-    collect_transformers(SemanticTier.LOSS)
+    assert collect_transformers(SemanticTier.LOSS) == []
 
     class BadProp:
-        """Class docstring."""
+        """Mock class with a property that raises ValueError on access."""
 
         @property
         def bad(self) -> Any:
-            """Function docstring.
+            """Raise ValueError when accessed.
 
             Raises:
-                ValueError: Exception.
+                ValueError: Always raised to test property access resilience.
             """
             raise ValueError()
 
@@ -253,13 +272,13 @@ def test_huggingface_missing() -> None:
     # Mock getattr correctly so it raises for 'bad'
     # we need to simulate the module behavior
     class FakeMod:
-        """Class docstring."""
+        """Fake transformers module exposing config and AutoModel members."""
 
         def __dir__(self) -> Any:
-            """Function docstring.
+            """Return list of fake module attributes.
 
             Returns:
-                Return value.
+                List of attribute names.
             """
             return [
                 "_hidden",
@@ -278,103 +297,103 @@ def test_huggingface_missing() -> None:
 
         @property
         def bad(self) -> Any:
-            """Function docstring.
+            """Raise ValueError on attribute access.
 
             Raises:
-                ValueError: Exception.
+                ValueError: Simulated broken property.
             """
             raise ValueError()
 
         @property
         def DummyConfig(self) -> Any:
-            """Function docstring.
+            """Return a dummy config instance with empty annotations.
 
             Returns:
-                Return value.
+                DummyConfig instance.
             """
             return type("DummyConfig", (), {"__annotations__": {}})()
 
         @property
         def EmptyConfig(self) -> Any:
-            """Function docstring.
+            """Return an EmptyConfig instance with 'a' annotation.
 
             Returns:
-                Return value.
+                EmptyConfig instance.
             """
             return type("EmptyConfig", (), {"__annotations__": {"a": int}})()
 
         @property
         def EmptyConfigB(self) -> Any:
-            """Function docstring.
+            """Return an EmptyConfigB instance with 'b' annotation.
 
             Returns:
-                Return value.
+                EmptyConfigB instance.
             """
             return type("EmptyConfigB", (), {"__annotations__": {"b": int}})()
 
         @property
         def AutoModelA(self) -> Any:
-            """Function docstring.
+            """Return a mock AutoModelA object.
 
             Returns:
-                Return value.
+                MagicMock instance.
             """
             return MagicMock()
 
         @property
         def AutoModelB(self) -> Any:
-            """Function docstring.
+            """Return a mock AutoModelB object.
 
             Returns:
-                Return value.
+                MagicMock instance.
             """
             return MagicMock()
 
         @property
         def Other(self) -> Any:
-            """Function docstring.
+            """Return a mock Other object.
 
             Returns:
-                Return value.
+                MagicMock instance.
             """
             return MagicMock()
 
         @property
         def ThrowConfig(self) -> Any:
-            """Function docstring.
+            """Return a mock ThrowConfig object.
 
             Returns:
-                Return value.
+                MagicMock instance.
             """
             return MagicMock()
 
         @property
         def ReturnNone(self) -> Any:
-            """Function docstring.
+            """Return None for attribute lookup.
 
             Returns:
-                Return value.
+                None.
             """
             return None
 
         @property
         def GenModel(self) -> Any:
-            """Function docstring.
+            """Return a model instance with a generate method.
 
             Returns:
-                Return value.
+                Mock model instance.
             """
 
             class M:
-                """Class docstring."""
+                """Mock inner model class with generate method."""
 
                 def generate(self, input: Any, *args: Any, **kwargs: Any) -> Any:
-                    """Function docstring.
+                    """Mock generate method.
 
                     Args:
-                        input: description
-                        args: description
-                        kwargs: description
+                        input: Input tensor.
+                        args: Variadic positional arguments.
+                        kwargs: Variadic keyword arguments.
                     """
                     pass
 
@@ -382,26 +401,25 @@ def test_huggingface_missing() -> None:
 
         @property
         def RefNone(self) -> Any:
-            """Function docstring.
+            """Return a mock RefNone object.
 
             Returns:
-                Return value.
+                MagicMock instance.
             """
             return MagicMock()
 
     def mock_inspect(obj: Any, name: Any) -> Any:
-        """Function docstring.
+        """Return a mocked GhostRef or raise for ThrowConfig.
 
         Args:
-            obj: description
-            name: description
-
+            obj: The target object being inspected.
+            name: The API path name.
 
         Raises:
-            Exception: Exception.
+            Exception: When inspecting ThrowConfig.
 
         Returns:
-            Return value.
+            A mocked GhostRef or None.
         """
         if "ThrowConfig" in name:
             raise Exception("test")
@@ -434,8 +452,10 @@ def test_huggingface_missing() -> None:
         side_effect=mock_inspect,
     ):
         with patch("importlib.import_module", return_value=FakeMod()):
-            collect_transformers(SemanticTier.MODEL)
-            collect_transformers(SemanticTier.UTIL)
+            models_res = collect_transformers(SemanticTier.MODEL)
+            assert len(models_res) >= 1
+            utils_res = collect_transformers(SemanticTier.UTIL)
+            assert len(utils_res) >= 1
 
 
 def test_hardware_exhaustive_fallbacks() -> None:
@@ -484,7 +504,11 @@ def test_hardware_exhaustive_fallbacks() -> None:
 
 
 def test_orbax_checkpoint_inspect_error(mocker: Any) -> None:
-    """Test orbax checkpoint exception handling during member inspection and member retrieval."""
+    """Test orbax checkpoint exception handling during member inspection and member retrieval.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
     import ml_ecosystem_snapshots.frameworks.orbax_checkpoint as orbax_mod
     from ml_ecosystem_snapshots.models import GhostInspector
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -520,7 +544,11 @@ def test_orbax_checkpoint_inspect_error(mocker: Any) -> None:
 
 
 def test_pax_import_fallback(monkeypatch: Any) -> None:
-    """Test pax import logic when praxis is available and unavailable."""
+    """Test pax import logic when praxis is available and unavailable.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     import importlib
     import sys
     import types
@@ -550,7 +578,11 @@ def test_pax_import_fallback(monkeypatch: Any) -> None:
 
 
 def test_sklearn_import_fallback(monkeypatch: Any) -> None:
-    """Test sklearn import logic when sklearn is unavailable."""
+    """Test sklearn import logic when sklearn is unavailable.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     import importlib
     import sys
     import ml_ecosystem_snapshots.frameworks.sklearn as sklearn_mod
@@ -567,7 +599,12 @@ def test_sklearn_import_fallback(monkeypatch: Any) -> None:
 
 
 def test_flax_nnx_import_fallback(monkeypatch: Any, mocker: Any) -> None:
-    """Test flax.nnx import fallback and inspection exception handling."""
+    """Test flax.nnx import fallback and inspection exception handling.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        mocker: Pytest mocker fixture.
+    """
     import importlib
     import sys
     import types
@@ -609,7 +646,11 @@ def test_flax_nnx_import_fallback(monkeypatch: Any, mocker: Any) -> None:
 
 
 def test_deepspeed_fallback_edges(mocker: Any) -> None:
-    """Test deepspeed inspect exception handling and existing config_params."""
+    """Test deepspeed inspect exception handling and existing config_params.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
     import types
     import ml_ecosystem_snapshots.frameworks.deepspeed as ds_mod
     from ml_ecosystem_snapshots.models import GhostInspector
@@ -626,14 +667,14 @@ def test_deepspeed_fallback_edges(mocker: Any) -> None:
     )
 
     def mock_inspect(obj: Any, name: str) -> Any:
-        """Mock inspect to test various DeepSpeed discovery branches.
+        """Mock inspect function.
 
         Args:
-            obj: Object to inspect.
-            name: Fully qualified API name.
+            obj: Input parameter value.
+            name: Input parameter value.
 
         Returns:
-            GhostRef object or raises simulated exception.
+            A mocked GhostRef.
         """
         if "error_op" in name:
             raise Exception("simulated error")
@@ -728,6 +769,16 @@ def test_tensorflow_import_reload() -> None:
     real_import = builtins.__import__
 
     def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         """Mock import raising ImportError on tensorflow.
 
         Args:

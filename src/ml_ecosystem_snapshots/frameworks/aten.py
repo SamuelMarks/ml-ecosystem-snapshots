@@ -673,7 +673,18 @@ def _get_torch_ops_aten() -> Any:
             ops = getattr(mod, "ops", None)
             if ops is not None:
                 return getattr(ops, "aten", None)
-    except Exception:
+    except (
+        AttributeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        IndexError,
+        SyntaxError,
+        OSError,
+        ImportError,
+        RuntimeError,
+        Exception,
+    ):
         pass
     return None
 

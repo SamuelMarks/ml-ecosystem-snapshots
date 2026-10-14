@@ -476,6 +476,10 @@ def test_promote_documented_kwargs() -> None:
     def custom_layer(in_features: int, **kwargs: Any) -> None:
         """Initialize custom layer.
 
+        Args:
+            in_features: Size of each input sample.
+            kwargs: Variadic keyword arguments.
+
         :param in_features: Size of each input sample.
         :type in_features: int
         :param bias: If set to False, additive bias is omitted.

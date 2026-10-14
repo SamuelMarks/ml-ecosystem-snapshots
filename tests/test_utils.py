@@ -7,14 +7,14 @@ from ml_ecosystem_snapshots.utils import get_all_members, extract_c_extension_si
 
 
 class FaultyModule:
-    """Class docstring."""
+    """Mock or helper class FaultyModule for unit testing."""
 
     __all__ = ["good", "bad"]
     good = 1
 
     @property
     def bad(self) -> Any:
-        """Function docstring.
+        """Execute helper bad.
 
         Raises:
             ValueError: Exception.
@@ -23,7 +23,7 @@ class FaultyModule:
 
 
 class NoAllModule:
-    """Class docstring."""
+    """Mock or helper class NoAllModule for unit testing."""
 
     a = 1
 
@@ -42,28 +42,28 @@ def test_extract_c_extension_signatures() -> None:
     """Test extract_c_extension_signature across diverse docstring patterns and overloads."""
 
     def empty_doc() -> Any:
-        """Function docstring."""
+        """Execute helper empty doc."""
         pass
 
     empty_doc.__doc__ = ""
     assert extract_c_extension_signature(empty_doc, "empty_doc") is None
 
     def bad_syntax() -> Any:
-        """Function docstring."""
+        """Execute helper bad syntax."""
         pass
 
     bad_syntax.__doc__ = "func(a b c) -> int"
     assert extract_c_extension_signature(bad_syntax, "bad_syntax") is None
 
     def no_match() -> Any:
-        """Function docstring."""
+        """Execute helper no match."""
         pass
 
     no_match.__doc__ = "This is just a description without signature."
     assert extract_c_extension_signature(no_match, "no_match") is None
 
     def string_def() -> Any:
-        """Function docstring."""
+        """Execute helper string def."""
         pass
 
     string_def.__doc__ = "func(a='hello', b=None, *args: int, c=1, **kwargs: float) -> str\n\nDescription text."
@@ -78,7 +78,7 @@ def test_extract_c_extension_signatures() -> None:
     assert sig[1][2] == "None"  # b=None
 
     def func_with_self() -> Any:
-        """Function docstring."""
+        """Execute helper func with self."""
         pass
 
     func_with_self.__doc__ = "func(self, x=torch.float32)"
@@ -88,7 +88,7 @@ def test_extract_c_extension_signatures() -> None:
     assert sig2[0][2] == "torch.float32"  # value error fallback
 
     def leading_empty() -> Any:
-        """Function docstring."""
+        """Execute helper leading empty."""
         pass
 
     leading_empty.__doc__ = (
@@ -99,7 +99,7 @@ def test_extract_c_extension_signatures() -> None:
     assert len(sig_leading.overloads) == 1
 
     def numbered_with_empty() -> Any:
-        """Function docstring."""
+        """Execute helper numbered with empty."""
         pass
 
     numbered_with_empty.__doc__ = (
@@ -110,7 +110,7 @@ def test_extract_c_extension_signatures() -> None:
     assert len(sig_num.overloads) == 2
 
     def sig_then_overload_header() -> Any:
-        """Function docstring."""
+        """Execute helper sig then overload header."""
         pass
 
     sig_then_overload_header.__doc__ = "func(x: int) -> int\nOverloaded function.\n1. func(x: int) -> int\n2. func(y: str) -> str"
@@ -119,7 +119,7 @@ def test_extract_c_extension_signatures() -> None:
     assert len(sig_so.overloads) == 2
 
     def sig_then_doc_text() -> Any:
-        """Function docstring."""
+        """Execute helper sig then doc text."""
         pass
 
     sig_then_doc_text.__doc__ = (
@@ -137,7 +137,7 @@ def test_utils_branches() -> None:
     )
 
     class Dummy:
-        """Class docstring."""
+        """Mock or helper class Dummy for unit testing."""
 
         pass
 
@@ -382,7 +382,11 @@ def test_parse_docstring_with_griffe_parse_exception() -> None:
 
 
 def test_is_offline_mode_env_vars(monkeypatch: Any) -> None:
-    """Test is_offline_mode across all truthy and falsey environment values."""
+    """Test is_offline_mode across all truthy and falsey environment values.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     from ml_ecosystem_snapshots.utils import is_offline_mode
 
     monkeypatch.delenv("ML_SNAPSHOTS_OFFLINE", raising=False)

@@ -1,11 +1,9 @@
 """Dask API Snapshot Extractor."""
 
-from typing import List
-from ml_switcheroo_ir.schema.ghost import SemanticTier
-from ml_switcheroo_ir.schema.ghost import GhostRef
+from typing import Any, List
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+from ml_ecosystem_snapshots.frameworks._base import collect_dir_callables
 from ..models import GhostInspector
-
-from typing import Any
 
 try:
     import dask.array as _da
@@ -40,35 +38,27 @@ def collect_api(
         for submod_obj, prefix in submodules:
             if submod_obj is None:
                 continue
-            for name in dir(submod_obj):
-                if not include_nonpublic and name.startswith("_"):
-                    continue
-                obj = getattr(submod_obj, name)
-                if callable(obj):
-                    try:
-                        res = GhostInspector.inspect(
-                            obj, f"{prefix}.{name}", is_public=not name.startswith("_")
-                        )
-                        results.append(res)
-                    except Exception:
-                        pass
+            results.extend(
+                collect_dir_callables(
+                    mod_obj=submod_obj,
+                    api_prefix=prefix,
+                    include_nonpublic=include_nonpublic,
+                    inspector_fn=GhostInspector.inspect,
+                )
+            )
 
     elif category == SemanticTier.UTIL:
         try:
             import dask as _dask_top
 
-            for name in dir(_dask_top):
-                if not include_nonpublic and name.startswith("_"):
-                    continue
-                obj = getattr(_dask_top, name)
-                if callable(obj):
-                    try:
-                        res = GhostInspector.inspect(
-                            obj, f"dask.{name}", is_public=not name.startswith("_")
-                        )
-                        results.append(res)
-                    except Exception:
-                        pass
+            results.extend(
+                collect_dir_callables(
+                    mod_obj=_dask_top,
+                    api_prefix="dask",
+                    include_nonpublic=include_nonpublic,
+                    inspector_fn=GhostInspector.inspect,
+                )
+            )
         except (ImportError, Exception):
             pass
 

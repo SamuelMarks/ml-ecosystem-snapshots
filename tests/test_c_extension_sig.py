@@ -1,4 +1,4 @@
-"""Module docstring."""
+"""Unit tests and verification suite for c extension sig."""
 
 # ruff: noqa: D205, D415, D207, D212
 
@@ -19,19 +19,19 @@ original_sig = inspect.signature
 
 
 def patched_sig(target: Any, *args: Any, **kwargs: Any) -> Any:
-    """Function docstring.
+    """Execute helper patched sig.
 
     Args:
-        target: description
-        args: description
-        kwargs: description
+        target: Input parameter value.
+        args: Input parameter value.
+        kwargs: Input parameter value.
 
 
     Raises:
         ValueError: Exception.
 
     Returns:
-        Return value.
+        Computed result.
     """
     if target is dummy_c_ext:
         raise ValueError("no signature found")
@@ -40,7 +40,7 @@ def patched_sig(target: Any, *args: Any, **kwargs: Any) -> Any:
 
 
 def test_c_extension_signature_fallback() -> None:
-    """Function docstring."""
+    """Verify c extension signature fallback behavior."""
     with patch("inspect.signature", side_effect=patched_sig):
         inspector = GhostInspector()
         ref = inspector.inspect(dummy_c_ext, "dummy_c_ext")
@@ -53,8 +53,13 @@ def test_c_extension_signature_fallback() -> None:
         assert ref.params[1].annotation == "Tensor | None"
 
 
-def dummy_posonly(*args: Any, **kwargs: Any) -> None:
-    """dummy_posonly(a: int, /, b: str = 'x') -> None"""  # noqa: D402, D415
+def dummy_posonly(*args: Any, **kwargs: Any) -> None:  # noqa: D402
+    """dummy_posonly(a: int, /, b: str = 'x') -> None
+
+    Parameters:
+        *args: Variadic positional arguments.
+        **kwargs: Variadic keyword arguments.
+    """  # noqa: D402, D415
     pass
 
 

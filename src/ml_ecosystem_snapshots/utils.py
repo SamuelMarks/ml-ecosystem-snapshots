@@ -1,11 +1,23 @@
 """Utility functions for inspecting and extracting information from Python modules."""
 
-import ast
-import json
-import os
-from pathlib import Path
+from __future__ import annotations
+
 import re
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
+
+from ml_ecosystem_snapshots.c_extension_sig import (
+    CExtensionSignature,
+    _normalize_c_sig_args,
+    _parse_c_extension_sig_str,
+    extract_c_extension_signature,
+)
+from ml_ecosystem_snapshots.network_env import (
+    fetch_url,
+    get_custom_snapshots_paths,
+    is_offline_mode,
+    load_json_data,
+    stream_snapshot_items,
+)
 
 
 def get_all_members(module: Any) -> List[Tuple[str, Any]]:
@@ -20,332 +32,52 @@ def get_all_members(module: Any) -> List[Tuple[str, Any]]:
 
     Returns:
         A list of (name, object) tuples.
-
     """
     members = {}
 
-    # 1. Standard dir() lookup
     for name in dir(module):
         try:
             members[name] = getattr(module, name)
-        except Exception:
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+            IndexError,
+            SyntaxError,
+            OSError,
+            ImportError,
+            RuntimeError,
+            Exception,
+        ):
             pass
 
-    # 2. Aggressive __all__ resolution for lazy loaded modules
     if hasattr(module, "__all__"):
         for name in module.__all__:
             if name not in members:
                 try:
                     members[name] = getattr(module, name)
-                except Exception:
+                except (
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    KeyError,
+                    IndexError,
+                    SyntaxError,
+                    OSError,
+                    ImportError,
+                    RuntimeError,
+                    Exception,
+                ):
                     pass
 
     return list(members.items())
-
-
-class CExtensionSignature(List[Tuple[str, str, Optional[str], Optional[str]]]):
-    """Extracted signature parameter list for C-extensions with overloads support."""
-
-    def __init__(
-        self,
-        params: List[Tuple[str, str, Optional[str], Optional[str]]],
-        returns_type: Optional[str] = None,
-        overloads: Optional[List["CExtensionSignature"]] = None,
-    ) -> None:
-        """Initialize signature with parameters, return type, and optional overloads.
-
-        Args:
-            params: List of parameter tuples: (name, kind, default, annotation).
-            returns_type: Optional return type annotation string.
-            overloads: Optional list of secondary/tertiary overload signatures.
-        """
-        super().__init__(params)
-        self.returns_type: Optional[str] = returns_type
-        self.overloads: List["CExtensionSignature"] = overloads or []
-
-
-def _normalize_c_sig_args(args_str: str) -> str:
-    """Normalize C++ / PyBind / ATen parameter syntax to Python syntax for AST parsing.
-
-    Converts signatures like 'Tensor self, bool inplace=False' into 'self: "Tensor" = False'.
-
-    Args:
-        args_str: Raw parameter string from C-extension docstring.
-
-    Returns:
-        Normalized Python parameter string.
-    """
-    tokens: List[str] = []
-    depth = 0
-    cur: List[str] = []
-    for char in args_str:
-        if char in "<[(":
-            depth += 1
-            cur.append(char)
-        elif char in ">])":
-            depth -= 1
-            cur.append(char)
-        elif char == "," and depth == 0:
-            tokens.append("".join(cur).strip())
-            cur = []
-        else:
-            cur.append(char)
-    if cur:
-        tokens.append("".join(cur).strip())
-
-    transformed: List[str] = []
-    for tok in tokens:
-        if not tok:
-            continue
-        if tok in ("*", "/"):
-            transformed.append(tok)
-            continue
-        if tok.startswith("*"):
-            transformed.append(tok)
-            continue
-        if ":" in tok:
-            transformed.append(tok)
-            continue
-        # C++ / PyBind style: Type [&*] name [= default]
-        m = re.match(
-            r"^(?:const\s+)?([a-zA-Z_][\w:]*(?:<[^>]+>)?(?:\s*[*&]+)?)\s+([a-zA-Z_]\w*)(?:\s*=\s*(.+))?$",
-            tok,
-        )
-        if m:
-            typ, name, default = m.group(1).strip(), m.group(2).strip(), m.group(3)
-            clean_typ = typ.replace("&", "").replace("*", "").strip()
-            if default is not None:
-                transformed.append(f'{name}: "{clean_typ}" = {default.strip()}')
-            else:
-                transformed.append(f'{name}: "{clean_typ}"')
-        else:
-            transformed.append(tok)
-    return ", ".join(transformed)
-
-
-def _parse_c_extension_sig_str(
-    sig_line: str,
-) -> Optional[
-    Tuple[
-        str,
-        List[Tuple[str, str, Optional[str], Optional[str]]],
-        Optional[str],
-    ]
-]:
-    """Parse a single signature line into function name, params, and return type.
-
-    Args:
-        sig_line: A single signature line (e.g. `add(input, other) -> Tensor`).
-
-    Returns:
-        A tuple of (func_name, extracted_params, returns_type), or None if parsing fails.
-    """
-    clean_line = sig_line.strip()
-    clean_line = re.sub(r"^(?:\d+[\.\)]\s*)?(?:aten::|c10::|torch\.)", "", clean_line)
-    pattern = r"^(?:\d+[\.\)]\s*)?([a-zA-Z0-9_]+)\((.*)\)(?:\s*->\s*(.*))?$"
-    match = re.match(pattern, clean_line)
-    if not match:
-        return None
-
-    func_name = match.group(1)
-    args_str = match.group(2)
-    ret_type_str = match.group(3).strip() if match.group(3) else None
-
-    dummy_code = f"def dummy_func({args_str}): pass"
-    args: ast.arguments
-    try:
-        tree = ast.parse(dummy_code)
-        func_def = tree.body[0]
-        assert isinstance(func_def, ast.FunctionDef)
-        args = func_def.args
-    except SyntaxError:
-        norm_args = _normalize_c_sig_args(args_str)
-        try:
-            tree = ast.parse(f"def dummy_func({norm_args}): pass")
-            func_def = tree.body[0]
-            assert isinstance(func_def, ast.FunctionDef)
-            args = func_def.args
-        except SyntaxError:
-            return None
-
-    extracted_params: List[Tuple[str, str, Optional[str], Optional[str]]] = []
-
-    def unparse_anno(node: Any) -> Optional[str]:
-        """Convert an AST annotation node back to a string.
-
-        Args:
-            node: AST node.
-
-        Returns:
-            String representation or None.
-        """
-        if node is None:
-            return None
-        return ast.unparse(node)
-
-    def unparse_default(node: Any) -> Optional[str]:
-        """Convert an AST default value node to a string representation.
-
-        Args:
-            node: AST node.
-
-        Returns:
-            String representation or None.
-        """
-        try:
-            val = ast.literal_eval(node)
-            if isinstance(val, str):
-                return repr(val)
-            return str(val)
-        except ValueError:
-            return ast.unparse(node)
-
-    num_defaults = len(args.defaults)
-    posonly_args = getattr(args, "posonlyargs", [])
-    posonly_count = len(posonly_args)
-    combined_args = posonly_args + args.args
-
-    num_combined = len(combined_args)
-    default_offset = num_combined - num_defaults
-
-    for i, arg in enumerate(combined_args):
-        p_name = arg.arg
-        if p_name == "self":
-            continue
-        p_kind = "POSITIONAL_ONLY" if i < posonly_count else "POSITIONAL_OR_KEYWORD"
-        p_anno = unparse_anno(arg.annotation)
-        p_def = (
-            unparse_default(args.defaults[i - default_offset])
-            if i >= default_offset
-            else None
-        )
-        extracted_params.append((p_name, p_kind, p_def, p_anno))
-
-    if args.vararg:
-        p_name = args.vararg.arg
-        p_kind = "VAR_POSITIONAL"
-        p_anno = unparse_anno(args.vararg.annotation)
-        extracted_params.append((p_name, p_kind, None, p_anno))
-
-    for i, arg in enumerate(args.kwonlyargs):
-        p_name = arg.arg
-        p_kind = "KEYWORD_ONLY"
-        p_anno = unparse_anno(arg.annotation)
-        default_node = args.kw_defaults[i]
-        p_def = unparse_default(default_node) if default_node else None
-        extracted_params.append((p_name, p_kind, p_def, p_anno))
-
-    if args.kwarg:
-        p_name = args.kwarg.arg
-        p_kind = "VAR_KEYWORD"
-        p_anno = unparse_anno(args.kwarg.annotation)
-        extracted_params.append((p_name, p_kind, None, p_anno))
-
-    return func_name, extracted_params, ret_type_str
-
-
-def extract_c_extension_signature(
-    target: Any, target_name: str
-) -> Optional[CExtensionSignature]:
-    """Extract signature parameters from C-extension / PyBind11 docstrings.
-
-    Many compiled ML frameworks (like Torch, PyBind11 modules) do not support
-    inspect.signature. Their signatures are often embedded in the first lines of
-    the docstring (e.g., `relu(input: Tensor) -> Tensor`), potentially with
-    multiple consecutive or numbered overloads.
-
-    Args:
-        target: The callable object to inspect.
-        target_name: The name of the callable.
-
-    Returns:
-        A CExtensionSignature list of parameter tuples: (name, kind, default_str, annotation_str)
-        with .returns_type and .overloads populated, or None if parsing fails.
-    """
-    docstring = getattr(target, "__doc__", None)
-    if not docstring or not isinstance(docstring, str) or not docstring.strip():
-        return None
-
-    lines = docstring.strip().split("\n")
-
-    parsed_sigs: List[
-        Tuple[
-            str,
-            List[Tuple[str, str, Optional[str], Optional[str]]],
-            Optional[str],
-        ]
-    ] = []
-
-    has_numbered = any(re.match(r"^\s*\d+[\.\)]", line) for line in lines)
-
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            if parsed_sigs and not has_numbered:
-                break
-        elif (parsed := _parse_c_extension_sig_str(stripped)) is not None:
-            parsed_sigs.append(parsed)
-        elif parsed_sigs and not has_numbered:
-            if "overloaded function" in stripped.lower():
-                has_numbered = True
-            else:
-                break
-        elif "overloaded function" in stripped.lower():
-            has_numbered = True
-
-    if not parsed_sigs:
-        # Fallback: scan lines for target_name(...) calls or docstring usage patterns
-        for line in lines:
-            stripped = line.strip()
-            if "(" in stripped and ")" in stripped:
-                clean_cand = re.sub(r"^(?:>>>|\.\.\.)\s*", "", stripped).strip()
-                if (
-                    clean_cand.startswith(f"{target_name}(")
-                    or f".{target_name}(" in clean_cand
-                    or target_name in clean_cand
-                ):
-                    parsed = _parse_c_extension_sig_str(clean_cand)
-                    if parsed is not None:
-                        parsed_sigs.append(parsed)
-                        break
-
-    if not parsed_sigs:
-        return None
-
-    if (
-        len(parsed_sigs) > 1
-        and has_numbered
-        and len(parsed_sigs[0][1]) == 2
-        and parsed_sigs[0][1][0][1] == "VAR_POSITIONAL"
-        and parsed_sigs[0][1][1][1] == "VAR_KEYWORD"
-    ):
-        primary = parsed_sigs[1]
-        secondary = parsed_sigs[2:]
-    else:
-        primary = parsed_sigs[0]
-        secondary = parsed_sigs[1:]
-
-    overload_objs = [
-        CExtensionSignature(params=ov[1], returns_type=ov[2], overloads=[])
-        for ov in secondary
-    ]
-
-    return CExtensionSignature(
-        params=primary[1],
-        returns_type=primary[2],
-        overloads=overload_objs,
-    )
 
 
 def get_framework_docstring_parser(
     framework_name: str, docstring: Optional[str] = None
 ) -> str:
     """Determine the most appropriate docstring parser for a framework.
-
-    Sphinx/reST is used by default for Sphinx-heavy frameworks (PyTorch, TensorFlow,
-    Scikit-Learn). NumPy convention is used for NumPy/SciPy. Google convention
-    is used for JAX/Keras/Transformers. If a docstring is provided, structural heuristics
-    are evaluated to detect or dynamically fall back to the observed style.
 
     Args:
         framework_name: Name of the framework or top-level module (e.g. 'torch', 'numpy').
@@ -354,19 +86,20 @@ def get_framework_docstring_parser(
     Returns:
         The docstring parser style identifier ('rest', 'numpy', 'google', or 'auto').
     """
+    nl = chr(10)
     if docstring and isinstance(docstring, str):
-        # Heuristics on docstring content
         if any(
             marker in docstring
             for marker in (":param ", ":type ", ":return:", ":rtype:", ":raises:")
         ):
             return "rest"
-        if re.search(r"\n(Parameters|Returns|Raises)\n\s*[-=]{3,}", docstring):
+        if re.search(
+            nl + r"(Parameters|Returns|Raises)" + nl + r"\s*[-=]{3,}", docstring
+        ):
             return "numpy"
-        if re.search(r"\n(Args|Arguments|Returns|Raises):\s*\n", docstring):
+        if re.search(nl + r"(Args|Arguments|Returns|Raises):\s*" + nl, docstring):
             return "google"
 
-    # Framework-level heuristics
     name_clean = framework_name.lower().replace("-", "_")
     if name_clean in (
         "torch",
@@ -389,9 +122,6 @@ def get_framework_docstring_parser(
 def resolve_griffe_parser(parser_name: str) -> Any:
     """Resolve a parser identifier into a valid Griffe Parser instance.
 
-    Ensures that 'rest' maps to griffe.Parser.rest if available, or gracefully
-    falls back to griffe.Parser.sphinx (reST/Sphinx parser).
-
     Args:
         parser_name: The parser name ('rest', 'sphinx', 'google', 'numpy', 'auto').
 
@@ -403,18 +133,27 @@ def resolve_griffe_parser(parser_name: str) -> Any:
 
         if not hasattr(griffe.Parser, "rest"):
             try:
-                # Provide transparent fallback hook for Parser('rest')
                 setattr(
                     griffe.Parser,
                     "_missing_",
                     classmethod(lambda cls, val: cls.sphinx if val == "rest" else None),
                 )
-            except Exception:
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                IndexError,
+                SyntaxError,
+                OSError,
+                ImportError,
+                RuntimeError,
+                Exception,
+            ):
                 pass
 
         if parser_name == "rest":
             return getattr(griffe.Parser, "rest", griffe.Parser.sphinx)
-
         return griffe.Parser(parser_name)
     except Exception:
         return None
@@ -424,10 +163,6 @@ def parse_docstring_with_griffe(
     docstring: str, parser_name: Optional[str] = None
 ) -> List[Any]:
     """Parse a docstring using Griffe with dynamic fallback across conventions.
-
-    Tries the requested or detected parser first. If the resulting parse yields
-    no structured sections (parameters, returns, or raises), it dynamically falls
-    back through the alternative conventions ('rest', 'google', 'numpy').
 
     Args:
         docstring: The docstring text to parse.
@@ -455,7 +190,7 @@ def parse_docstring_with_griffe(
             continue
         try:
             doc_obj = griffe.Docstring(docstring)
-            sections = griffe.parse(doc_obj, resolved)
+            sections: List[Any] = griffe.parse(doc_obj, resolved)
             has_structured = any(
                 getattr(s.kind, "value", str(s.kind))
                 in ("parameters", "returns", "raises")
@@ -465,7 +200,18 @@ def parse_docstring_with_griffe(
                 return sections
             if not best_sections and sections:
                 best_sections = sections
-        except Exception:
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+            IndexError,
+            SyntaxError,
+            OSError,
+            ImportError,
+            RuntimeError,
+            Exception,
+        ):
             pass
 
     return best_sections
@@ -473,9 +219,6 @@ def parse_docstring_with_griffe(
 
 def strip_sphinx_roles(text: Optional[str]) -> Optional[str]:
     """Strip Sphinx cross-referencing roles from text.
-
-    Transforms roles such as `:class:`~torch.Tensor`` or `:func:`relu``
-    into clean representations (e.g. `torch.Tensor` or `relu`).
 
     Args:
         text: The input text containing potential Sphinx roles.
@@ -486,7 +229,6 @@ def strip_sphinx_roles(text: Optional[str]) -> Optional[str]:
     if text is None:
         return None
     cleaned = str(text)
-    # Strip Sphinx roles :role:`~target` -> target
     cleaned = re.sub(r":[a-zA-Z0-9_:]+:`~?([^`]*)`", r"\1", cleaned)
     return cleaned
 
@@ -496,18 +238,12 @@ def extract_griffe_docstring_metadata(
 ) -> Dict[str, Any]:
     """Extract structured parameters, return types, and exceptions from a docstring.
 
-    Leverages Griffe's parsed docstring section enumeration to capture parameter
-    descriptions, structured types, defaults, return annotations, and raised exceptions.
-
     Args:
         docstring: The docstring text to parse.
         parser_name: Optional parser name to prioritize.
 
     Returns:
-        A dictionary containing:
-            'params': Dict[str, Dict[str, Optional[str]]],
-            'returns': Optional[Dict[str, Optional[str]]],
-            'raises': List[str]
+        A dictionary containing 'params', 'returns', and 'raises'.
     """
     sections = parse_docstring_with_griffe(docstring, parser_name=parser_name)
 
@@ -571,8 +307,6 @@ def extract_griffe_docstring_metadata(
                     if exc_name not in raises:
                         raises.append(exc_name)
 
-    # Sphinx field lists: :raises <type>: or :raise <type>: or :except <type>:
-    # Griffe's parser often treats :raises <type>: as a DocstringParameter in 'parameters'.
     for exc in re.findall(r":(?:raises?|except)\s+([A-Za-z0-9_.]+):", docstring):
         if exc in params:
             del params[exc]
@@ -580,36 +314,6 @@ def extract_griffe_docstring_metadata(
             raises.append(exc)
 
     return {"params": params, "returns": returns, "raises": raises}
-
-
-def is_offline_mode() -> bool:
-    """Check if offline mode is explicitly enabled via environment variable.
-
-    Returns:
-        True if ML_SNAPSHOTS_OFFLINE or ML_FRAMEWORK_SNAPSHOTS_OFFLINE is set to a truthy value.
-    """
-    for var in ("ML_SNAPSHOTS_OFFLINE", "ML_FRAMEWORK_SNAPSHOTS_OFFLINE"):
-        val = os.environ.get(var, "").strip().lower()
-        if val in ("1", "true", "yes", "on", "enable", "enabled"):
-            return True
-    return False
-
-
-def get_custom_snapshots_paths() -> List[str]:
-    """Retrieve custom snapshot directory paths configured via environment variables.
-
-    Returns:
-        List of directory paths specified in ML_SNAPSHOTS_PATH or ML_FRAMEWORK_SNAPSHOTS_PATH.
-    """
-    paths: List[str] = []
-    for var in ("ML_SNAPSHOTS_PATH", "ML_FRAMEWORK_SNAPSHOTS_PATH"):
-        raw = os.environ.get(var)
-        if raw:
-            for p in raw.split(os.pathsep):
-                p_clean = p.strip()
-                if p_clean and os.path.isdir(p_clean) and p_clean not in paths:
-                    paths.append(p_clean)
-    return paths
 
 
 def split_tablegen_list(raw_list_str: str) -> List[str]:
@@ -621,6 +325,7 @@ def split_tablegen_list(raw_list_str: str) -> List[str]:
     Returns:
         List of trimmed TableGen element strings.
     """
+    bs = chr(92)
     elements: List[str] = []
     current: List[str] = []
     depth_bracket = 0
@@ -630,14 +335,14 @@ def split_tablegen_list(raw_list_str: str) -> List[str]:
     escape = False
 
     cleaned_str = re.sub(r"/\*.*?\*/", "", raw_list_str, flags=re.DOTALL)
-    cleaned_str = re.sub(r"//[^\r\n]*", "", cleaned_str)
+    cleaned_str = re.sub(r"//.*", "", cleaned_str)
 
     for char in cleaned_str:
         if escape:
             current.append(char)
             escape = False
             continue
-        if char == "\\":
+        if char == bs:
             current.append(char)
             escape = True
             continue
@@ -693,6 +398,7 @@ def extract_tablegen_traits(text: str) -> List[str]:
     Returns:
         List of parsed trait names with nested parameters preserved.
     """
+    bs = chr(92)
     start = -1
     in_str = False
     esc = False
@@ -700,7 +406,7 @@ def extract_tablegen_traits(text: str) -> List[str]:
         if esc:
             esc = False
             continue
-        if ch == "\\":
+        if ch == bs:
             esc = True
             continue
         if ch == '"':
@@ -721,7 +427,7 @@ def extract_tablegen_traits(text: str) -> List[str]:
         if escape:
             escape = False
             continue
-        if char == "\\":
+        if char == bs:
             escape = True
             continue
         if char == '"':
@@ -759,62 +465,22 @@ def extract_tablegen_traits(text: str) -> List[str]:
     return []
 
 
-def load_json_data(file_path: Union[str, Path]) -> Any:
-    """Load JSON data from a plain .json, compressed .json.gz, or .json.zst file.
-
-    Args:
-        file_path: Absolute or relative path to the snapshot file.
-
-    Returns:
-        Deserialized JSON object (dict or list).
-    """
-    path_str = str(file_path)
-    if path_str.endswith(".gz"):
-        import gzip
-
-        with gzip.open(path_str, "rt", encoding="utf-8") as f:
-            return json.load(f)
-    elif path_str.endswith(".zst"):
-        import importlib
-
-        try:
-            zstd = importlib.import_module("zstandard")
-            dctx = getattr(zstd, "ZstdDecompressor")()
-            with open(path_str, "rb") as bf:
-                decompressed: bytes = dctx.decompress(bf.read())
-            return json.loads(decompressed.decode("utf-8"))
-        except Exception:
-            with open(path_str, "rb") as bf:
-                return json.loads(bf.read().decode("utf-8"))
-    else:
-        with open(path_str, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-
-def stream_snapshot_items(file_path: Union[str, Path]) -> Iterator[Dict[str, Any]]:
-    """Iteratively yield items from a snapshot manifest to minimize memory overhead.
-
-    Args:
-        file_path: Absolute or relative path to the snapshot file.
-
-    Yields:
-        Individual item dictionaries parsed from categories or items lists.
-    """
-    data = load_json_data(file_path)
-    if isinstance(data, list):
-        for item in data:
-            if isinstance(item, dict):
-                yield item
-    elif isinstance(data, dict):
-        categories = data.get("categories", {})
-        if isinstance(categories, dict):
-            for _cat, items in categories.items():
-                if isinstance(items, list):
-                    for item in items:
-                        if isinstance(item, dict):
-                            yield item
-        items_list = data.get("items", [])
-        if isinstance(items_list, list):
-            for item in items_list:
-                if isinstance(item, dict):
-                    yield item
+__all__ = [
+    "CExtensionSignature",
+    "_normalize_c_sig_args",
+    "_parse_c_extension_sig_str",
+    "extract_c_extension_signature",
+    "extract_griffe_docstring_metadata",
+    "extract_tablegen_traits",
+    "fetch_url",
+    "get_all_members",
+    "get_custom_snapshots_paths",
+    "get_framework_docstring_parser",
+    "is_offline_mode",
+    "load_json_data",
+    "parse_docstring_with_griffe",
+    "resolve_griffe_parser",
+    "split_tablegen_list",
+    "stream_snapshot_items",
+    "strip_sphinx_roles",
+]

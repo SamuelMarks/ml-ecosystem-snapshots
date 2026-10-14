@@ -140,7 +140,11 @@ def test_check_aten_op_mcp() -> None:
 
 
 def test_cmd_check_aten_cli_valid(capsys: Any) -> None:
-    """Verify CLI command execution on valid ATen operation."""
+    """Verify CLI command execution on valid ATen operation.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     args = argparse.Namespace(
         op_name="matmul",
         inputs_count=2,
@@ -153,7 +157,11 @@ def test_cmd_check_aten_cli_valid(capsys: Any) -> None:
 
 
 def test_cmd_check_aten_cli_invalid_exits(capsys: Any) -> None:
-    """Verify CLI command exits with non-zero code on invalid operator."""
+    """Verify CLI command exits with non-zero code on invalid operator.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     args = argparse.Namespace(
         op_name="invalid_op",
         inputs_count=None,

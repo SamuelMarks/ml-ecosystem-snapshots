@@ -10,10 +10,7 @@ import importlib
 from typing import Any, Dict, List
 
 from ml_switcheroo_ir.schema.ghost import (
-    GhostParam,
-    GhostPythonRef,
     GhostRef,
-    ParameterKind,
     SemanticTier,
 )
 from ..models import GhostInspector
@@ -164,30 +161,19 @@ def collect_api(
     ):
         return []
 
+    from ml_ecosystem_snapshots.frameworks._base import build_canonical_python_ref
+
     mod = _discover_flash_attn_module()
     if mod is None:
-        refs: List[GhostRef] = []
-        for op in CANONICAL_FLASH_ATTN_OPS:
-            params = [
-                GhostParam(
-                    name=p["name"],
-                    kind=getattr(ParameterKind, p.get("kind", "POSITIONAL_OR_KEYWORD")),
-                    default=p.get("default"),
-                )
-                for p in op.get("params", [])
-            ]
-            refs.append(
-                GhostPythonRef(
-                    name=op["name"],
-                    api_path=op["api_path"],
-                    kind="function",
-                    params=params,
-                    docstring=op.get("docstring", f"Attention kernel {op['name']}."),
-                    environment_tags=["attention", "fused_kernel", "custom_ops"],
-                    domain_metadata={"domain": "attention"},
-                )
+        return [
+            build_canonical_python_ref(
+                op,
+                default_doc_prefix="Attention kernel",
+                environment_tags=("attention", "fused_kernel", "custom_ops"),
+                domain_metadata={"domain": "attention"},
             )
-        return refs
+            for op in CANONICAL_FLASH_ATTN_OPS
+        ]
 
     results: List[GhostRef] = []
     seen: set[str] = set()
@@ -204,28 +190,28 @@ def collect_api(
                 ]
                 results.append(ref)
                 seen.add(op["api_path"])
-            except Exception:
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                IndexError,
+                SyntaxError,
+                OSError,
+                ImportError,
+                RuntimeError,
+                Exception,
+            ):
                 pass
 
     # Fill any missed ops from canonical definitions
     for op in CANONICAL_FLASH_ATTN_OPS:
         if op["api_path"] not in seen:
-            params = [
-                GhostParam(
-                    name=p["name"],
-                    kind=getattr(ParameterKind, p.get("kind", "POSITIONAL_OR_KEYWORD")),
-                    default=p.get("default"),
-                )
-                for p in op.get("params", [])
-            ]
             results.append(
-                GhostPythonRef(
-                    name=op["name"],
-                    api_path=op["api_path"],
-                    kind="function",
-                    params=params,
-                    docstring=op.get("docstring", f"Attention kernel {op['name']}."),
-                    environment_tags=["attention", "fused_kernel", "custom_ops"],
+                build_canonical_python_ref(
+                    op,
+                    default_doc_prefix="Attention kernel",
+                    environment_tags=("attention", "fused_kernel", "custom_ops"),
                     domain_metadata={"domain": "attention"},
                 )
             )

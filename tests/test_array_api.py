@@ -124,7 +124,11 @@ def test_check_array_api_op_mcp() -> None:
 
 
 def test_cmd_check_array_api_cli_valid(capsys: Any) -> None:
-    """Verify CLI command execution on valid Array API operation."""
+    """Verify CLI command execution on valid Array API operation.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     args = argparse.Namespace(
         op_name="multiply",
         inputs_count=2,
@@ -137,7 +141,11 @@ def test_cmd_check_array_api_cli_valid(capsys: Any) -> None:
 
 
 def test_cmd_check_array_api_cli_invalid_exits(capsys: Any) -> None:
-    """Verify CLI command exits with non-zero code on invalid operator."""
+    """Verify CLI command exits with non-zero code on invalid operator.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     args = argparse.Namespace(
         op_name="invalid_op",
         inputs_count=None,
@@ -152,9 +160,20 @@ def test_cmd_check_array_api_cli_invalid_exits(capsys: Any) -> None:
 
 def test_get_array_api_module_branches() -> None:
     """Verify module lookup branches for _get_array_api_module."""
+
     # Case where module is found
-    mod = array_api._get_array_api_module()
-    assert mod is not None or mod is None
+    class DummyModule:
+        """Mock Array API module placeholder."""
+
+        pass
+
+    with patch(
+        "ml_ecosystem_snapshots.frameworks.array_api.importlib.import_module",
+        return_value=DummyModule(),
+    ):
+        mod = array_api._get_array_api_module()
+        assert mod is not None
+        assert isinstance(mod, DummyModule)
 
     # Case where all fail
     with patch(

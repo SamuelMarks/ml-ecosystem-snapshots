@@ -68,7 +68,11 @@ def test_collect_api_live_mode() -> None:
     fake_trans = types.SimpleNamespace(MFCC=lambda: None)
 
     def fake_get_submodule(sub: str) -> Any:
-        """Return fake submodule by name."""
+        """Return fake submodule by name.
+
+        Args:
+            sub: Input sub parameter.
+        """
         if sub == "functional":
             return fake_func
         if sub == "transforms":
@@ -90,7 +94,11 @@ def test_collect_api_inspection_exception_handled() -> None:
     fake_func = types.SimpleNamespace(melscale_fbanks="not_inspectable")
 
     def fake_get_submodule(sub: str) -> Any:
-        """Return fake functional submodule."""
+        """Return fake functional submodule.
+
+        Args:
+            sub: Input sub parameter.
+        """
         return fake_func if sub == "functional" else None
 
     with patch(
@@ -148,7 +156,11 @@ def test_check_torchaudio_op_mcp() -> None:
 
 
 def test_cmd_check_torchaudio_cli_valid(capsys: Any) -> None:
-    """Verify CLI command execution on valid TorchAudio operation."""
+    """Verify CLI command execution on valid TorchAudio operation.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     args = argparse.Namespace(
         op_name="spectrogram",
         inputs_count=8,
@@ -161,7 +173,11 @@ def test_cmd_check_torchaudio_cli_valid(capsys: Any) -> None:
 
 
 def test_cmd_check_torchaudio_cli_invalid_exits(capsys: Any) -> None:
-    """Verify CLI command exits with non-zero code on invalid operator."""
+    """Verify CLI command exits with non-zero code on invalid operator.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     args = argparse.Namespace(
         op_name="invalid_op",
         inputs_count=None,
@@ -176,9 +192,20 @@ def test_cmd_check_torchaudio_cli_invalid_exits(capsys: Any) -> None:
 
 def test_get_torchaudio_submodule_branches() -> None:
     """Verify module lookup branches for _get_torchaudio_submodule."""
+
     # Case where module is found
-    mod = torchaudio._get_torchaudio_submodule("functional")
-    assert mod is not None or mod is None
+    class DummyModule:
+        """Mock TorchAudio submodule placeholder."""
+
+        pass
+
+    with patch(
+        "ml_ecosystem_snapshots.frameworks.torchaudio.importlib.import_module",
+        return_value=DummyModule(),
+    ):
+        mod = torchaudio._get_torchaudio_submodule("functional")
+        assert mod is not None
+        assert isinstance(mod, DummyModule)
 
     # Case where all fail
     with patch(

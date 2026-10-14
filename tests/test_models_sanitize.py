@@ -1,10 +1,10 @@
-"""Module docstring."""
+"""Unit tests and verification suite for models sanitize."""
 
 from ml_ecosystem_snapshots.models import sanitize_type_str
 
 
 def test_sanitize_type_str() -> None:
-    """Function docstring."""
+    """Verify sanitize type str behavior."""
     assert sanitize_type_str(None) is None
     assert sanitize_type_str("<class 'list'>") == "list"
     assert sanitize_type_str("typing.List[int]") == "list[int]"

@@ -6,7 +6,6 @@ import json
 import os
 import re
 from typing import Any, DefaultDict, Dict, List, Optional
-import warnings
 
 
 def resolve_instruction_architectures(mnemonic: str) -> List[str]:
@@ -645,13 +644,9 @@ def scrape_sass(
     """
     resolved_input = input_path or os.environ.get("NVIDIA_SASS_INPUT_PATH")
     if not resolved_input:
-        warnings.warn(
-            "Relying on default input path '/tmp/isa.json' is deprecated. "
-            "Please provide an explicit input_path or set NVIDIA_SASS_INPUT_PATH.",
-            DeprecationWarning,
-            stacklevel=2,
+        raise ValueError(
+            "An explicit input_path or the NVIDIA_SASS_INPUT_PATH environment variable is required."
         )
-        resolved_input = "/tmp/isa.json"
 
     resolved_output = output_path or os.path.join(
         os.path.dirname(__file__),

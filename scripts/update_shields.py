@@ -1,4 +1,4 @@
-"""Module docstring."""
+"""Unit tests and verification suite for update shields."""
 
 import os
 import sys

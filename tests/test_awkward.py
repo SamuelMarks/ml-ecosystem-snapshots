@@ -82,18 +82,15 @@ def test_collect_api_awkward_live(monkeypatch: pytest.MonkeyPatch) -> None:
     real_inspect = GhostInspector.inspect
 
     def mock_inspect(obj: Any, name: str, is_public: bool = True) -> Any:
-        """Mock inspect raising error on mean.
+        """Mock inspect function.
 
         Args:
-            obj: Target object.
-            name: Fully qualified target name.
-            is_public: Visibility flag.
+            obj: Input parameter value.
+            name: Input parameter value.
+            is_public: Input parameter value.
 
         Returns:
-            GhostRef object.
-
-        Raises:
-            RuntimeError: If target is mean.
+            A mocked GhostRef.
         """
         if "mean" in name:
             raise RuntimeError("Simulated inspection failure")
@@ -156,6 +153,16 @@ def test_get_awkward_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     real_import = builtins.__import__
 
     def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         """Mock import raising ImportError on awkward.
 
         Args:
@@ -196,6 +203,24 @@ def test_collect_api_awkward_inspection_exception(
     )
 
     def mock_inspect(*args: Any, **kwargs: Any) -> Any:
+        """Mock inspect function.
+
+        Args:
+            *args: Variable arguments.
+            **kwargs: Variable arguments.
+
+        Returns:
+            A mocked GhostRef.
+        """
+        """Mock inspect function.
+
+        Args:
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            A mocked GhostRef.
+        """
         """Mock inspect raising RuntimeError.
 
         Args:

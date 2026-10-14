@@ -1,4 +1,4 @@
-"""Module docstring."""
+"""Unit tests and verification suite for export."""
 
 from typing import Any
 from unittest.mock import patch
@@ -21,10 +21,10 @@ from ml_ecosystem_snapshots.export import (
 
 @pytest.fixture
 def sample_ghost_ref() -> GhostRef:
-    """Function docstring.
+    """Execute helper sample ghost ref.
 
     Returns:
-        Return value.
+        Computed result.
     """
     return GhostRef(
         name="Linear",
@@ -63,10 +63,10 @@ def sample_ghost_ref() -> GhostRef:
 
 
 def test_ghost_to_cdd_ir(sample_ghost_ref: Any) -> None:
-    """Function docstring.
+    """Verify ghost to cdd ir behavior.
 
     Args:
-        sample_ghost_ref: description
+        sample_ghost_ref: Input parameter value.
     """
     ir = _ghost_to_cdd_ir(sample_ghost_ref)
 
@@ -94,10 +94,10 @@ def test_ghost_to_cdd_ir(sample_ghost_ref: Any) -> None:
 
 
 def test_to_json_schema(sample_ghost_ref: Any) -> None:
-    """Function docstring.
+    """Verify to json schema behavior.
 
     Args:
-        sample_ghost_ref: description
+        sample_ghost_ref: Input parameter value.
     """
     schema = to_json_schema(sample_ghost_ref)
 
@@ -114,10 +114,10 @@ def test_to_json_schema(sample_ghost_ref: Any) -> None:
 
 
 def test_to_openapi(sample_ghost_ref: Any) -> None:
-    """Function docstring.
+    """Verify to openapi behavior.
 
     Args:
-        sample_ghost_ref: description
+        sample_ghost_ref: Input parameter value.
     """
     openapi_dict = to_openapi([sample_ghost_ref])
 
@@ -132,10 +132,10 @@ def test_to_openapi(sample_ghost_ref: Any) -> None:
 
 
 def test_to_pydantic(sample_ghost_ref: Any) -> None:
-    """Function docstring.
+    """Verify to pydantic behavior.
 
     Args:
-        sample_ghost_ref: description
+        sample_ghost_ref: Input parameter value.
     """
     code = to_pydantic(sample_ghost_ref)
     assert "class Linear(BaseModel):" in code
@@ -154,7 +154,7 @@ def test_to_pydantic(sample_ghost_ref: Any) -> None:
 
 
 def test_to_pydantic_empty() -> None:
-    """Function docstring."""
+    """Verify to pydantic empty behavior."""
     ref = GhostRef(name="Empty", api_path="a.Empty", kind="class", params=[])
     code = to_pydantic(ref)
     assert "class Empty(BaseModel):" in code
@@ -162,10 +162,10 @@ def test_to_pydantic_empty() -> None:
 
 
 def test_to_protobuf(sample_ghost_ref: Any) -> None:
-    """Function docstring.
+    """Verify to protobuf behavior.
 
     Args:
-        sample_ghost_ref: description
+        sample_ghost_ref: Input parameter value.
     """
     code = to_protobuf(sample_ghost_ref)
     assert 'syntax = "proto3";' in code
@@ -177,7 +177,7 @@ def test_to_protobuf(sample_ghost_ref: Any) -> None:
 
 
 def test_to_protobuf_types() -> None:
-    """Function docstring."""
+    """Verify to protobuf types behavior."""
     ref = GhostRef(
         name="Types",
         api_path="a.Types",
@@ -221,7 +221,7 @@ def test_to_protobuf_types() -> None:
 
 
 def test_export_branches() -> None:
-    """Function docstring."""
+    """Verify export branches behavior."""
     from ml_ecosystem_snapshots.export import (
         _py_type_to_proto,
         to_pydantic,
@@ -253,8 +253,11 @@ def test_export_branches() -> None:
             ),
         ],
     )
-    to_pydantic(r)
-    to_json_schema(r)
+    pyd_str = to_pydantic(r)
+    assert "class X" in pyd_str
+    schema_dict = to_json_schema(r)
+    assert isinstance(schema_dict, dict)
+    assert "p1" in schema_dict.get("properties", {})
 
     r_empty_anno = GhostRef(
         name="Y",
@@ -263,16 +266,19 @@ def test_export_branches() -> None:
         params=[GhostParam(name="p_empty", kind=ParameterKind.KEYWORD_ONLY)],
         returns_type="str",
     )  # No returns_description
-    _ghost_to_cdd_ir(r_empty_anno)
+    ir_empty = _ghost_to_cdd_ir(r_empty_anno)
+    assert "p_empty" in ir_empty["params"]
+    assert ir_empty["returns"]["return_type"]["typ"] == "str"
 
     r_ret_desc = GhostRef(
         name="Z", api_path="Z", kind="function", params=[], returns_description="desc"
     )
-    _ghost_to_cdd_ir(r_ret_desc)
+    ir_desc = _ghost_to_cdd_ir(r_ret_desc)
+    assert ir_desc["returns"]["return_type"]["doc"] == "desc"
 
 
 def test_export_branches_more() -> None:
-    """Function docstring."""
+    """Verify Pydantic, OpenAPI, and JSON Schema export with keyword-only and variadic parameters."""
     from ml_ecosystem_snapshots.export import (
         to_pydantic,
         to_openapi,
@@ -301,9 +307,12 @@ def test_export_branches_more() -> None:
             ),
         ],
     )
-    to_pydantic(r)
-    to_openapi([r])
-    to_json_schema(r)
+    pyd_r = to_pydantic(r)
+    assert "class X" in pyd_r
+    openapi_r = to_openapi([r])
+    assert "openapi" in openapi_r
+    json_r = to_json_schema(r)
+    assert "p1" in json_r.get("properties", {})
 
     r2 = GhostRef(
         name="X",
@@ -321,7 +330,9 @@ def test_export_branches_more() -> None:
             ),
         ],
     )
-    to_pydantic(r2)
+    pyd_r2 = to_pydantic(r2)
+    assert "class X" in pyd_r2
+    assert "p1" in pyd_r2
 
 
 def test_export_llm_prompt_context_full(sample_ghost_ref: GhostRef) -> None:

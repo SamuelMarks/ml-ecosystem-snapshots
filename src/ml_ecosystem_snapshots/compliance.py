@@ -11,7 +11,7 @@ import sys
 
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 import griffe
 
 from ml_switcheroo_ir.schema.ghost import GhostRef
@@ -237,14 +237,14 @@ def extract_target_refs_single(
 
 
 def score_compliance(
-    reference_snapshot: Dict[str, Any],
-    target_refs: List[GhostRef],
+    reference_snapshot: Mapping[str, Any],
+    target_refs: Sequence[GhostRef],
     strict_c_extensions: bool = False,
 ) -> Dict[str, Any]:
     """Score the compliance of target refs against a reference snapshot.
 
     Args:
-        reference_snapshot: The reference snapshot dictionary containing categories.
+        reference_snapshot: The reference snapshot dictionary or envelope containing categories.
         target_refs: The extracted and aligned GhostRefs from the target.
         strict_c_extensions: Whether to reject fallback matches with opaque C-extension signatures.
 
@@ -382,7 +382,7 @@ def score_compliance(
 
 
 def extract_target_refs(
-    file_paths: Union[List[str], str], target_prefix: str, reference_prefix: str
+    file_paths: Union[Sequence[str], str], target_prefix: str, reference_prefix: str
 ) -> List[GhostRef]:
     """Extract a list of GhostRefs from multiple target file paths.
 

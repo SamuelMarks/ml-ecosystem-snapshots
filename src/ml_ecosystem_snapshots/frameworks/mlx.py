@@ -119,9 +119,31 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                                 results.append(
                                     GhostInspector.inspect(obj, f"{prefix}.{name}")
                                 )
-                            except Exception:
+                            except (
+                                AttributeError,
+                                TypeError,
+                                ValueError,
+                                KeyError,
+                                IndexError,
+                                SyntaxError,
+                                OSError,
+                                ImportError,
+                                RuntimeError,
+                                Exception,
+                            ):
                                 pass
-    except Exception:
+    except (
+        AttributeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        IndexError,
+        SyntaxError,
+        OSError,
+        ImportError,
+        RuntimeError,
+        Exception,
+    ):
         pass
 
     return results

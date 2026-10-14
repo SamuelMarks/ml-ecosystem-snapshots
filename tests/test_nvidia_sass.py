@@ -512,7 +512,12 @@ def test_check_sass_instruction_extended() -> None:
 
 
 def test_cli_check_sass(capsys: Any, tmp_path: Any) -> None:
-    """Test CLI check-sass subcommand with file, valid mnemonic, and error cases."""
+    """Test CLI check-sass subcommand with file, valid mnemonic, and error cases.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+        tmp_path: Temporary directory path fixture.
+    """
     from ml_ecosystem_snapshots.cli import cmd_check_sass
     import argparse
     import pytest

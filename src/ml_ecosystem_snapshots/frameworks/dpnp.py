@@ -7,12 +7,10 @@ and accelerated math kernels from Intel DPNP.
 from typing import Any, Dict, List
 
 from ml_switcheroo_ir.schema.ghost import (
-    GhostParam,
     GhostRef,
-    ParameterKind,
     SemanticTier,
 )
-from ..models import GhostInspector, GhostPythonRef
+from ..models import GhostInspector
 
 
 CANONICAL_DPNP_OPS: List[Dict[str, Any]] = [
@@ -141,32 +139,8 @@ def collect_api(
     ):
         return []
 
-    dp = _get_dpnp()
-    if dp is None:
-        refs: List[GhostRef] = []
-        for op in CANONICAL_DPNP_OPS:
-            params = [
-                GhostParam(
-                    name=p["name"],
-                    kind=getattr(ParameterKind, p.get("kind", "POSITIONAL_OR_KEYWORD")),
-                    default=p.get("default"),
-                )
-                for p in op.get("params", [])
-            ]
-            refs.append(
-                GhostPythonRef(
-                    name=op["name"],
-                    api_path=op["api_path"],
-                    kind=op.get("kind", "function"),
-                    params=params,
-                    docstring=op.get("docstring", f"DPNP {op['name']} API."),
-                    environment_tags=["dpnp", "sycl", "oneapi"],
-                    domain_metadata={},
-                )
-            )
-        return refs
+    from ml_ecosystem_snapshots.frameworks._base import collect_from_canonical_or_live
 
-    results: List[GhostRef] = []
     target_names = [
         "array",
         "empty",
@@ -180,19 +154,12 @@ def collect_api(
         "std",
         "reshape",
     ]
-
-    for name in target_names:
-        if hasattr(dp, name):
-            obj = getattr(dp, name)
-            try:
-                ref = GhostInspector.inspect(obj, f"dpnp.{name}", is_public=True)
-                ref.environment_tags = list(ref.environment_tags or ()) + [
-                    "dpnp",
-                    "sycl",
-                    "oneapi",
-                ]
-                results.append(ref)
-            except Exception:
-                pass
-
-    return results
+    return collect_from_canonical_or_live(
+        live_module=_get_dpnp(),
+        module_prefix="dpnp",
+        target_names=target_names,
+        canonical_ops=CANONICAL_DPNP_OPS,
+        default_doc_prefix="DPNP",
+        environment_tags=("dpnp", "sycl", "oneapi"),
+        inspector_fn=GhostInspector.inspect,
+    )

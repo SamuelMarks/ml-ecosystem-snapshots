@@ -1,4 +1,4 @@
-"""Module docstring."""
+"""Unit tests and verification suite for resolve snapshot path."""
 
 from pathlib import Path
 import os
@@ -9,10 +9,10 @@ from ml_ecosystem_snapshots.cli import resolve_snapshot_path
 
 
 def test_resolve_snapshot_path_existing_file(tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify resolve snapshot path existing file behavior.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     file_path = Path(os.path.join(tmp_path, "my_snapshot.json"))
     file_path.touch()
@@ -22,10 +22,10 @@ def test_resolve_snapshot_path_existing_file(tmp_path: Any) -> None:
 
 
 def test_resolve_snapshot_path_append_json(tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify resolve snapshot path append json behavior.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     file_path = Path(os.path.join(tmp_path, "my_snapshot.json"))
     file_path.touch()
@@ -37,10 +37,10 @@ def test_resolve_snapshot_path_append_json(tmp_path: Any) -> None:
 
 
 def test_resolve_snapshot_path_fallback_to_repo(tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify resolve snapshot path fallback to repo behavior.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     # Mock __file__ so repo root points to our temp directory
     pkg_dir = Path(
@@ -76,10 +76,10 @@ def test_resolve_snapshot_path_fallback_to_repo(tmp_path: Any) -> None:
 
 
 def test_resolve_snapshot_path_not_found(tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify resolve snapshot path not found behavior.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     # Should just return the input path if nothing works
     with patch("ml_ecosystem_snapshots.cli.__file__", "/tmp/does_not_exist/cli.py"):
@@ -88,10 +88,10 @@ def test_resolve_snapshot_path_not_found(tmp_path: Any) -> None:
 
 
 def test_resolve_multiple_matches(tmp_path: Any) -> None:
-    """Function docstring.
+    """Verify resolve multiple matches behavior.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     pkg_dir = Path(
         os.path.join(Path(os.path.join(tmp_path, "src")), "ml_ecosystem_snapshots")
@@ -116,7 +116,7 @@ def test_resolve_no_matches_in_existing_dir(tmp_path: Any) -> None:
     """Test when snapshots_dir exists but no glob matches are found.
 
     Args:
-        tmp_path: Parameter.
+        tmp_path: Input parameter value.
     """
     pkg_dir = Path(
         os.path.join(Path(os.path.join(tmp_path, "src")), "ml_ecosystem_snapshots")

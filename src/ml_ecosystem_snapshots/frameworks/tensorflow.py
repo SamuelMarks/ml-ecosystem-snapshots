@@ -34,6 +34,46 @@ def _get_tf() -> Any:
         return None
 
 
+def _collect_tf_submodules(
+    tf_mod: Any,
+    submodule_names: List[str],
+    include_nonpublic: bool,
+    allow_classes: bool = False,
+) -> List[GhostRef]:
+    """Collect callable or class members across a list of TensorFlow submodules.
+
+    Args:
+        tf_mod: Imported TensorFlow root module.
+        submodule_names: List of submodule attribute names on `tf_mod`.
+        include_nonpublic: Whether to include private underscore-prefixed symbols.
+        allow_classes: Whether classes should also be collected alongside callables.
+
+    Returns:
+        List of inspected `GhostRef` objects.
+    """
+    collected: List[GhostRef] = []
+    for sub_name in submodule_names:
+        if hasattr(tf_mod, sub_name):
+            sub_mod = getattr(tf_mod, sub_name)
+            for name, obj in get_all_members(sub_mod):
+                if (callable(obj) or (allow_classes and inspect.isclass(obj))) and (
+                    include_nonpublic or not name.startswith("_")
+                ):
+                    try:
+                        collected.append(
+                            GhostInspector.inspect(obj, f"tf.{sub_name}.{name}")
+                        )
+                    except (
+                        AttributeError,
+                        TypeError,
+                        ValueError,
+                        RuntimeError,
+                        Exception,
+                    ):
+                        pass
+    return collected
+
+
 def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[GhostRef]:
     """Scan the live TensorFlow library for a specific API category.
 
@@ -155,59 +195,22 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                         results.append(GhostInspector.inspect(obj, f"tf.data.{name}"))
 
         elif category == SemanticTier.ARRAY_API:
-            if hasattr(tf, "math"):
-                for name, obj in get_all_members(tf.math):
-                    if callable(obj) and (
-                        include_nonpublic or not name.startswith("_")
-                    ):
-                        try:
-                            results.append(
-                                GhostInspector.inspect(obj, f"tf.math.{name}")
-                            )
-                        except Exception:
-                            pass
-            if hasattr(tf, "linalg"):
-                for name, obj in get_all_members(tf.linalg):
-                    if callable(obj) and (
-                        include_nonpublic or not name.startswith("_")
-                    ):
-                        try:
-                            results.append(
-                                GhostInspector.inspect(obj, f"tf.linalg.{name}")
-                            )
-                        except Exception:
-                            pass
-            if hasattr(tf, "nn"):
-                for name, obj in get_all_members(tf.nn):
-                    if callable(obj) and (
-                        include_nonpublic or not name.startswith("_")
-                    ):
-                        try:
-                            results.append(GhostInspector.inspect(obj, f"tf.nn.{name}"))
-                        except Exception:
-                            pass
-            if hasattr(tf, "image"):
-                for name, obj in get_all_members(tf.image):
-                    if callable(obj) and (
-                        include_nonpublic or not name.startswith("_")
-                    ):
-                        try:
-                            results.append(
-                                GhostInspector.inspect(obj, f"tf.image.{name}")
-                            )
-                        except Exception:
-                            pass
-            if hasattr(tf, "lookup"):
-                for name, obj in get_all_members(tf.lookup):
-                    if (callable(obj) or inspect.isclass(obj)) and (
-                        include_nonpublic or not name.startswith("_")
-                    ):
-                        try:
-                            results.append(
-                                GhostInspector.inspect(obj, f"tf.lookup.{name}")
-                            )
-                        except Exception:
-                            pass
+            results.extend(
+                _collect_tf_submodules(
+                    tf,
+                    ["math", "linalg", "nn", "image"],
+                    include_nonpublic=include_nonpublic,
+                    allow_classes=False,
+                )
+            )
+            results.extend(
+                _collect_tf_submodules(
+                    tf,
+                    ["lookup"],
+                    include_nonpublic=include_nonpublic,
+                    allow_classes=True,
+                )
+            )
 
             top_level_tensor_ops = [
                 "concat",
@@ -233,7 +236,18 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                     if callable(obj):
                         try:
                             results.append(GhostInspector.inspect(obj, f"tf.{name}"))
-                        except Exception:
+                        except (
+                            AttributeError,
+                            TypeError,
+                            ValueError,
+                            KeyError,
+                            IndexError,
+                            SyntaxError,
+                            OSError,
+                            ImportError,
+                            RuntimeError,
+                            Exception,
+                        ):
                             pass
 
             for name, obj in get_all_members(tf):
@@ -247,7 +261,18 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                     ):
                         try:
                             results.append(GhostInspector.inspect(obj, f"tf.{name}"))
-                        except Exception:
+                        except (
+                            AttributeError,
+                            TypeError,
+                            ValueError,
+                            KeyError,
+                            IndexError,
+                            SyntaxError,
+                            OSError,
+                            ImportError,
+                            RuntimeError,
+                            Exception,
+                        ):
                             pass
 
             if hasattr(tf, "raw_ops"):
@@ -258,7 +283,18 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                                 results.append(
                                     GhostInspector.inspect(obj, f"tf.raw_ops.{name}")
                                 )
-                            except Exception:
+                            except (
+                                AttributeError,
+                                TypeError,
+                                ValueError,
+                                KeyError,
+                                IndexError,
+                                SyntaxError,
+                                OSError,
+                                ImportError,
+                                RuntimeError,
+                                Exception,
+                            ):
                                 pass
 
             # tf.Tensor and tf.Variable member methods
@@ -275,7 +311,18 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                                     obj, f"tf.Tensor.{name}", kind="method"
                                 )
                             )
-                        except Exception:
+                        except (
+                            AttributeError,
+                            TypeError,
+                            ValueError,
+                            KeyError,
+                            IndexError,
+                            SyntaxError,
+                            OSError,
+                            ImportError,
+                            RuntimeError,
+                            Exception,
+                        ):
                             pass
 
             if hasattr(tf, "Variable"):
@@ -291,7 +338,18 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                                     obj, f"tf.Variable.{name}", kind="method"
                                 )
                             )
-                        except Exception:
+                        except (
+                            AttributeError,
+                            TypeError,
+                            ValueError,
+                            KeyError,
+                            IndexError,
+                            SyntaxError,
+                            OSError,
+                            ImportError,
+                            RuntimeError,
+                            Exception,
+                        ):
                             pass
 
         if category in (SemanticTier.ARRAY_API, SemanticTier.UTIL) and hasattr(
@@ -307,10 +365,32 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                             ref.environment_tags = []
                         ref.environment_tags.append("tf.raw_op")
                         results.append(ref)
-                    except Exception:
+                    except (
+                        AttributeError,
+                        TypeError,
+                        ValueError,
+                        KeyError,
+                        IndexError,
+                        SyntaxError,
+                        OSError,
+                        ImportError,
+                        RuntimeError,
+                        Exception,
+                    ):
                         pass
 
-    except Exception:
+    except (
+        AttributeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        IndexError,
+        SyntaxError,
+        OSError,
+        ImportError,
+        RuntimeError,
+        Exception,
+    ):
         pass
 
     return results

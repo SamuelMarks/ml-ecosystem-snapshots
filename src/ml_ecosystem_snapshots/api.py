@@ -312,7 +312,18 @@ def get_pkg_version(package_name: str) -> str:
                             val = getattr(ver, "value", None)
                         if val is not None:
                             return str(val).strip("'\"")
-                except Exception:
+                except (
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    KeyError,
+                    IndexError,
+                    SyntaxError,
+                    OSError,
+                    ImportError,
+                    RuntimeError,
+                    Exception,
+                ):
                     pass
         elif package_name == "orbax_checkpoint":
             package_name = "orbax-checkpoint"
@@ -339,7 +350,18 @@ def get_pkg_version(package_name: str) -> str:
             for mlir_pkg in ("mlir", "mlir-native"):
                 try:
                     return importlib.metadata.version(mlir_pkg)
-                except Exception:
+                except (
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    KeyError,
+                    IndexError,
+                    SyntaxError,
+                    OSError,
+                    ImportError,
+                    RuntimeError,
+                    Exception,
+                ):
                     pass
             json_file = os.path.join(
                 os.path.dirname(__file__), "frameworks", "mlir_exhaustive.json"
@@ -350,7 +372,18 @@ def get_pkg_version(package_name: str) -> str:
                         h = json.load(f)
                         if isinstance(h, dict) and h.get("version"):
                             return str(h["version"])
-                except Exception:
+                except (
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    KeyError,
+                    IndexError,
+                    SyntaxError,
+                    OSError,
+                    ImportError,
+                    RuntimeError,
+                    Exception,
+                ):
                     pass
             return "19.1.0"
         elif package_name in [
@@ -370,7 +403,18 @@ def get_pkg_version(package_name: str) -> str:
                         h = json.load(f)
                         if isinstance(h, dict) and h.get("version"):
                             return str(h["version"])
-                except Exception:
+                except (
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    KeyError,
+                    IndexError,
+                    SyntaxError,
+                    OSError,
+                    ImportError,
+                    RuntimeError,
+                    Exception,
+                ):
                     pass
             defaults = {
                 "nvidia_sass": "12.6.0",
@@ -404,7 +448,18 @@ def get_pkg_version(package_name: str) -> str:
                     return line.split("==")[1].strip()
                 elif line.startswith(f"{search_name} @"):
                     return "unknown"  # Can't easily determine version from direct URL
-        except Exception:
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+            IndexError,
+            SyntaxError,
+            OSError,
+            ImportError,
+            RuntimeError,
+            Exception,
+        ):
             pass
         return "unknown"
 
@@ -618,7 +673,18 @@ def extract_snapshot(
                     d["kwargs"] = kwargs_list
                     dumped_refs.append(d)
                 return cat.value, dumped_refs
-        except Exception:
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+            IndexError,
+            SyntaxError,
+            OSError,
+            ImportError,
+            RuntimeError,
+            Exception,
+        ):
             pass
         return cat.value, []
 

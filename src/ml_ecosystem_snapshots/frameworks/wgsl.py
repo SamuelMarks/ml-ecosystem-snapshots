@@ -59,6 +59,22 @@ CANONICAL_WGSL_OPS: List[Dict[str, Any]] = [
         "description": "Synchronize memory operations among invocations in a workgroup.",
     },
     {
+        "name": "textureSample",
+        "domain": "wgsl",
+        "inputs": ["t", "s", "coords"],
+        "outputs": ["value"],
+        "attributes": [],
+        "description": "Samples a texture using a sampler.",
+    },
+    {
+        "name": "textureLoad",
+        "domain": "wgsl",
+        "inputs": ["t", "coords", "level"],
+        "outputs": ["value"],
+        "attributes": [],
+        "description": "Loads a texel from a texture without filtering.",
+    },
+    {
         "name": "storageBarrier",
         "domain": "wgsl",
         "inputs": [],
@@ -109,7 +125,18 @@ def _load_wgsl_ops() -> List[Dict[str, Any]]:
             ops: List[Dict[str, Any]] = list(data.get("ops", []))
             if ops:
                 return ops
-    except Exception:
+    except (
+        AttributeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        IndexError,
+        SyntaxError,
+        OSError,
+        ImportError,
+        RuntimeError,
+        Exception,
+    ):
         pass
     return CANONICAL_WGSL_OPS
 

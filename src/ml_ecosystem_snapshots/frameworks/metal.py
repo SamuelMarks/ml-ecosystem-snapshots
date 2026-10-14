@@ -7,16 +7,10 @@ and threadgroup synchronization operations from the Apple Metal Shading Language
 from typing import Any, Dict, List
 
 from ml_switcheroo_ir.schema.ghost import (
-    GhostOperationRef,
-    GhostParam,
     GhostRef,
-    GhostResult,
-    IRParameterRole,
     OperandDirection,
-    ParameterKind,
     SemanticTier,
 )
-from ..models import ExtendedGhostParam
 
 
 CANONICAL_METAL_OPS: List[Dict[str, Any]] = [
@@ -180,84 +174,31 @@ def collect_api(
     ):
         return []
 
+    from ml_ecosystem_snapshots.frameworks._base import build_ssa_operation_refs
+
     ops = _load_metal_ops()
-    refs: List[GhostRef] = []
-
-    for op in ops:
-        op_name = op["name"]
-        addr_space = op.get("address_space", "thread")
-        api_path = f"metal.{op_name}"
-        params: List[GhostParam] = []
-
-        # SSA operands
-        for inp in op.get("inputs", []):
-            direction = (
-                OperandDirection.WRITE
-                if "store" in op_name and inp in ("ptr", "dest")
-                else OperandDirection.READ
-            )
-            params.append(
-                ExtendedGhostParam(
-                    name=inp,
-                    kind=ParameterKind.POSITIONAL_ONLY,
-                    annotation=f"{addr_space} T*",
-                    standardized_name=inp,
-                    description=f"MSL operand {inp} in {addr_space} address space",
-                    direction=direction,
-                    role=IRParameterRole.OPERAND,
-                )
-            )
-
-        # Attributes
-        attrs_meta: Dict[str, Any] = {}
-        for attr in op.get("attributes", []):
-            attr_name = attr.get("name", "attr")
-            attr_type = attr.get("type", "Any")
-            attr_def = attr.get("default")
-            params.append(
-                ExtendedGhostParam(
-                    name=attr_name,
-                    kind=ParameterKind.KEYWORD_ONLY,
-                    annotation=attr_type,
-                    default=str(attr_def) if attr_def is not None else None,
-                    standardized_name=attr_name,
-                    description=f"MSL attribute {attr_name}",
-                    role=IRParameterRole.ATTRIBUTE,
-                )
-            )
-            attrs_meta[attr_name] = attr
-
-        returns: List[GhostResult] = []
-        for out in op.get("outputs", []):
-            returns.append(GhostResult(name=out, type="T"))
-
-        returns_type = "T" if returns else "None"
-
-        provenance = {
+    return build_ssa_operation_refs(
+        ops=ops,
+        api_prefix="metal",
+        name_key="name",
+        operand_annotation_fn=lambda op, inp: f"{op.get('address_space', 'thread')} T*",
+        operand_description_fn=lambda op, inp: (
+            f"MSL operand {inp} in {op.get('address_space', 'thread')} address space"
+        ),
+        operand_direction_fn=lambda op, inp: (
+            OperandDirection.WRITE
+            if "store" in op["name"] and inp in ("ptr", "dest")
+            else OperandDirection.READ
+        ),
+        attr_description_prefix="MSL attribute",
+        result_type="T",
+        empty_return_type="None",
+        provenance_fn=lambda op: {
             "source_type": "metal_spec",
             "upstream_version": "3.2",
-            "address_space": addr_space,
+            "address_space": op.get("address_space", "thread"),
             "category": op.get("category", "compute"),
-        }
-
-        refs.append(
-            GhostOperationRef(
-                name=op_name,
-                api_path=api_path,
-                kind="function",
-                params=params,
-                operands=[
-                    p
-                    for p in params
-                    if getattr(p, "role", None) == IRParameterRole.OPERAND
-                ],
-                returns=returns,
-                returns_type=returns_type,
-                docstring=op.get("description", f"Apple Metal {op_name} operation."),
-                environment_tags=["metal", "msl"],
-                domain_metadata=provenance,
-                attributes=attrs_meta if attrs_meta else None,
-            )
-        )
-
-    return refs
+        },
+        default_doc_fn=lambda op_name: f"Apple Metal {op_name} operation.",
+        environment_tags=("metal", "msl"),
+    )

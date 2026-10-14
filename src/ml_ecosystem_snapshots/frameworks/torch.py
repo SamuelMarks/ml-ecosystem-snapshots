@@ -101,7 +101,18 @@ def _get_activation_names() -> Set[str]:
         for name, obj in get_all_members(act_mod):
             if inspect.isclass(obj) and issubclass(obj, nn.Module):
                 names.add(name)
-    except Exception:
+    except (
+        AttributeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        IndexError,
+        SyntaxError,
+        OSError,
+        ImportError,
+        RuntimeError,
+        Exception,
+    ):
         pass
     if not names:
         names = {
@@ -233,7 +244,18 @@ def _scan_metrics(include_nonpublic: bool) -> List[GhostRef]:
             if inspect.isclass(obj) and (include_nonpublic or not name.startswith("_")):
                 try:
                     found.append(GhostInspector.inspect(obj, f"torchmetrics.{name}"))
-                except Exception:
+                except (
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    KeyError,
+                    IndexError,
+                    SyntaxError,
+                    OSError,
+                    ImportError,
+                    RuntimeError,
+                    Exception,
+                ):
                     pass
     except ImportError:
         pass
@@ -259,6 +281,35 @@ def _scan_dataloaders(include_nonpublic: bool) -> List[GhostRef]:
                 continue
             found.append(GhostInspector.inspect(obj, f"torch.utils.data.{name}"))
     return found
+
+
+def _collect_torch_namespace(
+    ns_obj: Any,
+    api_prefix: str,
+    include_nonpublic: bool,
+) -> List[GhostRef]:
+    """Collect callable non-class members from a PyTorch submodule namespace.
+
+    Args:
+        ns_obj: Target PyTorch submodule object.
+        api_prefix: Qualified API path prefix (e.g. 'torch.linalg').
+        include_nonpublic: Whether to include private underscore-prefixed symbols.
+
+    Returns:
+        List of inspected `GhostRef` objects.
+    """
+    collected: List[GhostRef] = []
+    for name, obj in get_all_members(ns_obj):
+        if (
+            (include_nonpublic or not name.startswith("_"))
+            and callable(obj)
+            and not inspect.isclass(obj)
+        ):
+            try:
+                collected.append(GhostInspector.inspect(obj, f"{api_prefix}.{name}"))
+            except (AttributeError, TypeError, ValueError, RuntimeError, Exception):
+                pass
+    return collected
 
 
 def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
@@ -288,88 +339,28 @@ def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
             if callable(obj) and not inspect.isclass(obj) and not inspect.ismodule(obj):
                 try:
                     found.append(GhostInspector.inspect(obj, f"torch.{name}"))
-                except Exception:
+                except (AttributeError, TypeError, ValueError, RuntimeError, Exception):
                     pass
 
-        # 2. linalg module
-        if hasattr(torch, "linalg"):
-            for name, obj in get_all_members(torch.linalg):
-                if (
-                    (include_nonpublic or not name.startswith("_"))
-                    and callable(obj)
-                    and not inspect.isclass(obj)
-                ):
-                    try:
-                        found.append(
-                            GhostInspector.inspect(obj, f"torch.linalg.{name}")
-                        )
-                    except Exception:
-                        pass
+        # 2-7. Submodule namespaces
+        for attr_name in ("linalg", "special", "fft", "autograd", "distributed"):
+            if hasattr(torch, attr_name):
+                found.extend(
+                    _collect_torch_namespace(
+                        getattr(torch, attr_name),
+                        f"torch.{attr_name}",
+                        include_nonpublic,
+                    )
+                )
 
-        # 3. special module
-        if hasattr(torch, "special"):
-            for name, obj in get_all_members(torch.special):
-                if (
-                    (include_nonpublic or not name.startswith("_"))
-                    and callable(obj)
-                    and not inspect.isclass(obj)
-                ):
-                    try:
-                        found.append(
-                            GhostInspector.inspect(obj, f"torch.special.{name}")
-                        )
-                    except Exception:
-                        pass
-
-        # 4. fft module
-        if hasattr(torch, "fft"):
-            for name, obj in get_all_members(torch.fft):
-                if not name.startswith("_") or include_nonpublic:
-                    if callable(obj) and not inspect.isclass(obj):
-                        try:
-                            found.append(
-                                GhostInspector.inspect(obj, f"torch.fft.{name}")
-                            )
-                        except Exception:
-                            pass
-
-        # 5. Exhaustive nn.functional module
         if hasattr(torch, "nn") and hasattr(torch.nn, "functional"):
-            for name, obj in get_all_members(torch.nn.functional):
-                if not name.startswith("_") or include_nonpublic:
-                    if callable(obj) and not inspect.isclass(obj):
-                        try:
-                            found.append(
-                                GhostInspector.inspect(
-                                    obj, f"torch.nn.functional.{name}"
-                                )
-                            )
-                        except Exception:
-                            pass
-
-        # 6. autograd functions
-        if hasattr(torch, "autograd"):
-            for name, obj in get_all_members(torch.autograd):
-                if not name.startswith("_") or include_nonpublic:
-                    if callable(obj) and not inspect.isclass(obj):
-                        try:
-                            found.append(
-                                GhostInspector.inspect(obj, f"torch.autograd.{name}")
-                            )
-                        except Exception:
-                            pass
-
-        # 7. distributed functions
-        if hasattr(torch, "distributed"):
-            for name, obj in get_all_members(torch.distributed):
-                if not name.startswith("_") or include_nonpublic:
-                    if callable(obj) and not inspect.isclass(obj):
-                        try:
-                            found.append(
-                                GhostInspector.inspect(obj, f"torch.distributed.{name}")
-                            )
-                        except Exception:
-                            pass
+            found.extend(
+                _collect_torch_namespace(
+                    torch.nn.functional,
+                    "torch.nn.functional",
+                    include_nonpublic,
+                )
+            )
 
         # 8. torch.Tensor instance methods
         if hasattr(torch, "Tensor"):
@@ -391,7 +382,18 @@ def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
                             if "in_place_mutation" not in ref.environment_tags:
                                 ref.environment_tags.append("in_place_mutation")
                         found.append(ref)
-                    except Exception:
+                    except (
+                        AttributeError,
+                        TypeError,
+                        ValueError,
+                        KeyError,
+                        IndexError,
+                        SyntaxError,
+                        OSError,
+                        ImportError,
+                        RuntimeError,
+                        Exception,
+                    ):
                         pass
 
         # 9. torch.ops.aten operations
@@ -403,7 +405,18 @@ def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
                             found.append(
                                 GhostInspector.inspect(obj, f"torch.ops.aten.{name}")
                             )
-                        except Exception:
+                        except (
+                            AttributeError,
+                            TypeError,
+                            ValueError,
+                            KeyError,
+                            IndexError,
+                            SyntaxError,
+                            OSError,
+                            ImportError,
+                            RuntimeError,
+                            Exception,
+                        ):
                             pass
 
     except ImportError:

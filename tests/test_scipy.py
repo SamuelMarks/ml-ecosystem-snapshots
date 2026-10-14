@@ -59,7 +59,11 @@ def test_collect_api_live_mode() -> None:
     fake_signal = types.SimpleNamespace(convolve=lambda in1, in2: in1)
 
     def fake_get_submodule(sub: str) -> Any:
-        """Return fake submodule by name."""
+        """Return fake submodule by name.
+
+        Args:
+            sub: Input sub parameter.
+        """
         if sub == "special":
             return fake_special
         if sub == "linalg":
@@ -83,7 +87,11 @@ def test_collect_api_inspection_exception_handled() -> None:
     fake_special = types.SimpleNamespace(erf="not_inspectable")
 
     def fake_get_submodule(sub: str) -> Any:
-        """Return fake special submodule."""
+        """Return fake special submodule.
+
+        Args:
+            sub: Input sub parameter.
+        """
         return fake_special if sub == "special" else None
 
     with patch(
@@ -139,7 +147,11 @@ def test_check_scipy_op_mcp() -> None:
 
 
 def test_cmd_check_scipy_cli_valid(capsys: Any) -> None:
-    """Verify CLI command execution on valid SciPy operation."""
+    """Verify CLI command execution on valid SciPy operation.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     args = argparse.Namespace(
         op_name="inv",
         inputs_count=1,
@@ -152,7 +164,11 @@ def test_cmd_check_scipy_cli_valid(capsys: Any) -> None:
 
 
 def test_cmd_check_scipy_cli_invalid_exits(capsys: Any) -> None:
-    """Verify CLI command exits with non-zero code on invalid operator."""
+    """Verify CLI command exits with non-zero code on invalid operator.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     args = argparse.Namespace(
         op_name="invalid_op",
         inputs_count=None,
@@ -167,9 +183,20 @@ def test_cmd_check_scipy_cli_invalid_exits(capsys: Any) -> None:
 
 def test_get_scipy_submodule_branches() -> None:
     """Verify module lookup branches for _get_scipy_submodule."""
+
     # Case where module is found
-    mod = scipy._get_scipy_submodule("special")
-    assert mod is not None or mod is None
+    class DummyModule:
+        """Mock SciPy submodule placeholder."""
+
+        pass
+
+    with patch(
+        "ml_ecosystem_snapshots.frameworks.scipy.importlib.import_module",
+        return_value=DummyModule(),
+    ):
+        mod = scipy._get_scipy_submodule("special")
+        assert mod is not None
+        assert isinstance(mod, DummyModule)
 
     # Case where all fail
     with patch(

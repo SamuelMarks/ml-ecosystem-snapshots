@@ -1,12 +1,11 @@
 """Orbax Checkpoint API Snapshot Extractor."""
 
 import inspect
-from ml_ecosystem_snapshots.utils import get_all_members
 from typing import List
 
 from ml_ecosystem_snapshots.models import GhostInspector
-from ml_switcheroo_ir.schema.ghost import GhostRef
-from ml_switcheroo_ir.schema.ghost import SemanticTier
+from ml_ecosystem_snapshots.utils import get_all_members
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 try:
     import orbax.checkpoint as ocp
@@ -29,16 +28,16 @@ def _scan_orbax_checkpoint(include_nonpublic: bool) -> List[GhostRef]:
     found: List[GhostRef] = []
     try:
         for name, obj in get_all_members(ocp):
-            if not include_nonpublic and name.startswith("_"):
-                continue
             if inspect.isclass(obj) or inspect.isfunction(obj):
+                if not include_nonpublic and name.startswith("_"):
+                    continue
                 try:
                     found.append(
                         GhostInspector.inspect(obj, f"orbax.checkpoint.{name}")
                     )
-                except Exception:
+                except (AttributeError, TypeError, ValueError, RuntimeError, Exception):
                     pass
-    except Exception:
+    except (AttributeError, TypeError, ValueError, RuntimeError, Exception):
         pass
 
     return found

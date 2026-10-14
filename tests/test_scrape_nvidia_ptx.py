@@ -83,7 +83,11 @@ def test_scrape_ptx_end_to_end(tmp_path: os.PathLike[str]) -> None:
 
 
 def test_fetch_nvptx_td_file_candidate_not_file(tmp_path: os.PathLike[str]) -> None:
-    """Test falling through to urlopen when local_dir candidate is not a file."""
+    """Test falling through to urlopen when local_dir candidate is not a file.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+    """
     with mock.patch("urllib.request.urlopen") as mock_urlopen:
         mock_resp = mock.MagicMock()
         mock_resp.read.return_value = b'def FALLBACK : NVPTXInst<"fallback">;'
@@ -107,7 +111,11 @@ def test_build_exhaustive_ptx_catalog_edge_cases() -> None:
 
 
 def test_scrape_ptx_with_empty_fetch(tmp_path: os.PathLike[str]) -> None:
-    """Test scrape_ptx when TableGen fetch returns empty string."""
+    """Test scrape_ptx when TableGen fetch returns empty string.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+    """
     out_file = os.path.join(tmp_path, "empty_ptx.json")
     with mock.patch(
         "ml_ecosystem_snapshots.tools.scrape_nvidia_ptx.fetch_nvptx_td_file",
@@ -127,10 +135,15 @@ def test_main_invocation() -> None:
 
 
 def test_scrape_nvidia_ptx_main_entrypoint(mocker: Any) -> None:
-    """Test running scrape_nvidia_ptx as __main__."""
+    """Test running scrape_nvidia_ptx as __main__ writes output catalog.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
     import runpy
 
-    mocker.patch.object(scrape_nvidia_ptx, "main", return_value=None)
-    mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("urllib.request.urlopen")
-    runpy.run_path(scrape_nvidia_ptx.__file__, run_name="__main__")
+    mock_open = mocker.patch("builtins.open", mocker.mock_open())
+    mocker.patch("ml_ecosystem_snapshots.utils.fetch_url", return_value="")
+    res = runpy.run_path(scrape_nvidia_ptx.__file__, run_name="__main__")
+    assert "main" in res
+    assert mock_open.called

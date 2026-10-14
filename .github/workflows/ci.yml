@@ -21,7 +21,6 @@ jobs:
 
     - name: Create required directories and set permissions
       run: |
-        sudo mkdir -p /Users/samuel/repos
         sudo chown -R $(whoami) /Users
 
     - name: Checkout ml-switcheroo-ir
@@ -31,7 +30,7 @@ jobs:
         path: ml-switcheroo-ir
 
     - name: Move ml-switcheroo-ir
-      run: mv ml-switcheroo-ir /Users/samuel/repos/ml-switcheroo-ir
+      run: mv ml-switcheroo-ir ../ml-switcheroo-ir
 
     - name: Install uv
       uses: astral-sh/setup-uv@v10.1.0
@@ -44,7 +43,7 @@ jobs:
 
     - name: Set up virtual environment
       run: |
-        uv pip install --system -e /Users/samuel/repos/ml-switcheroo-ir
+        uv pip install --system -e ../ml-switcheroo-ir
         uv pip install --system -e ".[test,generate]" build pytest pytest-cov pytest-xdist hatchling hatch-requirements-txt
 
     - name: Run pre-commit
@@ -93,7 +92,7 @@ jobs:
     - name: End-to-end offline smoke test with pre-built wheel
       run: |
         uv venv .venv_smoke --python 3.11
-        uv pip install -p .venv_smoke -e /Users/samuel/repos/ml-switcheroo-ir
+        uv pip install -p .venv_smoke -e ../ml-switcheroo-ir
         uv pip install -p .venv_smoke -r requirements.txt
         uv pip install -p .venv_smoke --no-deps dist/*.whl
         .venv_smoke/bin/ml_ecosystem_snapshots list-snapshots

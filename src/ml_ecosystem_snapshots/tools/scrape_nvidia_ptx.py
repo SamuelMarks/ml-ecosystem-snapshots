@@ -11,8 +11,6 @@ import json
 import os
 import re
 from typing import Any, Dict, List, Optional
-import urllib.error
-import urllib.request
 
 LLVM_NVPTX_BASE_URL = (
     "https://raw.githubusercontent.com/llvm/llvm-project/main/llvm/lib/Target/NVPTX"
@@ -41,12 +39,13 @@ def fetch_nvptx_td_file(filename: str, local_dir: Optional[str] = None) -> str:
                 return f.read()
 
     url = f"{LLVM_NVPTX_BASE_URL}/{filename}"
-    try:
-        with urllib.request.urlopen(url) as response:
-            return str(response.read().decode("utf-8"))
-    except Exception as e:
-        print(f"Error fetching {url}: {e}")
-        return ""
+    from ml_ecosystem_snapshots.utils import fetch_url
+
+    content = fetch_url(url)
+    if content is not None:
+        return content
+    print(f"Error fetching {url}")
+    return ""
 
 
 def parse_nvptx_td_content(content: str) -> List[Dict[str, Any]]:

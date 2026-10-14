@@ -5,21 +5,33 @@ Transparently re-exports all members from ml_ecosystem_snapshots.frameworks.meta
 
 from __future__ import annotations
 
-import sys
-from typing import TYPE_CHECKING
+from typing import Any, List
 import ml_ecosystem_snapshots.frameworks.metal as _orig_mod
+from ml_ecosystem_snapshots.frameworks.metal import *  # noqa: F401, F403
 
-if TYPE_CHECKING:
-    from ml_ecosystem_snapshots.frameworks.metal import *  # noqa: F401, F403
-
-# Re-export all attributes including internal and dunder methods
-for _k in dir(_orig_mod):
-    globals()[_k] = getattr(_orig_mod, _k)
-
-__all__ = getattr(
+__all__: List[str] = getattr(
     _orig_mod,
     "__all__",
     [k for k in dir(_orig_mod) if not k.startswith("_")],
 )
 
-sys.modules[__name__] = _orig_mod
+
+def __getattr__(name: str) -> Any:
+    """Delegate attribute access to the canonical module.
+
+    Args:
+        name: Attribute name to look up.
+
+    Returns:
+        The attribute value from the canonical module.
+    """
+    return getattr(_orig_mod, name)
+
+
+def __dir__() -> List[str]:
+    """Return the list of attributes exposed by the canonical module.
+
+    Returns:
+        Sorted list of attribute names.
+    """
+    return dir(_orig_mod)

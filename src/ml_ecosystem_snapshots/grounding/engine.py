@@ -155,7 +155,18 @@ class GroundingEngine:
                     if mnemonic:
                         symbol_index[str(mnemonic)] = ref
                         short_index[str(mnemonic).lower()] = ref
-                except Exception:
+                except (
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    KeyError,
+                    IndexError,
+                    SyntaxError,
+                    OSError,
+                    ImportError,
+                    RuntimeError,
+                    Exception,
+                ):
                     continue
 
         if not symbol_index:
@@ -184,9 +195,31 @@ class GroundingEngine:
                                         if mnemonic:
                                             symbol_index[str(mnemonic)] = ref
                                             short_index[str(mnemonic).lower()] = ref
-                                    except Exception:
+                                    except (
+                                        AttributeError,
+                                        TypeError,
+                                        ValueError,
+                                        KeyError,
+                                        IndexError,
+                                        SyntaxError,
+                                        OSError,
+                                        ImportError,
+                                        RuntimeError,
+                                        Exception,
+                                    ):
                                         continue
-            except Exception:
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                IndexError,
+                SyntaxError,
+                OSError,
+                ImportError,
+                RuntimeError,
+                Exception,
+            ):
                 pass
 
         self._target_cache[norm_target] = symbol_index

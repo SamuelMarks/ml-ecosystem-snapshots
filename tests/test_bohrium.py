@@ -17,7 +17,11 @@ from ml_switcheroo_ir.schema.ghost import (
 
 
 def test_collect_api_bohrium_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify collect_api returns CANONICAL_BOHRIUM_OPS fallback when bohrium is absent."""
+    """Verify collect_api returns CANONICAL_BOHRIUM_OPS fallback when bohrium is absent.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     monkeypatch.setattr(
         "ml_ecosystem_snapshots.frameworks.bohrium._get_bohrium", lambda: None
     )
@@ -30,14 +34,22 @@ def test_collect_api_bohrium_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_collect_api_bohrium_live(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify collect_api introspects members when bohrium is present."""
+    """Verify collect_api introspects members when bohrium is present.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
 
     class FakeBohrium:
         """Mock Bohrium module."""
 
         @staticmethod
         def array(obj: Any) -> Any:
-            """Mock array creation."""
+            """Mock array creation.
+
+            Args:
+                obj: Target object under inspection.
+            """
             return obj
 
         @staticmethod
@@ -62,19 +74,37 @@ def test_collect_api_bohrium_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_get_bohrium_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_bohrium returns module when import succeeds."""
+    """Verify _get_bohrium returns module when import succeeds.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     fake_mod = types.ModuleType("bohrium")
     monkeypatch.setitem(sys.modules, "bohrium", fake_mod)
     assert _get_bohrium() is fake_mod
 
 
 def test_get_bohrium_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_bohrium handles ImportError gracefully."""
+    """Verify _get_bohrium handles ImportError gracefully.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     import builtins
 
     real_import = builtins.__import__
 
     def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         if "bohrium" in name:
             raise ImportError("Simulated bohrium absent")
         return real_import(name, *args, **kwargs)
@@ -86,9 +116,15 @@ def test_get_bohrium_exception(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_collect_api_bohrium_inspection_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify collect_api handles individual object inspection errors gracefully."""
+    """Verify collect_api handles individual object inspection errors gracefully.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
 
     class FlakyBohrium:
+        """Mock Bohrium namespace with broken attribute."""
+
         array = "broken"
 
     monkeypatch.setattr(
@@ -96,6 +132,24 @@ def test_collect_api_bohrium_inspection_exception(
     )
 
     def mock_inspect(*args: Any, **kwargs: Any) -> Any:
+        """Mock inspect function.
+
+        Args:
+            *args: Variable arguments.
+            **kwargs: Variable arguments.
+
+        Returns:
+            A mocked GhostRef.
+        """
+        """Mock inspect function.
+
+        Args:
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            A mocked GhostRef.
+        """
         raise RuntimeError("Inspection failure")
 
     monkeypatch.setattr(

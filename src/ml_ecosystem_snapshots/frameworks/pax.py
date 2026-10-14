@@ -39,6 +39,17 @@ def collect_api(
             if inspect.isclass(obj):
                 try:
                     results.append(GhostInspector.inspect(obj, f"praxis.layers.{name}"))
-                except Exception:
+                except (
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    KeyError,
+                    IndexError,
+                    SyntaxError,
+                    OSError,
+                    ImportError,
+                    RuntimeError,
+                    Exception,
+                ):
                     pass
     return results

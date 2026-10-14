@@ -7,16 +7,10 @@ memory access operators (v128.load, v128.store), and lane swizzles.
 from typing import Any, Dict, List
 
 from ml_switcheroo_ir.schema.ghost import (
-    GhostOperationRef,
-    GhostParam,
     GhostRef,
-    GhostResult,
-    IRParameterRole,
     OperandDirection,
-    ParameterKind,
     SemanticTier,
 )
-from ..models import ExtendedGhostParam
 
 
 CANONICAL_WASM_SIMD_OPS: List[Dict[str, Any]] = [
@@ -165,82 +159,28 @@ def collect_api(
     ):
         return []
 
+    from ml_ecosystem_snapshots.frameworks._base import build_ssa_operation_refs
+
     ops = _load_wasm_simd_ops()
-    refs: List[GhostRef] = []
-
-    for op in ops:
-        mnemonic = op["mnemonic"]
-        api_path = f"wasm.{mnemonic}"
-        params: List[GhostParam] = []
-
-        # SSA stack operands
-        for inp in op.get("inputs", []):
-            direction = (
-                OperandDirection.WRITE
-                if mnemonic == "v128.store" and inp == "addr"
-                else OperandDirection.READ
-            )
-            params.append(
-                ExtendedGhostParam(
-                    name=inp,
-                    kind=ParameterKind.POSITIONAL_ONLY,
-                    annotation="v128" if inp != "addr" else "i32",
-                    standardized_name=inp,
-                    description=f"WASM operand {inp}",
-                    direction=direction,
-                    role=IRParameterRole.OPERAND,
-                )
-            )
-
-        # Attributes (immediates / alignment / offset)
-        attrs_meta: Dict[str, Any] = {}
-        for attr in op.get("attributes", []):
-            attr_name = attr.get("name", "attr")
-            attr_type = attr.get("type", "Any")
-            attr_def = attr.get("default")
-            params.append(
-                ExtendedGhostParam(
-                    name=attr_name,
-                    kind=ParameterKind.KEYWORD_ONLY,
-                    annotation=attr_type,
-                    default=str(attr_def) if attr_def is not None else None,
-                    standardized_name=attr_name,
-                    description=f"WASM immediate/attribute {attr_name}",
-                    role=IRParameterRole.ATTRIBUTE,
-                )
-            )
-            attrs_meta[attr_name] = attr
-
-        returns: List[GhostResult] = []
-        for out in op.get("outputs", []):
-            returns.append(GhostResult(name=out, type="v128"))
-
-        returns_type = "v128" if returns else "None"
-
-        provenance = {
+    return build_ssa_operation_refs(
+        ops=ops,
+        api_prefix="wasm",
+        name_key="mnemonic",
+        operand_annotation_fn=lambda op, inp: "v128" if inp != "addr" else "i32",
+        operand_description_fn=lambda op, inp: f"WASM operand {inp}",
+        operand_direction_fn=lambda op, inp: (
+            OperandDirection.WRITE
+            if op["mnemonic"] == "v128.store" and inp == "addr"
+            else OperandDirection.READ
+        ),
+        attr_description_prefix="WASM immediate/attribute",
+        result_type="v128",
+        empty_return_type="None",
+        provenance_fn=lambda op: {
             "source_type": "wasm_spec",
             "upstream_version": "2.0",
             "category": op.get("category", "simd"),
-        }
-
-        refs.append(
-            GhostOperationRef(
-                name=mnemonic,
-                api_path=api_path,
-                kind="function",
-                params=params,
-                operands=[
-                    p
-                    for p in params
-                    if getattr(p, "role", None) == IRParameterRole.OPERAND
-                ],
-                returns=returns,
-                returns_type=returns_type,
-                docstring=op.get("description", f"WebAssembly {mnemonic} instruction."),
-                environment_tags=["wasm", "simd", "v128"],
-                domain_metadata=provenance,
-                attributes=attrs_meta if attrs_meta else None,
-            )
-        )
-
-    return refs
+        },
+        default_doc_fn=lambda mnemonic: f"WebAssembly {mnemonic} instruction.",
+        environment_tags=("wasm", "simd", "v128"),
+    )

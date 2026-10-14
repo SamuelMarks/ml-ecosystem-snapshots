@@ -4,8 +4,9 @@ Provides functions to diff two snapshots and detect additions, removals,
 and signature changes.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 from pydantic import BaseModel, Field
+from ml_switcheroo_ir.schema.ghost import SnapshotEnvelope
 
 
 class DiffResult(BaseModel):
@@ -157,7 +158,10 @@ def _is_breaking_change(
     return False
 
 
-def diff_snapshots(snap1: Any, snap2: Any) -> DiffResult:
+def diff_snapshots(
+    snap1: Union[SnapshotEnvelope, Mapping[str, Any], Sequence[Mapping[str, Any]], Any],
+    snap2: Union[SnapshotEnvelope, Mapping[str, Any], Sequence[Mapping[str, Any]], Any],
+) -> DiffResult:
     """Diffs two snapshots to find changes.
 
     Args:

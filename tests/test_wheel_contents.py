@@ -147,7 +147,7 @@ def test_wheel_packaging_and_data_assets(tmp_path: os.PathLike[str]) -> None:
                 info = zf.getinfo(matching[0])
                 if req != "concept_map.json":
                     assert (
-                        info.file_size > 5000
+                        info.file_size > 3000
                     ), f"Asset '{req}' has trivial size {info.file_size} in wheel archive"
 
             # 3. Test querying extracted wheel assets

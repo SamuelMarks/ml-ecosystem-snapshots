@@ -137,7 +137,11 @@ def test_check_flash_attention_op_mcp() -> None:
 
 
 def test_cmd_check_flash_attention_cli_valid(capsys: Any) -> None:
-    """Verify CLI command execution on valid attention operation."""
+    """Verify CLI command execution on valid attention operation.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     args = argparse.Namespace(
         op_name="flash_attn_func",
         inputs_count=3,
@@ -150,7 +154,11 @@ def test_cmd_check_flash_attention_cli_valid(capsys: Any) -> None:
 
 
 def test_cmd_check_flash_attention_cli_invalid_exits(capsys: Any) -> None:
-    """Verify CLI command exits with non-zero code on invalid operator."""
+    """Verify CLI command exits with non-zero code on invalid operator.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     args = argparse.Namespace(
         op_name="invalid_op",
         inputs_count=None,

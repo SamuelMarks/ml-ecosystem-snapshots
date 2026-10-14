@@ -1,6 +1,6 @@
 """Export module for generating JSON Schema, OpenAPI specifications, Pydantic classes, and Protobuf definitions."""
 
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Sequence, Set
 from collections import OrderedDict
 
 from ml_switcheroo_ir.schema.ghost import GhostRef
@@ -10,7 +10,7 @@ def _ghost_to_cdd_ir(ref: GhostRef) -> Dict[str, Any]:
     """Convert a GhostRef to cdd-python Intermediate Representation (IR).
 
     Args:
-        ref: description
+        ref: Input parameter value.
 
     Returns:
         The cdd IR representation.
@@ -70,11 +70,11 @@ def to_json_schema(ref: GhostRef) -> Dict[str, Any]:
     )
 
 
-def to_openapi(refs: List[GhostRef]) -> Dict[str, Any]:
-    """Convert a list of GhostRefs into an OpenAPI specification.
+def to_openapi(refs: Sequence[GhostRef]) -> Dict[str, Any]:
+    """Convert a sequence of GhostRefs into an OpenAPI specification.
 
     Args:
-        refs: A list of GhostRefs.
+        refs: A sequence of GhostRefs.
 
     Returns:
         A dictionary representing the OpenAPI specification.
@@ -378,14 +378,14 @@ def to_protobuf(ref: GhostRef, package: str = "ml_framework") -> str:
     return "\n".join(lines) + "\n"
 
 
-def export_llm_prompt_context(refs: List[GhostRef]) -> str:
-    """Export GhostRef list into a compact, typed format optimized for LLM prompting.
+def export_llm_prompt_context(refs: Sequence[GhostRef]) -> str:
+    """Export GhostRef sequence into a compact, typed format optimized for LLM prompting.
 
     Formats functions, operands, attributes, and constraints into concise markdown
     specifications designed to prevent LLM hallucinations during code generation.
 
     Args:
-        refs: List of GhostRef items to format.
+        refs: Sequence of GhostRef items to format.
 
     Returns:
         A Markdown-formatted string with compact signatures and parameter constraints.
@@ -449,14 +449,14 @@ def export_llm_prompt_context(refs: List[GhostRef]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-def export_sass_prompt_context(refs: List[GhostRef]) -> str:
+def export_sass_prompt_context(refs: Sequence[GhostRef]) -> str:
     """Export SASS instruction specifications as canonical assembly prompt templates.
 
     Formats GPU instructions into real SASS assembly syntax templates rather than
     synthetic Python signatures, specifying valid register files, modifiers, and SM architectures.
 
     Args:
-        refs: List of SASS GhostRef items to format.
+        refs: Sequence of SASS GhostRef items to format.
 
     Returns:
         Markdown string formatted with assembly syntax templates and register constraints.
@@ -520,14 +520,14 @@ def export_sass_prompt_context(refs: List[GhostRef]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-def export_mlir_prompt_context(refs: List[GhostRef]) -> str:
+def export_mlir_prompt_context(refs: Sequence[GhostRef]) -> str:
     """Export MLIR / StableHLO operations as canonical SSA IR prompt templates.
 
     Formats compiler operations into true MLIR syntax templates, distinguishing
     runtime SSA operands from compile-time attributes, regions, and multi-result signatures.
 
     Args:
-        refs: List of MLIR or StableHLO GhostRef items to format.
+        refs: Sequence of MLIR or StableHLO GhostRef items to format.
 
     Returns:
         Markdown string formatted with canonical MLIR operation specifications.
@@ -675,7 +675,18 @@ def export_scoped_prompt_context(
     for item in selected_items:
         try:
             hydrated_refs.append(GhostInspector.hydrate(item))
-        except Exception:
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+            IndexError,
+            SyntaxError,
+            OSError,
+            ImportError,
+            RuntimeError,
+            Exception,
+        ):
             pass
 
     index_lines: List[str] = [
@@ -725,11 +736,11 @@ def export_scoped_prompt_context(
     return "\n\n".join(result_parts).strip() + "\n"
 
 
-def export_rdna_prompt_context(refs: List[GhostRef]) -> str:
+def export_rdna_prompt_context(refs: Sequence[GhostRef]) -> str:
     """Export AMD RDNA / CDNA instruction specifications as canonical assembly prompt templates.
 
     Args:
-        refs: List of AMD RDNA GhostRef items to format.
+        refs: Sequence of AMD RDNA GhostRef items to format.
 
     Returns:
         Markdown string formatted with RDNA assembly syntax and architecture constraints.
@@ -759,11 +770,11 @@ def export_rdna_prompt_context(refs: List[GhostRef]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-def export_ptx_prompt_context(refs: List[GhostRef]) -> str:
+def export_ptx_prompt_context(refs: Sequence[GhostRef]) -> str:
     """Export NVIDIA PTX instruction specifications as canonical assembly prompt templates.
 
     Args:
-        refs: List of PTX GhostRef items to format.
+        refs: Sequence of PTX GhostRef items to format.
 
     Returns:
         Markdown string formatted with PTX assembly syntax and SM requirements.
@@ -793,11 +804,11 @@ def export_ptx_prompt_context(refs: List[GhostRef]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-def export_stablehlo_prompt_context(refs: List[GhostRef]) -> str:
+def export_stablehlo_prompt_context(refs: Sequence[GhostRef]) -> str:
     """Export StableHLO operations as canonical MLIR dialect SSA prompt templates.
 
     Args:
-        refs: List of StableHLO GhostRef items to format.
+        refs: Sequence of StableHLO GhostRef items to format.
 
     Returns:
         Markdown string formatted with canonical StableHLO operation templates.

@@ -43,7 +43,18 @@ def _scan_jax_activations(include_nonpublic: bool) -> List[GhostRef]:
                 continue
             if inspect.isfunction(obj):
                 found.append(GhostInspector.inspect(obj, f"jax.nn.{name}"))
-    except Exception:
+    except (
+        AttributeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        IndexError,
+        SyntaxError,
+        OSError,
+        ImportError,
+        RuntimeError,
+        Exception,
+    ):
         pass
     return found
 
@@ -69,7 +80,18 @@ def _scan_jax_initializers(include_nonpublic: bool) -> List[GhostRef]:
                 continue
             if inspect.isfunction(obj):
                 found.append(GhostInspector.inspect(obj, f"jax.nn.initializers.{name}"))
-    except Exception:
+    except (
+        AttributeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        IndexError,
+        SyntaxError,
+        OSError,
+        ImportError,
+        RuntimeError,
+        Exception,
+    ):
         pass
     return found
 
@@ -114,6 +136,40 @@ def _attach_jax_static_arg_metadata(ref: GhostRef, obj: Any) -> GhostRef:
     return ref
 
 
+def _collect_jax_namespace(
+    ns_obj: Any,
+    api_prefix: str,
+    include_nonpublic: bool,
+    attach_static_args: bool = False,
+) -> List[GhostRef]:
+    """Collect callable non-class members from a JAX submodule namespace.
+
+    Args:
+        ns_obj: Target JAX submodule object (e.g. `jax.numpy`, `jax.lax`, `jax.random`).
+        api_prefix: Qualified API path prefix.
+        include_nonpublic: Whether to include private underscore-prefixed symbols.
+        attach_static_args: If True, attach static arg metadata via `_attach_jax_static_arg_metadata`.
+
+    Returns:
+        List of inspected `GhostRef` objects.
+    """
+    collected: List[GhostRef] = []
+    for name, obj in get_all_members(ns_obj):
+        if (
+            (include_nonpublic or not name.startswith("_"))
+            and callable(obj)
+            and not inspect.isclass(obj)
+        ):
+            try:
+                ref: GhostRef = GhostInspector.inspect(obj, f"{api_prefix}.{name}")
+                if attach_static_args:
+                    ref = _attach_jax_static_arg_metadata(ref, obj)
+                collected.append(ref)
+            except (AttributeError, TypeError, ValueError, RuntimeError, Exception):
+                pass
+    return collected
+
+
 def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
     """Scan JAX for array API functions, primitives, random generation, and transforms.
 
@@ -123,49 +179,37 @@ def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
     Returns:
         List of GhostRefs.
     """
-    found = []
+    found: List[GhostRef] = []
     try:
         import jax
         import jax.numpy as jnp
         import numpy as np
 
         # 1. Exhaustive jax.numpy.*
-        for name, obj in get_all_members(jnp):
-            if not include_nonpublic and name.startswith("_"):
-                continue
-            if callable(obj) and not inspect.isclass(obj):
-                try:
-                    ref = GhostInspector.inspect(obj, f"jax.numpy.{name}")
-                    found.append(_attach_jax_static_arg_metadata(ref, obj))
-                except Exception:
-                    pass
+        found.extend(
+            _collect_jax_namespace(
+                jnp, "jax.numpy", include_nonpublic, attach_static_args=True
+            )
+        )
 
         # 2. Core primitive operations in jax.lax.*
         if hasattr(jax, "lax"):
-            for name, obj in get_all_members(jax.lax):
-                if (
-                    (include_nonpublic or not name.startswith("_"))
-                    and callable(obj)
-                    and not inspect.isclass(obj)
-                ):
-                    try:
-                        ref = GhostInspector.inspect(obj, f"jax.lax.{name}")
-                        found.append(_attach_jax_static_arg_metadata(ref, obj))
-                    except Exception:
-                        pass
+            found.extend(
+                _collect_jax_namespace(
+                    jax.lax, "jax.lax", include_nonpublic, attach_static_args=True
+                )
+            )
 
         # 3. Random generation APIs in jax.random.*
         if hasattr(jax, "random"):
-            for name, obj in get_all_members(jax.random):
-                if (
-                    (include_nonpublic or not name.startswith("_"))
-                    and callable(obj)
-                    and not inspect.isclass(obj)
-                ):
-                    try:
-                        found.append(GhostInspector.inspect(obj, f"jax.random.{name}"))
-                    except Exception:
-                        pass
+            found.extend(
+                _collect_jax_namespace(
+                    jax.random,
+                    "jax.random",
+                    include_nonpublic,
+                    attach_static_args=False,
+                )
+            )
 
         # 4. Transformations (jax.jit, jax.grad, jax.vmap, jax.pmap, jax.checkpoint)
         for transform_name in ["jit", "grad", "vmap", "pmap", "checkpoint"]:
@@ -173,7 +217,18 @@ def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
             if obj and callable(obj):
                 try:
                     found.append(GhostInspector.inspect(obj, f"jax.{transform_name}"))
-                except Exception:
+                except (
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    KeyError,
+                    IndexError,
+                    SyntaxError,
+                    OSError,
+                    ImportError,
+                    RuntimeError,
+                    Exception,
+                ):
                     pass
 
         obj = getattr(jnp, "transpose", None)
@@ -194,7 +249,18 @@ def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
                                 obj, f"jax.Array.{name}", kind="method"
                             )
                         )
-                    except Exception:
+                    except (
+                        AttributeError,
+                        TypeError,
+                        ValueError,
+                        KeyError,
+                        IndexError,
+                        SyntaxError,
+                        OSError,
+                        ImportError,
+                        RuntimeError,
+                        Exception,
+                    ):
                         pass
 
         # 6. jax.sharding APIs
@@ -207,7 +273,18 @@ def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
                         found.append(
                             GhostInspector.inspect(obj, f"jax.sharding.{name}")
                         )
-                    except Exception:
+                    except (
+                        AttributeError,
+                        TypeError,
+                        ValueError,
+                        KeyError,
+                        IndexError,
+                        SyntaxError,
+                        OSError,
+                        ImportError,
+                        RuntimeError,
+                        Exception,
+                    ):
                         pass
 
         # 7. jax.experimental.pallas custom GPU/TPU kernel primitives
@@ -224,9 +301,31 @@ def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
                                 obj, f"jax.experimental.pallas.{name}"
                             )
                         )
-                    except Exception:
+                    except (
+                        AttributeError,
+                        TypeError,
+                        ValueError,
+                        KeyError,
+                        IndexError,
+                        SyntaxError,
+                        OSError,
+                        ImportError,
+                        RuntimeError,
+                        Exception,
+                    ):
                         pass
-        except Exception:
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+            IndexError,
+            SyntaxError,
+            OSError,
+            ImportError,
+            RuntimeError,
+            Exception,
+        ):
             pass
     except ImportError:
         pass

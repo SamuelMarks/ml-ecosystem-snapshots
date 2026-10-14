@@ -1,11 +1,11 @@
-"""Module docstring."""
+"""Unit tests and verification suite for diff."""
 
 from typing import Any, Dict, List
 from ml_ecosystem_snapshots.diff import diff_snapshots, generate_changelog
 
 
 def test_diff_snapshots() -> None:
-    """Function docstring."""
+    """Verify diff snapshots behavior."""
     snap1 = {
         "categories": {
             "layer": [
@@ -188,7 +188,7 @@ def test_diff_snapshots() -> None:
 
 
 def test_diff_empty() -> None:
-    """Function docstring."""
+    """Verify diff empty behavior."""
     res = diff_snapshots({}, {})
     assert not res.added
     assert not res.removed
@@ -196,7 +196,7 @@ def test_diff_empty() -> None:
 
 
 def test_generate_changelog() -> None:
-    """Function docstring."""
+    """Verify generate changelog behavior."""
     snap1 = {
         "categories": {
             "layer": [
@@ -251,14 +251,14 @@ def test_generate_changelog() -> None:
 
 
 def test_generate_changelog_empty() -> None:
-    """Function docstring."""
+    """Verify generate changelog empty behavior."""
     res = diff_snapshots({}, {})
     changelog = generate_changelog(res)
     assert "No changes detected." in changelog
 
 
 def test_changelog_combinations() -> None:
-    """Function docstring."""
+    """Verify changelog combinations behavior."""
     from ml_ecosystem_snapshots.diff import DiffResult
 
     # Only added
@@ -309,7 +309,7 @@ def test_changelog_combinations() -> None:
 
 
 def test_diff_branches() -> None:
-    """Function docstring."""
+    """Verify diff_snapshots handles identical empty parameter lists and non-breaking parameter kind changes."""
     from ml_ecosystem_snapshots.diff import diff_snapshots
 
     # Hit line 81->87 (_compare_params empty)
@@ -323,7 +323,10 @@ def test_diff_branches() -> None:
             "MODEL": [{"name": "A", "api_path": "A", "kind": "function", "params": []}]
         }
     }
-    diff_snapshots(s1, s2)
+    res_empty = diff_snapshots(s1, s2)
+    assert res_empty.added == []
+    assert res_empty.removed == []
+    assert res_empty.signature_changed == []
 
     # Hit branch where kind changed but it's not breaking (e.g. POSITIONAL_ONLY -> POSITIONAL_OR_KEYWORD)
     s3 = {
@@ -350,14 +353,14 @@ def test_diff_branches() -> None:
             ]
         }
     }
-    diff_snapshots(s3, s4)
-
-
-"""Module docstring."""
+    res_kind = diff_snapshots(s3, s4)
+    assert len(res_kind.signature_changed) == 1
+    assert res_kind.breaking_signature_changed == []
+    assert len(res_kind.non_breaking_signature_changed) == 1
 
 
 def test_diff_branches_more() -> None:
-    """Function docstring."""
+    """Verify diff_snapshots detects default value modifications as non-breaking signature changes."""
     from ml_ecosystem_snapshots.diff import diff_snapshots
 
     s1 = {

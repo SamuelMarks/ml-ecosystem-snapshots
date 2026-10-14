@@ -1,4 +1,4 @@
-"""Module docstring."""
+"""Unit tests and verification suite for huggingface."""
 
 from typing import Any
 from unittest.mock import patch, MagicMock
@@ -13,32 +13,32 @@ from ml_ecosystem_snapshots.frameworks.huggingface import (
 
 
 def test_collect_transformers() -> None:
-    """Function docstring."""
+    """Verify collect transformers behavior."""
     mock_mod = MagicMock()
 
     class DummyConfig:
-        """Class docstring."""
+        """Mock or helper class DummyConfig for unit testing."""
 
         __annotations__ = {"vocab_size": int, "hidden_size": int}
 
     class AutoModelForCausalLM:
-        """Class docstring."""
+        """Mock or helper class AutoModelForCausalLM for unit testing."""
 
         pass
 
     class DummyModel:
-        """Class docstring."""
+        """Mock or helper class DummyModel for unit testing."""
 
         def generate(self, input_ids: str, max_length: int = 20) -> str:
-            """Function docstring.
+            """Execute helper generate.
 
             Args:
-                input_ids: description
-                max_length: description
+                input_ids: Input parameter value.
+                max_length: Input parameter value.
 
 
             Returns:
-                Return value.
+                Computed result.
             """
             return ""
 
@@ -91,11 +91,11 @@ def test_collect_transformers() -> None:
 
 
 def test_collect_diffusers() -> None:
-    """Function docstring."""
+    """Verify collect diffusers behavior."""
     mock_mod = MagicMock()
 
     class DummyScheduler:
-        """Class docstring."""
+        """Mock or helper class DummyScheduler for unit testing."""
 
         pass
 
@@ -124,11 +124,11 @@ def test_collect_diffusers() -> None:
 
 
 def test_collect_tokenizers() -> None:
-    """Function docstring."""
+    """Verify collect tokenizers behavior."""
     mock_mod = MagicMock()
 
     class DummyTokenizer:
-        """Class docstring."""
+        """Mock or helper class DummyTokenizer for unit testing."""
 
         pass
 
@@ -157,11 +157,11 @@ def test_collect_tokenizers() -> None:
 
 
 def test_parse_pretrained_config_with_empty_annotations() -> None:
-    """Function docstring."""
+    """Verify parse pretrained config with empty annotations behavior."""
     ref = GhostRef(name="MyConfig", api_path="pkg.MyConfig", kind="class")
 
     class DummyConfig:
-        """Class docstring."""
+        """Mock or helper class DummyConfig for unit testing."""
 
         __annotations__ = {}
 

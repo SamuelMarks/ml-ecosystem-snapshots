@@ -116,7 +116,11 @@ def test_check_onnx_op_validation() -> None:
 
 
 def test_cmd_check_onnx_cli(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test the CLI command check-onnx for valid and invalid queries."""
+    """Test the CLI command check-onnx for valid and invalid queries.
+
+    Args:
+        capsys: Pytest stdout/stderr capture fixture.
+    """
     # 1. Valid invocation
     args_valid = argparse.Namespace(
         op_name="Add",
@@ -154,7 +158,11 @@ def test_cmd_check_onnx_cli(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_load_onnx_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test fallback paths in _load_onnx_ops when onnx.defs is absent or fails."""
+    """Test fallback paths in _load_onnx_ops when onnx.defs is absent or fails.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     # 1. Fallback when onnx.defs is None
     monkeypatch.setattr(
         "ml_ecosystem_snapshots.frameworks.onnx_spec._get_onnx_defs",
@@ -180,12 +188,26 @@ def test_load_onnx_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_get_onnx_defs_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_onnx_defs gracefully catches ImportError."""
+    """Verify _get_onnx_defs gracefully catches ImportError.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     import builtins
 
     real_import = builtins.__import__
 
     def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         """Mock import raising ImportError on onnx.
 
         Args:
@@ -283,7 +305,11 @@ def test_onnx_schema_attributes_with_defaults(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_onnx_collect_no_outputs_no_attrs(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify collect_api handles ops without outputs or attributes."""
+    """Verify collect_api handles ops without outputs or attributes.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     dummy_ops = [
         {
             "name": "SinkOp",
@@ -307,7 +333,11 @@ def test_onnx_collect_no_outputs_no_attrs(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_onnx_filter_preview_domain(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify collect_api skips preview domain operations when include_nonpublic is False."""
+    """Verify collect_api skips preview domain operations when include_nonpublic is False.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     preview_ops = [
         {
             "name": "PreviewOp",
@@ -330,13 +360,23 @@ def test_onnx_filter_preview_domain(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_onnx_schema_older_version_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _load_onnx_ops keeps latest version when multiple schema versions exist."""
+    """Verify _load_onnx_ops keeps latest version when multiple schema versions exist.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
 
     class FakeSchema:
         """Mock Schema object."""
 
         def __init__(self, name: str, domain: str, since_version: int) -> None:
-            """Initialize fake schema."""
+            """Initialize fake schema.
+
+            Args:
+                name: Target name or identifier.
+                domain: Input domain parameter.
+                since_version: Input since_version parameter.
+            """
             self.name = name
             self.domain = domain
             self.since_version = since_version
@@ -365,7 +405,11 @@ def test_onnx_schema_older_version_skipped(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_onnx_load_empty_schemas(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify fallback when schemas list is empty."""
+    """Verify fallback when schemas list is empty.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
 
     class EmptyDefs:
         """Mock defs returning empty list."""

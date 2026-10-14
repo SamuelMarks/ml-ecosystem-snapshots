@@ -70,7 +70,18 @@ class OptaxScanner:
                     try:
                         ref = GhostInspector.inspect(obj, f"optax.{name}")
                         results.append(ref)
-                    except Exception:
+                    except (
+                        AttributeError,
+                        TypeError,
+                        ValueError,
+                        KeyError,
+                        IndexError,
+                        SyntaxError,
+                        OSError,
+                        ImportError,
+                        RuntimeError,
+                        Exception,
+                    ):
                         pass
 
         return results
@@ -105,7 +116,18 @@ class OptaxScanner:
                     try:
                         ref = GhostInspector.inspect(obj, f"optax.losses.{name}")
                         results.append(ref)
-                    except Exception:
+                    except (
+                        AttributeError,
+                        TypeError,
+                        ValueError,
+                        KeyError,
+                        IndexError,
+                        SyntaxError,
+                        OSError,
+                        ImportError,
+                        RuntimeError,
+                        Exception,
+                    ):
                         pass
 
         return results
@@ -133,7 +155,18 @@ class OptaxScanner:
                 try:
                     ref = GhostInspector.inspect(obj, f"optax.schedules.{name}")
                     results.append(ref)
-                except Exception:
+                except (
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    KeyError,
+                    IndexError,
+                    SyntaxError,
+                    OSError,
+                    ImportError,
+                    RuntimeError,
+                    Exception,
+                ):
                     pass
 
         return results

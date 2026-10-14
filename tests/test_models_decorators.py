@@ -1,4 +1,4 @@
-"""Module docstring."""
+"""Unit tests and verification suite for models decorators."""
 
 from typing import Any
 
@@ -7,26 +7,26 @@ from ml_ecosystem_snapshots.models import GhostInspector
 
 
 def dummy_decorator(func: Any) -> Any:
-    """Function docstring.
+    """Execute helper dummy decorator.
 
     Args:
-        func: description
+        func: Input parameter value.
 
 
     Returns:
-        Return value.
+        Computed result.
     """
 
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        """Function docstring.
+        """Execute helper wrapper.
 
         Args:
-            args: description
-            kwargs: description
+            args: Input parameter value.
+            kwargs: Input parameter value.
 
 
         Returns:
-            Return value.
+            Computed result.
         """
         return func(*args, **kwargs)
 
@@ -35,24 +35,24 @@ def dummy_decorator(func: Any) -> Any:
 
 
 def tf_function_mock(func: Any) -> Any:
-    """Function docstring.
+    """Execute helper tf function mock.
 
     Args:
-        func: description
+        func: Input parameter value.
 
 
     Returns:
-        Return value.
+        Computed result.
     """
 
     class TFFunction:
-        """Class docstring."""
+        """Mock or helper class TFFunction for unit testing."""
 
         def __init__(self, f: Any) -> None:
-            """Function docstring.
+            """Execute helper init  .
 
             Args:
-                f: description
+                f: Input parameter value.
             """
             self._python_function = f
 
@@ -60,15 +60,15 @@ def tf_function_mock(func: Any) -> Any:
 
 
 def test_unwrap_standard_decorator() -> None:
-    """Function docstring."""
+    """Verify unwrap standard decorator behavior."""
 
     @dummy_decorator
     def my_func(a: int, b: str = "test") -> Any:
         """My doc.
 
         Args:
-            a: description
-            b: description
+            a: Input parameter value.
+            b: Input parameter value.
         """
         pass
 
@@ -79,15 +79,15 @@ def test_unwrap_standard_decorator() -> None:
 
 
 def test_unwrap_tf_decorator() -> None:
-    """Function docstring."""
+    """Verify unwrap tf decorator behavior."""
 
     @tf_function_mock
     def my_tf_func(tensor: Any, training: bool = False) -> None:
-        """Function docstring.
+        """Execute helper my tf func.
 
         Args:
-            tensor: description
-            training: description
+            tensor: Input parameter value.
+            training: Input parameter value.
         """
         pass
 
@@ -97,21 +97,21 @@ def test_unwrap_tf_decorator() -> None:
 
 
 def test_unwrap_generic_decorator() -> None:
-    """Function docstring."""
+    """Verify unwrap generic decorator behavior."""
 
     def generic_dec(func: Any) -> Any:
-        """Function docstring.
+        """Execute helper generic dec.
 
         Args:
-            func: description
+            func: Input parameter value.
 
 
         Returns:
-            Return value.
+            Computed result.
         """
 
         class Wrapper:
-            """Class docstring."""
+            """Mock or helper class Wrapper for unit testing."""
 
             pass
 
@@ -121,10 +121,10 @@ def test_unwrap_generic_decorator() -> None:
 
     @generic_dec
     def fn1(a: Any) -> Any:
-        """Function docstring.
+        """Execute helper fn1.
 
         Args:
-            a: description
+            a: Input parameter value.
         """
         pass
 
@@ -133,21 +133,21 @@ def test_unwrap_generic_decorator() -> None:
 
 
 def test_unwrap_variant_decorator() -> None:
-    """Function docstring."""
+    """Verify unwrap variant decorator behavior."""
 
     def variant_dec(func: Any) -> Any:
-        """Function docstring.
+        """Execute helper variant dec.
 
         Args:
-            func: description
+            func: Input parameter value.
 
 
         Returns:
-            Return value.
+            Computed result.
         """
 
         class Wrapper:
-            """Class docstring."""
+            """Mock or helper class Wrapper for unit testing."""
 
             pass
 
@@ -157,10 +157,10 @@ def test_unwrap_variant_decorator() -> None:
 
     @variant_dec
     def fn2(b: Any) -> Any:
-        """Function docstring.
+        """Execute helper fn2.
 
         Args:
-            b: description
+            b: Input parameter value.
         """
         pass
 

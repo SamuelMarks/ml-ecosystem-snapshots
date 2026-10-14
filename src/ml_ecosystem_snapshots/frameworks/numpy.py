@@ -42,7 +42,18 @@ def collect_api(
                             obj, f"numpy.{name}", is_public=True
                         )
                         results.append(res)
-                    except Exception:
+                    except (
+                        AttributeError,
+                        TypeError,
+                        ValueError,
+                        KeyError,
+                        IndexError,
+                        SyntaxError,
+                        OSError,
+                        ImportError,
+                        RuntimeError,
+                        Exception,
+                    ):
                         pass
     elif category == SemanticTier.ARRAY_API:
         for name in dir(np):
@@ -54,7 +65,18 @@ def collect_api(
                             obj, f"numpy.{name}", is_public=True
                         )
                         results.append(res)
-                    except Exception:
+                    except (
+                        AttributeError,
+                        TypeError,
+                        ValueError,
+                        KeyError,
+                        IndexError,
+                        SyntaxError,
+                        OSError,
+                        ImportError,
+                        RuntimeError,
+                        Exception,
+                    ):
                         pass
 
         # Introspect numpy.linalg.*
@@ -69,7 +91,18 @@ def collect_api(
                                     obj, f"numpy.linalg.{name}", is_public=True
                                 )
                             )
-                        except Exception:
+                        except (
+                            AttributeError,
+                            TypeError,
+                            ValueError,
+                            KeyError,
+                            IndexError,
+                            SyntaxError,
+                            OSError,
+                            ImportError,
+                            RuntimeError,
+                            Exception,
+                        ):
                             pass
 
         # Introspect numpy.fft.*
@@ -84,6 +117,17 @@ def collect_api(
                                     obj, f"numpy.fft.{name}", is_public=True
                                 )
                             )
-                        except Exception:
+                        except (
+                            AttributeError,
+                            TypeError,
+                            ValueError,
+                            KeyError,
+                            IndexError,
+                            SyntaxError,
+                            OSError,
+                            ImportError,
+                            RuntimeError,
+                            Exception,
+                        ):
                             pass
     return results

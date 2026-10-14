@@ -15,7 +15,11 @@ from ml_switcheroo_ir.schema.ghost import (
 
 
 def test_collect_api_dpnp_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify collect_api returns CANONICAL_DPNP_OPS fallback when dpnp is not installed."""
+    """Verify collect_api returns CANONICAL_DPNP_OPS fallback when dpnp is not installed.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     monkeypatch.setattr(
         "ml_ecosystem_snapshots.frameworks.dpnp._get_dpnp", lambda: None
     )
@@ -28,19 +32,31 @@ def test_collect_api_dpnp_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_collect_api_dpnp_live(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify collect_api introspects members when dpnp is present."""
+    """Verify collect_api introspects members when dpnp is present.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
 
     class FakeDPNP:
         """Mock DPNP module."""
 
         @staticmethod
         def array(obj: Any) -> Any:
-            """Mock array creation."""
+            """Mock array creation.
+
+            Args:
+                obj: Target object under inspection.
+            """
             return obj
 
         @staticmethod
         def empty(shape: Any) -> Any:
-            """Mock empty creation."""
+            """Mock empty creation.
+
+            Args:
+                shape: Input shape parameter.
+            """
             return shape
 
     monkeypatch.setattr(
@@ -60,7 +76,11 @@ def test_collect_api_dpnp_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_get_dpnp_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_dpnp returns module when import succeeds."""
+    """Verify _get_dpnp returns module when import succeeds.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     import sys
     import types
 
@@ -70,12 +90,26 @@ def test_get_dpnp_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_get_dpnp_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_dpnp handles ImportError gracefully."""
+    """Verify _get_dpnp handles ImportError gracefully.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     import builtins
 
     real_import = builtins.__import__
 
     def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        """Mock import function.
+
+        Args:
+            name: The module name.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The imported module or raises.
+        """
         if "dpnp" in name:
             raise ImportError("Simulated dpnp absent")
         return real_import(name, *args, **kwargs)
@@ -85,9 +119,15 @@ def test_get_dpnp_exception(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_collect_api_dpnp_inspection_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify collect_api handles individual object inspection errors gracefully."""
+    """Verify collect_api handles individual object inspection errors gracefully.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
 
     class FlakyDPNP:
+        """Mock DPNP namespace with broken attribute."""
+
         array = "broken"
 
     monkeypatch.setattr(
@@ -95,6 +135,24 @@ def test_collect_api_dpnp_inspection_exception(monkeypatch: pytest.MonkeyPatch) 
     )
 
     def mock_inspect(*args: Any, **kwargs: Any) -> Any:
+        """Mock inspect function.
+
+        Args:
+            *args: Variable arguments.
+            **kwargs: Variable arguments.
+
+        Returns:
+            A mocked GhostRef.
+        """
+        """Mock inspect function.
+
+        Args:
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            A mocked GhostRef.
+        """
         raise RuntimeError("Inspection failure")
 
     monkeypatch.setattr(

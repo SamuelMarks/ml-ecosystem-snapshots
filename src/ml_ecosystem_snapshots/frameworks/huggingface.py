@@ -11,8 +11,8 @@ def _extract_generation_kwargs(obj: Any, ref: GhostRef) -> None:
     """Extract generation kwargs.
 
     Args:
-        obj: description
-        ref: description
+        obj: Input parameter value.
+        ref: Input parameter value.
     """
     gen_method = getattr(obj, "generate")
     try:
@@ -43,7 +43,18 @@ def _extract_generation_kwargs(obj: Any, ref: GhostRef) -> None:
                         annotation=anno_str,
                     )
                 )
-    except Exception:
+    except (
+        AttributeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        IndexError,
+        SyntaxError,
+        OSError,
+        ImportError,
+        RuntimeError,
+        Exception,
+    ):
         pass
 
 
@@ -51,8 +62,8 @@ def _parse_pretrained_config(obj: Any, ref: GhostRef) -> None:
     """Parse pretrained config.
 
     Args:
-        obj: description
-        ref: description
+        obj: Input parameter value.
+        ref: Input parameter value.
     """
     if not hasattr(obj, "__annotations__"):
         return
@@ -78,9 +89,9 @@ def _handle_automodel_factory(obj: Any, name: str, ref: GhostRef) -> None:
     """Handle auto model factory.
 
     Args:
-        obj: description
-        name: description
-        ref: description
+        obj: Input parameter value.
+        name: Input parameter value.
+        ref: Input parameter value.
     """
     if not any(p.name == "config" for p in ref.params):
         ref.params.append(
@@ -102,10 +113,10 @@ def collect_huggingface(
     """Collect huggingface APIs.
 
     Args:
-        module_name: description
-        category_mapping: description
-        category: description
-        include_nonpublic: description
+        module_name: Input parameter value.
+        category_mapping: Input parameter value.
+        category: Input parameter value.
+        include_nonpublic: Input parameter value.
 
     Returns:
         List of GhostRefs.
@@ -147,7 +158,18 @@ def collect_huggingface(
 
         try:
             obj = getattr(mod, name)
-        except Exception:
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+            IndexError,
+            SyntaxError,
+            OSError,
+            ImportError,
+            RuntimeError,
+            Exception,
+        ):
             continue
 
         if obj is None:
@@ -175,7 +197,18 @@ def collect_huggingface(
                         _extract_generation_kwargs(obj, ref)
 
                     results.append(ref)
-            except Exception:
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                IndexError,
+                SyntaxError,
+                OSError,
+                ImportError,
+                RuntimeError,
+                Exception,
+            ):
                 pass
 
     return results
@@ -187,8 +220,8 @@ def collect_transformers(
     """Collect transformers API.
 
     Args:
-        category: description
-        include_nonpublic: description
+        category: Input parameter value.
+        include_nonpublic: Input parameter value.
 
     Returns:
         List of GhostRefs.
@@ -206,8 +239,8 @@ def collect_diffusers(
     """Collect diffusers API.
 
     Args:
-        category: description
-        include_nonpublic: description
+        category: Input parameter value.
+        include_nonpublic: Input parameter value.
 
     Returns:
         List of GhostRefs.
@@ -226,8 +259,8 @@ def collect_tokenizers(
     """Collect tokenizers API.
 
     Args:
-        category: description
-        include_nonpublic: description
+        category: Input parameter value.
+        include_nonpublic: Input parameter value.
 
     Returns:
         List of GhostRefs.
