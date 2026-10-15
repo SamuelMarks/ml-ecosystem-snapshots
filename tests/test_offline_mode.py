@@ -334,3 +334,36 @@ def test_offline_cli_pull_forbidden(monkeypatch: Any) -> None:
     with pytest.raises(SystemExit) as exc_info:
         cli.main()
     assert exc_info.value.code == 1
+
+
+def test_cli_import_and_list_snapshots_without_rich(
+    tmp_path: Any, monkeypatch: Any, capsys: Any
+) -> None:
+    """Verify CLI imports and executes list-snapshots without optional rich package installed.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+        capsys: Pytest stdout/stderr capture fixture.
+    """
+    import importlib
+    import sys
+    import ml_ecosystem_snapshots.cli as cli_mod
+    import ml_ecosystem_snapshots.cli.commands.capture as capture_mod
+
+    monkeypatch.setitem(sys.modules, "rich", None)
+    monkeypatch.setitem(sys.modules, "rich.progress", None)
+
+    reloaded_capture = importlib.reload(capture_mod)
+    reloaded_cli = importlib.reload(cli_mod)
+    assert callable(reloaded_capture.cmd_capture)
+    assert callable(reloaded_cli.main)
+
+    monkeypatch.setattr(reloaded_capture, "_get_pkg_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(sys, "argv", ["ml_ecosystem_snapshots", "list-snapshots"])
+    reloaded_cli.main()
+    captured = capsys.readouterr()
+    assert (
+        "Available Snapshots:" in captured.out
+        or "No snapshot files found." in captured.out
+    )

@@ -14,11 +14,34 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v7
 
-      - name: Run Snapshot Generation Action
-        uses: ./
+      - name: Checkout ml-switcheroo-ir
+        uses: actions/checkout@v7
         with:
-          frameworks: "torch,jax,tensorflow,keras,mlx,flax"
-          out-dir: "./snapshots"
+          repository: SamuelMarks/ml-switcheroo-ir
+          path: ml-switcheroo-ir
+
+      - name: Move ml-switcheroo-ir
+        run: mv ml-switcheroo-ir ../ml-switcheroo-ir
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+        with:
+          version: "latest"
+
+      - name: Install dependencies and generate snapshots
+        run: |
+          uv pip install --system -e ../ml-switcheroo-ir
+          uv pip install --system -e ".[generate]"
+          for fw in torch jax tensorflow keras flax numpy; do
+            uv pip install --system "$fw" || echo "Failed to install $fw, skipping."
+          done
+          python3 scripts/generate_all_snapshots.py torch jax tensorflow keras flax numpy || true
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v8

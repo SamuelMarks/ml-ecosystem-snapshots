@@ -54,14 +54,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Create required directories and set permissions (Linux)
-        run: |
-        if: runner.os == 'Linux'
-
-      - name: Create required directories (macOS)
-        run: |
-        if: runner.os == 'macOS'
-
       - name: Checkout ml-switcheroo-ir
         uses: actions/checkout@v7
         with:

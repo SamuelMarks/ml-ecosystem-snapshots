@@ -19,10 +19,6 @@ jobs:
         python-version: "3.11"
         cache: 'pip'
 
-    - name: Create required directories and set permissions
-      run: |
-        sudo chown -R $(whoami) /Users
-
     - name: Checkout ml-switcheroo-ir
       uses: actions/checkout@v7
       with:

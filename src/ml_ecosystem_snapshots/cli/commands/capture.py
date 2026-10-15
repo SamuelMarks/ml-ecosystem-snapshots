@@ -14,8 +14,6 @@ import urllib.request
 import warnings
 from typing import Any, Dict, List
 
-from rich.progress import Progress
-
 
 def _get_pkg_dir() -> str:
     """Resolve the root `ml_ecosystem_snapshots` package directory.
@@ -32,6 +30,8 @@ def cmd_capture(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command line arguments containing frameworks, out_dir, and include_nonpublic.
     """
+    from rich.progress import Progress
+
     import ml_ecosystem_snapshots.cli as cli_pkg
     from ml_ecosystem_snapshots.api import get_available_frameworks
 

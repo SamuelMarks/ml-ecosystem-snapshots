@@ -11,6 +11,39 @@ from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 pytestmark = [pytest.mark.frameworks]
 
 
+@pytest.fixture(autouse=True)
+def _stub_heavy_griffe_cache(monkeypatch: Any) -> None:
+    """Prevent synthetic unit tests from triggering full disk AST parses of heavy packages via griffe.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    import griffe
+    from ml_ecosystem_snapshots import models
+
+    monkeypatch.setitem(models._GRIFFE_CACHE, "__loader__", griffe.load)
+    for pkg in (
+        "torch",
+        "torchmetrics",
+        "transformers",
+        "sklearn",
+        "jax",
+        "jnp",
+        "tf",
+        "tensorflow",
+        "numpy",
+        "orbax",
+        "mlx",
+        "optax",
+        "flax",
+        "praxis",
+        "triton",
+        "deepspeed",
+        "onnxruntime",
+    ):
+        monkeypatch.setitem(models._GRIFFE_CACHE, pkg, None)
+
+
 def create_module(name: str, attrs: dict[str, Any]) -> types.ModuleType:
     """Execute helper create module.
 
@@ -1112,6 +1145,8 @@ def test_jax_collect(mocker: Any) -> None:
     setattr(static_func, "_static_argnums", (0,))
     setattr(static_func, "_static_argnames", ("axis",))
 
+    fake_pallas = create_module("jax.experimental.pallas", {})
+    fake_experimental = create_module("jax.experimental", {"pallas": fake_pallas})
     mocker.patch.dict(
         "sys.modules",
         {
@@ -1120,6 +1155,8 @@ def test_jax_collect(mocker: Any) -> None:
             "jax.nn.initializers": fake_jax_init,
             "jax.lax": fake_lax,
             "jax.random": fake_random,
+            "jax.experimental": fake_experimental,
+            "jax.experimental.pallas": fake_pallas,
             "jax.numpy": create_module(
                 "jax.numpy",
                 {
@@ -1251,11 +1288,15 @@ def test_jax_static_arg_metadata_none_environment_tags(mocker: Any) -> None:
         assert len(res_empty) == 0
 
     mocker.patch.object(jax_fw, "jax", True)
+    fake_pallas = create_module("jax.experimental.pallas", {})
+    fake_experimental = create_module("jax.experimental", {"pallas": fake_pallas})
     with mock.patch.dict(
         "sys.modules",
         {
             "jax": create_module("jax", {}),
             "jax.numpy": create_module("jax.numpy", {"abs": lambda: None}),
+            "jax.experimental": fake_experimental,
+            "jax.experimental.pallas": fake_pallas,
         },
     ):
         assert len(jax_fw.collect_api(SemanticTier.ARRAY_API)) > 0
