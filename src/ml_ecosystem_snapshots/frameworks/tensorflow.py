@@ -30,7 +30,7 @@ def _get_tf() -> Any:
 
         tf = tf_mod
         return tf
-    except (ImportError, Exception):
+    except Exception:
         return None
 
 

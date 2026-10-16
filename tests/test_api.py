@@ -1237,16 +1237,6 @@ def test_get_pkg_version_import_fallbacks(monkeypatch: pytest.MonkeyPatch) -> No
         monkeypatch.delitem(sys.modules, name, raising=False)
 
     def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        """Mock import function.
-
-        Args:
-            name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            The imported module or raises.
-        """
         """Mock import raising error for targets.
 
         Args:

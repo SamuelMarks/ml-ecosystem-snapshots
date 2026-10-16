@@ -114,7 +114,7 @@ def _get_bohrium() -> Any:
         import bohrium
 
         return bohrium
-    except (ImportError, Exception):
+    except Exception:
         return None
 
 

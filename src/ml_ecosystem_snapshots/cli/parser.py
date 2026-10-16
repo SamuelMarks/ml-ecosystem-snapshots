@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
+from typing import Any, Callable, List, Optional, Tuple
 
 from ml_ecosystem_snapshots.cli.commands import (
     cmd_capture,
@@ -36,6 +38,117 @@ from ml_ecosystem_snapshots.cli.commands import (
     cmd_stubs,
     cmd_verify_local_cache,
 )
+
+
+@dataclass(frozen=True)
+class SubparserCheckSpec:
+    """Declarative specification for a `check-*` domain CLI subcommand."""
+
+    command: str
+    help_text: str
+    handler: Callable[[argparse.Namespace], None]
+    pos_arg: str = "op_name"
+    pos_help: str = "Operation name"
+    count_flag: str = "--inputs-count"
+    count_help: str = "Expected number of input operands"
+    attr_help: str = "Comma-separated list of expected keyword argument names"
+    extra_flag: Optional[Tuple[str, Any, str]] = None
+
+
+DOMAIN_CHECK_SUBPARSERS: List[SubparserCheckSpec] = [
+    SubparserCheckSpec(
+        command="check-onnx",
+        help_text="Validate ONNX operation against official specification",
+        handler=cmd_check_onnx,
+        pos_help="Name of the ONNX operator (e.g., 'Conv', 'Add')",
+        attr_help="Comma-separated list of expected attribute names",
+        extra_flag=("--domain", "", "Optional domain (e.g., 'ai.onnx.ml')"),
+    ),
+    SubparserCheckSpec(
+        command="check-metal",
+        help_text="Validate Apple Metal MSL compute operation against specification",
+        handler=cmd_check_metal,
+        pos_help="Name of the Metal MSL operation (e.g., 'simdgroup_multiply_accumulate')",
+        attr_help="Comma-separated list of expected attribute names",
+        extra_flag=(
+            "--address-space",
+            None,
+            "Expected address space (e.g., 'device', 'threadgroup', 'thread')",
+        ),
+    ),
+    SubparserCheckSpec(
+        command="check-wasm",
+        help_text="Validate WebAssembly 2.0 / SIMD instruction against specification",
+        handler=cmd_check_wasm,
+        pos_arg="mnemonic",
+        pos_help="Mnemonic of the WASM instruction (e.g., 'f32x4.add', 'v128.load')",
+        count_flag="--operands-count",
+        count_help="Expected number of stack operands",
+        attr_help="Comma-separated list of expected attribute/immediate names",
+    ),
+    SubparserCheckSpec(
+        command="check-webgl",
+        help_text="Validate WebGL 2.0 / GLSL ES 3.00 operation against specification",
+        handler=cmd_check_webgl,
+        pos_help="Name of the WebGL operation (e.g., 'texelFetch', 'matrixCompMult')",
+        attr_help="Comma-separated list of expected attribute names",
+    ),
+    SubparserCheckSpec(
+        command="check-cpp",
+        help_text="Validate C++17 / PyBind11 operation against specification",
+        handler=cmd_check_cpp,
+        pos_help="Name of the C++ operation (e.g., 'clamp', 'from_blob', 'sqrt')",
+        attr_help="Comma-separated list of expected attribute names",
+    ),
+    SubparserCheckSpec(
+        command="check-array-api",
+        help_text="Validate Python Array API Standard operation against specification",
+        handler=cmd_check_array_api,
+        pos_help="Name of the Array API operation (e.g., 'add', 'matmul', 'sum')",
+    ),
+    SubparserCheckSpec(
+        command="check-scipy",
+        help_text="Validate SciPy operation against specification",
+        handler=cmd_check_scipy,
+        pos_help="Name of the SciPy operation (e.g., 'erf', 'inv', 'convolve')",
+    ),
+    SubparserCheckSpec(
+        command="check-torchvision",
+        help_text="Validate TorchVision operation against specification",
+        handler=cmd_check_torchvision,
+        pos_help="Name of the TorchVision operation (e.g., 'nms', 'roi_align', 'box_iou')",
+    ),
+    SubparserCheckSpec(
+        command="check-torchaudio",
+        help_text="Validate TorchAudio operation against specification",
+        handler=cmd_check_torchaudio,
+        pos_help="Name of the TorchAudio operation (e.g., 'melscale_fbanks', 'spectrogram', 'MFCC')",
+    ),
+    SubparserCheckSpec(
+        command="check-safetensors",
+        help_text="Validate SafeTensors operation against specification",
+        handler=cmd_check_safetensors,
+        pos_help="Name of the SafeTensors operation (e.g., 'save_file', 'load_file', 'safe_open')",
+    ),
+    SubparserCheckSpec(
+        command="check-aten",
+        help_text="Validate PyTorch ATen operation against specification",
+        handler=cmd_check_aten,
+        pos_help="Name of the ATen operation (e.g., 'add', 'matmul', 'relu')",
+    ),
+    SubparserCheckSpec(
+        command="check-nccl",
+        help_text="Validate NCCL/RCCL collective operation against specification",
+        handler=cmd_check_nccl,
+        pos_help="Name of the collective operation (e.g., 'all_reduce', 'all_gather', 'reduce_scatter')",
+    ),
+    SubparserCheckSpec(
+        command="check-flash-attention",
+        help_text="Validate FlashAttention operation against specification",
+        handler=cmd_check_flash_attention,
+        pos_help="Name of the attention operation (e.g., 'flash_attn_func', 'paged_attention_v1', 'FlashAttention')",
+    ),
+]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -212,47 +325,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser_verify_cache.set_defaults(func=cmd_verify_local_cache)
 
-    # index
-    parser_index = subparsers.add_parser(
-        "index", help="Manage ephemeral local SQLite search index"
-    )
-    parser_index.add_argument(
-        "--rebuild",
-        action="store_true",
-        help="Rebuild index from all available snapshots",
-    )
-    parser_index.add_argument(
-        "--clean",
-        "--clear",
-        dest="clean",
-        action="store_true",
-        help="Clear the local index database",
-    )
-    parser_index.add_argument(
-        "--status", action="store_true", help="Display index statistics"
-    )
-    parser_index.set_defaults(func=cmd_index)
-
-    # index-cache
-    parser_index_cache = subparsers.add_parser(
-        "index-cache", help="Manage and clean ephemeral local SQLite search index"
-    )
-    parser_index_cache.add_argument(
-        "--clean",
-        "--clear",
-        dest="clean",
-        action="store_true",
-        help="Clear the local index cache",
-    )
-    parser_index_cache.add_argument(
-        "--rebuild",
-        action="store_true",
-        help="Rebuild index from all available snapshots",
-    )
-    parser_index_cache.add_argument(
-        "--status", action="store_true", help="Display index statistics"
-    )
-    parser_index_cache.set_defaults(func=cmd_index)
+    # index / index-cache
+    for idx_cmd, idx_help in (
+        ("index", "Manage ephemeral local SQLite search index"),
+        ("index-cache", "Manage and clean ephemeral local SQLite search index"),
+    ):
+        p_idx = subparsers.add_parser(idx_cmd, help=idx_help)
+        p_idx.add_argument(
+            "--rebuild",
+            action="store_true",
+            help="Rebuild index from all available snapshots",
+        )
+        p_idx.add_argument(
+            "--clean",
+            "--clear",
+            dest="clean",
+            action="store_true",
+            help="Clear the local index database",
+        )
+        p_idx.add_argument(
+            "--status", action="store_true", help="Display index statistics"
+        )
+        p_idx.set_defaults(func=cmd_index)
 
     # check-sass
     parser_check_sass = subparsers.add_parser(
@@ -399,386 +493,68 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser_check_ptx.set_defaults(func=cmd_check_ptx)
 
-    # check-mlir
-    parser_check_mlir = subparsers.add_parser(
-        "check-mlir",
-        help="Validate MLIR text or operation",
-    )
-    parser_check_mlir.add_argument(
-        "op_name",
-        type=str,
-        nargs="?",
-        default=None,
-        help="Qualified MLIR op name (e.g. arith.addf)",
-    )
-    parser_check_mlir.add_argument(
-        "--operands-count",
-        type=int,
-        default=None,
-        help="Expected number of SSA operands",
-    )
-    parser_check_mlir.add_argument(
-        "--attributes",
-        type=str,
-        default=None,
-        help="Comma-separated attribute names",
-    )
-    parser_check_mlir.add_argument(
-        "--file",
-        type=str,
-        default=None,
-        help="Path to MLIR text file to validate",
-    )
-    parser_check_mlir.set_defaults(func=cmd_check_mlir)
+    # check-mlir / check-stablehlo / check-wgsl (file + op_name capable)
+    for ir_cmd, ir_help, ir_pos_help, ir_cnt_flag, ir_fn in (
+        (
+            "check-mlir",
+            "Validate MLIR text or operation",
+            "Qualified MLIR op name (e.g. arith.addf)",
+            "--operands-count",
+            cmd_check_mlir,
+        ),
+        (
+            "check-stablehlo",
+            "Validate StableHLO text or operation",
+            "Qualified StableHLO op name (e.g. stablehlo.dot_general)",
+            "--operands-count",
+            cmd_check_stablehlo,
+        ),
+        (
+            "check-wgsl",
+            "Validate WGSL shader or operation against specification",
+            "Name of the WGSL operation (e.g. storageStore, atomicAdd)",
+            "--inputs-count",
+            cmd_check_wgsl,
+        ),
+    ):
+        p_ir = subparsers.add_parser(ir_cmd, help=ir_help)
+        p_ir.add_argument(
+            "op_name", type=str, nargs="?", default=None, help=ir_pos_help
+        )
+        p_ir.add_argument(
+            ir_cnt_flag,
+            type=int,
+            default=None,
+            help="Expected number of operands",
+        )
+        p_ir.add_argument(
+            "--attributes",
+            type=str,
+            default=None,
+            help="Comma-separated attribute names",
+        )
+        p_ir.add_argument(
+            "--file",
+            type=str,
+            default=None,
+            help="Path to source file to validate",
+        )
+        p_ir.set_defaults(func=ir_fn)
 
-    # check-stablehlo
-    parser_check_stablehlo = subparsers.add_parser(
-        "check-stablehlo",
-        help="Validate StableHLO text or operation",
-    )
-    parser_check_stablehlo.add_argument(
-        "op_name",
-        type=str,
-        nargs="?",
-        default=None,
-        help="Qualified StableHLO op name (e.g. stablehlo.dot_general)",
-    )
-    parser_check_stablehlo.add_argument(
-        "--operands-count",
-        type=int,
-        default=None,
-        help="Expected number of SSA operands",
-    )
-    parser_check_stablehlo.add_argument(
-        "--attributes",
-        type=str,
-        default=None,
-        help="Comma-separated attribute names",
-    )
-    parser_check_stablehlo.add_argument(
-        "--file",
-        type=str,
-        default=None,
-        help="Path to StableHLO text file to validate",
-    )
-    parser_check_stablehlo.set_defaults(func=cmd_check_stablehlo)
-
-    # check-wgsl
-    parser_check_wgsl = subparsers.add_parser(
-        "check-wgsl",
-        help="Validate WGSL shader or operation against specification",
-    )
-    parser_check_wgsl.add_argument(
-        "op_name",
-        type=str,
-        nargs="?",
-        default=None,
-        help="Name of the WGSL operation (e.g. storageStore, atomicAdd)",
-    )
-    parser_check_wgsl.add_argument(
-        "--inputs-count",
-        type=int,
-        default=None,
-        help="Expected number of input operands",
-    )
-    parser_check_wgsl.add_argument(
-        "--attributes",
-        type=str,
-        default=None,
-        help="Comma-separated attribute names",
-    )
-    parser_check_wgsl.add_argument(
-        "--file",
-        type=str,
-        default=None,
-        help="Path to WGSL shader file to validate",
-    )
-    parser_check_wgsl.set_defaults(func=cmd_check_wgsl)
-
-    parser_check_onnx = subparsers.add_parser(
-        "check-onnx",
-        help="Validate ONNX operation against official specification",
-    )
-    parser_check_onnx.add_argument(
-        "op_name",
-        help="Name of the ONNX operator (e.g., 'Conv', 'Add')",
-    )
-    parser_check_onnx.add_argument(
-        "--domain",
-        default="",
-        help="Optional domain (e.g., 'ai.onnx.ml')",
-    )
-    parser_check_onnx.add_argument(
-        "--inputs-count",
-        type=int,
-        default=None,
-        help="Expected number of input operands",
-    )
-    parser_check_onnx.add_argument(
-        "--attributes",
-        default=None,
-        help="Comma-separated list of expected attribute names",
-    )
-    parser_check_onnx.set_defaults(func=cmd_check_onnx)
-
-    parser_check_metal = subparsers.add_parser(
-        "check-metal",
-        help="Validate Apple Metal MSL compute operation against specification",
-    )
-    parser_check_metal.add_argument(
-        "op_name",
-        help="Name of the Metal MSL operation (e.g., 'simdgroup_multiply_accumulate')",
-    )
-    parser_check_metal.add_argument(
-        "--address-space",
-        default=None,
-        help="Expected address space (e.g., 'device', 'threadgroup', 'thread')",
-    )
-    parser_check_metal.add_argument(
-        "--inputs-count",
-        type=int,
-        default=None,
-        help="Expected number of input operands",
-    )
-    parser_check_metal.add_argument(
-        "--attributes",
-        default=None,
-        help="Comma-separated list of expected attribute names",
-    )
-    parser_check_metal.set_defaults(func=cmd_check_metal)
-
-    parser_check_wasm = subparsers.add_parser(
-        "check-wasm",
-        help="Validate WebAssembly 2.0 / SIMD instruction against specification",
-    )
-    parser_check_wasm.add_argument(
-        "mnemonic",
-        help="Mnemonic of the WASM instruction (e.g., 'f32x4.add', 'v128.load')",
-    )
-    parser_check_wasm.add_argument(
-        "--operands-count",
-        type=int,
-        default=None,
-        help="Expected number of stack operands",
-    )
-    parser_check_wasm.add_argument(
-        "--attributes",
-        default=None,
-        help="Comma-separated list of expected attribute/immediate names",
-    )
-    parser_check_wasm.set_defaults(func=cmd_check_wasm)
-
-    parser_check_webgl = subparsers.add_parser(
-        "check-webgl",
-        help="Validate WebGL 2.0 / GLSL ES 3.00 operation against specification",
-    )
-    parser_check_webgl.add_argument(
-        "op_name",
-        help="Name of the WebGL operation (e.g., 'texelFetch', 'matrixCompMult')",
-    )
-    parser_check_webgl.add_argument(
-        "--inputs-count",
-        type=int,
-        default=None,
-        help="Expected number of input operands",
-    )
-    parser_check_webgl.add_argument(
-        "--attributes",
-        default=None,
-        help="Comma-separated list of expected attribute names",
-    )
-    parser_check_webgl.set_defaults(func=cmd_check_webgl)
-
-    parser_check_cpp = subparsers.add_parser(
-        "check-cpp",
-        help="Validate C++17 / PyBind11 operation against specification",
-    )
-    parser_check_cpp.add_argument(
-        "op_name",
-        help="Name of the C++ operation (e.g., 'clamp', 'from_blob', 'sqrt')",
-    )
-    parser_check_cpp.add_argument(
-        "--inputs-count",
-        type=int,
-        default=None,
-        help="Expected number of input operands",
-    )
-    parser_check_cpp.add_argument(
-        "--attributes",
-        default=None,
-        help="Comma-separated list of expected attribute names",
-    )
-    parser_check_cpp.set_defaults(func=cmd_check_cpp)
-
-    parser_check_array_api = subparsers.add_parser(
-        "check-array-api",
-        help="Validate Python Array API Standard operation against specification",
-    )
-    parser_check_array_api.add_argument(
-        "op_name",
-        help="Name of the Array API operation (e.g., 'add', 'matmul', 'sum')",
-    )
-    parser_check_array_api.add_argument(
-        "--inputs-count",
-        type=int,
-        default=None,
-        help="Expected number of input operands",
-    )
-    parser_check_array_api.add_argument(
-        "--attributes",
-        default=None,
-        help="Comma-separated list of expected keyword argument names",
-    )
-    parser_check_array_api.set_defaults(func=cmd_check_array_api)
-
-    parser_check_scipy = subparsers.add_parser(
-        "check-scipy",
-        help="Validate SciPy operation against specification",
-    )
-    parser_check_scipy.add_argument(
-        "op_name",
-        help="Name of the SciPy operation (e.g., 'erf', 'inv', 'convolve')",
-    )
-    parser_check_scipy.add_argument(
-        "--inputs-count",
-        type=int,
-        default=None,
-        help="Expected number of input operands",
-    )
-    parser_check_scipy.add_argument(
-        "--attributes",
-        default=None,
-        help="Comma-separated list of expected keyword argument names",
-    )
-    parser_check_scipy.set_defaults(func=cmd_check_scipy)
-
-    parser_check_torchvision = subparsers.add_parser(
-        "check-torchvision",
-        help="Validate TorchVision operation against specification",
-    )
-    parser_check_torchvision.add_argument(
-        "op_name",
-        help="Name of the TorchVision operation (e.g., 'nms', 'roi_align', 'box_iou')",
-    )
-    parser_check_torchvision.add_argument(
-        "--inputs-count",
-        type=int,
-        default=None,
-        help="Expected number of input operands",
-    )
-    parser_check_torchvision.add_argument(
-        "--attributes",
-        default=None,
-        help="Comma-separated list of expected keyword argument names",
-    )
-    parser_check_torchvision.set_defaults(func=cmd_check_torchvision)
-
-    parser_check_torchaudio = subparsers.add_parser(
-        "check-torchaudio",
-        help="Validate TorchAudio operation against specification",
-    )
-    parser_check_torchaudio.add_argument(
-        "op_name",
-        help="Name of the TorchAudio operation (e.g., 'melscale_fbanks', 'spectrogram', 'MFCC')",
-    )
-    parser_check_torchaudio.add_argument(
-        "--inputs-count",
-        type=int,
-        default=None,
-        help="Expected number of input operands",
-    )
-    parser_check_torchaudio.add_argument(
-        "--attributes",
-        default=None,
-        help="Comma-separated list of expected keyword argument names",
-    )
-    parser_check_torchaudio.set_defaults(func=cmd_check_torchaudio)
-
-    parser_check_safetensors = subparsers.add_parser(
-        "check-safetensors",
-        help="Validate SafeTensors operation against specification",
-    )
-    parser_check_safetensors.add_argument(
-        "op_name",
-        help="Name of the SafeTensors operation (e.g., 'save_file', 'load_file', 'safe_open')",
-    )
-    parser_check_safetensors.add_argument(
-        "--inputs-count",
-        type=int,
-        default=None,
-        help="Expected number of input operands",
-    )
-    parser_check_safetensors.add_argument(
-        "--attributes",
-        default=None,
-        help="Comma-separated list of expected keyword argument names",
-    )
-    parser_check_safetensors.set_defaults(func=cmd_check_safetensors)
-
-    parser_check_aten = subparsers.add_parser(
-        "check-aten",
-        help="Validate PyTorch ATen operation against specification",
-    )
-    parser_check_aten.add_argument(
-        "op_name",
-        help="Name of the ATen operation (e.g., 'add', 'matmul', 'relu')",
-    )
-    parser_check_aten.add_argument(
-        "--inputs-count",
-        type=int,
-        default=None,
-        help="Expected number of input operands",
-    )
-    parser_check_aten.add_argument(
-        "--attributes",
-        default=None,
-        help="Comma-separated list of expected keyword argument names",
-    )
-    parser_check_aten.set_defaults(func=cmd_check_aten)
-
-    parser_check_nccl = subparsers.add_parser(
-        "check-nccl",
-        help="Validate NCCL/RCCL collective operation against specification",
-    )
-    parser_check_nccl.add_argument(
-        "op_name",
-        help="Name of the collective operation (e.g., 'all_reduce', 'all_gather', 'reduce_scatter')",
-    )
-    parser_check_nccl.add_argument(
-        "--inputs-count",
-        type=int,
-        default=None,
-        help="Expected number of input operands",
-    )
-    parser_check_nccl.add_argument(
-        "--attributes",
-        default=None,
-        help="Comma-separated list of expected keyword argument names",
-    )
-    parser_check_nccl.set_defaults(func=cmd_check_nccl)
-
-    parser_check_flash_attention = subparsers.add_parser(
-        "check-flash-attention",
-        help="Validate FlashAttention operation against specification",
-    )
-    parser_check_flash_attention.add_argument(
-        "op_name",
-        help="Name of the attention operation (e.g., 'flash_attn_func', 'paged_attention_v1', 'FlashAttention')",
-    )
-    parser_check_flash_attention.add_argument(
-        "--inputs-count",
-        type=int,
-        default=None,
-        help="Expected number of input operands",
-    )
-    parser_check_flash_attention.add_argument(
-        "--attributes",
-        default=None,
-        help="Comma-separated list of expected keyword argument names",
-    )
-    parser_check_flash_attention.set_defaults(func=cmd_check_flash_attention)
+    # Declarative domain check subparsers
+    for spec in DOMAIN_CHECK_SUBPARSERS:
+        p_dom = subparsers.add_parser(spec.command, help=spec.help_text)
+        p_dom.add_argument(spec.pos_arg, help=spec.pos_help)
+        if spec.extra_flag is not None:
+            flag_name, flag_default, flag_help = spec.extra_flag
+            p_dom.add_argument(flag_name, default=flag_default, help=flag_help)
+        p_dom.add_argument(
+            spec.count_flag, type=int, default=None, help=spec.count_help
+        )
+        p_dom.add_argument("--attributes", default=None, help=spec.attr_help)
+        p_dom.set_defaults(func=spec.handler)
 
     return parser
 
 
-__all__ = ["build_parser"]
+__all__ = ["DOMAIN_CHECK_SUBPARSERS", "SubparserCheckSpec", "build_parser"]

@@ -14,70 +14,73 @@ DEFAULT_MATRIX = {
 }
 
 
-def build_and_run(framework: str, version: str, output_dir: Path) -> Path:
+def build_and_run(
+    framework: str, version: str, output_dir: Path, check: bool = False
+) -> Path:
     """Build a Docker image and run the snapshot extraction.
 
     Args:
         framework: The ML framework name.
         version: The framework version to install.
         output_dir: The directory to store the snapshot.
+        check: Whether to raise `subprocess.CalledProcessError` if Docker build or run fails.
 
     Returns:
         The path to the generated snapshot.
     """
     print(f"Running matrix for {framework}=={version}")
 
-    # We create a simple Dockerfile
     dockerfile_content = f"""
     FROM python:3.9-slim
 
     RUN pip install {framework}=={version}
-    # Install ml_ecosystem_snapshots (assuming it's installed or we copy the current dir)
-    # For a real run, we would pip install the SDK. Here we copy the source.
     COPY . /app
     WORKDIR /app
     RUN pip install -e .
 
-    # Run the snapshot generation
     CMD ["ml_ecosystem_snapshots", "capture", "--framework", "{framework}", "--output-dir", "/out"]
     """
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
-        (tmp_path / "Dockerfile").write_text(dockerfile_content)
+        (tmp_path / "Dockerfile").write_text(dockerfile_content, encoding="utf-8")
 
         image_tag = f"snapshot-runner-{framework}-{version}"
-
-        # Build image
-        subprocess.run(
-            [
-                "docker",
-                "build",
-                "-t",
-                image_tag,
-                "-f",
-                str(os.path.join(tmp_path, "Dockerfile")),
-                ".",
-            ],
-            check=False,
-        )
-
-        # Run container and mount output directory
         out_path = output_dir / framework / version
         out_path.mkdir(parents=True, exist_ok=True)
 
-        subprocess.run(
-            ["docker", "run", "--rm", "-v", f"{out_path.absolute()}:/out", image_tag],
-            check=False,
-        )
+        try:
+            subprocess.run(
+                [
+                    "docker",
+                    "build",
+                    "-t",
+                    image_tag,
+                    "-f",
+                    str(os.path.join(tmp_path, "Dockerfile")),
+                    ".",
+                ],
+                check=check,
+            )
 
-        # Clean up image to save space
-        subprocess.run(
-            ["docker", "rmi", image_tag],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+            subprocess.run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "-v",
+                    f"{out_path.absolute()}:/out",
+                    image_tag,
+                ],
+                check=check,
+            )
+        finally:
+            subprocess.run(
+                ["docker", "rmi", image_tag],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
 
         return out_path
 

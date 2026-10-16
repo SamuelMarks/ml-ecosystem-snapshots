@@ -189,7 +189,7 @@ def _get_safetensors_submodule(submod: str) -> Any:
         if submod == "core":
             return importlib.import_module("safetensors")
         return importlib.import_module(f"safetensors.{submod}")
-    except (ImportError, Exception):
+    except Exception:
         return None
 
 

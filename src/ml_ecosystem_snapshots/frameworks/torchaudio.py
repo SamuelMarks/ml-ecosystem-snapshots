@@ -186,7 +186,7 @@ def _get_torchaudio_submodule(submod: str) -> Any:
     """
     try:
         return importlib.import_module(f"torchaudio.{submod}")
-    except (ImportError, Exception):
+    except Exception:
         return None
 
 

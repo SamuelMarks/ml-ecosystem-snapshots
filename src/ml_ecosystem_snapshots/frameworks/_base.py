@@ -7,7 +7,7 @@ framework collector modules.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, TypedDict
 from ml_switcheroo_ir.schema.ghost import (
     ExtendedGhostParam,
     GhostOperationRef,
@@ -20,6 +20,55 @@ from ml_switcheroo_ir.schema.ghost import (
     ParameterKind,
 )
 from ml_ecosystem_snapshots.models import GhostInspector
+
+
+class CanonicalParamDict(TypedDict, total=False):
+    """TypedDict for a parameter specification inside a canonical Python op."""
+
+    name: str
+    kind: str
+    default: Optional[str]
+
+
+class CanonicalPythonOpDict(TypedDict, total=False):
+    """TypedDict for a canonical Python operation entry."""
+
+    name: str
+    api_path: str
+    kind: str
+    params: List[CanonicalParamDict]
+    docstring: str
+
+
+class CanonicalSubmoduleOpDict(CanonicalPythonOpDict, total=False):
+    """TypedDict for a submodule-backed canonical Python operation entry."""
+
+    submodule: str
+
+
+class CanonicalSsaAttrDict(TypedDict, total=False):
+    """TypedDict for an attribute specification inside a canonical SSA op."""
+
+    name: str
+    type: str
+    default: Any
+    required: bool
+    description: str
+
+
+class CanonicalSsaOpDict(TypedDict, total=False):
+    """TypedDict for a canonical SSA / hardware operation entry."""
+
+    name: str
+    mnemonic: str
+    domain: str
+    category: str
+    address_space: str
+    since_version: int
+    inputs: List[str]
+    outputs: List[str]
+    attributes: List[CanonicalSsaAttrDict]
+    description: str
 
 
 def build_canonical_python_ref(
@@ -102,7 +151,7 @@ def collect_from_canonical_or_live(
                     environment_tags
                 )
                 results.append(ref)
-            except (AttributeError, TypeError, ValueError, RuntimeError, Exception):
+            except Exception:
                 pass
     return results
 
@@ -163,7 +212,7 @@ def collect_from_submodules_or_canonical(
                     ]
                     results.append(ref)
                     seen.add(str(op["api_path"]))
-                except (AttributeError, TypeError, ValueError, RuntimeError, Exception):
+                except Exception:
                     pass
 
     for op in canonical_ops:
@@ -198,6 +247,7 @@ def build_ssa_operation_refs(
     provenance_fn: Callable[[Mapping[str, Any]], Dict[str, Any]],
     default_doc_fn: Callable[[str], str],
     environment_tags: Sequence[str],
+    api_path_fn: Optional[Callable[[Mapping[str, Any], str], str]] = None,
 ) -> List[GhostRef]:
     """Construct `GhostOperationRef` objects from SSA / hardware operation specs.
 
@@ -214,6 +264,7 @@ def build_ssa_operation_refs(
         provenance_fn: Callback returning provenance metadata dictionary for `op`.
         default_doc_fn: Callback returning fallback docstring for `op_name`.
         environment_tags: Sequence of environment tag strings.
+        api_path_fn: Optional callback returning `api_path` for `(op, op_name)`.
 
     Returns:
         List of populated `GhostOperationRef` items.
@@ -221,7 +272,11 @@ def build_ssa_operation_refs(
     refs: List[GhostRef] = []
     for op in ops:
         op_name = str(op[name_key])
-        api_path = f"{api_prefix}.{op_name}"
+        api_path = (
+            api_path_fn(op, op_name)
+            if api_path_fn is not None
+            else f"{api_prefix}.{op_name}"
+        )
         params: List[GhostParam] = []
 
         for inp in op.get("inputs", []):
@@ -243,6 +298,9 @@ def build_ssa_operation_refs(
             attr_name = str(attr.get("name", "attr"))
             attr_type = str(attr.get("type", "Any"))
             attr_def = attr.get("default")
+            attr_desc = str(
+                attr.get("description") or f"{attr_description_prefix} {attr_name}"
+            )
             params.append(
                 ExtendedGhostParam(
                     name=attr_name,
@@ -250,7 +308,7 @@ def build_ssa_operation_refs(
                     annotation=attr_type,
                     default=str(attr_def) if attr_def is not None else None,
                     standardized_name=attr_name,
-                    description=f"{attr_description_prefix} {attr_name}",
+                    description=attr_desc,
                     role=IRParameterRole.ATTRIBUTE,
                 )
             )
@@ -313,6 +371,6 @@ def collect_dir_callables(
                     obj, f"{api_prefix}.{name}", is_public=not name.startswith("_")
                 )
                 results.append(res)
-            except (AttributeError, TypeError, ValueError, RuntimeError, Exception):
+            except Exception:
                 pass
     return results

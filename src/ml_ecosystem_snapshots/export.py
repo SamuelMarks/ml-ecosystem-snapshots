@@ -647,10 +647,14 @@ def export_scoped_prompt_context(
     Returns:
         Structured Markdown string containing an index summary followed by detailed signatures.
     """
-    from ml_ecosystem_snapshots.mcp_server import get_framework_snapshot
+    import ml_ecosystem_snapshots.mcp_server as _mcp_server
+    from ml_ecosystem_snapshots.mcp.cache import get_framework_snapshot
     from ml_ecosystem_snapshots.models import GhostInspector
 
-    snap = get_framework_snapshot(framework)
+    active_get_snap = getattr(
+        _mcp_server, "get_framework_snapshot", get_framework_snapshot
+    )
+    snap = active_get_snap(framework)
     categories = snap.get("categories", {})
 
     all_raw_items: List[Dict[str, Any]] = []
@@ -675,18 +679,7 @@ def export_scoped_prompt_context(
     for item in selected_items:
         try:
             hydrated_refs.append(GhostInspector.hydrate(item))
-        except (
-            AttributeError,
-            TypeError,
-            ValueError,
-            KeyError,
-            IndexError,
-            SyntaxError,
-            OSError,
-            ImportError,
-            RuntimeError,
-            Exception,
-        ):
+        except Exception:
             pass
 
     index_lines: List[str] = [

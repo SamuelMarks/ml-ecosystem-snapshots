@@ -9,10 +9,16 @@ from __future__ import annotations
 import os
 
 
-def generate_shims() -> None:
-    """Generate all shim files from src/ml_ecosystem_snapshots to src/ml_framework_snapshots."""
-    eco_dir = os.path.join("src", "ml_ecosystem_snapshots")
-    fw_dir = os.path.join("src", "ml_framework_snapshots")
+def generate_shims(
+    eco_dir: str = os.path.join("src", "ml_ecosystem_snapshots"),
+    fw_dir: str = os.path.join("src", "ml_framework_snapshots"),
+) -> None:
+    """Generate all shim files from src/ml_ecosystem_snapshots to src/ml_framework_snapshots.
+
+    Args:
+        eco_dir: Source directory of canonical `ml_ecosystem_snapshots` package.
+        fw_dir: Target directory for generated `ml_framework_snapshots` shims.
+    """
     nl = chr(10)
 
     for root, _dirs, files in os.walk(eco_dir):

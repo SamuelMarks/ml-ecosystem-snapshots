@@ -33,7 +33,7 @@ def _get_nnx() -> typing.Any:
 
         nnx = _nnx
         return nnx
-    except (ImportError, Exception):
+    except Exception:
         return None
 
 

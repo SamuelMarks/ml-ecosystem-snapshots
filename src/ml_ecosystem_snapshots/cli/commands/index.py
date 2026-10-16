@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import sqlite3
 
@@ -30,10 +31,10 @@ def cmd_index(args: argparse.Namespace) -> None:
 
     if args.rebuild:
         clear_index()
-        conn = ensure_index()
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM symbols")
-        count = cur.fetchone()[0]
+        with contextlib.closing(ensure_index()) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM symbols")
+            count = cur.fetchone()[0]
         print(f"Rebuilt index with {count} symbols at {db_path}")
         return
 
@@ -41,12 +42,12 @@ def cmd_index(args: argparse.Namespace) -> None:
         print(f"Index database does not exist yet at {db_path}.")
         return
 
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM symbols")
-    symbol_count = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM indexed_files")
-    file_count = cur.fetchone()[0]
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM symbols")
+        symbol_count = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM indexed_files")
+        file_count = cur.fetchone()[0]
     size = os.path.getsize(db_path)
     print(f"Index database: {db_path}")
     print(f"  Indexed snapshots: {file_count}")

@@ -289,7 +289,7 @@ def _get_torchvision_submodule(submod: str) -> Any:
     """
     try:
         return importlib.import_module(f"torchvision.{submod}")
-    except (ImportError, Exception):
+    except Exception:
         return None
 
 

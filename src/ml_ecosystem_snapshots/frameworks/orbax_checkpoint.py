@@ -35,9 +35,9 @@ def _scan_orbax_checkpoint(include_nonpublic: bool) -> List[GhostRef]:
                     found.append(
                         GhostInspector.inspect(obj, f"orbax.checkpoint.{name}")
                     )
-                except (AttributeError, TypeError, ValueError, RuntimeError, Exception):
+                except Exception:
                     pass
-    except (AttributeError, TypeError, ValueError, RuntimeError, Exception):
+    except Exception:
         pass
 
     return found

@@ -8,12 +8,12 @@ import os
 import sys
 import datetime
 import concurrent.futures
-import importlib.metadata
 import json
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from ml_switcheroo_ir.schema.ghost import SemanticTier
+from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
 from ml_ecosystem_snapshots.models import SnapshotEnvelope
 from ml_switcheroo_ir.schema.ghost import GhostRef
 
@@ -163,6 +163,61 @@ def get_available_frameworks() -> Dict[str, Any]:
 FRAMEWORK_COLLECTORS = get_available_frameworks()
 
 
+_PKG_NAME_ALIASES: Dict[str, str] = {
+    "flax_nnx": "flax",
+    "sklearn": "scikit-learn",
+    "pytorch": "torch",
+    "pax": "paxml",
+    "optax_shim": "optax",
+    "huggingface": "transformers",
+    "orbax_checkpoint": "orbax-checkpoint",
+    "orbax": "orbax-checkpoint",
+}
+
+_STATIC_SPEC_VERSIONS: Dict[str, str] = {
+    "wgsl": "draft-2024",
+    "metal": "3.2",
+    "wasm_simd": "2.0",
+    "wasm": "2.0",
+    "webgl": "2.0",
+    "cpp_runtime": "17",
+    "cpp": "17",
+    "array_api": "2024.12",
+    "nccl": "2.21",
+    "rccl": "2.21",
+    "flash_attention": "2.6.3",
+    "flash_attn": "2.6.3",
+    "html_dsl": "0.0.2",
+    "latex_dsl": "0.0.2",
+    "tikz": "0.0.2",
+}
+
+_LIVE_MODULE_VERSION_FALLBACKS: Dict[str, Tuple[str, str, Optional[str]]] = {
+    "ir": ("ml_switcheroo_ir", "0.0.3", "ml-switcheroo-ir"),
+    "ml_switcheroo_ir": ("ml_switcheroo_ir", "0.0.3", "ml-switcheroo-ir"),
+    "scipy": ("scipy", "1.13.1", "scipy"),
+    "torchvision": ("torchvision", "0.23.0", "torchvision"),
+    "torchaudio": ("torchaudio", "2.8.0", "torchaudio"),
+    "safetensors": ("safetensors", "0.7.0", "safetensors"),
+    "aten": ("torch", "2.8.0", "torch"),
+    "numba": ("numba", "0.60.0", "numba"),
+    "sparse": ("sparse", "0.15.4", "sparse"),
+    "dpnp": ("dpnp", "0.15.0", None),
+    "awkward": ("awkward", "2.6.8", None),
+    "pyarrow_compute": ("pyarrow", "17.0.0", None),
+    "bohrium": ("bohrium", "0.13.0", None),
+    "onnx": ("onnx", "1.17.0", "onnx"),
+    "onnx_spec": ("onnx", "1.17.0", "onnx"),
+}
+
+_EXHAUSTIVE_JSON_VERSIONS: Dict[str, str] = {
+    "nvidia_sass": "12.6.0",
+    "amd_rdna": "19.1.0",
+    "nvidia_ptx": "8.5",
+    "stablehlo": "1.9.0",
+}
+
+
 def get_pkg_version(package_name: str) -> str:
     """Safely retrieves the installed version of a python package.
 
@@ -173,129 +228,28 @@ def get_pkg_version(package_name: str) -> str:
         The version string, or "unknown" if not installed.
 
     """
+    import builtins
+    import importlib.metadata
     import subprocess
     import sys
 
     try:
-        if package_name == "flax_nnx":
-            package_name = "flax"
-        elif package_name == "sklearn":
-            package_name = "scikit-learn"
-        elif package_name == "pytorch":
-            package_name = "torch"
-        elif package_name == "pax":
-            package_name = "paxml"
-        elif package_name == "optax_shim":
-            package_name = "optax"
-        elif package_name in ("ir", "ml_switcheroo_ir"):
-            try:
-                import ml_switcheroo_ir
+        if package_name in _STATIC_SPEC_VERSIONS:
+            return _STATIC_SPEC_VERSIONS[package_name]
 
-                return str(getattr(ml_switcheroo_ir, "__version__", "0.0.3"))
-            except Exception:
-                package_name = "ml-switcheroo-ir"
-        elif package_name == "wgsl":
-            return "draft-2024"
-        elif package_name == "metal":
-            return "3.2"
-        elif package_name in ("wasm_simd", "wasm"):
-            return "2.0"
-        elif package_name == "webgl":
-            return "2.0"
-        elif package_name in ("cpp_runtime", "cpp"):
-            return "17"
-        elif package_name == "array_api":
-            return "2024.12"
-        elif package_name == "scipy":
+        if package_name in _LIVE_MODULE_VERSION_FALLBACKS:
+            mod_name, default_ver, dist_fallback = _LIVE_MODULE_VERSION_FALLBACKS[
+                package_name
+            ]
             try:
-                import scipy
-
-                return str(getattr(scipy, "__version__", "1.13.1"))
+                mod = builtins.__import__(mod_name)
+                return str(getattr(mod, "__version__", default_ver))
             except Exception:
-                package_name = "scipy"
-        elif package_name == "torchvision":
-            try:
-                import torchvision
-
-                return str(getattr(torchvision, "__version__", "0.23.0"))
-            except Exception:
-                package_name = "torchvision"
-        elif package_name == "torchaudio":
-            try:
-                import torchaudio
-
-                return str(getattr(torchaudio, "__version__", "2.8.0"))
-            except Exception:
-                package_name = "torchaudio"
-        elif package_name == "safetensors":
-            try:
-                import safetensors
-
-                return str(getattr(safetensors, "__version__", "0.7.0"))
-            except Exception:
-                package_name = "safetensors"
-        elif package_name == "aten":
-            try:
-                import torch
-
-                return str(getattr(torch, "__version__", "2.8.0"))
-            except Exception:
-                package_name = "torch"
-        elif package_name in ("nccl", "rccl"):
-            return "2.21"
-        elif package_name in ("flash_attention", "flash_attn"):
-            return "2.6.3"
-        elif package_name == "numba":
-            try:
-                import numba
-
-                return str(getattr(numba, "__version__", "0.60.0"))
-            except Exception:
-                package_name = "numba"
-        elif package_name == "sparse":
-            try:
-                import sparse
-
-                return str(getattr(sparse, "__version__", "0.15.4"))
-            except Exception:
-                package_name = "sparse"
-        elif package_name == "dpnp":
-            try:
-                import dpnp
-
-                return str(getattr(dpnp, "__version__", "0.15.0"))
-            except Exception:
-                return "0.15.0"
-        elif package_name == "awkward":
-            try:
-                import awkward
-
-                return str(getattr(awkward, "__version__", "2.6.8"))
-            except Exception:
-                return "2.6.8"
-        elif package_name == "pyarrow_compute":
-            try:
-                import pyarrow
-
-                return str(getattr(pyarrow, "__version__", "17.0.0"))
-            except Exception:
-                return "17.0.0"
-        elif package_name == "bohrium":
-            try:
-                import bohrium
-
-                return str(getattr(bohrium, "__version__", "0.13.0"))
-            except Exception:
-                return "0.13.0"
-        elif package_name in ("onnx", "onnx_spec"):
-            try:
-                import onnx
-
-                return str(getattr(onnx, "__version__", "1.17.0"))
-            except Exception:
-                package_name = "onnx"
-        elif package_name == "huggingface":
-            package_name = "transformers"
+                if dist_fallback is None:
+                    return default_ver
+                package_name = dist_fallback
+        elif package_name in _PKG_NAME_ALIASES:
+            package_name = _PKG_NAME_ALIASES[package_name]
         elif package_name == "keras":
             try:
                 return importlib.metadata.version("keras")
@@ -312,23 +266,8 @@ def get_pkg_version(package_name: str) -> str:
                             val = getattr(ver, "value", None)
                         if val is not None:
                             return str(val).strip("'\"")
-                except (
-                    AttributeError,
-                    TypeError,
-                    ValueError,
-                    KeyError,
-                    IndexError,
-                    SyntaxError,
-                    OSError,
-                    ImportError,
-                    RuntimeError,
-                    Exception,
-                ):
+                except Exception:
                     pass
-        elif package_name == "orbax_checkpoint":
-            package_name = "orbax-checkpoint"
-        elif package_name == "orbax":
-            package_name = "orbax-checkpoint"
         elif package_name == "cupy":
             try:
                 import cupy
@@ -350,18 +289,7 @@ def get_pkg_version(package_name: str) -> str:
             for mlir_pkg in ("mlir", "mlir-native"):
                 try:
                     return importlib.metadata.version(mlir_pkg)
-                except (
-                    AttributeError,
-                    TypeError,
-                    ValueError,
-                    KeyError,
-                    IndexError,
-                    SyntaxError,
-                    OSError,
-                    ImportError,
-                    RuntimeError,
-                    Exception,
-                ):
+                except Exception:
                     pass
             json_file = os.path.join(
                 os.path.dirname(__file__), "frameworks", "mlir_exhaustive.json"
@@ -372,26 +300,10 @@ def get_pkg_version(package_name: str) -> str:
                         h = json.load(f)
                         if isinstance(h, dict) and h.get("version"):
                             return str(h["version"])
-                except (
-                    AttributeError,
-                    TypeError,
-                    ValueError,
-                    KeyError,
-                    IndexError,
-                    SyntaxError,
-                    OSError,
-                    ImportError,
-                    RuntimeError,
-                    Exception,
-                ):
+                except Exception:
                     pass
             return "19.1.0"
-        elif package_name in [
-            "nvidia_sass",
-            "amd_rdna",
-            "nvidia_ptx",
-            "stablehlo",
-        ]:
+        elif package_name in _EXHAUSTIVE_JSON_VERSIONS:
             json_file = os.path.join(
                 os.path.dirname(__file__),
                 "frameworks",
@@ -403,33 +315,9 @@ def get_pkg_version(package_name: str) -> str:
                         h = json.load(f)
                         if isinstance(h, dict) and h.get("version"):
                             return str(h["version"])
-                except (
-                    AttributeError,
-                    TypeError,
-                    ValueError,
-                    KeyError,
-                    IndexError,
-                    SyntaxError,
-                    OSError,
-                    ImportError,
-                    RuntimeError,
-                    Exception,
-                ):
+                except Exception:
                     pass
-            defaults = {
-                "nvidia_sass": "12.6.0",
-                "amd_rdna": "19.1.0",
-                "nvidia_ptx": "8.5",
-                "stablehlo": "1.9.0",
-            }
-            return defaults.get(package_name, "1.0.0")
-        elif package_name in [
-            "html_dsl",
-            "latex_dsl",
-            "tikz",
-        ]:
-            # DSL dialects are sourced from ml-switcheroo v0.0.2
-            return "0.0.2"
+            return _EXHAUSTIVE_JSON_VERSIONS[package_name]
 
         return importlib.metadata.version(package_name)
     except Exception:
@@ -447,19 +335,8 @@ def get_pkg_version(package_name: str) -> str:
                 if line.startswith(f"{search_name}=="):
                     return line.split("==")[1].strip()
                 elif line.startswith(f"{search_name} @"):
-                    return "unknown"  # Can't easily determine version from direct URL
-        except (
-            AttributeError,
-            TypeError,
-            ValueError,
-            KeyError,
-            IndexError,
-            SyntaxError,
-            OSError,
-            ImportError,
-            RuntimeError,
-            Exception,
-        ):
+                    return "unknown"
+        except Exception:
             pass
         return "unknown"
 
@@ -673,18 +550,7 @@ def extract_snapshot(
                     d["kwargs"] = kwargs_list
                     dumped_refs.append(d)
                 return cat.value, dumped_refs
-        except (
-            AttributeError,
-            TypeError,
-            ValueError,
-            KeyError,
-            IndexError,
-            SyntaxError,
-            OSError,
-            ImportError,
-            RuntimeError,
-            Exception,
-        ):
+        except Exception:
             pass
         return cat.value, []
 
@@ -856,10 +722,10 @@ def validate_snapshot_envelope(snapshot_dict: Any) -> SnapshotEnvelope:
         Validated SnapshotEnvelope instance.
 
     Raises:
-        ValueError: If required fields are missing or invalid.
+        SnapshotSchemaError: If required fields are missing or invalid.
     """
     if not isinstance(snapshot_dict, dict):
-        raise ValueError("Snapshot must be a dictionary.")
+        raise SnapshotSchemaError("Snapshot must be a dictionary.")
     target = snapshot_dict.get("target") or "unknown"
     envelope_data = dict(snapshot_dict)
     envelope_data.setdefault("target", target)

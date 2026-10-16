@@ -196,3 +196,31 @@ def test_main_replace_existing(mocker: Any, tmp_path: Any) -> None:
         assert "olddocs" not in content
     finally:
         os.chdir(orig_cwd)
+
+
+def test_update_shields_main_entrypoint(mocker: Any, tmp_path: Any) -> None:
+    """Test running scripts/update_shields.py as __main__.
+
+    Args:
+        mocker: Pytest mocker fixture.
+        tmp_path: Temporary directory path fixture.
+    """
+    import runpy
+    import scripts.update_shields as us_mod
+
+    mocker.patch(
+        "subprocess.run"
+    ).return_value.stdout = (
+        "TOTAL 100 0 100%\nRESULT: PASSED (minimum: 80.0%, actual: 100.0%)\n"
+    )
+    readme_path = tmp_path / "README.md"
+    readme_path.write_text(
+        "[![License](license)]()\n[![Tests](oldtests)]()\n[![Docs](olddocs)]()\n"
+    )
+    orig_cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        runpy.run_path(us_mod.__file__, run_name="__main__")
+        assert "tests-100%25-brightgreen.svg" in readme_path.read_text()
+    finally:
+        os.chdir(orig_cwd)

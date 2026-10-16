@@ -8,6 +8,16 @@ caching (`cache`), and domain-specific verification tools (`tools`).
 from __future__ import annotations
 
 from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository
+from ml_ecosystem_snapshots.mcp.models import (
+    AntiPatternExplanationResult,
+    CodeBlockCheckResult,
+    CodeBlockFinding,
+    ConceptTranslationResult,
+    DomainOpCheckResult,
+    HallucinationCheckResult,
+    IrCheckResult,
+    IsaCheckResult,
+)
 from ml_ecosystem_snapshots.mcp.protocol import (
     JsonRpcError,
     JsonRpcRequest,
@@ -17,6 +27,14 @@ from ml_ecosystem_snapshots.mcp.protocol import (
 from ml_ecosystem_snapshots.mcp.registry import McpToolSpec, dispatch_tool_call
 
 __all__ = [
+    "AntiPatternExplanationResult",
+    "CodeBlockCheckResult",
+    "CodeBlockFinding",
+    "ConceptTranslationResult",
+    "DomainOpCheckResult",
+    "HallucinationCheckResult",
+    "IrCheckResult",
+    "IsaCheckResult",
     "JsonRpcError",
     "JsonRpcRequest",
     "JsonRpcResponse",

@@ -136,7 +136,7 @@ def _get_sparse() -> Any:
         import sparse
 
         return sparse
-    except (ImportError, Exception):
+    except Exception:
         return None
 
 

@@ -78,9 +78,9 @@ def test_zero_unparsed_regex_tokens_in_bundled_snapshots() -> None:
         data = get_bundled_json(sname)
         raw_text = json.dumps(data)
         for tok in forbidden_tokens:
-            assert (
-                tok not in raw_text
-            ), f"Forbidden unparsed token '{tok}' found in {sname}"
+            assert tok not in raw_text, (
+                f"Forbidden unparsed token '{tok}' found in {sname}"
+            )
 
 
 def test_no_decay_to_varargs_for_top_pytorch_ops() -> None:
@@ -105,12 +105,12 @@ def test_no_decay_to_varargs_for_top_pytorch_ops() -> None:
         # Check that it did not decay to inexact (*args, **kwargs)
         if len(ref.params) == 2:
             names = [p.name for p in ref.params]
-            assert not (
-                names == ["args", "kwargs"]
-            ), f"Operator {api_path} decayed to (*args, **kwargs)!"
-        assert "inexact_signature" not in (
-            ref.environment_tags or []
-        ), f"Operator {api_path} tagged with inexact_signature!"
+            assert not (names == ["args", "kwargs"]), (
+                f"Operator {api_path} decayed to (*args, **kwargs)!"
+            )
+        assert "inexact_signature" not in (ref.environment_tags or []), (
+            f"Operator {api_path} tagged with inexact_signature!"
+        )
 
 
 def test_zero_duplicate_placeholder_operand_signatures() -> None:
@@ -121,18 +121,18 @@ def test_zero_duplicate_placeholder_operand_signatures() -> None:
         op_sigs = item.get("operand_signatures", [])
         sig_tuples = [tuple(sig) for sig in op_sigs if isinstance(sig, list)]
         # No duplicate operand signatures for the same instruction
-        assert len(sig_tuples) == len(
-            set(sig_tuples)
-        ), f"Duplicate operand signatures found in SASS mnemonic {item.get('mnemonic')}"
+        assert len(sig_tuples) == len(set(sig_tuples)), (
+            f"Duplicate operand signatures found in SASS mnemonic {item.get('mnemonic')}"
+        )
 
     # 2. AMD RDNA
     rdna_data = get_bundled_json("amd_rdna_exhaustive.json")
     for item in rdna_data:
         op_sigs = item.get("operand_signatures", [])
         sig_tuples = [tuple(sig) for sig in op_sigs if isinstance(sig, list)]
-        assert len(sig_tuples) == len(
-            set(sig_tuples)
-        ), f"Duplicate operand signatures found in RDNA mnemonic {item.get('mnemonic')}"
+        assert len(sig_tuples) == len(set(sig_tuples)), (
+            f"Duplicate operand signatures found in RDNA mnemonic {item.get('mnemonic')}"
+        )
 
 
 def test_separation_of_ssa_operands_from_attributes_in_dialects() -> None:
@@ -157,9 +157,9 @@ def test_separation_of_ssa_operands_from_attributes_in_dialects() -> None:
 
         # Intersection between operands and attributes should be empty
         overlap = op_names.intersection(attr_names)
-        assert (
-            len(overlap) == 0
-        ), f"Overlap between SSA operands and attributes in MLIR op {op.get('name')}: {overlap}"
+        assert len(overlap) == 0, (
+            f"Overlap between SSA operands and attributes in MLIR op {op.get('name')}: {overlap}"
+        )
 
     # 2. StableHLO
     hlo_data = get_bundled_json("stablehlo_exhaustive.json")
@@ -178,9 +178,9 @@ def test_separation_of_ssa_operands_from_attributes_in_dialects() -> None:
         }
 
         overlap = op_names.intersection(attr_names)
-        assert (
-            len(overlap) == 0
-        ), f"Overlap between SSA operands and attributes in StableHLO op {op.get('name')}: {overlap}"
+        assert len(overlap) == 0, (
+            f"Overlap between SSA operands and attributes in StableHLO op {op.get('name')}: {overlap}"
+        )
 
 
 @pytest.mark.frameworks
@@ -201,9 +201,9 @@ def test_dask_minimum_symbol_threshold() -> None:
         arr_refs = collect_api(SemanticTier.ARRAY_API)
         util_refs = collect_api(SemanticTier.UTIL)
     total_count = len(arr_refs) + len(util_refs)
-    assert (
-        total_count >= 200
-    ), f"Dask symbol count too low: {total_count} endpoints found"
+    assert total_count >= 200, (
+        f"Dask symbol count too low: {total_count} endpoints found"
+    )
 
 
 def test_all_new_snapshots_exist_and_nonempty() -> None:
@@ -258,9 +258,9 @@ def test_all_new_snapshots_exist_and_nonempty() -> None:
             assert size > 500, f"Snapshot {fname} is too small ({size} bytes)"
             with open(fpath, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                assert (
-                    "categories" in data
-                ), f"Snapshot {fname} missing 'categories' envelope key"
+                assert "categories" in data, (
+                    f"Snapshot {fname} missing 'categories' envelope key"
+                )
 
 
 def test_no_mock_introspection_or_type_ignores_in_src() -> None:
@@ -296,9 +296,9 @@ def test_no_mock_introspection_or_type_ignores_in_src() -> None:
         with open(fpath, "r", encoding="utf-8") as fp:
             content = fp.read()
         for token in banned_tokens:
-            assert (
-                token not in content
-            ), f"Banned token '{token}' found in production module {fpath}"
+            assert token not in content, (
+                f"Banned token '{token}' found in production module {fpath}"
+            )
 
 
 def test_every_test_function_has_assertions() -> None:
@@ -326,9 +326,9 @@ def test_every_test_function_has_assertions() -> None:
                         ):
                             has_assert = True
                             break
-                assert (
-                    has_assert
-                ), f"Zero-assertion test detected: {fpath}:{node.lineno} ({node.name})"
+                assert has_assert, (
+                    f"Zero-assertion test detected: {fpath}:{node.lineno} ({node.name})"
+                )
 
 
 def test_codebase_100_percent_docstring_and_arg_coverage() -> None:
@@ -357,17 +357,17 @@ def test_codebase_100_percent_docstring_and_arg_coverage() -> None:
         mod_doc = ast.get_docstring(tree)
         assert mod_doc, f"Missing module docstring in {fpath}"
         for bp in banned_placeholders:
-            assert (
-                bp not in mod_doc
-            ), f"Placeholder '{bp}' in module docstring of {fpath}"
+            assert bp not in mod_doc, (
+                f"Placeholder '{bp}' in module docstring of {fpath}"
+            )
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 doc = ast.get_docstring(node)
                 assert doc, f"Missing docstring on {node.name} at {fpath}:{node.lineno}"
                 for bp in banned_placeholders:
-                    assert (
-                        bp not in doc
-                    ), f"Placeholder '{bp}' in docstring of {node.name} at {fpath}:{node.lineno}"
+                    assert bp not in doc, (
+                        f"Placeholder '{bp}' in docstring of {node.name} at {fpath}:{node.lineno}"
+                    )
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     args = [
                         a.arg for a in node.args.args if a.arg not in ("self", "cls")
@@ -380,4 +380,6 @@ def test_codebase_100_percent_docstring_and_arg_coverage() -> None:
                     for arg_name in args:
                         assert re.search(
                             rf"\b{re.escape(arg_name)}\b\s*(\([^)]*\))?\s*:", doc
-                        ), f"Missing arg '{arg_name}' in docstring of {node.name} at {fpath}:{node.lineno}"
+                        ), (
+                            f"Missing arg '{arg_name}' in docstring of {node.name} at {fpath}:{node.lineno}"
+                        )

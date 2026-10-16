@@ -134,7 +134,7 @@ def _get_pyarrow_compute() -> Any:
         import pyarrow.compute as pc
 
         return pc
-    except (ImportError, Exception):
+    except Exception:
         return None
 
 

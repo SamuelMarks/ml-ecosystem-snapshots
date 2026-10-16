@@ -131,27 +131,6 @@ def resolve_griffe_parser(parser_name: str) -> Any:
     try:
         import griffe
 
-        if not hasattr(griffe.Parser, "rest"):
-            try:
-                setattr(
-                    griffe.Parser,
-                    "_missing_",
-                    classmethod(lambda cls, val: cls.sphinx if val == "rest" else None),
-                )
-            except (
-                AttributeError,
-                TypeError,
-                ValueError,
-                KeyError,
-                IndexError,
-                SyntaxError,
-                OSError,
-                ImportError,
-                RuntimeError,
-                Exception,
-            ):
-                pass
-
         if parser_name == "rest":
             return getattr(griffe.Parser, "rest", griffe.Parser.sphinx)
         return griffe.Parser(parser_name)

@@ -6,7 +6,9 @@ and identically to `ml_ecosystem_snapshots`.
 
 from __future__ import annotations
 
+from pathlib import Path
 import sys
+import pytest
 
 from ml_ecosystem_snapshots._alias import (
     AliasFinder,
@@ -113,3 +115,67 @@ def test_all_shim_files_execution() -> None:
                 assert res["__getattr__"]("__name__") == res["_orig_mod"].__name__
                 executed_count += 1
     assert executed_count >= 74
+
+
+def test_compat_shims_in_sync_with_source() -> None:
+    """Verify every Python module in src/ml_ecosystem_snapshots has a matching shim in src/ml_framework_snapshots."""
+    import os
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src_dir = os.path.join(repo_root, "src", "ml_ecosystem_snapshots")
+    shim_dir = os.path.join(repo_root, "src", "ml_framework_snapshots")
+
+    src_rel_files = set()
+    for root, _, files in os.walk(src_dir):
+        for f in files:
+            if f.endswith(".py"):
+                rel = os.path.relpath(os.path.join(root, f), src_dir)
+                src_rel_files.add(rel)
+
+    shim_rel_files = set()
+    for root, _, files in os.walk(shim_dir):
+        for f in files:
+            if f.endswith(".py"):
+                rel = os.path.relpath(os.path.join(root, f), shim_dir)
+                shim_rel_files.add(rel)
+
+    assert src_rel_files == shim_rel_files
+
+
+def test_create_compat_shims_script(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify scripts/create_compat_shims.py generates valid shims and copies .gitignore.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    import os
+    import runpy
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if repo_root not in sys.path:
+        monkeypatch.syspath_prepend(repo_root)
+    from scripts.create_compat_shims import generate_shims
+
+    fake_eco = tmp_path / "src" / "ml_ecosystem_snapshots"
+    fake_fw = tmp_path / "src" / "ml_framework_snapshots"
+    sub_dir = fake_eco / "subpkg"
+    sub_dir.mkdir(parents=True)
+
+    (fake_eco / "__init__.py").write_text('"""Root."""\n', encoding="utf-8")
+    (fake_eco / ".gitignore").write_text("*.db\n", encoding="utf-8")
+    (fake_eco / "ignored.txt").write_text("ignore\n", encoding="utf-8")
+    (sub_dir / "__init__.py").write_text('"""Sub."""\n', encoding="utf-8")
+    (sub_dir / "mod.py").write_text('"""Mod."""\n', encoding="utf-8")
+
+    generate_shims(str(fake_eco), str(fake_fw))
+    assert (fake_fw / "__init__.py").exists()
+    assert (fake_fw / ".gitignore").read_text(encoding="utf-8") == "*.db\n"
+    assert (fake_fw / "subpkg" / "mod.py").exists()
+
+    monkeypatch.chdir(tmp_path)
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    script_path = os.path.join(repo_root, "scripts", "create_compat_shims.py")
+    runpy.run_path(script_path, run_name="__main__")

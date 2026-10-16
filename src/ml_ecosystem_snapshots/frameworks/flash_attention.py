@@ -136,7 +136,7 @@ def _discover_flash_attn_module() -> Any:
     for mod_name in ("flash_attn", "vllm"):
         try:
             return importlib.import_module(mod_name)
-        except (ImportError, Exception):
+        except Exception:
             pass
     return None
 

@@ -1808,9 +1808,9 @@ def test_synthetic_hallucination_benchmark_suite(mocker: Any) -> None:
                 detected += 1
 
     # Verify 100% detection rate across all 500+ synthetic hallucinations
-    assert detected == len(
-        hallucination_cases
-    ), f"Detection rate: {detected}/{len(hallucination_cases)}"
+    assert detected == len(hallucination_cases), (
+        f"Detection rate: {detected}/{len(hallucination_cases)}"
+    )
 
 
 def test_mcp_server_remaining_branches(mocker: Any) -> None:

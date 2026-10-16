@@ -170,9 +170,9 @@ def test_expanded_semantic_concept_maps() -> None:
     ]
 
     for concept in required_concepts:
-        assert (
-            concept in CONCEPT_ALIAS_MAP
-        ), f"Concept '{concept}' missing from CONCEPT_ALIAS_MAP"
+        assert concept in CONCEPT_ALIAS_MAP, (
+            f"Concept '{concept}' missing from CONCEPT_ALIAS_MAP"
+        )
         aliases = CONCEPT_ALIAS_MAP[concept]
         assert "torch" in aliases
         assert len(aliases["torch"]) > 0

@@ -6,10 +6,7 @@ for generating, diffing, exporting, indexing, and verifying framework snapshots.
 
 from __future__ import annotations
 
-import argparse
-import json
 import os
-import sys
 
 from ml_ecosystem_snapshots.api import extract_snapshot, write_snapshot
 from ml_ecosystem_snapshots.cli.commands import (
@@ -68,7 +65,6 @@ def main() -> None:
 __all__ = [
     "GhostInspector",
     "GhostRef",
-    "argparse",
     "build_parser",
     "cmd_capture",
     "cmd_check",
@@ -109,11 +105,8 @@ __all__ = [
     "get_cache_dir",
     "get_custom_snapshots_paths",
     "is_offline_mode",
-    "json",
     "main",
-    "os",
     "resolve_snapshot_path",
-    "sys",
     "write_snapshot",
 ]
 

@@ -45,7 +45,7 @@ def resolve_snapshot_path(path: str) -> str:
     candidate_dirs: List[str] = []
     for d in search_dirs:
         norm_d = os.path.normpath(d)
-        if norm_d not in seen_dirs and cli_pkg.os.path.isdir(norm_d):
+        if norm_d not in seen_dirs and os.path.isdir(norm_d):
             seen_dirs.add(norm_d)
             candidate_dirs.append(norm_d)
 

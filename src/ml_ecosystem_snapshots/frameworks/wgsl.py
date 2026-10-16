@@ -7,16 +7,10 @@ import json
 from typing import Any, Dict, List
 
 from ml_switcheroo_ir.schema.ghost import (
-    GhostOperationRef,
-    GhostParam,
     GhostRef,
-    GhostResult,
-    IRParameterRole,
     OperandDirection,
-    ParameterKind,
     SemanticTier,
 )
-from ..models import ExtendedGhostParam
 
 
 CANONICAL_WGSL_OPS: List[Dict[str, Any]] = [
@@ -125,18 +119,7 @@ def _load_wgsl_ops() -> List[Dict[str, Any]]:
             ops: List[Dict[str, Any]] = list(data.get("ops", []))
             if ops:
                 return ops
-    except (
-        AttributeError,
-        TypeError,
-        ValueError,
-        KeyError,
-        IndexError,
-        SyntaxError,
-        OSError,
-        ImportError,
-        RuntimeError,
-        Exception,
-    ):
+    except Exception:
         pass
     return CANONICAL_WGSL_OPS
 
@@ -153,6 +136,8 @@ def collect_api(
     Returns:
         List of GhostOperationRef objects representing WGSL shader operations.
     """
+    from ml_ecosystem_snapshots.frameworks._base import build_ssa_operation_refs
+
     if category not in (
         SemanticTier.ARRAY_API,
         SemanticTier.NEURAL,
@@ -161,81 +146,25 @@ def collect_api(
         return []
 
     ops = _load_wgsl_ops()
-    refs: List[GhostRef] = []
-
-    for op in ops:
-        op_name = op["name"]
-        api_path = f"wgsl.{op_name}"
-        params: List[GhostParam] = []
-
-        # SSA inputs
-        for inp in op.get("inputs", []):
-            direction = (
-                OperandDirection.WRITE
-                if "store" in op_name.lower() and inp == "value"
-                else OperandDirection.READ
-            )
-            params.append(
-                ExtendedGhostParam(
-                    name=inp,
-                    kind=ParameterKind.POSITIONAL_ONLY,
-                    annotation="Value",
-                    standardized_name=inp,
-                    description=f"WGSL operand {inp}",
-                    direction=direction,
-                    role=IRParameterRole.OPERAND,
-                )
-            )
-
-        # Attributes
-        attrs_meta: Dict[str, Any] = {}
-        for attr in op.get("attributes", []):
-            attr_name = attr.get("name", "attr")
-            attr_type = attr.get("type", "str")
-            attr_def = attr.get("default")
-            params.append(
-                ExtendedGhostParam(
-                    name=attr_name,
-                    kind=ParameterKind.KEYWORD_ONLY,
-                    annotation=attr_type,
-                    default=str(attr_def) if attr_def is not None else None,
-                    standardized_name=attr_name,
-                    description=f"WGSL attribute {attr_name}",
-                    role=IRParameterRole.ATTRIBUTE,
-                )
-            )
-            attrs_meta[attr_name] = attr
-
-        returns: List[GhostResult] = []
-        for out in op.get("outputs", []):
-            returns.append(GhostResult(name=out, type="Value"))
-
-        returns_type = "Value" if returns else "None"
-
-        provenance = {
+    return build_ssa_operation_refs(
+        ops=ops,
+        api_prefix="wgsl",
+        name_key="name",
+        operand_annotation_fn=lambda _op, _inp: "Value",
+        operand_description_fn=lambda _op, inp: f"WGSL operand {inp}",
+        operand_direction_fn=lambda op, inp: (
+            OperandDirection.WRITE
+            if "store" in str(op["name"]).lower() and inp == "value"
+            else OperandDirection.READ
+        ),
+        attr_description_prefix="WGSL attribute",
+        result_type="Value",
+        empty_return_type="None",
+        provenance_fn=lambda op: {
             "source_type": "wgsl_spec",
             "upstream_version": "draft-2024",
             "domain": op.get("domain", "wgsl"),
-        }
-
-        refs.append(
-            GhostOperationRef(
-                name=op_name,
-                api_path=api_path,
-                kind="function",
-                params=params,
-                operands=[
-                    p
-                    for p in params
-                    if getattr(p, "role", None) == IRParameterRole.OPERAND
-                ],
-                returns=returns,
-                returns_type=returns_type,
-                docstring=op.get("description", f"WebGPU WGSL {op_name} operation."),
-                environment_tags=["webgpu"],
-                domain_metadata=provenance,
-                attributes=attrs_meta if attrs_meta else None,
-            )
-        )
-
-    return refs
+        },
+        default_doc_fn=lambda op_name: f"WebGPU WGSL {op_name} operation.",
+        environment_tags=("webgpu",),
+    )

@@ -10,10 +10,7 @@ import importlib
 from typing import Any, Dict, List
 
 from ml_switcheroo_ir.schema.ghost import (
-    GhostParam,
-    GhostPythonRef,
     GhostRef,
-    ParameterKind,
     SemanticTier,
 )
 from ..models import GhostInspector
@@ -982,7 +979,7 @@ def _get_array_api_module() -> Any:
     for mod_name in ("array_api_compat.numpy", "numpy.array_api", "array_api_compat"):
         try:
             return importlib.import_module(mod_name)
-        except (ImportError, Exception):
+        except Exception:
             pass
     return None
 
@@ -999,6 +996,10 @@ def collect_api(
     Returns:
         List of GhostRef objects representing Array API Standard operations.
     """
+    from ml_ecosystem_snapshots.frameworks._base import (
+        collect_from_submodules_or_canonical,
+    )
+
     if category not in (
         SemanticTier.ARRAY_API,
         SemanticTier.UTIL,
@@ -1006,84 +1007,12 @@ def collect_api(
         return []
 
     mod = _get_array_api_module()
-    if mod is None:
-        refs: List[GhostRef] = []
-        for op in CANONICAL_ARRAY_API_OPS:
-            params = [
-                GhostParam(
-                    name=p["name"],
-                    kind=getattr(ParameterKind, p.get("kind", "POSITIONAL_OR_KEYWORD")),
-                    default=p.get("default"),
-                )
-                for p in op.get("params", [])
-            ]
-            refs.append(
-                GhostPythonRef(
-                    name=op["name"],
-                    api_path=op["api_path"],
-                    kind="function",
-                    params=params,
-                    docstring=op.get(
-                        "docstring", f"Array API Standard {op['name']} operation."
-                    ),
-                    environment_tags=["array_api", "standard"],
-                    domain_metadata={"standard": "2024.12"},
-                )
-            )
-        return refs
-
-    results: List[GhostRef] = []
-    seen: set[str] = set()
-
-    for op in CANONICAL_ARRAY_API_OPS:
-        name = op["name"]
-        if hasattr(mod, name):
-            obj = getattr(mod, name)
-            try:
-                ref = GhostInspector.inspect(obj, f"array_api.{name}", is_public=True)
-                ref.environment_tags = list(ref.environment_tags or ()) + [
-                    "array_api",
-                    "standard",
-                ]
-                results.append(ref)
-                seen.add(name)
-            except (
-                AttributeError,
-                TypeError,
-                ValueError,
-                KeyError,
-                IndexError,
-                SyntaxError,
-                OSError,
-                ImportError,
-                RuntimeError,
-                Exception,
-            ):
-                pass
-
-    # Fill any missed ops from canonical definitions
-    for op in CANONICAL_ARRAY_API_OPS:
-        if op["name"] not in seen:
-            params = [
-                GhostParam(
-                    name=p["name"],
-                    kind=getattr(ParameterKind, p.get("kind", "POSITIONAL_OR_KEYWORD")),
-                    default=p.get("default"),
-                )
-                for p in op.get("params", [])
-            ]
-            results.append(
-                GhostPythonRef(
-                    name=op["name"],
-                    api_path=op["api_path"],
-                    kind="function",
-                    params=params,
-                    docstring=op.get(
-                        "docstring", f"Array API Standard {op['name']} operation."
-                    ),
-                    environment_tags=["array_api", "standard"],
-                    domain_metadata={"standard": "2024.12"},
-                )
-            )
-
-    return results
+    loaded_submods = {"standard": mod} if mod is not None else {}
+    return collect_from_submodules_or_canonical(
+        loaded_submods=loaded_submods,
+        canonical_ops=CANONICAL_ARRAY_API_OPS,
+        framework_tag="array_api",
+        default_submodule="standard",
+        default_doc_prefix="Array API Standard",
+        inspector_fn=GhostInspector.inspect,
+    )

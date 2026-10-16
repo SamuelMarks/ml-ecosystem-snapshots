@@ -2,10 +2,966 @@
 
 from __future__ import annotations
 
-from ml_ecosystem_snapshots.mcp_server import (
-    check_code_block,
-    check_hallucination,
-    explain_anti_pattern,
-)
+import ast
+import re
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
-__all__ = ["check_code_block", "check_hallucination", "explain_anti_pattern"]
+from ml_ecosystem_snapshots.mcp.cache import get_framework_snapshot
+from ml_ecosystem_snapshots.mcp.tools.ir import check_mlir_op
+from ml_ecosystem_snapshots.mcp.tools.isa import (
+    check_rdna_instruction,
+    check_sass_instruction,
+)
+from ml_ecosystem_snapshots.mcp.tools.signature import get_api_signature
+
+DTYPE_CANONICAL_ALIASES: Dict[str, str] = {
+    "str": "string",
+    "str_": "string",
+    "object_": "object",
+    "fp8": "float8_e4m3fn",
+    "fp16": "float16",
+    "bf16": "bfloat16",
+    "fp32": "float32",
+    "fp64": "float64",
+    "int": "int64",
+    "float": "float32",
+    "qint4x2": "qint4",
+}
+
+
+def normalize_dtype_name(raw_dt: str) -> str:
+    """Normalize framework-specific dtype representations into canonical dtype names.
+
+    Args:
+        raw_dt: Raw dtype representation (e.g. 'torch.float32', 'jnp.float32', 'tf.float32').
+
+    Returns:
+        Canonical dtype name (e.g. 'float32', 'int64', 'qint8', 'float8_e4m3b11fnuz').
+    """
+    clean = str(raw_dt).lower().strip()
+    for prefix in (
+        "torch.",
+        "jax.numpy.",
+        "jnp.",
+        "tensorflow.",
+        "tf.",
+        "numpy.",
+        "np.",
+        "mlx.core.",
+        "mlx.",
+    ):
+        if clean.startswith(prefix):
+            clean = clean[len(prefix) :]
+            break
+    return DTYPE_CANONICAL_ALIASES.get(clean, clean)
+
+
+def _matches_rank_constraint(passed_rk: int, constraint: Union[int, str]) -> bool:
+    """Check whether a passed tensor rank satisfies a rank constraint specification.
+
+    Args:
+        passed_rk: Integer tensor rank passed by the user.
+        constraint: Rank constraint (e.g. 2, '==2', '>=2', '2D', '2').
+
+    Returns:
+        True if valid, False if constraint is violated.
+    """
+    if isinstance(constraint, int):
+        return passed_rk == constraint
+    cstr = str(constraint).strip()
+    if cstr.startswith("=="):
+        target = int(cstr[2:])
+        return passed_rk == target
+    if cstr.startswith(">="):
+        target = int(cstr[2:])
+        return passed_rk >= target
+    if cstr.endswith(("D", "d")):
+        target = int(cstr[:-1])
+        return passed_rk == target
+    if cstr.isdigit():
+        return passed_rk == int(cstr)
+    return True
+
+
+def check_hallucination(
+    framework: str,
+    api_path: str,
+    kwargs: Optional[List[str]] = None,
+    args_count: Optional[int] = None,
+    strict_kwargs: bool = True,
+    kwarg_values: Optional[Dict[str, Any]] = None,
+    version: Optional[str] = None,
+    arg_dtypes: Optional[Union[List[str], Dict[str, str]]] = None,
+    kwarg_dtypes: Optional[Dict[str, str]] = None,
+    arg_ranks: Optional[
+        Union[List[Union[int, str]], Dict[str, Union[int, str]]]
+    ] = None,
+    kwarg_ranks: Optional[Dict[str, Union[int, str]]] = None,
+    arg_shapes: Optional[List[Sequence[Union[int, str]]]] = None,
+    kwarg_shapes: Optional[Dict[str, Sequence[Union[int, str]]]] = None,
+    strict_c_extensions: bool = False,
+) -> Dict[str, Any]:
+    """Verify whether an API or specified arguments represent hallucinations.
+
+    Checks:
+        - Whether the API path exists in the ground-truth snapshot.
+        - Whether any passed keyword arguments are non-existent in the signature.
+        - Flags unconstrained keyword arguments when **kwargs is present.
+        - Verifies positional parameter arity and counts.
+        - Validates string enum parameters against allowed options (e.g. reduction='mean').
+        - Suggests canonical argument names (e.g. 'dim' for 'axis' in torch).
+        - Validates tensor argument dtypes against allowed dtypes (e.g. float-only for inv/cholesky).
+        - Validates tensor argument ranks against expected dimensions (e.g. rank 2 for mm).
+        - Validates tensor broadcasting compatibility and matmul contracting dimensions.
+        - Flags opaque C-extension signatures to prevent false-negative hallucination passes.
+
+    Args:
+        framework: The target framework name.
+        api_path: The requested API path.
+        kwargs: List of argument names passed to the API.
+        args_count: Optional number of positional arguments passed.
+        strict_kwargs: Whether to treat unconstrained kwargs as hallucinated.
+        kwarg_values: Optional dictionary mapping passed keyword argument names to their values for type and enum validation.
+        version: Optional framework version string.
+        arg_dtypes: Optional list or dictionary mapping positional/keyword parameters to passed tensor dtypes.
+        kwarg_dtypes: Optional dictionary mapping keyword parameter names to passed tensor dtypes.
+        arg_ranks: Optional list or dictionary mapping positional/keyword parameters to passed tensor ranks.
+        kwarg_ranks: Optional dictionary mapping keyword parameter names to passed tensor ranks.
+        arg_shapes: Optional list of tensor shape sequences for positional arguments.
+        kwarg_shapes: Optional dictionary mapping keyword argument names to tensor shape sequences.
+        strict_c_extensions: Whether to treat unverified kwargs on opaque C-extension APIs as hallucinations.
+
+    Returns:
+        Dictionary containing:
+            - 'api_exists': bool
+            - 'is_hallucinated': bool
+            - 'invalid_kwargs': List[str]
+            - 'canonical_params': List[str]
+            - 'has_unconstrained_kwargs': bool
+            - 'reason': str
+    """
+    import ml_ecosystem_snapshots.mcp_server as _mcp_server
+
+    active_get_sig = getattr(_mcp_server, "get_api_signature", get_api_signature)
+    active_get_snap = getattr(
+        _mcp_server, "get_framework_snapshot", get_framework_snapshot
+    )
+
+    if kwargs is None and kwarg_values is not None:
+        kwargs = list(kwarg_values.keys())
+
+    sig = active_get_sig(framework, api_path, version=version)
+    snap = active_get_snap(framework, version=version)
+    snapshot_source = snap.get(
+        "_snapshot_source", "not_found" if not snap.get("categories") else "unknown"
+    )
+    if not sig:
+        if snapshot_source == "not_found":
+            reason = (
+                f"API '{api_path}' could not be verified: no local ground-truth snapshot for framework '{framework}' "
+                f"(version '{version or 'any'}') was found in bundled packages or local cache. To ground offline, "
+                f"install '{framework}' or place a versioned snapshot JSON in the cache directory."
+            )
+        else:
+            reason = f"API '{api_path}' does not exist in ground-truth '{framework}' snapshot."
+        return {
+            "api_exists": False,
+            "is_hallucinated": True,
+            "invalid_kwargs": kwargs or [],
+            "canonical_params": [],
+            "has_unconstrained_kwargs": False,
+            "snapshot_source": snapshot_source,
+            "reason": reason,
+        }
+
+    candidates = [sig] + [ov for ov in sig.get("overloads", []) if isinstance(ov, dict)]
+
+    best_result = None
+    fewest_errors = 999999
+
+    known_enums = {
+        "reduction": ["none", "mean", "sum"],
+        "mode": [
+            "nearest",
+            "linear",
+            "bilinear",
+            "bicubic",
+            "trilinear",
+            "area",
+            "nearest-exact",
+        ],
+        "padding": ["valid", "same", "zeros", "reflect", "replicate", "circular"],
+        "layout": ["NCHW", "NHWC", "NCDHW", "NDHWC"],
+    }
+
+    for cand in candidates:
+        cand_names = {p["name"] for p in cand.get("params", []) if "name" in p}
+        cand_has_var_kwargs = any(
+            p.get("kind") == "VAR_KEYWORD" for p in cand.get("params", [])
+        )
+        cand_is_opaque = (
+            cand.get("signature_completeness") == "opaque"
+            or "inexact_signature" in cand.get("environment_tags", [])
+            or "opaque_c_extension" in cand.get("environment_tags", [])
+        )
+
+        domain_meta = cand.get("domain_metadata") or {}
+        accepted_kwargs_list = cand.get("accepted_kwargs") or domain_meta.get(
+            "accepted_kwargs"
+        )
+        if accepted_kwargs_list is not None:
+            accepted_set = set(accepted_kwargs_list)
+            cand_has_var_kwargs = False
+        else:
+            accepted_set = None
+
+        invalid: List[str] = []
+        unrecognized: List[str] = []
+        if kwargs:
+            for kw in kwargs:
+                if kw not in cand_names:
+                    if accepted_set is not None:
+                        if kw not in accepted_set:
+                            invalid.append(kw)
+                    elif cand_has_var_kwargs:
+                        unrecognized.append(kw)
+                    else:
+                        invalid.append(kw)
+
+        opaque_warning = None
+        if cand_is_opaque and kwargs:
+            opaque_warning = "WARNING: API has opaque C-extension signature; cannot definitively confirm argument validity"
+            if strict_c_extensions and unrecognized:
+                invalid.extend(unrecognized)
+                unrecognized = []
+
+        if strict_kwargs and unrecognized:
+            invalid.extend(unrecognized)
+
+        enum_errors: List[str] = []
+        if kwarg_values:
+            params_with_allowed = set()
+            for p in cand.get("params", []):
+                p_name = p.get("name")
+                if not p_name or p_name not in kwarg_values:
+                    continue
+                val = kwarg_values[p_name]
+                allowed_vals = p.get("allowed_values")
+                if allowed_vals:
+                    params_with_allowed.add(p_name.lower())
+                    if str(val).lower() not in [str(a).lower() for a in allowed_vals]:
+                        enum_errors.append(
+                            f"Invalid enum value '{val}' for parameter '{p_name}'. Expected one of {allowed_vals}"
+                        )
+
+            for k, val in kwarg_values.items():
+                k_norm = k.lower()
+                if (
+                    k_norm in known_enums
+                    and k_norm not in params_with_allowed
+                    and not any(f"parameter '{k}'" in err for err in enum_errors)
+                ):
+                    allowed = known_enums[k_norm]
+                    if str(val).lower() not in [a.lower() for a in allowed]:
+                        enum_errors.append(
+                            f"Invalid enum value '{val}' for parameter '{k}'. Expected one of {allowed}"
+                        )
+
+            for p in cand.get("params", []):
+                p_name = p.get("name")
+                anno = p.get("annotation") or ""
+                if (
+                    p_name in kwarg_values
+                    and anno
+                    and any(c in anno for c in ("Literal[", "'", '"'))
+                    and not any(f"parameter '{p_name}'" in err for err in enum_errors)
+                ):
+                    allowed_literals = re.findall(r"['\x22]([^'\x22]+)['\x22]", anno)
+                    if (
+                        allowed_literals
+                        and str(kwarg_values[p_name]) not in allowed_literals
+                    ):
+                        enum_errors.append(
+                            f"Invalid literal value '{kwarg_values[p_name]}' for parameter '{p_name}'. Expected one of {allowed_literals}"
+                        )
+
+        dtype_errors: List[str] = []
+        rank_errors: List[str] = []
+
+        passed_dtypes: Dict[str, str] = {}
+        if kwarg_dtypes:
+            passed_dtypes.update(kwarg_dtypes)
+        if isinstance(arg_dtypes, dict):
+            passed_dtypes.update(arg_dtypes)
+        elif isinstance(arg_dtypes, list):
+            cand_params = cand.get("params", [])
+            for idx, dt in enumerate(arg_dtypes):
+                if idx < len(cand_params):
+                    passed_dtypes[cand_params[idx]["name"]] = dt
+
+        passed_ranks: Dict[str, Union[int, str]] = {}
+        if kwarg_ranks:
+            passed_ranks.update(kwarg_ranks)
+        if isinstance(arg_ranks, dict):
+            passed_ranks.update(arg_ranks)
+        elif isinstance(arg_ranks, list):
+            cand_params = cand.get("params", [])
+            for idx, rk in enumerate(arg_ranks):
+                if idx < len(cand_params):
+                    passed_ranks[cand_params[idx]["name"]] = rk
+
+        if kwarg_values:
+            for k, val in kwarg_values.items():
+                val_str = str(val).lower().replace("torch.", "")
+                if (
+                    any(
+                        k_type in val_str
+                        for k_type in ("int", "float", "complex", "bool")
+                    )
+                    and k != "reduction"
+                ):
+                    if k not in passed_dtypes:
+                        passed_dtypes[k] = val_str
+
+        clean_api = api_path.split(".")[-1].lower()
+        is_float_complex_api = framework == "torch" and (
+            clean_api
+            in (
+                "inv",
+                "linalg_inv",
+                "cholesky",
+                "linalg_cholesky",
+                "det",
+                "eig",
+                "svd",
+                "solve",
+            )
+            or "linalg.inv" in api_path
+            or "linalg.cholesky" in api_path
+            or "cholesky" in clean_api
+        )
+
+        for p in cand.get("params", []):
+            p_name = p.get("name")
+            p_dtypes = p.get("allowed_dtypes") or p.get("dtypes")
+            p_rank = p.get("rank_constraint") or p.get("rank")
+
+            if p_name in passed_dtypes:
+                dt = normalize_dtype_name(passed_dtypes[p_name])
+                allowed = p_dtypes
+                if not allowed and is_float_complex_api:
+                    allowed = ["float32", "float64", "complex64", "complex128"]
+                if allowed:
+                    norm_allowed = [normalize_dtype_name(a) for a in allowed]
+                    if dt not in norm_allowed:
+                        dtype_errors.append(
+                            f"Dtype '{passed_dtypes[p_name]}' is not supported for parameter '{p_name}' of '{api_path}'. Supported dtypes: {allowed}"
+                        )
+
+            if p_name in passed_ranks and p_rank is not None:
+                passed_rk = passed_ranks[p_name]
+                if isinstance(passed_rk, int):
+                    if not _matches_rank_constraint(passed_rk, p_rank):
+                        rank_errors.append(
+                            f"Rank {passed_rk} is not supported for parameter '{p_name}' of '{api_path}'. Expected rank: {p_rank}"
+                        )
+
+        if is_float_complex_api and passed_dtypes:
+            for p_k, dt in passed_dtypes.items():
+                if any(
+                    bad in dt.lower()
+                    for bad in (
+                        "int",
+                        "bool",
+                        "uint",
+                        "qint",
+                        "quint",
+                        "string",
+                        "object",
+                    )
+                ):
+                    if not any(f"Dtype '{dt}'" in err for err in dtype_errors):
+                        dtype_errors.append(
+                            f"Dtype '{dt}' is not supported for '{api_path}'. Floating-point or complex dtype required."
+                        )
+
+        is_logical_bitwise = any(
+            op in clean_api
+            for op in (
+                "bitwise_and",
+                "bitwise_or",
+                "bitwise_xor",
+                "bitwise_not",
+                "logical_and",
+                "logical_or",
+                "logical_xor",
+                "logical_not",
+            )
+        )
+        if is_logical_bitwise and passed_dtypes:
+            for p_k, dt in passed_dtypes.items():
+                if any(bad in dt.lower() for bad in ("float", "complex")):
+                    if not any(f"Dtype '{dt}'" in err for err in dtype_errors):
+                        dtype_errors.append(
+                            f"Dtype '{dt}' is not supported for '{api_path}'. Logical/bitwise operations require integer or boolean types."
+                        )
+
+        is_quant_api = any(
+            op in clean_api
+            for op in ("quantize", "dequantize", "q_per_tensor", "q_per_channel")
+        )
+        if is_quant_api and "dtype" in passed_dtypes:
+            q_dt = passed_dtypes["dtype"].lower()
+            valid_q = [
+                "int8",
+                "uint8",
+                "qint8",
+                "quint8",
+                "float8_e4m3fn",
+                "float8_e5m2",
+            ]
+            if not any(vq in q_dt for vq in valid_q):
+                dtype_errors.append(
+                    f"Dtype '{q_dt}' is not a valid quantization dtype for '{api_path}'. Expected one of {valid_q}."
+                )
+
+        shape_errors: List[str] = []
+        passed_shapes: Dict[str, Sequence[Union[int, str]]] = {}
+        if kwarg_shapes:
+            passed_shapes.update(kwarg_shapes)
+        if isinstance(arg_shapes, list):
+            cand_params = cand.get("params", [])
+            for idx, sh in enumerate(arg_shapes):
+                if idx < len(cand_params):
+                    passed_shapes[cand_params[idx]["name"]] = sh
+                else:
+                    passed_shapes[f"arg_{idx}"] = sh
+
+        is_elementwise = (
+            any(
+                op in clean_api
+                for op in (
+                    "add",
+                    "sub",
+                    "subtract",
+                    "mul",
+                    "multiply",
+                    "div",
+                    "divide",
+                    "maximum",
+                    "minimum",
+                    "pow",
+                )
+            )
+            and "matmul" not in clean_api
+        )
+        if is_elementwise and len(passed_shapes) >= 2:
+            from ml_ecosystem_snapshots.compliance import validate_broadcast_shapes
+
+            sh_list = list(passed_shapes.values())
+            compat, _, err = validate_broadcast_shapes(sh_list[0], sh_list[1])
+            if not compat and err:
+                shape_errors.append(f"Broadcasting error in '{api_path}': {err}")
+
+        is_matmul = (
+            any(op in clean_api for op in ("matmul", "mm", "bmm")) or clean_api == "dot"
+        )
+        if is_matmul and len(passed_shapes) >= 2:
+            from ml_ecosystem_snapshots.compliance import validate_matmul_shapes
+
+            strict_2d = clean_api == "mm"
+            sh_list = list(passed_shapes.values())
+            compat, _, err = validate_matmul_shapes(
+                sh_list[0], sh_list[1], strict_2d=strict_2d
+            )
+            if not compat and err:
+                shape_errors.append(f"Matmul error in '{api_path}': {err}")
+
+        positional_error = None
+        if args_count is not None:
+            min_pos = sum(
+                1
+                for p in cand.get("params", [])
+                if p.get("default") is None
+                and p.get("kind") in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
+            )
+            max_pos = sum(
+                1
+                for p in cand.get("params", [])
+                if p.get("kind") in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
+            )
+            cand_has_varargs = cand.get("has_varargs", False) or any(
+                p.get("kind") == "VAR_POSITIONAL" for p in cand.get("params", [])
+            )
+            if args_count < min_pos:
+                positional_error = f"Missing required positional arguments: expected at least {min_pos}, got {args_count}"
+            elif not cand_has_varargs and args_count > max_pos:
+                positional_error = f"Too many positional arguments: expected at most {max_pos}, got {args_count}"
+
+        cand_hallucinated = (
+            len(invalid) > 0
+            or positional_error is not None
+            or len(enum_errors) > 0
+            or len(dtype_errors) > 0
+            or len(rank_errors) > 0
+            or len(shape_errors) > 0
+        )
+        reason = "Valid API call"
+        if cand_hallucinated:
+            reasons = []
+            if invalid:
+                reasons.append(
+                    f"Invalid/hallucinated keyword arguments: {', '.join(invalid)}"
+                )
+            if enum_errors:
+                reasons.extend(enum_errors)
+            if dtype_errors:
+                reasons.extend(dtype_errors)
+            if rank_errors:
+                reasons.extend(rank_errors)
+            if shape_errors:
+                reasons.extend(shape_errors)
+            if positional_error:
+                reasons.append(positional_error)
+            reason = "; ".join(reasons)
+        elif unrecognized:
+            reason = f"Unconstrained keyword arguments passed to **kwargs: {', '.join(unrecognized)}"
+
+        res = {
+            "api_exists": True,
+            "is_hallucinated": cand_hallucinated,
+            "invalid_kwargs": invalid,
+            "canonical_params": sorted(list(cand_names)),
+            "has_unconstrained_kwargs": cand_has_var_kwargs,
+            "reason": reason,
+            "snapshot_source": snapshot_source,
+            "signature_completeness": cand.get(
+                "signature_completeness", "opaque" if cand_is_opaque else "exact"
+            ),
+            "is_c_extension": cand.get("is_c_extension", False) or cand_is_opaque,
+        }
+        if dtype_errors:
+            res["dtype_errors"] = dtype_errors
+        if rank_errors:
+            res["rank_errors"] = rank_errors
+        if shape_errors:
+            res["shape_errors"] = shape_errors
+        if opaque_warning:
+            res["warning"] = opaque_warning
+            if not cand_hallucinated and reason == "Valid API call":
+                res["reason"] = f"Valid API call with warning: {opaque_warning}"
+
+        if not cand_hallucinated:
+            return res
+
+        err_count = (
+            len(invalid)
+            + len(enum_errors)
+            + len(dtype_errors)
+            + len(rank_errors)
+            + len(shape_errors)
+            + (1 if positional_error else 0)
+        )
+        if err_count < fewest_errors:
+            fewest_errors = err_count
+            best_result = res
+
+    return best_result or {
+        "api_exists": True,
+        "is_hallucinated": True,
+        "invalid_kwargs": kwargs or [],
+        "canonical_params": [],
+        "has_unconstrained_kwargs": False,
+        "snapshot_source": snapshot_source,
+        "reason": "No matching overload signature found.",
+    }
+
+
+def explain_anti_pattern(
+    framework: str,
+    api_path: str,
+    hallucinated_argument: str,
+    passed_value: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Provide canonical migration advice and rationale for a flagged anti-pattern or hallucinated argument.
+
+    Args:
+        framework: Target ML framework name (e.g. 'torch', 'jax', 'tensorflow').
+        api_path: Target API path (e.g. 'torch.sum', 'jax.numpy.mean').
+        hallucinated_argument: Name of the flagged/hallucinated keyword argument.
+        passed_value: Optional value passed to the argument for contextual advice.
+
+    Returns:
+        Structured guidance dictionary with canonical replacement, explanation, and code example.
+    """
+    import ml_ecosystem_snapshots.mcp_server as _mcp_server
+
+    active_get_sig = getattr(_mcp_server, "get_api_signature", get_api_signature)
+    clean_fw = framework.lower().strip()
+    arg_clean = hallucinated_argument.strip().lower()
+
+    known_migrations: Dict[str, Dict[str, Dict[str, str]]] = {
+        "torch": {
+            "axis": {
+                "canonical": "dim",
+                "explanation": "PyTorch standardizes dimension specifications on 'dim' rather than 'axis' (which is used by NumPy and JAX).",
+                "example": f"{api_path}(..., dim=0)",
+            },
+            "keepdims": {
+                "canonical": "keepdim",
+                "explanation": "PyTorch uses the singular 'keepdim' parameter instead of the plural 'keepdims' (used by NumPy, JAX, and TensorFlow).",
+                "example": f"{api_path}(..., keepdim=True)",
+            },
+            "split_size": {
+                "canonical": "split_size_or_sections",
+                "explanation": "PyTorch torch.split uses 'split_size_or_sections' for chunk sizes or split sections.",
+                "example": f"{api_path}(tensor, split_size_or_sections=2)",
+            },
+            "device": {
+                "canonical": "device='cuda'",
+                "explanation": "PyTorch device identifiers use 'cuda' (or 'cuda:0') rather than 'gpu'.",
+                "example": f"{api_path}(..., device='cuda')",
+            },
+            "inplace": {
+                "canonical": "out-of-place or trailing underscore",
+                "explanation": "PyTorch provides inplace operations via a trailing underscore suffix (e.g. 'relu_()' or 'add_()') rather than an 'inplace=True' argument on functional ops.",
+                "example": "x.relu_() or torch.relu(x)",
+            },
+        },
+        "jax": {
+            "dim": {
+                "canonical": "axis",
+                "explanation": "JAX follows the NumPy Array API standard, using 'axis' instead of PyTorch's 'dim'.",
+                "example": f"{api_path}(..., axis=0)",
+            },
+            "keepdim": {
+                "canonical": "keepdims",
+                "explanation": "JAX follows NumPy naming conventions, using 'keepdims' (plural) instead of PyTorch's 'keepdim'.",
+                "example": f"{api_path}(..., keepdims=True)",
+            },
+            "key": {
+                "canonical": "jax.random.PRNGKey",
+                "explanation": "JAX random operations require an explicit PRNG key passed to 'key' produced via 'jax.random.PRNGKey(seed)' or 'jax.random.key(seed)'.",
+                "example": "jax.random.normal(key, shape=(2, 3))",
+            },
+            "rng": {
+                "canonical": "key",
+                "explanation": "JAX standardizes random number generator parameters as 'key', not 'rng' or 'seed'.",
+                "example": "jax.random.normal(key=key, shape=(2, 3))",
+            },
+        },
+        "tensorflow": {
+            "dim": {
+                "canonical": "axis",
+                "explanation": "TensorFlow operations use 'axis' instead of PyTorch's 'dim'.",
+                "example": f"{api_path}(..., axis=0)",
+            },
+            "keepdim": {
+                "canonical": "keepdims",
+                "explanation": "TensorFlow uses 'keepdims' rather than PyTorch's 'keepdim'.",
+                "example": f"{api_path}(..., keepdims=True)",
+            },
+        },
+    }
+
+    fw_rules = known_migrations.get(clean_fw, {})
+    if arg_clean in fw_rules:
+        rule = fw_rules[arg_clean]
+        return {
+            "framework": framework,
+            "api_path": api_path,
+            "hallucinated_argument": hallucinated_argument,
+            "is_known_anti_pattern": True,
+            "canonical_argument": rule["canonical"],
+            "explanation": rule["explanation"],
+            "canonical_example": rule["example"],
+        }
+
+    sig = active_get_sig(framework, api_path)
+    canonical_params: List[str] = []
+    if sig:
+        canonical_params = [
+            p["name"]
+            for p in sig.get("params", [])
+            if isinstance(p, dict) and "name" in p
+        ]
+
+    return {
+        "framework": framework,
+        "api_path": api_path,
+        "hallucinated_argument": hallucinated_argument,
+        "is_known_anti_pattern": False,
+        "canonical_argument": None,
+        "explanation": f"Argument '{hallucinated_argument}' is not recognized in {framework} for '{api_path}'.",
+        "canonical_params": canonical_params,
+        "canonical_example": f"{api_path}(...)",
+    }
+
+
+def check_code_block(
+    code: str,
+    framework: Optional[str] = None,
+    version: Optional[str] = None,
+    sm_arch: Optional[str] = None,
+    gfx_arch: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Batch verify a code block for nonexistent APIs, invalid kwargs, and hardware constraints.
+
+    Analyzes Python AST for framework calls or assembly/IR lines for SASS, RDNA, and MLIR
+    instructions, returning a comprehensive hallucination and constraint validation report.
+
+    Args:
+        code: Python snippet, SASS assembly, RDNA assembly, or MLIR text.
+        framework: Optional framework hint ('torch', 'jax', 'nvidia_sass', 'amd_rdna', 'mlir').
+        version: Optional framework version string.
+        sm_arch: Optional NVIDIA architecture target (e.g. 'sm_80', 'sm_90').
+        gfx_arch: Optional AMD RDNA architecture target (e.g. 'GFX11/RDNA3').
+
+    Returns:
+        Dictionary report containing 'total_analyzed', 'hallucinations_detected', 'is_valid', and 'findings'.
+    """
+    import ml_ecosystem_snapshots.mcp_server as _mcp_server
+
+    active_check_hallucination = getattr(
+        _mcp_server, "check_hallucination", check_hallucination
+    )
+    active_check_mlir = getattr(_mcp_server, "check_mlir_op", check_mlir_op)
+    active_check_sass = getattr(
+        _mcp_server, "check_sass_instruction", check_sass_instruction
+    )
+    active_check_rdna = getattr(
+        _mcp_server, "check_rdna_instruction", check_rdna_instruction
+    )
+
+    findings: List[Dict[str, Any]] = []
+    total_analyzed = 0
+
+    is_python = False
+    try:
+        tree = ast.parse(code)
+        imports: Dict[str, str] = {}
+        calls: List[Tuple[int, str, List[str], int, Dict[str, Any]]] = []
+
+        class CallVisitor(ast.NodeVisitor):
+            """Visitor for tracking imports and collecting function calls."""
+
+            def visit_Import(self, node: ast.Import) -> None:
+                """Track 'import foo' and 'import foo as bar' statements.
+
+                Args:
+                    node: The AST Import node.
+                """
+                for alias in node.names:
+                    name = alias.name
+                    asname = alias.asname or name
+                    imports[asname] = name
+                self.generic_visit(node)
+
+            def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+                """Track 'from foo.bar import baz' statements.
+
+                Args:
+                    node: The AST ImportFrom node.
+                """
+                mod = node.module or ""
+                for alias in node.names:
+                    name = alias.name
+                    asname = alias.asname or name
+                    full = f"{mod}.{name}" if mod else name
+                    imports[asname] = full
+                self.generic_visit(node)
+
+            def visit_Call(self, node: ast.Call) -> None:
+                """Inspect Call AST nodes.
+
+                Args:
+                    node: The AST Call node.
+                """
+                curr: Any = node.func
+                attr_parts: List[str] = []
+                while isinstance(curr, ast.Attribute):
+                    attr_parts.append(curr.attr)
+                    curr = curr.value
+
+                root_id = curr.id if isinstance(curr, ast.Name) else None
+                if root_id is not None:
+                    resolved_base = imports.get(root_id, root_id)
+                    if attr_parts:
+                        full_path = f"{resolved_base}.{'.'.join(reversed(attr_parts))}"
+                    else:
+                        full_path = resolved_base
+
+                    kw_names = [kw.arg for kw in node.keywords if kw.arg]
+                    kw_vals = {}
+                    for kw in node.keywords:
+                        if kw.arg and isinstance(kw.value, ast.Constant):
+                            kw_vals[kw.arg] = kw.value.value
+                    calls.append(
+                        (node.lineno, full_path, kw_names, len(node.args), kw_vals)
+                    )
+                self.generic_visit(node)
+
+        visitor = CallVisitor()
+        visitor.visit(tree)
+
+        if calls:
+            is_python = True
+            for lineno, api_name, kw_list, arg_cnt, kw_vals in calls:
+                fw = framework
+                if not fw:
+                    if api_name.startswith("torch.") or api_name.startswith("torch"):
+                        fw = "torch"
+                    elif api_name.startswith("jax.") or api_name.startswith("jax"):
+                        fw = "jax"
+                    elif (
+                        api_name.startswith("tf.")
+                        or api_name.startswith("tensorflow.")
+                        or api_name.startswith("tensorflow")
+                    ):
+                        fw = "tensorflow"
+                    elif (
+                        api_name.startswith("np.")
+                        or api_name.startswith("numpy.")
+                        or api_name.startswith("numpy")
+                    ):
+                        fw = "numpy"
+                    elif api_name.startswith("nn.") or api_name.startswith("F."):
+                        fw = "torch"
+                        api_name = f"torch.{api_name}"
+                    elif api_name.startswith("stablehlo."):
+                        fw = "stablehlo"
+
+                if not fw:
+                    continue
+
+                total_analyzed += 1
+                res = active_check_hallucination(
+                    framework=fw,
+                    api_path=api_name,
+                    kwargs=kw_list,
+                    args_count=arg_cnt,
+                    kwarg_values=kw_vals if kw_vals else None,
+                    version=version,
+                )
+                if res.get("is_hallucinated"):
+                    findings.append(
+                        {
+                            "line": lineno,
+                            "type": "api_hallucination",
+                            "framework": fw,
+                            "target": api_name,
+                            "reason": res.get("reason", "Invalid API call"),
+                            "invalid_kwargs": res.get("invalid_kwargs", []),
+                        }
+                    )
+    except Exception:
+        is_python = False
+
+    if not is_python:
+        lines = code.strip().split(chr(10))
+        for lineno, raw_line in enumerate(lines, 1):
+            line = raw_line.strip()
+            if not line or line.startswith(("//", "#", ";")):
+                continue
+
+            mlir_match = re.search(
+                r"(?:%[a-zA-Z0-9_]+\s*=\s*)?([a-zA-Z0-9_]+\.[a-zA-Z0-9_]+)", line
+            )
+            sass_match = re.match(
+                r"^(?:@!?U?P\d+\s+)?([A-Z0-9_\.]+)(?:\s+(.*))?;?$", line
+            )
+            rdna_match = re.match(r"^([vsa]_[a-zA-Z0-9_\.]+)(?:\s+(.*))?$", line)
+
+            if mlir_match and (
+                framework in ("mlir", "stablehlo")
+                or any(
+                    d in line
+                    for d in (
+                        "arith.",
+                        "math.",
+                        "linalg.",
+                        "stablehlo.",
+                        "memref.",
+                        "func.",
+                        "scf.",
+                        "gpu.",
+                        "vector.",
+                        "llvm.",
+                        "nvvm.",
+                        "rocdl.",
+                    )
+                )
+            ):
+                op_name = mlir_match.group(1)
+                total_analyzed += 1
+                res = active_check_mlir(op_name)
+                if not res.get("is_valid"):
+                    findings.append(
+                        {
+                            "line": lineno,
+                            "type": "mlir_error",
+                            "target": op_name,
+                            "reason": "; ".join(res.get("errors", [])),
+                        }
+                    )
+
+            elif sass_match and (
+                framework == "nvidia_sass"
+                or any(s in line for s in ("R0", "UR0", "P0", "sm_"))
+                or line.endswith(";")
+            ):
+                from ml_ecosystem_snapshots.frameworks.nvidia_sass import (
+                    tokenize_sass_line,
+                )
+
+                _pred, mnem, mods, ops = tokenize_sass_line(line)
+                total_analyzed += 1
+                res = active_check_sass(
+                    mnem, operands=ops, modifiers=mods, sm_arch=sm_arch
+                )
+                if not res.get("is_valid"):
+                    findings.append(
+                        {
+                            "line": lineno,
+                            "type": "sass_error",
+                            "target": mnem,
+                            "reason": "; ".join(res.get("errors", [])),
+                        }
+                    )
+
+            elif rdna_match:
+                from ml_ecosystem_snapshots.frameworks.amd_rdna import (
+                    tokenize_rdna_line,
+                )
+
+                base_mnem, ops, _enc_suf, mods = tokenize_rdna_line(line)
+                total_analyzed += 1
+                res = active_check_rdna(
+                    base_mnem, operands=ops, modifiers=mods, gfx_arch=gfx_arch
+                )
+                if not res.get("is_valid"):
+                    findings.append(
+                        {
+                            "line": lineno,
+                            "type": "rdna_error",
+                            "target": base_mnem,
+                            "reason": "; ".join(res.get("errors", [])),
+                        }
+                    )
+
+    return {
+        "total_analyzed": total_analyzed,
+        "hallucinations_detected": len(findings),
+        "is_valid": len(findings) == 0,
+        "findings": findings,
+    }
+
+
+__all__ = [
+    "DTYPE_CANONICAL_ALIASES",
+    "_matches_rank_constraint",
+    "check_code_block",
+    "check_hallucination",
+    "explain_anti_pattern",
+    "normalize_dtype_name",
+]

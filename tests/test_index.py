@@ -416,8 +416,13 @@ def test_ensure_index_and_search_index(tmp_path: Any, monkeypatch: Any) -> None:
     conn = ensure_index(db_file)
     assert conn is not None
 
-    # Empty query
+    # Empty query or only FTS5 reserved operators
     assert search_index("", db_path=db_file) == []
+    assert search_index("AND OR NOT NEAR", db_path=db_file) == []
+    assert (
+        search_index("sum AND", framework="torch", version="2.2.0", db_path=db_file)
+        != []
+    )
 
     # Query matching sum
     results = search_index("sum", framework="torch", version="2.2.0", db_path=db_file)

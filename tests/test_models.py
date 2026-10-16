@@ -528,12 +528,17 @@ def test_ghost_inspector_griffe_params(mocker: Any) -> None:
             FakeParam("self", None, None, None),
             FakeParam("x", "VAR_POSITIONAL", None, "int"),
             FakeParam("y", "POSITIONAL_OR_KEYWORD", "10", None),
+            FakeParam("z", "POSITIONAL_OR_KEYWORD", None, "str"),
         ]
 
     mocker.patch("griffe.load", return_value=FakeGriffeNode())
 
-    def dummy_func_griffe() -> Any:
-        """Execute helper dummy func griffe."""
+    def dummy_func_griffe(z: int) -> Any:
+        """Execute helper dummy func griffe.
+
+        Args:
+            z: Input parameter value.
+        """
         pass
 
     ref = GhostInspector.inspect(dummy_func_griffe, "dummy_func_griffe")
@@ -542,6 +547,8 @@ def test_ghost_inspector_griffe_params(mocker: Any) -> None:
     assert ref.params[0].annotation == "int"
     assert ref.params[1].name == "y"
     assert ref.params[1].default == "10"
+    assert ref.params[2].name == "z"
+    assert ref.params[2].annotation == "int"
 
 
 def test_ghost_inspector_overloads_cdd() -> None:

@@ -165,7 +165,7 @@ def _discover_nccl_library() -> Optional[ctypes.CDLL]:
     ):
         try:
             return ctypes.CDLL(lib_name)
-        except (OSError, Exception):
+        except Exception:
             pass
     return None
 

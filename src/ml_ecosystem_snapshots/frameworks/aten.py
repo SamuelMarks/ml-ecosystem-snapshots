@@ -657,7 +657,7 @@ def _resolve_torch() -> Any:
         import torch
 
         return torch
-    except (ImportError, Exception):
+    except Exception:
         return None
 
 

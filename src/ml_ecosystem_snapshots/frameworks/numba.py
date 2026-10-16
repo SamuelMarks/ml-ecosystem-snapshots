@@ -107,7 +107,7 @@ def _get_numba() -> Any:
         import numba
 
         return numba
-    except (ImportError, Exception):
+    except Exception:
         return None
 
 

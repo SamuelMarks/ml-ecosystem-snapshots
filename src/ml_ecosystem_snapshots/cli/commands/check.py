@@ -7,7 +7,54 @@ import collections
 import json
 import os
 import sys
-from typing import Dict
+from typing import Any, Callable, Dict
+
+
+def _run_domain_op_check_cli(
+    args: argparse.Namespace,
+    check_fn: Callable[..., Dict[str, Any]],
+    label: str,
+    op_attr: str = "op_name",
+    count_attr: str = "inputs_count",
+    count_param: str = "inputs_count",
+    invalid_format: str = "Invalid:",
+    extra_kwargs: Dict[str, Any] | None = None,
+) -> None:
+    """Execute a domain op verification check and format CLI stdout/exit codes.
+
+    Args:
+        args: Parsed CLI `Namespace` object.
+        check_fn: Underlying MCP verification callable.
+        label: Human-readable domain operation prefix (e.g. 'ONNX Operation', 'WASM Instruction').
+        op_attr: Attribute name on `args` holding the operation or mnemonic string.
+        count_attr: Attribute name on `args` holding the expected operand/input count.
+        count_param: Keyword parameter name accepted by `check_fn` for operand/input count.
+        invalid_format: Suffix string when reporting an invalid operation ('Invalid:' or 'is invalid:').
+        extra_kwargs: Optional additional keyword arguments to forward to `check_fn`.
+    """
+    raw_attrs = getattr(args, "attributes", None)
+    attrs = (
+        [a.strip() for a in raw_attrs.split(",") if a.strip()] if raw_attrs else None
+    )
+    target = getattr(args, op_attr)
+    call_kwargs: Dict[str, Any] = {
+        op_attr: target,
+        count_param: getattr(args, count_attr, None),
+        "attributes": attrs,
+    }
+    if extra_kwargs:
+        call_kwargs.update(extra_kwargs)
+
+    res = check_fn(**call_kwargs)
+    if not res.get("is_valid"):
+        print(f"{label} '{target}' {invalid_format}")
+        for err in res.get("errors", []):
+            print(f"  - {err}")
+        sys.exit(1)
+
+    print(f"{label} '{target}' is valid.")
+    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
+    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
 
 
 def cmd_check(args: argparse.Namespace) -> None:
@@ -493,27 +540,7 @@ def cmd_check_wgsl(args: argparse.Namespace) -> None:
         print("Error: Either an op_name or --file must be specified.")
         sys.exit(1)
 
-    attrs = (
-        [a.strip() for a in args.attributes.split(",") if a.strip()]
-        if args.attributes
-        else None
-    )
-
-    res = check_wgsl_op(
-        op_name=args.op_name,
-        inputs_count=args.inputs_count,
-        attributes=attrs,
-    )
-
-    if not res.get("is_valid"):
-        print(f"WGSL Operation '{args.op_name}' Invalid:")
-        for err in res.get("errors", []):
-            print(f"  - {err}")
-        sys.exit(1)
-
-    print(f"WGSL Operation '{args.op_name}' is valid.")
-    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
+    _run_domain_op_check_cli(args, check_wgsl_op, "WGSL Operation")
 
 
 def cmd_check_onnx(args: argparse.Namespace) -> None:
@@ -524,28 +551,12 @@ def cmd_check_onnx(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_onnx_op
 
-    attrs = (
-        [a.strip() for a in args.attributes.split(",") if a.strip()]
-        if args.attributes
-        else None
+    _run_domain_op_check_cli(
+        args,
+        check_onnx_op,
+        "ONNX Operation",
+        extra_kwargs={"domain": getattr(args, "domain", "") or ""},
     )
-
-    res = check_onnx_op(
-        op_name=args.op_name,
-        domain=getattr(args, "domain", "") or "",
-        inputs_count=args.inputs_count,
-        attributes=attrs,
-    )
-
-    if not res.get("is_valid"):
-        print(f"ONNX Operation '{args.op_name}' Invalid:")
-        for err in res.get("errors", []):
-            print(f"  - {err}")
-        sys.exit(1)
-
-    print(f"ONNX Operation '{args.op_name}' is valid.")
-    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
 
 
 def cmd_check_metal(args: argparse.Namespace) -> None:
@@ -556,28 +567,12 @@ def cmd_check_metal(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_metal_op
 
-    attrs = (
-        [a.strip() for a in args.attributes.split(",") if a.strip()]
-        if args.attributes
-        else None
+    _run_domain_op_check_cli(
+        args,
+        check_metal_op,
+        "Metal Operation",
+        extra_kwargs={"address_space": getattr(args, "address_space", None)},
     )
-
-    res = check_metal_op(
-        op_name=args.op_name,
-        address_space=getattr(args, "address_space", None),
-        inputs_count=args.inputs_count,
-        attributes=attrs,
-    )
-
-    if not res.get("is_valid"):
-        print(f"Metal Operation '{args.op_name}' Invalid:")
-        for err in res.get("errors", []):
-            print(f"  - {err}")
-        sys.exit(1)
-
-    print(f"Metal Operation '{args.op_name}' is valid.")
-    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
 
 
 def cmd_check_wasm(args: argparse.Namespace) -> None:
@@ -588,27 +583,14 @@ def cmd_check_wasm(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_wasm_instruction
 
-    attrs = (
-        [a.strip() for a in args.attributes.split(",") if a.strip()]
-        if args.attributes
-        else None
+    _run_domain_op_check_cli(
+        args,
+        check_wasm_instruction,
+        "WASM Instruction",
+        op_attr="mnemonic",
+        count_attr="operands_count",
+        count_param="operands_count",
     )
-
-    res = check_wasm_instruction(
-        mnemonic=args.mnemonic,
-        operands_count=args.operands_count,
-        attributes=attrs,
-    )
-
-    if not res.get("is_valid"):
-        print(f"WASM Instruction '{args.mnemonic}' Invalid:")
-        for err in res.get("errors", []):
-            print(f"  - {err}")
-        sys.exit(1)
-
-    print(f"WASM Instruction '{args.mnemonic}' is valid.")
-    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
 
 
 def cmd_check_webgl(args: argparse.Namespace) -> None:
@@ -619,27 +601,7 @@ def cmd_check_webgl(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_webgl_op
 
-    attrs = (
-        [a.strip() for a in args.attributes.split(",") if a.strip()]
-        if args.attributes
-        else None
-    )
-
-    res = check_webgl_op(
-        op_name=args.op_name,
-        inputs_count=args.inputs_count,
-        attributes=attrs,
-    )
-
-    if not res.get("is_valid"):
-        print(f"WebGL Operation '{args.op_name}' Invalid:")
-        for err in res.get("errors", []):
-            print(f"  - {err}")
-        sys.exit(1)
-
-    print(f"WebGL Operation '{args.op_name}' is valid.")
-    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
+    _run_domain_op_check_cli(args, check_webgl_op, "WebGL Operation")
 
 
 def cmd_check_cpp(args: argparse.Namespace) -> None:
@@ -650,27 +612,7 @@ def cmd_check_cpp(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_cpp_op
 
-    attrs = (
-        [a.strip() for a in args.attributes.split(",") if a.strip()]
-        if args.attributes
-        else None
-    )
-
-    res = check_cpp_op(
-        op_name=args.op_name,
-        inputs_count=args.inputs_count,
-        attributes=attrs,
-    )
-
-    if not res.get("is_valid"):
-        print(f"C++ Operation '{args.op_name}' Invalid:")
-        for err in res.get("errors", []):
-            print(f"  - {err}")
-        sys.exit(1)
-
-    print(f"C++ Operation '{args.op_name}' is valid.")
-    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
+    _run_domain_op_check_cli(args, check_cpp_op, "C++ Operation")
 
 
 def cmd_check_array_api(args: argparse.Namespace) -> None:
@@ -681,27 +623,12 @@ def cmd_check_array_api(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_array_api_op
 
-    attrs = (
-        [a.strip() for a in args.attributes.split(",") if a.strip()]
-        if args.attributes
-        else None
+    _run_domain_op_check_cli(
+        args,
+        check_array_api_op,
+        "Array API Operation",
+        invalid_format="is invalid:",
     )
-
-    res = check_array_api_op(
-        op_name=args.op_name,
-        inputs_count=args.inputs_count,
-        attributes=attrs,
-    )
-
-    if not res.get("is_valid"):
-        print(f"Array API Operation '{args.op_name}' is invalid:")
-        for err in res.get("errors", []):
-            print(f"  - {err}")
-        sys.exit(1)
-
-    print(f"Array API Operation '{args.op_name}' is valid.")
-    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
 
 
 def cmd_check_scipy(args: argparse.Namespace) -> None:
@@ -712,27 +639,9 @@ def cmd_check_scipy(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_scipy_op
 
-    attrs = (
-        [a.strip() for a in args.attributes.split(",") if a.strip()]
-        if args.attributes
-        else None
+    _run_domain_op_check_cli(
+        args, check_scipy_op, "SciPy Operation", invalid_format="is invalid:"
     )
-
-    res = check_scipy_op(
-        op_name=args.op_name,
-        inputs_count=args.inputs_count,
-        attributes=attrs,
-    )
-
-    if not res.get("is_valid"):
-        print(f"SciPy Operation '{args.op_name}' is invalid:")
-        for err in res.get("errors", []):
-            print(f"  - {err}")
-        sys.exit(1)
-
-    print(f"SciPy Operation '{args.op_name}' is valid.")
-    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
 
 
 def cmd_check_torchvision(args: argparse.Namespace) -> None:
@@ -743,27 +652,12 @@ def cmd_check_torchvision(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_torchvision_op
 
-    attrs = (
-        [a.strip() for a in args.attributes.split(",") if a.strip()]
-        if args.attributes
-        else None
+    _run_domain_op_check_cli(
+        args,
+        check_torchvision_op,
+        "TorchVision Operation",
+        invalid_format="is invalid:",
     )
-
-    res = check_torchvision_op(
-        op_name=args.op_name,
-        inputs_count=args.inputs_count,
-        attributes=attrs,
-    )
-
-    if not res.get("is_valid"):
-        print(f"TorchVision Operation '{args.op_name}' is invalid:")
-        for err in res.get("errors", []):
-            print(f"  - {err}")
-        sys.exit(1)
-
-    print(f"TorchVision Operation '{args.op_name}' is valid.")
-    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
 
 
 def cmd_check_torchaudio(args: argparse.Namespace) -> None:
@@ -774,27 +668,12 @@ def cmd_check_torchaudio(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_torchaudio_op
 
-    attrs = (
-        [a.strip() for a in args.attributes.split(",") if a.strip()]
-        if args.attributes
-        else None
+    _run_domain_op_check_cli(
+        args,
+        check_torchaudio_op,
+        "TorchAudio Operation",
+        invalid_format="is invalid:",
     )
-
-    res = check_torchaudio_op(
-        op_name=args.op_name,
-        inputs_count=args.inputs_count,
-        attributes=attrs,
-    )
-
-    if not res.get("is_valid"):
-        print(f"TorchAudio Operation '{args.op_name}' is invalid:")
-        for err in res.get("errors", []):
-            print(f"  - {err}")
-        sys.exit(1)
-
-    print(f"TorchAudio Operation '{args.op_name}' is valid.")
-    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
 
 
 def cmd_check_safetensors(args: argparse.Namespace) -> None:
@@ -805,27 +684,12 @@ def cmd_check_safetensors(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_safetensors_op
 
-    attrs = (
-        [a.strip() for a in args.attributes.split(",") if a.strip()]
-        if args.attributes
-        else None
+    _run_domain_op_check_cli(
+        args,
+        check_safetensors_op,
+        "SafeTensors Operation",
+        invalid_format="is invalid:",
     )
-
-    res = check_safetensors_op(
-        op_name=args.op_name,
-        inputs_count=args.inputs_count,
-        attributes=attrs,
-    )
-
-    if not res.get("is_valid"):
-        print(f"SafeTensors Operation '{args.op_name}' is invalid:")
-        for err in res.get("errors", []):
-            print(f"  - {err}")
-        sys.exit(1)
-
-    print(f"SafeTensors Operation '{args.op_name}' is valid.")
-    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
 
 
 def cmd_check_aten(args: argparse.Namespace) -> None:
@@ -836,27 +700,9 @@ def cmd_check_aten(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_aten_op
 
-    attrs = (
-        [a.strip() for a in args.attributes.split(",") if a.strip()]
-        if args.attributes
-        else None
+    _run_domain_op_check_cli(
+        args, check_aten_op, "ATen Operation", invalid_format="is invalid:"
     )
-
-    res = check_aten_op(
-        op_name=args.op_name,
-        inputs_count=args.inputs_count,
-        attributes=attrs,
-    )
-
-    if not res.get("is_valid"):
-        print(f"ATen Operation '{args.op_name}' is invalid:")
-        for err in res.get("errors", []):
-            print(f"  - {err}")
-        sys.exit(1)
-
-    print(f"ATen Operation '{args.op_name}' is valid.")
-    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
 
 
 def cmd_check_nccl(args: argparse.Namespace) -> None:
@@ -867,27 +713,9 @@ def cmd_check_nccl(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_nccl_op
 
-    attrs = (
-        [a.strip() for a in args.attributes.split(",") if a.strip()]
-        if args.attributes
-        else None
+    _run_domain_op_check_cli(
+        args, check_nccl_op, "NCCL Operation", invalid_format="is invalid:"
     )
-
-    res = check_nccl_op(
-        op_name=args.op_name,
-        inputs_count=args.inputs_count,
-        attributes=attrs,
-    )
-
-    if not res.get("is_valid"):
-        print(f"NCCL Operation '{args.op_name}' is invalid:")
-        for err in res.get("errors", []):
-            print(f"  - {err}")
-        sys.exit(1)
-
-    print(f"NCCL Operation '{args.op_name}' is valid.")
-    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
 
 
 def cmd_check_flash_attention(args: argparse.Namespace) -> None:
@@ -898,30 +726,16 @@ def cmd_check_flash_attention(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_flash_attention_op
 
-    attrs = (
-        [a.strip() for a in args.attributes.split(",") if a.strip()]
-        if args.attributes
-        else None
+    _run_domain_op_check_cli(
+        args,
+        check_flash_attention_op,
+        "Attention Operation",
+        invalid_format="is invalid:",
     )
-
-    res = check_flash_attention_op(
-        op_name=args.op_name,
-        inputs_count=args.inputs_count,
-        attributes=attrs,
-    )
-
-    if not res.get("is_valid"):
-        print(f"Attention Operation '{args.op_name}' is invalid:")
-        for err in res.get("errors", []):
-            print(f"  - {err}")
-        sys.exit(1)
-
-    print(f"Attention Operation '{args.op_name}' is valid.")
-    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
 
 
 __all__ = [
+    "_run_domain_op_check_cli",
     "cmd_check",
     "cmd_check_array_api",
     "cmd_check_aten",

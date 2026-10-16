@@ -379,18 +379,7 @@ def ensure_index(db_path: Optional[str] = None) -> sqlite3.Connection:
     for sfile in snapshot_files:
         try:
             index_snapshot_file(sfile, conn)
-        except (
-            AttributeError,
-            TypeError,
-            ValueError,
-            KeyError,
-            IndexError,
-            SyntaxError,
-            OSError,
-            ImportError,
-            RuntimeError,
-            Exception,
-        ):
+        except Exception:
             pass
     return conn
 
@@ -414,57 +403,55 @@ def search_index(
     Returns:
         List of serialized symbol dictionaries.
     """
-    conn = ensure_index(db_path)
-    cur = conn.cursor()
+    import contextlib
+    import re
 
-    clean_q = query.replace("'", " ").replace('"', " ").strip()
+    clean_q = re.sub(r"[^\w\.]+", " ", query).strip()
     if not clean_q:
         return []
 
-    # FTS query with prefix wildcard
-    fts_term = f'"{clean_q}"*'
+    tokens = [
+        t for t in clean_q.split() if t.upper() not in ("AND", "OR", "NOT", "NEAR")
+    ]
+    if not tokens:
+        return []
 
-    conditions = ["symbols_fts MATCH ?"]
-    params: List[Any] = [fts_term]
+    with contextlib.closing(ensure_index(db_path)) as conn:
+        cur = conn.cursor()
 
-    if framework:
-        conditions.append("s.framework = ?")
-        params.append(framework.lower().strip())
-    if version:
-        conditions.append("s.version = ?")
-        params.append(version.strip())
+        # FTS query with quoted tokens and prefix wildcard on final token
+        fts_term = " ".join(f'"{t}"' for t in tokens[:-1] + [tokens[-1]]) + "*"
 
-    where_clause = " AND ".join(conditions)
-    sql = f"""
-        SELECT s.json_data
-        FROM symbols_fts f
-        JOIN symbols s ON f.rowid = s.id
-        WHERE {where_clause}
-        ORDER BY rank
-        LIMIT ?
-    """
-    params.append(limit)
+        conditions = ["symbols_fts MATCH ?"]
+        params: List[Any] = [fts_term]
 
-    cur.execute(sql, params)
-    rows = cur.fetchall()
-    results = []
-    for r in rows:
-        try:
-            results.append(json.loads(r["json_data"]))
-        except (
-            AttributeError,
-            TypeError,
-            ValueError,
-            KeyError,
-            IndexError,
-            SyntaxError,
-            OSError,
-            ImportError,
-            RuntimeError,
-            Exception,
-        ):
-            pass
-    return results
+        if framework:
+            conditions.append("s.framework = ?")
+            params.append(framework.lower().strip())
+        if version:
+            conditions.append("s.version = ?")
+            params.append(version.strip())
+
+        where_clause = " AND ".join(conditions)
+        sql = f"""
+            SELECT s.json_data
+            FROM symbols_fts f
+            JOIN symbols s ON f.rowid = s.id
+            WHERE {where_clause}
+            ORDER BY rank
+            LIMIT ?
+        """
+        params.append(limit)
+
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+        results = []
+        for r in rows:
+            try:
+                results.append(json.loads(r["json_data"]))
+            except Exception:
+                pass
+        return results
 
 
 def lookup_symbol(
@@ -484,30 +471,32 @@ def lookup_symbol(
     Returns:
         Deserialized GhostRef dict, or None if not found.
     """
-    conn = ensure_index(db_path)
-    cur = conn.cursor()
+    import contextlib
 
-    clean_fw = framework.lower().strip()
-    conditions = ["framework = ?", "(api_path = ? OR name = ?)"]
-    params: List[Any] = [clean_fw, api_path, api_path]
+    with contextlib.closing(ensure_index(db_path)) as conn:
+        cur = conn.cursor()
 
-    if version:
-        conditions.append("version = ?")
-        params.append(version.strip())
+        clean_fw = framework.lower().strip()
+        conditions = ["framework = ?", "(api_path = ? OR name = ?)"]
+        params: List[Any] = [clean_fw, api_path, api_path]
 
-    where_clause = " AND ".join(conditions)
-    sql = f"""
-        SELECT json_data
-        FROM symbols
-        WHERE {where_clause}
-        ORDER BY id DESC
-        LIMIT 1
-    """
-    cur.execute(sql, params)
-    row = cur.fetchone()
-    if row:
-        return cast(Dict[str, Any], json.loads(row["json_data"]))
-    return None
+        if version:
+            conditions.append("version = ?")
+            params.append(version.strip())
+
+        where_clause = " AND ".join(conditions)
+        sql = f"""
+            SELECT json_data
+            FROM symbols
+            WHERE {where_clause}
+            ORDER BY id DESC
+            LIMIT 1
+        """
+        cur.execute(sql, params)
+        row = cur.fetchone()
+        if row:
+            return cast(Dict[str, Any], json.loads(row["json_data"]))
+        return None
 
 
 def clear_index(db_path: Optional[str] = None) -> bool:

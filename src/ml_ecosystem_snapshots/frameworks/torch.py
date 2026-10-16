@@ -307,7 +307,7 @@ def _collect_torch_namespace(
         ):
             try:
                 collected.append(GhostInspector.inspect(obj, f"{api_prefix}.{name}"))
-            except (AttributeError, TypeError, ValueError, RuntimeError, Exception):
+            except Exception:
                 pass
     return collected
 
@@ -339,7 +339,7 @@ def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
             if callable(obj) and not inspect.isclass(obj) and not inspect.ismodule(obj):
                 try:
                     found.append(GhostInspector.inspect(obj, f"torch.{name}"))
-                except (AttributeError, TypeError, ValueError, RuntimeError, Exception):
+                except Exception:
                     pass
 
         # 2-7. Submodule namespaces

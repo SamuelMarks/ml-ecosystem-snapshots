@@ -165,3 +165,26 @@ def test_main_isolated_fallback(
     mock_extract_iso.assert_called_once_with("torch")
     mock_extract.assert_called_once_with("torch")
     assert mock_write.call_count == 1
+
+
+@patch("sys.argv", ["generate_all_snapshots.py", "tikz"])
+@patch("ml_ecosystem_snapshots.api.extract_snapshot", return_value={"categories": {}})
+@patch("ml_ecosystem_snapshots.api.write_snapshot")
+@patch("builtins.print")
+def test_generate_all_snapshots_main_entrypoint(
+    mock_print: MagicMock,
+    mock_write: MagicMock,
+    mock_extract: MagicMock,
+) -> None:
+    """Test running scripts/generate_all_snapshots.py as __main__.
+
+    Args:
+        mock_print: Mock for builtins.print.
+        mock_write: Mock for write_snapshot.
+        mock_extract: Mock for extract_snapshot.
+    """
+    import runpy
+
+    runpy.run_path(generate_all_snapshots.__file__, run_name="__main__")
+    mock_extract.assert_called_once_with("tikz")
+    mock_write.assert_called_once()

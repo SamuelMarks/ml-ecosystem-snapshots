@@ -156,6 +156,54 @@ def validate_mlir_op(
     return report
 
 
+def _validate_ssa_domain_op(
+    target_framework: str,
+    symbol_name: str,
+    res: Dict[str, Any],
+    unrecognized_label: str,
+    missing_field: str = "operation",
+    err_field: str = "operation",
+    engine: Optional[GroundingEngine] = None,
+) -> GroundingReport:
+    """Build a GroundingReport from a domain operation verifier dictionary result.
+
+    Args:
+        target_framework: Framework identifier (e.g., 'wgsl', 'onnx', 'metal', 'wasm_simd', 'webgl').
+        symbol_name: Operation or opcode name checked.
+        res: Result dictionary from `check_*_op`.
+        unrecognized_label: Human-readable label for unrecognized symbol diagnostics.
+        missing_field: Diagnostic field name when symbol is missing.
+        err_field: Diagnostic field name for constraint errors.
+        engine: Optional `GroundingEngine` instance.
+
+    Returns:
+        Populated `GroundingReport` instance.
+    """
+    eng = engine or GroundingEngine()
+    report = GroundingReport(
+        is_grounded=True,
+        target=target_framework,
+        symbol=symbol_name,
+    )
+    if not res.get("op_exists"):
+        suggested = eng.suggest_closest_symbol(target_framework, symbol_name)
+        report.add_diagnostic(
+            field=missing_field,
+            message=f"Unrecognized {unrecognized_label} '{symbol_name}'.",
+            severity=DiagnosticSeverity.ERROR,
+            suggested_fix=suggested,
+        )
+        return report
+
+    for err in res.get("errors", []):
+        report.add_diagnostic(
+            field=err_field,
+            message=err,
+            severity=DiagnosticSeverity.ERROR,
+        )
+    return report
+
+
 def validate_wgsl_op(
     op_name: str,
     operands_count: Optional[int] = None,
@@ -175,34 +223,18 @@ def validate_wgsl_op(
     """
     from ml_ecosystem_snapshots.mcp_server import check_wgsl_op
 
-    eng = engine or GroundingEngine()
-    report = GroundingReport(
-        is_grounded=True,
-        target="wgsl",
-        symbol=op_name,
-    )
     res = check_wgsl_op(
         op_name=op_name,
         inputs_count=operands_count,
         attributes=attributes,
     )
-    if not res.get("op_exists"):
-        suggested = eng.suggest_closest_symbol("wgsl", op_name)
-        report.add_diagnostic(
-            field="operation",
-            message=f"Unrecognized WGSL builtin '{op_name}'.",
-            severity=DiagnosticSeverity.ERROR,
-            suggested_fix=suggested,
-        )
-        return report
-
-    for err in res.get("errors", []):
-        report.add_diagnostic(
-            field="operation",
-            message=err,
-            severity=DiagnosticSeverity.ERROR,
-        )
-    return report
+    return _validate_ssa_domain_op(
+        target_framework="wgsl",
+        symbol_name=op_name,
+        res=res,
+        unrecognized_label="WGSL builtin",
+        engine=engine,
+    )
 
 
 def validate_onnx_op(
@@ -224,34 +256,18 @@ def validate_onnx_op(
     """
     from ml_ecosystem_snapshots.mcp_server import check_onnx_op
 
-    eng = engine or GroundingEngine()
-    report = GroundingReport(
-        is_grounded=True,
-        target="onnx",
-        symbol=op_name,
-    )
     res = check_onnx_op(
         op_name=op_name,
         inputs_count=inputs_count,
         attributes=attributes,
     )
-    if not res.get("op_exists"):
-        suggested = eng.suggest_closest_symbol("onnx", op_name)
-        report.add_diagnostic(
-            field="operation",
-            message=f"Unrecognized ONNX operator '{op_name}'.",
-            severity=DiagnosticSeverity.ERROR,
-            suggested_fix=suggested,
-        )
-        return report
-
-    for err in res.get("errors", []):
-        report.add_diagnostic(
-            field="operation",
-            message=err,
-            severity=DiagnosticSeverity.ERROR,
-        )
-    return report
+    return _validate_ssa_domain_op(
+        target_framework="onnx",
+        symbol_name=op_name,
+        res=res,
+        unrecognized_label="ONNX operator",
+        engine=engine,
+    )
 
 
 def validate_metal_op(
@@ -275,35 +291,19 @@ def validate_metal_op(
     """
     from ml_ecosystem_snapshots.mcp_server import check_metal_op
 
-    eng = engine or GroundingEngine()
-    report = GroundingReport(
-        is_grounded=True,
-        target="metal",
-        symbol=op_name,
-    )
     res = check_metal_op(
         op_name=op_name,
         address_space=address_space,
         inputs_count=inputs_count,
         attributes=attributes,
     )
-    if not res.get("op_exists"):
-        suggested = eng.suggest_closest_symbol("metal", op_name)
-        report.add_diagnostic(
-            field="operation",
-            message=f"Unrecognized Metal builtin '{op_name}'.",
-            severity=DiagnosticSeverity.ERROR,
-            suggested_fix=suggested,
-        )
-        return report
-
-    for err in res.get("errors", []):
-        report.add_diagnostic(
-            field="operation",
-            message=err,
-            severity=DiagnosticSeverity.ERROR,
-        )
-    return report
+    return _validate_ssa_domain_op(
+        target_framework="metal",
+        symbol_name=op_name,
+        res=res,
+        unrecognized_label="Metal builtin",
+        engine=engine,
+    )
 
 
 def validate_wasm_op(
@@ -325,34 +325,20 @@ def validate_wasm_op(
     """
     from ml_ecosystem_snapshots.mcp_server import check_wasm_instruction
 
-    eng = engine or GroundingEngine()
-    report = GroundingReport(
-        is_grounded=True,
-        target="wasm_simd",
-        symbol=mnemonic,
-    )
     res = check_wasm_instruction(
         mnemonic=mnemonic,
         operands_count=operands_count,
         attributes=attributes,
     )
-    if not res.get("is_valid") and not res.get("op_exists"):
-        suggested = eng.suggest_closest_symbol("wasm_simd", mnemonic)
-        report.add_diagnostic(
-            field="mnemonic",
-            message=f"Unrecognized WebAssembly SIMD opcode '{mnemonic}'.",
-            severity=DiagnosticSeverity.ERROR,
-            suggested_fix=suggested,
-        )
-        return report
-
-    for err in res.get("errors", []):
-        report.add_diagnostic(
-            field="instruction",
-            message=err,
-            severity=DiagnosticSeverity.ERROR,
-        )
-    return report
+    return _validate_ssa_domain_op(
+        target_framework="wasm_simd",
+        symbol_name=mnemonic,
+        res=res,
+        unrecognized_label="WebAssembly SIMD opcode",
+        missing_field="mnemonic",
+        err_field="instruction",
+        engine=engine,
+    )
 
 
 def validate_webgl_op(
@@ -374,31 +360,15 @@ def validate_webgl_op(
     """
     from ml_ecosystem_snapshots.mcp_server import check_webgl_op
 
-    eng = engine or GroundingEngine()
-    report = GroundingReport(
-        is_grounded=True,
-        target="webgl",
-        symbol=op_name,
-    )
     res = check_webgl_op(
         op_name=op_name,
         inputs_count=inputs_count,
         attributes=attributes,
     )
-    if not res.get("op_exists"):
-        suggested = eng.suggest_closest_symbol("webgl", op_name)
-        report.add_diagnostic(
-            field="operation",
-            message=f"Unrecognized WebGL / GLSL builtin '{op_name}'.",
-            severity=DiagnosticSeverity.ERROR,
-            suggested_fix=suggested,
-        )
-        return report
-
-    for err in res.get("errors", []):
-        report.add_diagnostic(
-            field="operation",
-            message=err,
-            severity=DiagnosticSeverity.ERROR,
-        )
-    return report
+    return _validate_ssa_domain_op(
+        target_framework="webgl",
+        symbol_name=op_name,
+        res=res,
+        unrecognized_label="WebGL / GLSL builtin",
+        engine=engine,
+    )

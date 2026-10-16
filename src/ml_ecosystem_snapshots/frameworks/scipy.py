@@ -630,7 +630,7 @@ def _get_scipy_submodule(submod: str) -> Any:
     """
     try:
         return importlib.import_module(f"scipy.{submod}")
-    except (ImportError, Exception):
+    except Exception:
         return None
 
 

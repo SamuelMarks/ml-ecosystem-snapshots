@@ -146,7 +146,7 @@ def _get_awkward() -> Any:
         import awkward as ak
 
         return ak
-    except (ImportError, Exception):
+    except Exception:
         return None
 
 

@@ -73,12 +73,11 @@ def cmd_capture(args: argparse.Namespace) -> None:
 
 
 def cmd_list_snapshots(args: argparse.Namespace) -> None:
-    """List pre-bundled or locally available snapshot files.
+    """List available pre-bundled and locally cached snapshots.
 
     Args:
         args: Parsed command line arguments.
     """
-    import ml_ecosystem_snapshots.cli as cli_pkg
     from ml_ecosystem_snapshots.index import get_cache_dir
     from ml_ecosystem_snapshots.utils import get_custom_snapshots_paths
 
@@ -91,7 +90,7 @@ def cmd_list_snapshots(args: argparse.Namespace) -> None:
     found_snapshots: List[Dict[str, Any]] = []
     seen_files = set()
     for d in snapshots_dirs:
-        if cli_pkg.os.path.isdir(d):
+        if os.path.isdir(d):
             for fname in sorted(os.listdir(d)):
                 if fname.endswith(".json"):
                     if fname in seen_files:
@@ -158,7 +157,6 @@ def cmd_download_all(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command line arguments containing cache_dir and optional offline flag.
     """
-    import ml_ecosystem_snapshots.cli as cli_pkg
     from ml_ecosystem_snapshots.index import get_cache_dir
     from ml_ecosystem_snapshots.utils import is_offline_mode
 
@@ -200,7 +198,7 @@ def cmd_download_all(args: argparse.Namespace) -> None:
             success_count += 1
         except Exception:
             bundled_src = os.path.join(pkg_dir, "frameworks", fname)
-            if cli_pkg.os.path.exists(bundled_src):
+            if os.path.exists(bundled_src):
                 shutil.copyfile(bundled_src, dest_path)
                 print(f"  + Copied bundled {target} -> {dest_path}")
                 success_count += 1
@@ -216,7 +214,6 @@ def cmd_verify_local_cache(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command line arguments containing cache_dir.
     """
-    import ml_ecosystem_snapshots.cli as cli_pkg
     from ml_ecosystem_snapshots.index import get_cache_dir
 
     nl = chr(10)
@@ -232,7 +229,7 @@ def cmd_verify_local_cache(args: argparse.Namespace) -> None:
     discovered: List[str] = []
     seen = set()
     for d in search_dirs:
-        if cli_pkg.os.path.isdir(d):
+        if os.path.isdir(d):
             for fname in sorted(os.listdir(d)):
                 if fname.endswith(".json") or fname.endswith(".json.gz"):
                     p = os.path.join(d, fname)

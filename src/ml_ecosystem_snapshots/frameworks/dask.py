@@ -9,7 +9,7 @@ try:
     import dask.array as _da
 
     da: Any = _da
-except (ImportError, Exception):
+except Exception:
     da = None
 
 
@@ -59,7 +59,7 @@ def collect_api(
                     inspector_fn=GhostInspector.inspect,
                 )
             )
-        except (ImportError, Exception):
+        except Exception:
             pass
 
     return results

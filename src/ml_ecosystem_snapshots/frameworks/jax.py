@@ -165,7 +165,7 @@ def _collect_jax_namespace(
                 if attach_static_args:
                     ref = _attach_jax_static_arg_metadata(ref, obj)
                 collected.append(ref)
-            except (AttributeError, TypeError, ValueError, RuntimeError, Exception):
+            except Exception:
                 pass
     return collected
 

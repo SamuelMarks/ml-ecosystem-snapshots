@@ -117,7 +117,7 @@ def _get_dpnp() -> Any:
         import dpnp
 
         return dpnp
-    except (ImportError, Exception):
+    except Exception:
         return None
 
 

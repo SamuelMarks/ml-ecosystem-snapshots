@@ -29,6 +29,46 @@ def test_build_and_run(mocker: Any, tmp_path: Path) -> None:
     assert mock_run.call_count == 3
 
 
+def test_build_and_run_error_cleanup(mocker: Any, tmp_path: Path) -> None:
+    """Verify docker rmi cleanup runs even if docker build raises CalledProcessError.
+
+    Args:
+        mocker: Pytest mocker fixture.
+        tmp_path: Temporary directory path fixture.
+    """
+    import pytest
+    import subprocess
+
+    calls: list[list[str]] = []
+
+    def side_effect(cmd: list[str], **kwargs: Any) -> Any:
+        """Record subprocess command and fail on docker build.
+
+        Args:
+            cmd: Command list.
+            **kwargs: Subprocess keyword arguments.
+
+        Raises:
+            subprocess.CalledProcessError: When running docker build with check=True.
+
+        Returns:
+            None.
+        """
+        calls.append(cmd)
+        if cmd[:2] == ["docker", "build"] and kwargs.get("check"):
+            raise subprocess.CalledProcessError(1, cmd)
+        return None
+
+    mocker.patch("subprocess.run", side_effect=side_effect)
+    out_dir = tmp_path / "out"
+    with pytest.raises(subprocess.CalledProcessError):
+        build_and_run("torch", "2.0.1", out_dir, check=True)
+
+    assert len(calls) == 2
+    assert calls[0][:2] == ["docker", "build"]
+    assert calls[1] == ["docker", "rmi", "snapshot-runner-torch-2.0.1"]
+
+
 def test_upload_to_s3_success(mocker: Any, tmp_path: Path) -> None:
     """Test upload_to_s3 function with boto3.
 

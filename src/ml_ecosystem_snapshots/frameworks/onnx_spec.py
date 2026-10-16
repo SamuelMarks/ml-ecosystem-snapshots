@@ -7,16 +7,10 @@ and type signatures from the ONNX operator specification definitions.
 from typing import Any, Dict, List
 
 from ml_switcheroo_ir.schema.ghost import (
-    GhostOperationRef,
-    GhostParam,
     GhostRef,
-    GhostResult,
-    IRParameterRole,
     OperandDirection,
-    ParameterKind,
     SemanticTier,
 )
-from ..models import ExtendedGhostParam
 
 
 CANONICAL_ONNX_OPS: List[Dict[str, Any]] = [
@@ -211,7 +205,7 @@ def _get_onnx_defs() -> Any:
         import onnx.defs as defs
 
         return defs
-    except (ImportError, Exception):
+    except Exception:
         return None
 
 
@@ -266,18 +260,7 @@ def _load_onnx_ops() -> List[Dict[str, Any]]:
             )
         if ops:
             return ops
-    except (
-        AttributeError,
-        TypeError,
-        ValueError,
-        KeyError,
-        IndexError,
-        SyntaxError,
-        OSError,
-        ImportError,
-        RuntimeError,
-        Exception,
-    ):
+    except Exception:
         pass
 
     return CANONICAL_ONNX_OPS
@@ -295,6 +278,8 @@ def collect_api(
     Returns:
         List of GhostOperationRef objects representing ONNX operators.
     """
+    from ml_ecosystem_snapshots.frameworks._base import build_ssa_operation_refs
+
     if category not in (
         SemanticTier.ARRAY_API,
         SemanticTier.NEURAL,
@@ -303,81 +288,34 @@ def collect_api(
         return []
 
     ops = _load_onnx_ops()
-    refs: List[GhostRef] = []
+    filtered_ops = [
+        op
+        for op in ops
+        if include_nonpublic
+        or (
+            "preview" not in str(op.get("domain", ""))
+            and "internal" not in str(op.get("domain", ""))
+        )
+    ]
 
-    for op in ops:
-        domain = op.get("domain", "")
-        if include_nonpublic or ("preview" not in domain and "internal" not in domain):
-            op_name = op["name"]
-            prefix = f"onnx.{domain}." if domain else "onnx."
-            api_path = f"{prefix}{op_name}"
-            params: List[GhostParam] = []
-
-            # SSA inputs
-            for inp in op.get("inputs", []):
-                params.append(
-                    ExtendedGhostParam(
-                        name=inp,
-                        kind=ParameterKind.POSITIONAL_ONLY,
-                        annotation="Tensor",
-                        standardized_name=inp,
-                        description=f"ONNX operand {inp}",
-                        direction=OperandDirection.READ,
-                        role=IRParameterRole.OPERAND,
-                    )
-                )
-
-            # Attributes
-            attrs_meta: Dict[str, Any] = {}
-            for attr in op.get("attributes", []):
-                attr_name = attr.get("name", "attr")
-                attr_type = attr.get("type", "Any")
-                attr_def = attr.get("default")
-                params.append(
-                    ExtendedGhostParam(
-                        name=attr_name,
-                        kind=ParameterKind.KEYWORD_ONLY,
-                        annotation=attr_type,
-                        default=str(attr_def) if attr_def is not None else None,
-                        standardized_name=attr_name,
-                        description=attr.get(
-                            "description", f"ONNX attribute {attr_name}"
-                        ),
-                        role=IRParameterRole.ATTRIBUTE,
-                    )
-                )
-                attrs_meta[attr_name] = attr
-
-            returns: List[GhostResult] = []
-            for out in op.get("outputs", []):
-                returns.append(GhostResult(name=out, type="Tensor"))
-
-            returns_type = "Tensor" if returns else "None"
-
-            provenance = {
-                "source_type": "onnx_spec",
-                "upstream_version": str(op.get("since_version", "1.0")),
-                "domain": domain or "ai.onnx",
-            }
-
-            refs.append(
-                GhostOperationRef(
-                    name=op_name,
-                    api_path=api_path,
-                    kind="function",
-                    params=params,
-                    operands=[
-                        p
-                        for p in params
-                        if getattr(p, "role", None) == IRParameterRole.OPERAND
-                    ],
-                    returns=returns,
-                    returns_type=returns_type,
-                    docstring=op.get("description", f"ONNX {op_name} operator."),
-                    environment_tags=["onnx"],
-                    domain_metadata=provenance,
-                    attributes=attrs_meta if attrs_meta else None,
-                )
-            )
-
-    return refs
+    return build_ssa_operation_refs(
+        ops=filtered_ops,
+        api_prefix="onnx",
+        name_key="name",
+        operand_annotation_fn=lambda _op, _inp: "Tensor",
+        operand_description_fn=lambda _op, inp: f"ONNX operand {inp}",
+        operand_direction_fn=lambda _op, _inp: OperandDirection.READ,
+        attr_description_prefix="ONNX attribute",
+        result_type="Tensor",
+        empty_return_type="None",
+        provenance_fn=lambda op: {
+            "source_type": "onnx_spec",
+            "upstream_version": str(op.get("since_version", "1.0")),
+            "domain": str(op.get("domain") or "ai.onnx"),
+        },
+        default_doc_fn=lambda op_name: f"ONNX {op_name} operator.",
+        environment_tags=("onnx",),
+        api_path_fn=lambda op, op_name: (
+            f"onnx.{op['domain']}.{op_name}" if op.get("domain") else f"onnx.{op_name}"
+        ),
+    )
