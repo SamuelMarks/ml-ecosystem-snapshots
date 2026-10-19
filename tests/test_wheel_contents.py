@@ -134,21 +134,21 @@ def test_wheel_packaging_and_data_assets(tmp_path: os.PathLike[str]) -> None:
                     )
                 )
             ]
-            assert len(db_artifacts) == 0, (
-                f"Found database files leaked into wheel: {db_artifacts}"
-            )
+            assert (
+                len(db_artifacts) == 0
+            ), f"Found database files leaked into wheel: {db_artifacts}"
 
             # 2. Exhaustive JSON assets bundled and non-trivial in size
             for req in required_exhaustive_jsons:
                 matching = [n for n in namelist if n.endswith(req)]
-                assert len(matching) > 0, (
-                    f"Required data asset '{req}' missing from wheel archive"
-                )
+                assert (
+                    len(matching) > 0
+                ), f"Required data asset '{req}' missing from wheel archive"
                 info = zf.getinfo(matching[0])
                 if req != "concept_map.json":
-                    assert info.file_size > 3000, (
-                        f"Asset '{req}' has trivial size {info.file_size} in wheel archive"
-                    )
+                    assert (
+                        info.file_size > 3000
+                    ), f"Asset '{req}' has trivial size {info.file_size} in wheel archive"
 
             # 3. Test querying extracted wheel assets
             extract_dir = os.path.join(str(tmp_path), "extracted")
@@ -207,13 +207,13 @@ def test_wheel_bundles_dynamic_snapshots(tmp_path: os.PathLike[str]) -> None:
         with zipfile.ZipFile(whl_path, "r") as zf:
             names = zf.namelist()
             # Assert test json is included
-            assert any(n.endswith("testframework_v1.0.0.json") for n in names), (
-                "Dynamic snapshot JSON was not included in wheel"
-            )
+            assert any(
+                n.endswith("testframework_v1.0.0.json") for n in names
+            ), "Dynamic snapshot JSON was not included in wheel"
             # Assert test db is excluded
-            assert not any(n.endswith("testleak.db") for n in names), (
-                "Database file was leaked into wheel"
-            )
+            assert not any(
+                n.endswith("testleak.db") for n in names
+            ), "Database file was leaked into wheel"
     finally:
         os.chdir(old_cwd)
 
@@ -241,8 +241,8 @@ def test_zero_json_files_in_git() -> None:
             for f in tracked_files
             if f.lower().endswith(".json") or f.lower().endswith(".json.gz")
         ]
-        assert len(tracked_jsons) == 0, (
-            f"Found JSON files tracked in git: {tracked_jsons}"
-        )
+        assert (
+            len(tracked_jsons) == 0
+        ), f"Found JSON files tracked in git: {tracked_jsons}"
     except (subprocess.SubprocessError, FileNotFoundError):
         pass

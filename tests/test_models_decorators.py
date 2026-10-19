@@ -10,7 +10,7 @@ def dummy_decorator(func: Any) -> Any:
     """Execute helper dummy decorator.
 
     Args:
-        func: Input parameter value.
+        func: Wrapped callable function.
 
 
     Returns:
@@ -21,8 +21,8 @@ def dummy_decorator(func: Any) -> Any:
         """Execute helper wrapper.
 
         Args:
-            args: Input parameter value.
-            kwargs: Input parameter value.
+            args: Variadic positional arguments.
+            kwargs: Variadic keyword arguments.
 
 
         Returns:
@@ -38,7 +38,7 @@ def tf_function_mock(func: Any) -> Any:
     """Execute helper tf function mock.
 
     Args:
-        func: Input parameter value.
+        func: Wrapped callable function.
 
 
     Returns:
@@ -52,7 +52,7 @@ def tf_function_mock(func: Any) -> Any:
             """Execute helper init  .
 
             Args:
-                f: Input parameter value.
+                f: Target callable to decorate.
             """
             self._python_function = f
 
@@ -67,8 +67,8 @@ def test_unwrap_standard_decorator() -> None:
         """My doc.
 
         Args:
-            a: Input parameter value.
-            b: Input parameter value.
+            a: First positional operand.
+            b: Second positional operand.
         """
         pass
 
@@ -86,8 +86,8 @@ def test_unwrap_tf_decorator() -> None:
         """Execute helper my tf func.
 
         Args:
-            tensor: Input parameter value.
-            training: Input parameter value.
+            tensor: Input activation tensor.
+            training: Whether layer is in training mode.
         """
         pass
 
@@ -103,7 +103,7 @@ def test_unwrap_generic_decorator() -> None:
         """Execute helper generic dec.
 
         Args:
-            func: Input parameter value.
+            func: Wrapped callable function.
 
 
         Returns:
@@ -124,7 +124,7 @@ def test_unwrap_generic_decorator() -> None:
         """Execute helper fn1.
 
         Args:
-            a: Input parameter value.
+            a: First positional operand.
         """
         pass
 
@@ -139,7 +139,7 @@ def test_unwrap_variant_decorator() -> None:
         """Execute helper variant dec.
 
         Args:
-            func: Input parameter value.
+            func: Wrapped callable function.
 
 
         Returns:
@@ -160,7 +160,7 @@ def test_unwrap_variant_decorator() -> None:
         """Execute helper fn2.
 
         Args:
-            b: Input parameter value.
+            b: Second positional operand.
         """
         pass
 

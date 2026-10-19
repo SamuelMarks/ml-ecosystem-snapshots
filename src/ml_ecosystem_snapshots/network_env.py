@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Union
 
 
+from ml_ecosystem_snapshots.exceptions import OfflineModeNetworkError
+
+
 def is_offline_mode() -> bool:
     """Check if offline mode is explicitly enabled via environment variable.
 
@@ -99,18 +102,31 @@ def stream_snapshot_items(file_path: Union[str, Path]) -> Iterator[Dict[str, Any
                     yield item
 
 
-def fetch_url(url: str, timeout: int = 10) -> Optional[str]:
+def fetch_url(
+    url: str, timeout: int = 10, strict_offline: bool = False
+) -> Optional[str]:
     """Fetch content from a URL with timeout.
 
     Args:
         url: The URL to fetch.
         timeout: Timeout in seconds.
+        strict_offline: Whether to raise `OfflineModeNetworkError` if offline mode is active.
 
     Returns:
         The decoded string content, or None on failure.
+
+    Raises:
+        OfflineModeNetworkError: If `strict_offline` is True and `is_offline_mode()` is True.
     """
     import urllib.error
     import urllib.request
+
+    if is_offline_mode():
+        if strict_offline:
+            raise OfflineModeNetworkError(
+                f"Outbound network request to '{url}' blocked in offline mode."
+            )
+        return None
 
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:

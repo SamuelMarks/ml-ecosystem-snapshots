@@ -8,7 +8,7 @@ from enum import Enum
 import json
 import os
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple, cast
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -690,14 +690,15 @@ def _load_exhaustive_rdna() -> List[Dict[str, Any]]:
                     if isinstance(cat_ops, list):
                         all_ops.extend(cat_ops)
                 return all_ops
-            return cast(
-                List[Dict[str, Any]],
+            extracted_items: List[Dict[str, Any]] = (
                 data.get("instructions")
                 or data.get("operations")
                 or data.get("items")
-                or [],
+                or []
             )
-        return cast(List[Dict[str, Any]], data)
+            return extracted_items
+        raw_items: List[Dict[str, Any]] = data
+        return raw_items
 
 
 def collect_api(

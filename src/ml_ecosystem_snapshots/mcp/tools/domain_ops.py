@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from ml_ecosystem_snapshots.mcp.models import DomainOpCheckResult
+
 
 @dataclass(frozen=True)
 class DomainOpCheckConfig:
@@ -35,7 +37,7 @@ def check_domain_op_generic(
     attributes: Optional[List[str]] = None,
     domain: Optional[str] = None,
     address_space: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> DomainOpCheckResult:
     """Execute unified validation against a domain operation specification.
 
     Args:
@@ -547,7 +549,7 @@ def check_wgsl_op(
     op_name: str,
     inputs_count: Optional[int] = None,
     attributes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+) -> DomainOpCheckResult:
     """Validate a WebGPU WGSL operation against grounded schema specifications.
 
     Args:
@@ -571,7 +573,7 @@ def check_onnx_op(
     domain: str = "",
     inputs_count: Optional[int] = None,
     attributes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+) -> DomainOpCheckResult:
     """Validate an ONNX operation against grounded operator specification.
 
     Args:
@@ -597,7 +599,7 @@ def check_metal_op(
     address_space: Optional[str] = None,
     inputs_count: Optional[int] = None,
     attributes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+) -> DomainOpCheckResult:
     """Validate an Apple Metal MSL compute operation against grounded specification.
 
     Args:
@@ -622,7 +624,7 @@ def check_wasm_instruction(
     mnemonic: str,
     operands_count: Optional[int] = None,
     attributes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+) -> DomainOpCheckResult:
     """Validate a WebAssembly 2.0 / SIMD instruction against grounded specification.
 
     Args:
@@ -645,7 +647,7 @@ def check_webgl_op(
     op_name: str,
     inputs_count: Optional[int] = None,
     attributes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+) -> DomainOpCheckResult:
     """Validate a WebGL 2.0 / GLSL ES 3.00 operation against grounded specification.
 
     Args:
@@ -668,7 +670,7 @@ def check_cpp_op(
     op_name: str,
     inputs_count: Optional[int] = None,
     attributes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+) -> DomainOpCheckResult:
     """Validate a C++17 / PyBind11 operation against grounded specification.
 
     Args:
@@ -691,7 +693,7 @@ def check_array_api_op(
     op_name: str,
     inputs_count: Optional[int] = None,
     attributes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+) -> DomainOpCheckResult:
     """Validate a Python Array API Standard operation against grounded specification.
 
     Args:
@@ -714,7 +716,7 @@ def check_scipy_op(
     op_name: str,
     inputs_count: Optional[int] = None,
     attributes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+) -> DomainOpCheckResult:
     """Validate a SciPy operation against grounded specification.
 
     Args:
@@ -737,7 +739,7 @@ def check_torchvision_op(
     op_name: str,
     inputs_count: Optional[int] = None,
     attributes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+) -> DomainOpCheckResult:
     """Validate a TorchVision operation against grounded specification.
 
     Args:
@@ -760,7 +762,7 @@ def check_torchaudio_op(
     op_name: str,
     inputs_count: Optional[int] = None,
     attributes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+) -> DomainOpCheckResult:
     """Validate a TorchAudio operation against grounded specification.
 
     Args:
@@ -783,7 +785,7 @@ def check_safetensors_op(
     op_name: str,
     inputs_count: Optional[int] = None,
     attributes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+) -> DomainOpCheckResult:
     """Validate a SafeTensors operation against grounded specification.
 
     Args:
@@ -806,7 +808,7 @@ def check_aten_op(
     op_name: str,
     inputs_count: Optional[int] = None,
     attributes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+) -> DomainOpCheckResult:
     """Validate an ATen operator against grounded specification.
 
     Args:
@@ -829,7 +831,7 @@ def check_nccl_op(
     op_name: str,
     inputs_count: Optional[int] = None,
     attributes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+) -> DomainOpCheckResult:
     """Validate an NCCL / RCCL collective operation against grounded specification.
 
     Args:
@@ -852,7 +854,7 @@ def check_flash_attention_op(
     op_name: str,
     inputs_count: Optional[int] = None,
     attributes: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+) -> DomainOpCheckResult:
     """Validate a FlashAttention / PagedAttention operation against grounded specification.
 
     Args:

@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import ast
 import re
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
-from ml_ecosystem_snapshots.mcp.cache import get_framework_snapshot
+from ml_ecosystem_snapshots.introspection.inspector import STANDARD_ENUM_MAP
+from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository, resolve_snapshot
+from ml_ecosystem_snapshots.mcp.models import (
+    AntiPatternExplanationResult,
+    CodeBlockCheckResult,
+    CodeBlockFinding,
+    HallucinationCheckResult,
+)
 from ml_ecosystem_snapshots.mcp.tools.ir import check_mlir_op
 from ml_ecosystem_snapshots.mcp.tools.isa import (
     check_rdna_instruction,
@@ -26,6 +33,11 @@ DTYPE_CANONICAL_ALIASES: Dict[str, str] = {
     "int": "int64",
     "float": "float32",
     "qint4x2": "qint4",
+}
+
+KNOWN_ENUM_VALUES: Dict[str, List[str]] = {
+    **STANDARD_ENUM_MAP,
+    "padding": ["valid", "same", "zeros", "reflect", "replicate", "circular"],
 }
 
 
@@ -83,6 +95,417 @@ def _matches_rank_constraint(passed_rk: int, constraint: Union[int, str]) -> boo
     return True
 
 
+def _validate_candidate_kwargs(
+    cand: Dict[str, Any],
+    kwargs: Optional[Sequence[str]],
+    strict_kwargs: bool = True,
+    strict_c_extensions: bool = False,
+) -> Tuple[List[str], List[str], bool, bool, Optional[str], Set[str]]:
+    """Validate passed keyword argument names against a candidate signature.
+
+    Args:
+        cand: Candidate signature dictionary.
+        kwargs: Sequence of passed keyword argument names.
+        strict_kwargs: Whether unconstrained `**kwargs` are flagged as invalid.
+        strict_c_extensions: Whether opaque C-extension signatures reject unknown kwargs.
+
+    Returns:
+        Tuple of (invalid, unrecognized, cand_has_var_kwargs, cand_is_opaque, opaque_warning, cand_names).
+    """
+    cand_names = {p["name"] for p in cand.get("params", []) if "name" in p}
+    cand_has_var_kwargs = any(
+        p.get("kind") == "VAR_KEYWORD" for p in cand.get("params", [])
+    )
+    cand_is_opaque = (
+        cand.get("signature_completeness") == "opaque"
+        or "inexact_signature" in cand.get("environment_tags", [])
+        or "opaque_c_extension" in cand.get("environment_tags", [])
+    )
+
+    domain_meta = cand.get("domain_metadata") or {}
+    accepted_kwargs_list = cand.get("accepted_kwargs") or domain_meta.get(
+        "accepted_kwargs"
+    )
+    if accepted_kwargs_list is not None:
+        accepted_set: Optional[Set[str]] = set(accepted_kwargs_list)
+        cand_has_var_kwargs = False
+    else:
+        accepted_set = None
+
+    invalid: List[str] = []
+    unrecognized: List[str] = []
+    if kwargs:
+        for kw in kwargs:
+            if kw not in cand_names:
+                if accepted_set is not None:
+                    if kw not in accepted_set:
+                        invalid.append(kw)
+                elif cand_has_var_kwargs:
+                    unrecognized.append(kw)
+                else:
+                    invalid.append(kw)
+
+    opaque_warning: Optional[str] = None
+    if cand_is_opaque and kwargs:
+        opaque_warning = "WARNING: API has opaque C-extension signature; cannot definitively confirm argument validity"
+        if strict_c_extensions and unrecognized:
+            invalid.extend(unrecognized)
+            unrecognized = []
+
+    if strict_kwargs and unrecognized:
+        invalid.extend(unrecognized)
+
+    return (
+        invalid,
+        unrecognized,
+        cand_has_var_kwargs,
+        cand_is_opaque,
+        opaque_warning,
+        cand_names,
+    )
+
+
+def _validate_candidate_enums_and_literals(
+    cand: Dict[str, Any],
+    kwarg_values: Optional[Dict[str, Any]],
+) -> List[str]:
+    """Validate enum and Literal constraints for passed keyword argument values.
+
+    Args:
+        cand: Candidate signature dictionary.
+        kwarg_values: Optional dictionary mapping keyword names to runtime values.
+
+    Returns:
+        List of enum/literal validation error strings.
+    """
+    enum_errors: List[str] = []
+    if not kwarg_values:
+        return enum_errors
+
+    params_with_allowed = set()
+    for p in cand.get("params", []):
+        p_name = p.get("name")
+        if not p_name or p_name not in kwarg_values:
+            continue
+        val = kwarg_values[p_name]
+        allowed_vals = p.get("allowed_values")
+        if allowed_vals:
+            params_with_allowed.add(p_name.lower())
+            if str(val).lower() not in [str(a).lower() for a in allowed_vals]:
+                enum_errors.append(
+                    f"Invalid enum value '{val}' for parameter '{p_name}'. Expected one of {allowed_vals}"
+                )
+
+    for k, val in kwarg_values.items():
+        if val is None or not isinstance(val, str):
+            continue
+        k_norm = k.lower()
+        if (
+            k_norm in KNOWN_ENUM_VALUES
+            and k_norm not in params_with_allowed
+            and not any(f"parameter '{k}'" in err for err in enum_errors)
+        ):
+            allowed = KNOWN_ENUM_VALUES[k_norm]
+            if str(val).lower() not in [a.lower() for a in allowed]:
+                enum_errors.append(
+                    f"Invalid enum value '{val}' for parameter '{k}'. Expected one of {allowed}"
+                )
+
+    for p in cand.get("params", []):
+        p_name = p.get("name")
+        anno = p.get("annotation") or ""
+        if (
+            p_name in kwarg_values
+            and anno
+            and any(c in anno for c in ("Literal[", "'", '"'))
+            and not any(f"parameter '{p_name}'" in err for err in enum_errors)
+        ):
+            allowed_literals = re.findall(r"['\x22]([^'\x22]+)['\x22]", anno)
+            if allowed_literals and str(kwarg_values[p_name]) not in allowed_literals:
+                enum_errors.append(
+                    f"Invalid literal value '{kwarg_values[p_name]}' for parameter '{p_name}'. Expected one of {allowed_literals}"
+                )
+
+    return enum_errors
+
+
+def _validate_candidate_dtypes_and_ranks(
+    cand: Dict[str, Any],
+    api_path: str,
+    framework: str,
+    kwarg_values: Optional[Dict[str, Any]] = None,
+    arg_dtypes: Optional[Union[List[str], Dict[str, str]]] = None,
+    kwarg_dtypes: Optional[Dict[str, str]] = None,
+    arg_ranks: Optional[
+        Union[List[Union[int, str]], Dict[str, Union[int, str]]]
+    ] = None,
+    kwarg_ranks: Optional[Dict[str, Union[int, str]]] = None,
+) -> Tuple[List[str], List[str]]:
+    """Validate tensor dtypes and ranks against a candidate signature.
+
+    Args:
+        cand: Candidate signature dictionary.
+        api_path: Target API path string.
+        framework: Target framework identifier.
+        kwarg_values: Optional dictionary of passed keyword values.
+        arg_dtypes: Optional list or dictionary of positional argument dtypes.
+        kwarg_dtypes: Optional dictionary of keyword argument dtypes.
+        arg_ranks: Optional list or dictionary of positional argument ranks.
+        kwarg_ranks: Optional dictionary of keyword argument ranks.
+
+    Returns:
+        Tuple of (dtype_errors, rank_errors).
+    """
+    dtype_errors: List[str] = []
+    rank_errors: List[str] = []
+
+    passed_dtypes: Dict[str, str] = {}
+    if kwarg_dtypes:
+        passed_dtypes.update(kwarg_dtypes)
+    if isinstance(arg_dtypes, dict):
+        passed_dtypes.update(arg_dtypes)
+    elif isinstance(arg_dtypes, list):
+        cand_params = cand.get("params", [])
+        for idx, dt in enumerate(arg_dtypes):
+            if idx < len(cand_params):
+                passed_dtypes[cand_params[idx]["name"]] = dt
+
+    passed_ranks: Dict[str, Union[int, str]] = {}
+    if kwarg_ranks:
+        passed_ranks.update(kwarg_ranks)
+    if isinstance(arg_ranks, dict):
+        passed_ranks.update(arg_ranks)
+    elif isinstance(arg_ranks, list):
+        cand_params = cand.get("params", [])
+        for idx, rk in enumerate(arg_ranks):
+            if idx < len(cand_params):
+                passed_ranks[cand_params[idx]["name"]] = rk
+
+    if kwarg_values:
+        for k, val in kwarg_values.items():
+            val_str = str(val).lower().replace("torch.", "")
+            if (
+                any(k_type in val_str for k_type in ("int", "float", "complex", "bool"))
+                and k != "reduction"
+            ):
+                if k not in passed_dtypes:
+                    passed_dtypes[k] = val_str
+
+    clean_api = api_path.split(".")[-1].lower()
+    is_float_complex_api = framework == "torch" and (
+        clean_api
+        in (
+            "inv",
+            "linalg_inv",
+            "cholesky",
+            "linalg_cholesky",
+            "det",
+            "eig",
+            "svd",
+            "solve",
+        )
+        or "linalg.inv" in api_path
+        or "linalg.cholesky" in api_path
+        or "cholesky" in clean_api
+    )
+
+    for p in cand.get("params", []):
+        p_name = p.get("name")
+        p_dtypes = p.get("allowed_dtypes") or p.get("dtypes")
+        p_rank = p.get("rank_constraint") or p.get("rank")
+
+        if p_name in passed_dtypes:
+            dt = normalize_dtype_name(passed_dtypes[p_name])
+            allowed = p_dtypes
+            if not allowed and is_float_complex_api:
+                allowed = ["float32", "float64", "complex64", "complex128"]
+            if allowed:
+                norm_allowed = [normalize_dtype_name(a) for a in allowed]
+                if dt not in norm_allowed:
+                    dtype_errors.append(
+                        f"Dtype '{passed_dtypes[p_name]}' is not supported for parameter '{p_name}' of '{api_path}'. Supported dtypes: {allowed}"
+                    )
+
+        if p_name in passed_ranks and p_rank is not None:
+            passed_rk = passed_ranks[p_name]
+            if isinstance(passed_rk, int):
+                if not _matches_rank_constraint(passed_rk, p_rank):
+                    rank_errors.append(
+                        f"Rank {passed_rk} is not supported for parameter '{p_name}' of '{api_path}'. Expected rank: {p_rank}"
+                    )
+
+    if is_float_complex_api and passed_dtypes:
+        for _p_k, dt in passed_dtypes.items():
+            if any(
+                bad in dt.lower()
+                for bad in (
+                    "int",
+                    "bool",
+                    "uint",
+                    "qint",
+                    "quint",
+                    "string",
+                    "object",
+                )
+            ):
+                if not any(f"Dtype '{dt}'" in err for err in dtype_errors):
+                    dtype_errors.append(
+                        f"Dtype '{dt}' is not supported for '{api_path}'. Floating-point or complex dtype required."
+                    )
+
+    is_logical_bitwise = any(
+        op in clean_api
+        for op in (
+            "bitwise_and",
+            "bitwise_or",
+            "bitwise_xor",
+            "bitwise_not",
+            "logical_and",
+            "logical_or",
+            "logical_xor",
+            "logical_not",
+        )
+    )
+    if is_logical_bitwise and passed_dtypes:
+        for _p_k, dt in passed_dtypes.items():
+            if any(bad in dt.lower() for bad in ("float", "complex")):
+                if not any(f"Dtype '{dt}'" in err for err in dtype_errors):
+                    dtype_errors.append(
+                        f"Dtype '{dt}' is not supported for '{api_path}'. Logical/bitwise operations require integer or boolean types."
+                    )
+
+    is_quant_api = any(
+        op in clean_api
+        for op in ("quantize", "dequantize", "q_per_tensor", "q_per_channel")
+    )
+    if is_quant_api and "dtype" in passed_dtypes:
+        q_dt = passed_dtypes["dtype"].lower()
+        valid_q = [
+            "int8",
+            "uint8",
+            "qint8",
+            "quint8",
+            "float8_e4m3fn",
+            "float8_e5m2",
+        ]
+        if not any(vq in q_dt for vq in valid_q):
+            dtype_errors.append(
+                f"Dtype '{q_dt}' is not a valid quantization dtype for '{api_path}'. Expected one of {valid_q}."
+            )
+
+    return dtype_errors, rank_errors
+
+
+def _validate_candidate_shapes(
+    cand: Dict[str, Any],
+    api_path: str,
+    clean_api: str,
+    arg_shapes: Optional[List[Sequence[Union[int, str]]]] = None,
+    kwarg_shapes: Optional[Dict[str, Sequence[Union[int, str]]]] = None,
+) -> List[str]:
+    """Validate tensor shapes (broadcasting and matmul contraction) against a candidate.
+
+    Args:
+        cand: Candidate signature dictionary.
+        api_path: Target API path string.
+        clean_api: Unqualified operation name.
+        arg_shapes: Optional list of positional argument shapes.
+        kwarg_shapes: Optional dictionary of keyword argument shapes.
+
+    Returns:
+        List of shape validation error strings.
+    """
+    shape_errors: List[str] = []
+    passed_shapes: Dict[str, Sequence[Union[int, str]]] = {}
+    if kwarg_shapes:
+        passed_shapes.update(kwarg_shapes)
+    if isinstance(arg_shapes, list):
+        cand_params = cand.get("params", [])
+        for idx, sh in enumerate(arg_shapes):
+            if idx < len(cand_params):
+                passed_shapes[cand_params[idx]["name"]] = sh
+            else:
+                passed_shapes[f"arg_{idx}"] = sh
+
+    is_elementwise = (
+        any(
+            op in clean_api
+            for op in (
+                "add",
+                "sub",
+                "subtract",
+                "mul",
+                "multiply",
+                "div",
+                "divide",
+                "maximum",
+                "minimum",
+                "pow",
+            )
+        )
+        and "matmul" not in clean_api
+    )
+    if is_elementwise and len(passed_shapes) >= 2:
+        from ml_ecosystem_snapshots.compliance import validate_broadcast_shapes
+
+        sh_list = list(passed_shapes.values())
+        compat, _, err = validate_broadcast_shapes(sh_list[0], sh_list[1])
+        if not compat and err:
+            shape_errors.append(f"Broadcasting error in '{api_path}': {err}")
+
+    is_matmul = (
+        any(op in clean_api for op in ("matmul", "mm", "bmm")) or clean_api == "dot"
+    )
+    if is_matmul and len(passed_shapes) >= 2:
+        from ml_ecosystem_snapshots.compliance import validate_matmul_shapes
+
+        strict_2d = clean_api == "mm"
+        sh_list = list(passed_shapes.values())
+        compat, _, err = validate_matmul_shapes(
+            sh_list[0], sh_list[1], strict_2d=strict_2d
+        )
+        if not compat and err:
+            shape_errors.append(f"Matmul error in '{api_path}': {err}")
+
+    return shape_errors
+
+
+def _validate_candidate_positional_arity(
+    cand: Dict[str, Any],
+    args_count: Optional[int],
+) -> Optional[str]:
+    """Validate positional argument count against a candidate signature.
+
+    Args:
+        cand: Candidate signature dictionary.
+        args_count: Optional number of positional arguments passed.
+
+    Returns:
+        Error string if positional arity is violated, or None if valid.
+    """
+    if args_count is None:
+        return None
+    min_pos = sum(
+        1
+        for p in cand.get("params", [])
+        if p.get("default") is None
+        and p.get("kind") in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
+    )
+    max_pos = sum(
+        1
+        for p in cand.get("params", [])
+        if p.get("kind") in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
+    )
+    cand_has_varargs = cand.get("has_varargs", False) or any(
+        p.get("kind") == "VAR_POSITIONAL" for p in cand.get("params", [])
+    )
+    if args_count < min_pos:
+        return f"Missing required positional arguments: expected at least {min_pos}, got {args_count}"
+    if not cand_has_varargs and args_count > max_pos:
+        return f"Too many positional arguments: expected at most {max_pos}, got {args_count}"
+    return None
+
+
 def check_hallucination(
     framework: str,
     api_path: str,
@@ -100,7 +523,8 @@ def check_hallucination(
     arg_shapes: Optional[List[Sequence[Union[int, str]]]] = None,
     kwarg_shapes: Optional[Dict[str, Sequence[Union[int, str]]]] = None,
     strict_c_extensions: bool = False,
-) -> Dict[str, Any]:
+    repository: Optional[SnapshotRepository] = None,
+) -> HallucinationCheckResult:
     """Verify whether an API or specified arguments represent hallucinations.
 
     Checks:
@@ -130,6 +554,7 @@ def check_hallucination(
         arg_shapes: Optional list of tensor shape sequences for positional arguments.
         kwarg_shapes: Optional dictionary mapping keyword argument names to tensor shape sequences.
         strict_c_extensions: Whether to treat unverified kwargs on opaque C-extension APIs as hallucinations.
+        repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
         Dictionary containing:
@@ -140,18 +565,11 @@ def check_hallucination(
             - 'has_unconstrained_kwargs': bool
             - 'reason': str
     """
-    import ml_ecosystem_snapshots.mcp_server as _mcp_server
-
-    active_get_sig = getattr(_mcp_server, "get_api_signature", get_api_signature)
-    active_get_snap = getattr(
-        _mcp_server, "get_framework_snapshot", get_framework_snapshot
-    )
-
     if kwargs is None and kwarg_values is not None:
         kwargs = list(kwarg_values.keys())
 
-    sig = active_get_sig(framework, api_path, version=version)
-    snap = active_get_snap(framework, version=version)
+    sig = get_api_signature(framework, api_path, version=version, repository=repository)
+    snap = resolve_snapshot(framework, version=version, repository=repository)
     snapshot_source = snap.get(
         "_snapshot_source", "not_found" if not snap.get("categories") else "unknown"
     )
@@ -176,327 +594,43 @@ def check_hallucination(
 
     candidates = [sig] + [ov for ov in sig.get("overloads", []) if isinstance(ov, dict)]
 
-    best_result = None
+    best_result: Optional[HallucinationCheckResult] = None
     fewest_errors = 999999
-
-    known_enums = {
-        "reduction": ["none", "mean", "sum"],
-        "mode": [
-            "nearest",
-            "linear",
-            "bilinear",
-            "bicubic",
-            "trilinear",
-            "area",
-            "nearest-exact",
-        ],
-        "padding": ["valid", "same", "zeros", "reflect", "replicate", "circular"],
-        "layout": ["NCHW", "NHWC", "NCDHW", "NDHWC"],
-    }
+    clean_api = api_path.split(".")[-1].lower()
 
     for cand in candidates:
-        cand_names = {p["name"] for p in cand.get("params", []) if "name" in p}
-        cand_has_var_kwargs = any(
-            p.get("kind") == "VAR_KEYWORD" for p in cand.get("params", [])
+        (
+            invalid,
+            unrecognized,
+            cand_has_var_kwargs,
+            cand_is_opaque,
+            opaque_warning,
+            cand_names,
+        ) = _validate_candidate_kwargs(
+            cand=cand,
+            kwargs=kwargs,
+            strict_kwargs=strict_kwargs,
+            strict_c_extensions=strict_c_extensions,
         )
-        cand_is_opaque = (
-            cand.get("signature_completeness") == "opaque"
-            or "inexact_signature" in cand.get("environment_tags", [])
-            or "opaque_c_extension" in cand.get("environment_tags", [])
+        enum_errors = _validate_candidate_enums_and_literals(cand, kwarg_values)
+        dtype_errors, rank_errors = _validate_candidate_dtypes_and_ranks(
+            cand=cand,
+            api_path=api_path,
+            framework=framework,
+            kwarg_values=kwarg_values,
+            arg_dtypes=arg_dtypes,
+            kwarg_dtypes=kwarg_dtypes,
+            arg_ranks=arg_ranks,
+            kwarg_ranks=kwarg_ranks,
         )
-
-        domain_meta = cand.get("domain_metadata") or {}
-        accepted_kwargs_list = cand.get("accepted_kwargs") or domain_meta.get(
-            "accepted_kwargs"
+        shape_errors = _validate_candidate_shapes(
+            cand=cand,
+            api_path=api_path,
+            clean_api=clean_api,
+            arg_shapes=arg_shapes,
+            kwarg_shapes=kwarg_shapes,
         )
-        if accepted_kwargs_list is not None:
-            accepted_set = set(accepted_kwargs_list)
-            cand_has_var_kwargs = False
-        else:
-            accepted_set = None
-
-        invalid: List[str] = []
-        unrecognized: List[str] = []
-        if kwargs:
-            for kw in kwargs:
-                if kw not in cand_names:
-                    if accepted_set is not None:
-                        if kw not in accepted_set:
-                            invalid.append(kw)
-                    elif cand_has_var_kwargs:
-                        unrecognized.append(kw)
-                    else:
-                        invalid.append(kw)
-
-        opaque_warning = None
-        if cand_is_opaque and kwargs:
-            opaque_warning = "WARNING: API has opaque C-extension signature; cannot definitively confirm argument validity"
-            if strict_c_extensions and unrecognized:
-                invalid.extend(unrecognized)
-                unrecognized = []
-
-        if strict_kwargs and unrecognized:
-            invalid.extend(unrecognized)
-
-        enum_errors: List[str] = []
-        if kwarg_values:
-            params_with_allowed = set()
-            for p in cand.get("params", []):
-                p_name = p.get("name")
-                if not p_name or p_name not in kwarg_values:
-                    continue
-                val = kwarg_values[p_name]
-                allowed_vals = p.get("allowed_values")
-                if allowed_vals:
-                    params_with_allowed.add(p_name.lower())
-                    if str(val).lower() not in [str(a).lower() for a in allowed_vals]:
-                        enum_errors.append(
-                            f"Invalid enum value '{val}' for parameter '{p_name}'. Expected one of {allowed_vals}"
-                        )
-
-            for k, val in kwarg_values.items():
-                k_norm = k.lower()
-                if (
-                    k_norm in known_enums
-                    and k_norm not in params_with_allowed
-                    and not any(f"parameter '{k}'" in err for err in enum_errors)
-                ):
-                    allowed = known_enums[k_norm]
-                    if str(val).lower() not in [a.lower() for a in allowed]:
-                        enum_errors.append(
-                            f"Invalid enum value '{val}' for parameter '{k}'. Expected one of {allowed}"
-                        )
-
-            for p in cand.get("params", []):
-                p_name = p.get("name")
-                anno = p.get("annotation") or ""
-                if (
-                    p_name in kwarg_values
-                    and anno
-                    and any(c in anno for c in ("Literal[", "'", '"'))
-                    and not any(f"parameter '{p_name}'" in err for err in enum_errors)
-                ):
-                    allowed_literals = re.findall(r"['\x22]([^'\x22]+)['\x22]", anno)
-                    if (
-                        allowed_literals
-                        and str(kwarg_values[p_name]) not in allowed_literals
-                    ):
-                        enum_errors.append(
-                            f"Invalid literal value '{kwarg_values[p_name]}' for parameter '{p_name}'. Expected one of {allowed_literals}"
-                        )
-
-        dtype_errors: List[str] = []
-        rank_errors: List[str] = []
-
-        passed_dtypes: Dict[str, str] = {}
-        if kwarg_dtypes:
-            passed_dtypes.update(kwarg_dtypes)
-        if isinstance(arg_dtypes, dict):
-            passed_dtypes.update(arg_dtypes)
-        elif isinstance(arg_dtypes, list):
-            cand_params = cand.get("params", [])
-            for idx, dt in enumerate(arg_dtypes):
-                if idx < len(cand_params):
-                    passed_dtypes[cand_params[idx]["name"]] = dt
-
-        passed_ranks: Dict[str, Union[int, str]] = {}
-        if kwarg_ranks:
-            passed_ranks.update(kwarg_ranks)
-        if isinstance(arg_ranks, dict):
-            passed_ranks.update(arg_ranks)
-        elif isinstance(arg_ranks, list):
-            cand_params = cand.get("params", [])
-            for idx, rk in enumerate(arg_ranks):
-                if idx < len(cand_params):
-                    passed_ranks[cand_params[idx]["name"]] = rk
-
-        if kwarg_values:
-            for k, val in kwarg_values.items():
-                val_str = str(val).lower().replace("torch.", "")
-                if (
-                    any(
-                        k_type in val_str
-                        for k_type in ("int", "float", "complex", "bool")
-                    )
-                    and k != "reduction"
-                ):
-                    if k not in passed_dtypes:
-                        passed_dtypes[k] = val_str
-
-        clean_api = api_path.split(".")[-1].lower()
-        is_float_complex_api = framework == "torch" and (
-            clean_api
-            in (
-                "inv",
-                "linalg_inv",
-                "cholesky",
-                "linalg_cholesky",
-                "det",
-                "eig",
-                "svd",
-                "solve",
-            )
-            or "linalg.inv" in api_path
-            or "linalg.cholesky" in api_path
-            or "cholesky" in clean_api
-        )
-
-        for p in cand.get("params", []):
-            p_name = p.get("name")
-            p_dtypes = p.get("allowed_dtypes") or p.get("dtypes")
-            p_rank = p.get("rank_constraint") or p.get("rank")
-
-            if p_name in passed_dtypes:
-                dt = normalize_dtype_name(passed_dtypes[p_name])
-                allowed = p_dtypes
-                if not allowed and is_float_complex_api:
-                    allowed = ["float32", "float64", "complex64", "complex128"]
-                if allowed:
-                    norm_allowed = [normalize_dtype_name(a) for a in allowed]
-                    if dt not in norm_allowed:
-                        dtype_errors.append(
-                            f"Dtype '{passed_dtypes[p_name]}' is not supported for parameter '{p_name}' of '{api_path}'. Supported dtypes: {allowed}"
-                        )
-
-            if p_name in passed_ranks and p_rank is not None:
-                passed_rk = passed_ranks[p_name]
-                if isinstance(passed_rk, int):
-                    if not _matches_rank_constraint(passed_rk, p_rank):
-                        rank_errors.append(
-                            f"Rank {passed_rk} is not supported for parameter '{p_name}' of '{api_path}'. Expected rank: {p_rank}"
-                        )
-
-        if is_float_complex_api and passed_dtypes:
-            for p_k, dt in passed_dtypes.items():
-                if any(
-                    bad in dt.lower()
-                    for bad in (
-                        "int",
-                        "bool",
-                        "uint",
-                        "qint",
-                        "quint",
-                        "string",
-                        "object",
-                    )
-                ):
-                    if not any(f"Dtype '{dt}'" in err for err in dtype_errors):
-                        dtype_errors.append(
-                            f"Dtype '{dt}' is not supported for '{api_path}'. Floating-point or complex dtype required."
-                        )
-
-        is_logical_bitwise = any(
-            op in clean_api
-            for op in (
-                "bitwise_and",
-                "bitwise_or",
-                "bitwise_xor",
-                "bitwise_not",
-                "logical_and",
-                "logical_or",
-                "logical_xor",
-                "logical_not",
-            )
-        )
-        if is_logical_bitwise and passed_dtypes:
-            for p_k, dt in passed_dtypes.items():
-                if any(bad in dt.lower() for bad in ("float", "complex")):
-                    if not any(f"Dtype '{dt}'" in err for err in dtype_errors):
-                        dtype_errors.append(
-                            f"Dtype '{dt}' is not supported for '{api_path}'. Logical/bitwise operations require integer or boolean types."
-                        )
-
-        is_quant_api = any(
-            op in clean_api
-            for op in ("quantize", "dequantize", "q_per_tensor", "q_per_channel")
-        )
-        if is_quant_api and "dtype" in passed_dtypes:
-            q_dt = passed_dtypes["dtype"].lower()
-            valid_q = [
-                "int8",
-                "uint8",
-                "qint8",
-                "quint8",
-                "float8_e4m3fn",
-                "float8_e5m2",
-            ]
-            if not any(vq in q_dt for vq in valid_q):
-                dtype_errors.append(
-                    f"Dtype '{q_dt}' is not a valid quantization dtype for '{api_path}'. Expected one of {valid_q}."
-                )
-
-        shape_errors: List[str] = []
-        passed_shapes: Dict[str, Sequence[Union[int, str]]] = {}
-        if kwarg_shapes:
-            passed_shapes.update(kwarg_shapes)
-        if isinstance(arg_shapes, list):
-            cand_params = cand.get("params", [])
-            for idx, sh in enumerate(arg_shapes):
-                if idx < len(cand_params):
-                    passed_shapes[cand_params[idx]["name"]] = sh
-                else:
-                    passed_shapes[f"arg_{idx}"] = sh
-
-        is_elementwise = (
-            any(
-                op in clean_api
-                for op in (
-                    "add",
-                    "sub",
-                    "subtract",
-                    "mul",
-                    "multiply",
-                    "div",
-                    "divide",
-                    "maximum",
-                    "minimum",
-                    "pow",
-                )
-            )
-            and "matmul" not in clean_api
-        )
-        if is_elementwise and len(passed_shapes) >= 2:
-            from ml_ecosystem_snapshots.compliance import validate_broadcast_shapes
-
-            sh_list = list(passed_shapes.values())
-            compat, _, err = validate_broadcast_shapes(sh_list[0], sh_list[1])
-            if not compat and err:
-                shape_errors.append(f"Broadcasting error in '{api_path}': {err}")
-
-        is_matmul = (
-            any(op in clean_api for op in ("matmul", "mm", "bmm")) or clean_api == "dot"
-        )
-        if is_matmul and len(passed_shapes) >= 2:
-            from ml_ecosystem_snapshots.compliance import validate_matmul_shapes
-
-            strict_2d = clean_api == "mm"
-            sh_list = list(passed_shapes.values())
-            compat, _, err = validate_matmul_shapes(
-                sh_list[0], sh_list[1], strict_2d=strict_2d
-            )
-            if not compat and err:
-                shape_errors.append(f"Matmul error in '{api_path}': {err}")
-
-        positional_error = None
-        if args_count is not None:
-            min_pos = sum(
-                1
-                for p in cand.get("params", [])
-                if p.get("default") is None
-                and p.get("kind") in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
-            )
-            max_pos = sum(
-                1
-                for p in cand.get("params", [])
-                if p.get("kind") in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
-            )
-            cand_has_varargs = cand.get("has_varargs", False) or any(
-                p.get("kind") == "VAR_POSITIONAL" for p in cand.get("params", [])
-            )
-            if args_count < min_pos:
-                positional_error = f"Missing required positional arguments: expected at least {min_pos}, got {args_count}"
-            elif not cand_has_varargs and args_count > max_pos:
-                positional_error = f"Too many positional arguments: expected at most {max_pos}, got {args_count}"
+        positional_error = _validate_candidate_positional_arity(cand, args_count)
 
         cand_hallucinated = (
             len(invalid) > 0
@@ -527,7 +661,7 @@ def check_hallucination(
         elif unrecognized:
             reason = f"Unconstrained keyword arguments passed to **kwargs: {', '.join(unrecognized)}"
 
-        res = {
+        res: HallucinationCheckResult = {
             "api_exists": True,
             "is_hallucinated": cand_hallucinated,
             "invalid_kwargs": invalid,
@@ -535,10 +669,12 @@ def check_hallucination(
             "has_unconstrained_kwargs": cand_has_var_kwargs,
             "reason": reason,
             "snapshot_source": snapshot_source,
-            "signature_completeness": cand.get(
-                "signature_completeness", "opaque" if cand_is_opaque else "exact"
+            "signature_completeness": str(
+                cand.get(
+                    "signature_completeness", "opaque" if cand_is_opaque else "exact"
+                )
             ),
-            "is_c_extension": cand.get("is_c_extension", False) or cand_is_opaque,
+            "is_c_extension": bool(cand.get("is_c_extension", False) or cand_is_opaque),
         }
         if dtype_errors:
             res["dtype_errors"] = dtype_errors
@@ -582,7 +718,8 @@ def explain_anti_pattern(
     api_path: str,
     hallucinated_argument: str,
     passed_value: Optional[Any] = None,
-) -> Dict[str, Any]:
+    repository: Optional[SnapshotRepository] = None,
+) -> AntiPatternExplanationResult:
     """Provide canonical migration advice and rationale for a flagged anti-pattern or hallucinated argument.
 
     Args:
@@ -590,13 +727,11 @@ def explain_anti_pattern(
         api_path: Target API path (e.g. 'torch.sum', 'jax.numpy.mean').
         hallucinated_argument: Name of the flagged/hallucinated keyword argument.
         passed_value: Optional value passed to the argument for contextual advice.
+        repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
         Structured guidance dictionary with canonical replacement, explanation, and code example.
     """
-    import ml_ecosystem_snapshots.mcp_server as _mcp_server
-
-    active_get_sig = getattr(_mcp_server, "get_api_signature", get_api_signature)
     clean_fw = framework.lower().strip()
     arg_clean = hallucinated_argument.strip().lower()
 
@@ -677,7 +812,7 @@ def explain_anti_pattern(
             "canonical_example": rule["example"],
         }
 
-    sig = active_get_sig(framework, api_path)
+    sig = get_api_signature(framework, api_path, repository=repository)
     canonical_params: List[str] = []
     if sig:
         canonical_params = [
@@ -704,7 +839,8 @@ def check_code_block(
     version: Optional[str] = None,
     sm_arch: Optional[str] = None,
     gfx_arch: Optional[str] = None,
-) -> Dict[str, Any]:
+    repository: Optional[SnapshotRepository] = None,
+) -> CodeBlockCheckResult:
     """Batch verify a code block for nonexistent APIs, invalid kwargs, and hardware constraints.
 
     Analyzes Python AST for framework calls or assembly/IR lines for SASS, RDNA, and MLIR
@@ -716,24 +852,12 @@ def check_code_block(
         version: Optional framework version string.
         sm_arch: Optional NVIDIA architecture target (e.g. 'sm_80', 'sm_90').
         gfx_arch: Optional AMD RDNA architecture target (e.g. 'GFX11/RDNA3').
+        repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
         Dictionary report containing 'total_analyzed', 'hallucinations_detected', 'is_valid', and 'findings'.
     """
-    import ml_ecosystem_snapshots.mcp_server as _mcp_server
-
-    active_check_hallucination = getattr(
-        _mcp_server, "check_hallucination", check_hallucination
-    )
-    active_check_mlir = getattr(_mcp_server, "check_mlir_op", check_mlir_op)
-    active_check_sass = getattr(
-        _mcp_server, "check_sass_instruction", check_sass_instruction
-    )
-    active_check_rdna = getattr(
-        _mcp_server, "check_rdna_instruction", check_rdna_instruction
-    )
-
-    findings: List[Dict[str, Any]] = []
+    findings: List[CodeBlockFinding] = []
     total_analyzed = 0
 
     is_python = False
@@ -835,13 +959,14 @@ def check_code_block(
                     continue
 
                 total_analyzed += 1
-                res = active_check_hallucination(
+                res = check_hallucination(
                     framework=fw,
                     api_path=api_name,
                     kwargs=kw_list,
                     args_count=arg_cnt,
                     kwarg_values=kw_vals if kw_vals else None,
                     version=version,
+                    repository=repository,
                 )
                 if res.get("is_hallucinated"):
                     findings.append(
@@ -854,11 +979,11 @@ def check_code_block(
                             "invalid_kwargs": res.get("invalid_kwargs", []),
                         }
                     )
-    except Exception:
+    except SyntaxError:
         is_python = False
 
     if not is_python:
-        lines = code.strip().split(chr(10))
+        lines = code.strip().splitlines()
         for lineno, raw_line in enumerate(lines, 1):
             line = raw_line.strip()
             if not line or line.startswith(("//", "#", ";")):
@@ -894,14 +1019,14 @@ def check_code_block(
             ):
                 op_name = mlir_match.group(1)
                 total_analyzed += 1
-                res = active_check_mlir(op_name)
-                if not res.get("is_valid"):
+                mlir_res = check_mlir_op(op_name, repository=repository)
+                if not mlir_res.get("is_valid"):
                     findings.append(
                         {
                             "line": lineno,
                             "type": "mlir_error",
                             "target": op_name,
-                            "reason": "; ".join(res.get("errors", [])),
+                            "reason": "; ".join(mlir_res.get("errors", [])),
                         }
                     )
 
@@ -916,16 +1041,20 @@ def check_code_block(
 
                 _pred, mnem, mods, ops = tokenize_sass_line(line)
                 total_analyzed += 1
-                res = active_check_sass(
-                    mnem, operands=ops, modifiers=mods, sm_arch=sm_arch
+                sass_res = check_sass_instruction(
+                    mnem,
+                    operands=ops,
+                    modifiers=mods,
+                    sm_arch=sm_arch,
+                    repository=repository,
                 )
-                if not res.get("is_valid"):
+                if not sass_res.get("is_valid"):
                     findings.append(
                         {
                             "line": lineno,
                             "type": "sass_error",
                             "target": mnem,
-                            "reason": "; ".join(res.get("errors", [])),
+                            "reason": "; ".join(sass_res.get("errors", [])),
                         }
                     )
 
@@ -936,16 +1065,20 @@ def check_code_block(
 
                 base_mnem, ops, _enc_suf, mods = tokenize_rdna_line(line)
                 total_analyzed += 1
-                res = active_check_rdna(
-                    base_mnem, operands=ops, modifiers=mods, gfx_arch=gfx_arch
+                rdna_res = check_rdna_instruction(
+                    base_mnem,
+                    operands=ops,
+                    modifiers=mods,
+                    gfx_arch=gfx_arch,
+                    repository=repository,
                 )
-                if not res.get("is_valid"):
+                if not rdna_res.get("is_valid"):
                     findings.append(
                         {
                             "line": lineno,
                             "type": "rdna_error",
                             "target": base_mnem,
-                            "reason": "; ".join(res.get("errors", [])),
+                            "reason": "; ".join(rdna_res.get("errors", [])),
                         }
                     )
 
@@ -959,7 +1092,13 @@ def check_code_block(
 
 __all__ = [
     "DTYPE_CANONICAL_ALIASES",
+    "KNOWN_ENUM_VALUES",
     "_matches_rank_constraint",
+    "_validate_candidate_dtypes_and_ranks",
+    "_validate_candidate_enums_and_literals",
+    "_validate_candidate_kwargs",
+    "_validate_candidate_positional_arity",
+    "_validate_candidate_shapes",
     "check_code_block",
     "check_hallucination",
     "explain_anti_pattern",

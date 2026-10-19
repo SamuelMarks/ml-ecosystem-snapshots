@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, List, Optional, Set, cast
+from typing import Any, Dict, List, Optional, Set
+
+from ml_ecosystem_snapshots.mcp.models import ConceptTranslationResult
 
 DEFAULT_CONCEPT_MAP: Dict[str, Any] = {
     "normalization": {
@@ -312,9 +314,10 @@ def load_concept_map(
         if os.path.exists(custom_path):
             try:
                 with open(custom_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
+                    data: Any = json.load(f)
                     if isinstance(data, dict):
-                        return cast(Dict[str, Any], data)
+                        loaded_custom: Dict[str, Any] = data
+                        return loaded_custom
             except Exception as e:
                 print(f"Warning: Failed to load concept map from {custom_path}: {e}")
         return {}
@@ -326,9 +329,10 @@ def load_concept_map(
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    return cast(Dict[str, Any], data)
+                data_bundled: Any = json.load(f)
+                if isinstance(data_bundled, dict):
+                    loaded_bundled: Dict[str, Any] = data_bundled
+                    return loaded_bundled
         except Exception as e:
             print(f"Warning: Failed to load concept map from {path}: {e}")
     return DEFAULT_CONCEPT_MAP
@@ -343,7 +347,8 @@ def translate_concept_arguments(
     source_framework: str,
     target_framework: str,
     source_kwargs: Dict[str, Any],
-) -> Dict[str, Any]:
+    alias_map: Optional[Dict[str, Any]] = None,
+) -> ConceptTranslationResult:
     """Translate operation arguments across frameworks using concept parameter mapping schemas.
 
     Translates parameter names and attributes for core concepts such as:
@@ -358,28 +363,27 @@ def translate_concept_arguments(
         source_framework: Source framework identifier (e.g. 'torch', 'jax', 'numpy').
         target_framework: Target framework identifier (e.g. 'jax', 'torch', 'stablehlo').
         source_kwargs: Dictionary of source kwargs or parameter values.
+        alias_map: Optional concept alias mapping override (defaults to `CONCEPT_ALIAS_MAP`).
 
     Returns:
         Dictionary of translated target keyword arguments and structured attributes.
     """
-    import ml_ecosystem_snapshots.mcp_server as _mcp_server
-
-    active_alias_map = getattr(_mcp_server, "CONCEPT_ALIAS_MAP", CONCEPT_ALIAS_MAP)
+    active_alias_map = alias_map if alias_map is not None else CONCEPT_ALIAS_MAP
 
     c_clean = concept.lower().strip()
     s_fw = source_framework.lower().strip()
     t_fw = target_framework.lower().strip()
 
-    param_translations = cast(
-        Dict[str, Any],
-        active_alias_map.get("_parameter_translations", {}),
-    )
+    raw_pt = active_alias_map.get("_parameter_translations", {})
+    param_translations: Dict[str, Any] = raw_pt if isinstance(raw_pt, dict) else {}
     schema: Optional[Dict[str, Any]] = None
 
     if c_clean in param_translations and isinstance(param_translations[c_clean], dict):
-        schema = cast(Dict[str, Any], param_translations[c_clean])
+        cand_schema: Dict[str, Any] = param_translations[c_clean]
+        schema = cand_schema
     elif "matmul" in c_clean or c_clean in ("mm", "bmm", "dot"):
-        schema = cast(Optional[Dict[str, Any]], param_translations.get("matmul"))
+        raw_matmul = param_translations.get("matmul")
+        schema = raw_matmul if isinstance(raw_matmul, dict) else None
     elif any(
         k in c_clean
         for k in (
@@ -394,11 +398,14 @@ def translate_concept_arguments(
             "softmax",
         )
     ):
-        schema = cast(Optional[Dict[str, Any]], param_translations.get("reduction"))
+        raw_red = param_translations.get("reduction")
+        schema = raw_red if isinstance(raw_red, dict) else None
     elif "conv" in c_clean:
-        schema = cast(Optional[Dict[str, Any]], param_translations.get("convolution"))
+        raw_conv = param_translations.get("convolution")
+        schema = raw_conv if isinstance(raw_conv, dict) else None
     elif "norm" in c_clean:
-        schema = cast(Optional[Dict[str, Any]], param_translations.get("normalization"))
+        raw_norm = param_translations.get("normalization")
+        schema = raw_norm if isinstance(raw_norm, dict) else None
 
     translated: Dict[str, Any] = {}
     unmapped: Dict[str, Any] = {}

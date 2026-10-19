@@ -495,7 +495,9 @@ def test_diff_snapshots_list_and_non_dict() -> None:
     assert "foo.bar" in res_list.signature_changed
 
     # Non-dict and non-list format fallback
-    res_invalid = diff_snapshots(None, 123)
+    invalid_1: Any = None
+    invalid_2: Any = 123
+    res_invalid = diff_snapshots(invalid_1, invalid_2)
     assert res_invalid.added == []
     assert res_invalid.removed == []
 

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from ml_ecosystem_snapshots.c_extension_sig import (
     CExtensionSignature,
+    ParsedParamTuple,
     _normalize_c_sig_args,
     _parse_c_extension_sig_str,
     extract_c_extension_signature,
@@ -18,6 +20,8 @@ from ml_ecosystem_snapshots.network_env import (
     load_json_data,
     stream_snapshot_items,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def get_all_members(module: Any) -> List[Tuple[str, Any]]:
@@ -33,43 +37,23 @@ def get_all_members(module: Any) -> List[Tuple[str, Any]]:
     Returns:
         A list of (name, object) tuples.
     """
-    members = {}
+    members: Dict[str, Any] = {}
 
     for name in dir(module):
         try:
             members[name] = getattr(module, name)
-        except (
-            AttributeError,
-            TypeError,
-            ValueError,
-            KeyError,
-            IndexError,
-            SyntaxError,
-            OSError,
-            ImportError,
-            RuntimeError,
-            Exception,
-        ):
-            pass
+        except Exception as exc:
+            _LOGGER.debug("Skipping inaccessible member %s: %s", name, exc)
 
     if hasattr(module, "__all__"):
         for name in module.__all__:
             if name not in members:
                 try:
                     members[name] = getattr(module, name)
-                except (
-                    AttributeError,
-                    TypeError,
-                    ValueError,
-                    KeyError,
-                    IndexError,
-                    SyntaxError,
-                    OSError,
-                    ImportError,
-                    RuntimeError,
-                    Exception,
-                ):
-                    pass
+                except Exception as exc:
+                    _LOGGER.debug(
+                        "Skipping inaccessible __all__ member %s: %s", name, exc
+                    )
 
     return list(members.items())
 
@@ -86,18 +70,15 @@ def get_framework_docstring_parser(
     Returns:
         The docstring parser style identifier ('rest', 'numpy', 'google', or 'auto').
     """
-    nl = chr(10)
     if docstring and isinstance(docstring, str):
         if any(
             marker in docstring
             for marker in (":param ", ":type ", ":return:", ":rtype:", ":raises:")
         ):
             return "rest"
-        if re.search(
-            nl + r"(Parameters|Returns|Raises)" + nl + r"\s*[-=]{3,}", docstring
-        ):
+        if re.search(r"(?:^|\s)(Parameters|Returns|Raises)\s*[-=]{3,}", docstring):
             return "numpy"
-        if re.search(nl + r"(Args|Arguments|Returns|Raises):\s*" + nl, docstring):
+        if re.search(r"(?:^|\s)(Args|Arguments|Returns|Raises):\s*", docstring):
             return "google"
 
     name_clean = framework_name.lower().replace("-", "_")
@@ -179,19 +160,8 @@ def parse_docstring_with_griffe(
                 return sections
             if not best_sections and sections:
                 best_sections = sections
-        except (
-            AttributeError,
-            TypeError,
-            ValueError,
-            KeyError,
-            IndexError,
-            SyntaxError,
-            OSError,
-            ImportError,
-            RuntimeError,
-            Exception,
-        ):
-            pass
+        except Exception as exc:
+            _LOGGER.debug("Griffe docstring parse fallback for %s: %s", candidate, exc)
 
     return best_sections
 
@@ -295,6 +265,9 @@ def extract_griffe_docstring_metadata(
     return {"params": params, "returns": returns, "raises": raises}
 
 
+_BACKSLASH = chr(92)
+
+
 def split_tablegen_list(raw_list_str: str) -> List[str]:
     """Split a comma-separated TableGen list while respecting nested brackets, angles, parens, and quotes.
 
@@ -304,7 +277,6 @@ def split_tablegen_list(raw_list_str: str) -> List[str]:
     Returns:
         List of trimmed TableGen element strings.
     """
-    bs = chr(92)
     elements: List[str] = []
     current: List[str] = []
     depth_bracket = 0
@@ -321,7 +293,7 @@ def split_tablegen_list(raw_list_str: str) -> List[str]:
             current.append(char)
             escape = False
             continue
-        if char == bs:
+        if char == _BACKSLASH:
             current.append(char)
             escape = True
             continue
@@ -377,7 +349,6 @@ def extract_tablegen_traits(text: str) -> List[str]:
     Returns:
         List of parsed trait names with nested parameters preserved.
     """
-    bs = chr(92)
     start = -1
     in_str = False
     esc = False
@@ -385,7 +356,7 @@ def extract_tablegen_traits(text: str) -> List[str]:
         if esc:
             esc = False
             continue
-        if ch == bs:
+        if ch == _BACKSLASH:
             esc = True
             continue
         if ch == '"':
@@ -406,7 +377,7 @@ def extract_tablegen_traits(text: str) -> List[str]:
         if escape:
             escape = False
             continue
-        if char == bs:
+        if char == _BACKSLASH:
             escape = True
             continue
         if char == '"':
@@ -445,21 +416,24 @@ def extract_tablegen_traits(text: str) -> List[str]:
 
 
 __all__ = [
-    "CExtensionSignature",
-    "_normalize_c_sig_args",
-    "_parse_c_extension_sig_str",
-    "extract_c_extension_signature",
+    # --- Core Module & Docstring Inspection Utilities ---
     "extract_griffe_docstring_metadata",
     "extract_tablegen_traits",
-    "fetch_url",
     "get_all_members",
-    "get_custom_snapshots_paths",
     "get_framework_docstring_parser",
-    "is_offline_mode",
-    "load_json_data",
     "parse_docstring_with_griffe",
     "resolve_griffe_parser",
     "split_tablegen_list",
-    "stream_snapshot_items",
     "strip_sphinx_roles",
+    # --- Backward-Compatibility Re-Exports ---
+    "CExtensionSignature",
+    "ParsedParamTuple",
+    "_normalize_c_sig_args",
+    "_parse_c_extension_sig_str",
+    "extract_c_extension_signature",
+    "fetch_url",
+    "get_custom_snapshots_paths",
+    "is_offline_mode",
+    "load_json_data",
+    "stream_snapshot_items",
 ]

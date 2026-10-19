@@ -14,7 +14,7 @@ def forward(x: "TensorRef") -> "TensorRef":
     """Execute helper forward.
 
     Args:
-        x: Input parameter value.
+        x: Forward-referenced parameter operand.
 
 
     Returns:

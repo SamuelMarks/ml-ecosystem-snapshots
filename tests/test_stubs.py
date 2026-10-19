@@ -13,7 +13,7 @@ def test_generate_stubs(tmp_path: Any) -> None:
     """Verify generate stubs behavior.
 
     Args:
-        tmp_path: Input parameter value.
+        tmp_path: Temporary directory path fixture.
     """
     snap = {
         "categories": {
@@ -117,7 +117,7 @@ def test_generate_stubs_empty(tmp_path: Any) -> None:
     """Verify generate stubs empty behavior.
 
     Args:
-        tmp_path: Input parameter value.
+        tmp_path: Temporary directory path fixture.
     """
     out_dir = Path(os.path.join(tmp_path, "stubs"))
     generate_stubs({}, str(out_dir))
@@ -128,7 +128,7 @@ def test_generate_stubs_default_vals(tmp_path: Any) -> None:
     """Verify generate stubs default vals behavior.
 
     Args:
-        tmp_path: Input parameter value.
+        tmp_path: Temporary directory path fixture.
     """
     snap = {
         "categories": {
@@ -165,7 +165,7 @@ def test_generate_stubs_no_module(tmp_path: Any) -> None:
     """Verify generate stubs no module behavior.
 
     Args:
-        tmp_path: Input parameter value.
+        tmp_path: Temporary directory path fixture.
     """
     data = {
         "categories": {
@@ -189,7 +189,7 @@ def test_generate_stubs_include_nonpublic(tmp_path: Any) -> None:
     """Verify generate stubs include nonpublic behavior.
 
     Args:
-        tmp_path: Input parameter value.
+        tmp_path: Temporary directory path fixture.
     """
     snap = {
         "categories": {
@@ -247,7 +247,8 @@ def test_generate_stubs_list_and_non_dict(tmp_path: Any) -> None:
 
     # Test snapshot_data as unsupported non-dict non-list type (e.g. integer or string)
     invalid_out_dir = Path(os.path.join(tmp_path, "stubs_invalid"))
-    generate_stubs(42, str(invalid_out_dir))
+    invalid_data: Any = 42
+    generate_stubs(invalid_data, str(invalid_out_dir))
     assert not list(invalid_out_dir.glob("**/*.pyi"))
 
     # Test validate_pyi_stub raising SyntaxError

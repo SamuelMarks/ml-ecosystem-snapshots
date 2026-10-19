@@ -14,8 +14,8 @@ def create_module(name: str, attrs: dict[str, Any]) -> types.ModuleType:
     """Create a mock module with given attributes.
 
     Args:
-        name: Input parameter value.
-        attrs: Input parameter value.
+        name: Synthetic module name.
+        attrs: Dictionary of module attributes to populate.
 
     Returns:
         The created mock module.
@@ -30,7 +30,7 @@ def test_cupy_collect(mocker: Any) -> None:
     """Test cupy_fw.collect_api function.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     # Test when cp is None
     mocker.patch("ml_ecosystem_snapshots.frameworks.cupy.cp", None)
@@ -71,9 +71,9 @@ def test_cupy_collect(mocker: Any) -> None:
         """Mock inspect function.
 
         Args:
-            obj: Input parameter value.
-            fqn: Input parameter value.
-            is_public: Input parameter value.
+            obj: Target live object to inspect.
+            fqn: Fully-qualified API path.
+            is_public: Whether the symbol is publicly exported.
 
         Returns:
             A mocked GhostRef.
@@ -106,7 +106,7 @@ def test_dask_collect(mocker: Any) -> None:
     """Test dask_fw.collect_api function.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     # Test when da is None
     mocker.patch("ml_ecosystem_snapshots.frameworks.dask.da", None)
@@ -136,9 +136,9 @@ def test_dask_collect(mocker: Any) -> None:
         """Mock inspect function.
 
         Args:
-            obj: Input parameter value.
-            fqn: Input parameter value.
-            is_public: Input parameter value.
+            obj: Target live object to inspect.
+            fqn: Fully-qualified API path.
+            is_public: Whether the symbol is publicly exported.
 
         Returns:
             A mocked GhostRef.
@@ -209,7 +209,7 @@ def test_cupy_import_success(mocker: Any) -> None:
     """Test cupy import logic when module is available.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     import sys
 
@@ -230,7 +230,7 @@ def test_cupy_import_error(mocker: Any) -> None:
     """Test cupy import logic when module is not available.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     import sys
 
@@ -247,7 +247,7 @@ def test_dask_import_error(mocker: Any) -> None:
     """Test dask import logic when module is available and unavailable.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     import importlib
     import sys

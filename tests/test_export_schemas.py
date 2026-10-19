@@ -184,7 +184,7 @@ def test_export_scoped_prompt_context_with_hallucination_guards() -> None:
     }
 
     with patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_torch_snap,
     ):
         ctx = export_scoped_prompt_context("torch", max_symbols=10)
@@ -222,7 +222,7 @@ def test_export_scoped_prompt_context_module_prefix_filtering() -> None:
     }
 
     with patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     ):
         ctx_filtered = export_scoped_prompt_context("torch", module_prefix="torch.nn")

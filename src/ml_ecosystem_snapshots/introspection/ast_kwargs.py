@@ -7,6 +7,30 @@ import inspect
 import textwrap
 from typing import Any, List, Optional, Set
 
+from ml_ecosystem_snapshots.exceptions import IntrospectionError
+
+
+def _parse_callable_ast(func: Any) -> ast.AST:
+    """Retrieve and parse the Python AST of a live callable object.
+
+    Args:
+        func: Live function or method object to inspect.
+
+    Returns:
+        Parsed module `ast.AST` tree.
+
+    Raises:
+        IntrospectionError: If source code cannot be retrieved or parsed.
+    """
+    try:
+        src = inspect.getsource(func)
+        src = textwrap.dedent(src)
+        return ast.parse(src)
+    except (OSError, TypeError, SyntaxError, IndentationError, ValueError) as exc:
+        raise IntrospectionError(
+            f"Unable to parse AST for callable {func!r}: {exc}"
+        ) from exc
+
 
 def extract_accepted_kwargs_from_ast(func: Any) -> Optional[List[str]]:
     """Statically analyze a function AST to extract keyword arguments accessed via `**kwargs`.
@@ -24,10 +48,8 @@ def extract_accepted_kwargs_from_ast(func: Any) -> Optional[List[str]]:
         Sorted list of discovered keyword argument names, or None when unavailable.
     """
     try:
-        src = inspect.getsource(func)
-        src = textwrap.dedent(src)
-        tree = ast.parse(src)
-    except Exception:
+        tree = _parse_callable_ast(func)
+    except IntrospectionError:
         return None
 
     kwarg_name = None

@@ -100,13 +100,23 @@ class ConceptTranslationResult(TypedDict):
     unmapped_kwargs: Dict[str, Any]
 
 
+AntiPatternExplanation = AntiPatternExplanationResult
+IsaValidationResult = IsaCheckResult
+MlirOpValidationResult = IrCheckResult
+DomainOpValidationResult = DomainOpCheckResult
+
+
 __all__ = [
+    "AntiPatternExplanation",
     "AntiPatternExplanationResult",
     "CodeBlockCheckResult",
     "CodeBlockFinding",
     "ConceptTranslationResult",
     "DomainOpCheckResult",
+    "DomainOpValidationResult",
     "HallucinationCheckResult",
     "IrCheckResult",
     "IsaCheckResult",
+    "IsaValidationResult",
+    "MlirOpValidationResult",
 ]

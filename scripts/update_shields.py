@@ -1,4 +1,4 @@
-"""Unit tests and verification suite for update shields."""
+"""Script to compute test and documentation coverage and update README.md shield badges."""
 
 import os
 import sys

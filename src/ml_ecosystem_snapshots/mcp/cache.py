@@ -7,9 +7,18 @@ import os
 import threading
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from ml_ecosystem_snapshots.api import (
+    FRAMEWORK_COLLECTORS as FRAMEWORK_COLLECTORS,
+    extract_snapshot as _imported_extract_snapshot,
+)
 from ml_ecosystem_snapshots.network_env import (
     get_custom_snapshots_paths,
     is_offline_mode,
+)
+
+extract_snapshot: Optional[Callable[..., Dict[str, Any]]] = _imported_extract_snapshot
+_extract_snapshot_fn: Optional[Callable[..., Dict[str, Any]]] = (
+    _imported_extract_snapshot
 )
 
 _SNAPSHOT_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -32,22 +41,14 @@ def get_framework_snapshot(
     Returns:
         The snapshot dictionary containing categorized GhostRefs.
     """
-    import ml_ecosystem_snapshots.mcp_server as _mcp_server
-
-    active_cache: Dict[str, Dict[str, Any]] = getattr(
-        _mcp_server, "_SNAPSHOT_CACHE", _SNAPSHOT_CACHE
+    active_cache: Dict[str, Dict[str, Any]] = _SNAPSHOT_CACHE
+    active_extract: Optional[Callable[..., Dict[str, Any]]] = extract_snapshot
+    active_extract_default: Optional[Callable[..., Dict[str, Any]]] = (
+        _extract_snapshot_fn
     )
-    active_extract: Optional[Callable[..., Dict[str, Any]]] = getattr(
-        _mcp_server, "extract_snapshot", None
-    )
-    active_extract_default: Optional[Callable[..., Dict[str, Any]]] = getattr(
-        _mcp_server, "_extract_snapshot_fn", None
-    )
-    active_collectors: Dict[str, Any] = getattr(_mcp_server, "FRAMEWORK_COLLECTORS", {})
-    active_custom_paths = getattr(
-        _mcp_server, "get_custom_snapshots_paths", get_custom_snapshots_paths
-    )
-    active_offline = getattr(_mcp_server, "is_offline_mode", is_offline_mode)
+    active_collectors: Dict[str, Any] = FRAMEWORK_COLLECTORS
+    active_custom_paths = get_custom_snapshots_paths
+    active_offline = is_offline_mode
 
     clean_fw = framework.lower().strip()
     cache_key = f"{clean_fw}@{version}" if version else clean_fw
@@ -62,12 +63,7 @@ def get_framework_snapshot(
         if use_bundled:
             from ml_ecosystem_snapshots.index import get_cache_dir
 
-            mcp_file = getattr(_mcp_server, "__file__", None)
-            base_dir = (
-                os.path.dirname(mcp_file)
-                if mcp_file
-                else os.path.dirname(os.path.dirname(__file__))
-            )
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             clean_ver = version.lstrip("vV") if version else None
 
             custom_dirs: List[Tuple[str, str]] = [
@@ -206,9 +202,15 @@ class SnapshotRepository:
             Categorized snapshot dictionary.
         """
         with self._lock:
-            return get_framework_snapshot(
+            clean_fw = framework.lower().strip()
+            cache_key = f"{clean_fw}@{version}" if version else clean_fw
+            if cache_key in self._store:
+                return self._store[cache_key]
+            snap = get_framework_snapshot(
                 framework=framework, version=version, prefer_bundled=prefer_bundled
             )
+            self._store[cache_key] = snap
+            return snap
 
     def put(
         self, framework: str, data: Dict[str, Any], version: Optional[str] = None
@@ -238,8 +240,42 @@ class SnapshotRepository:
         self.put(framework=framework, data=data, version=version)
 
 
+def resolve_snapshot(
+    framework: str,
+    version: Optional[str] = None,
+    prefer_bundled: Optional[bool] = None,
+    repository: Optional[SnapshotRepository] = None,
+) -> Dict[str, Any]:
+    """Resolve a framework snapshot via an explicit `SnapshotRepository` or default loader.
+
+    Args:
+        framework: Target framework identifier.
+        version: Optional framework version constraint.
+        prefer_bundled: Optional flag to prefer bundled snapshots.
+        repository: Optional injected `SnapshotRepository` instance.
+
+    Returns:
+        Categorized snapshot dictionary.
+    """
+    if repository is not None:
+        return repository.get(
+            framework=framework, version=version, prefer_bundled=prefer_bundled
+        )
+    if prefer_bundled is not None:
+        return get_framework_snapshot(
+            framework, version=version, prefer_bundled=prefer_bundled
+        )
+    if version is not None:
+        return get_framework_snapshot(framework, version=version)
+    return get_framework_snapshot(framework)
+
+
 __all__ = [
+    "FRAMEWORK_COLLECTORS",
     "SnapshotRepository",
     "_SNAPSHOT_CACHE",
+    "_extract_snapshot_fn",
+    "extract_snapshot",
     "get_framework_snapshot",
+    "resolve_snapshot",
 ]

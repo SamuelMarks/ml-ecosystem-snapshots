@@ -33,7 +33,7 @@ def dummy_func_sphinx_docstring(y: Any) -> None:
     :raises TypeError: If wrong.
 
     Args:
-        y: Input parameter value.
+        y: Input integer parameter.
     """
     pass
 
@@ -71,7 +71,7 @@ def test_cdd_exception_handling(mocker: Any) -> None:
     """Verify cdd exception handling behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     mocker.patch("cdd.docstring.parse.docstring", side_effect=ValueError)
     ref = GhostInspector.inspect(
@@ -84,7 +84,7 @@ def test_cdd_direct_raises(mocker: Any) -> None:
     """Verify cdd direct raises behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     # Mock cdd to return direct raises list
     mocker.patch(
@@ -111,7 +111,7 @@ def test_inspect_annotation_fallback() -> None:
         """Execute helper func annotated.
 
         Args:
-            a: Input parameter value.
+            a: First positional operand.
         """
         pass
 
@@ -133,7 +133,7 @@ def test_griffe_self_skip() -> None:
             """Execute helper m.
 
             Args:
-                x: Input parameter value.
+                x: Input operand value.
             """
             pass
 
@@ -159,14 +159,14 @@ def test_models_raises_no_typ(mocker: Any) -> None:
     """Verify models raises no typ behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     mocker.patch(
         "cdd.docstring.parse.docstring",
         return_value={"raises": [{"not_typ": "KeyError"}]},
     )
     mocker.patch(
-        "ml_ecosystem_snapshots.models.extract_griffe_docstring_metadata",
+        "ml_ecosystem_snapshots.introspection.inspector.extract_griffe_docstring_metadata",
         return_value={"params": {}, "returns": None, "raises": []},
     )
     ref = GhostInspector.inspect(
@@ -201,7 +201,7 @@ def test_ghost_inspector_aten_overload_and_factory_default(mocker: Any) -> None:
     )
 
     mocker.patch(
-        "ml_ecosystem_snapshots.models.extract_c_extension_signature",
+        "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
         return_value=existing_sig,
     )
     mocker.patch(
@@ -236,7 +236,7 @@ def test_ghost_inspector_aten_none(mocker: Any) -> None:
         return_value=None,
     )
     mocker.patch(
-        "ml_ecosystem_snapshots.models.extract_c_extension_signature",
+        "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
         return_value=None,
     )
 

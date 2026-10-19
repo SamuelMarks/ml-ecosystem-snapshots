@@ -5,15 +5,21 @@ from __future__ import annotations
 import os
 from typing import List
 
+from ml_ecosystem_snapshots.exceptions import SnapshotNotFoundError
 
-def resolve_snapshot_path(path: str) -> str:
+
+def resolve_snapshot_path(path: str, must_exist: bool = False) -> str:
     """Resolve a snapshot path, looking in local and package snapshot directories if needed.
 
     Args:
         path: The file path, filename, or framework prefix to resolve.
+        must_exist: Whether to raise `SnapshotNotFoundError` when the path cannot be resolved.
 
     Returns:
         The resolved full path if found, or the original path otherwise.
+
+    Raises:
+        SnapshotNotFoundError: If `must_exist` is True and no matching snapshot file exists.
     """
     import ml_ecosystem_snapshots.cli as cli_pkg
     from ml_ecosystem_snapshots.index import get_cache_dir
@@ -70,6 +76,8 @@ def resolve_snapshot_path(path: str) -> str:
     elif len(all_matches) > 1:
         return sorted(all_matches)[-1]
 
+    if must_exist:
+        raise SnapshotNotFoundError(f"Snapshot file not found: {path}")
     return path
 
 

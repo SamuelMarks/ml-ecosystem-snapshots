@@ -6,8 +6,13 @@ Transparently re-exports all members from ml_ecosystem_snapshots._alias.
 from __future__ import annotations
 
 from typing import Any, List
+from ml_ecosystem_snapshots._alias import (
+    register_alias_finder as _register_alias_finder,
+)
 import ml_ecosystem_snapshots._alias as _orig_mod
 from ml_ecosystem_snapshots._alias import *  # noqa: F401, F403
+
+_register_alias_finder()
 
 __all__: List[str] = getattr(
     _orig_mod,

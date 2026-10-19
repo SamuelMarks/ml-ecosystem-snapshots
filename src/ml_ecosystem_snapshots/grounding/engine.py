@@ -1,11 +1,17 @@
 """High-performance in-memory grounding engine for anti-hallucination verification."""
 
-import gzip
-import json
+from __future__ import annotations
+
+import logging
 import os
+import threading
 from typing import Any, Dict, List, Optional, Set
 
+from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository
 from ml_ecosystem_snapshots.models import ExtendedGhostRef, GhostInspector
+from ml_ecosystem_snapshots.network_env import load_json_data
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def compute_levenshtein(s1: str, s2: str) -> int:
@@ -37,22 +43,54 @@ def compute_levenshtein(s1: str, s2: str) -> int:
     return previous_row[-1]
 
 
-class GroundingEngine:
-    """In-memory cache and symbol resolution engine for anti-hallucination verification."""
+def _extract_raw_items(raw_data: Any) -> List[Dict[str, Any]]:
+    """Extract raw GhostRef dictionary items from a loaded snapshot structure.
 
-    def __init__(self, base_dirs: Optional[List[str]] = None) -> None:
+    Args:
+        raw_data: Deserialized JSON list or dictionary envelope.
+
+    Returns:
+        Flat list of GhostRef item dictionaries.
+    """
+    raw_items: List[Dict[str, Any]] = []
+    if isinstance(raw_data, list):
+        raw_items = [item for item in raw_data if isinstance(item, dict)]
+    elif isinstance(raw_data, dict):
+        if "categories" in raw_data and isinstance(raw_data["categories"], dict):
+            for cat_items in raw_data["categories"].values():
+                if isinstance(cat_items, list):
+                    raw_items.extend(i for i in cat_items if isinstance(i, dict))
+        elif "items" in raw_data and isinstance(raw_data["items"], list):
+            raw_items = [i for i in raw_data["items"] if isinstance(i, dict)]
+        else:
+            raw_items = [raw_data]
+    return raw_items
+
+
+class GroundingEngine:
+    """Thread-safe in-memory cache and symbol resolution engine for anti-hallucination verification."""
+
+    def __init__(
+        self,
+        base_dirs: Optional[List[str]] = None,
+        repository: Optional[SnapshotRepository] = None,
+    ) -> None:
         """Initialize the GroundingEngine.
 
         Args:
             base_dirs: Optional explicit directory paths to search for snapshots.
+            repository: Optional shared `SnapshotRepository` instance for MCP cache integration.
         """
         default_frameworks = os.path.join(os.path.dirname(__file__), "..", "frameworks")
         default_snapshots = os.path.join(os.path.dirname(__file__), "..", "snapshots")
 
+        self._has_custom_dirs = base_dirs is not None
         self.search_dirs: List[str] = base_dirs or [
             os.path.abspath(default_frameworks),
             os.path.abspath(default_snapshots),
         ]
+        self._repository = repository
+        self._lock = threading.RLock()
         # In-memory target registry: target -> {symbol_key: ExtendedGhostRef}
         self._target_cache: Dict[str, Dict[str, ExtendedGhostRef]] = {}
         # Mnemonic/short-name map: target -> {short_name: ExtendedGhostRef}
@@ -64,7 +102,8 @@ class GroundingEngine:
         Returns:
             List of target names.
         """
-        return sorted(list(self._target_cache.keys()))
+        with self._lock:
+            return sorted(list(self._target_cache.keys()))
 
     def _discover_target_files(self, target: str) -> List[str]:
         """Locate snapshot or exhaustive files matching a target name.
@@ -99,6 +138,33 @@ class GroundingEngine:
 
         return matched_files
 
+    def _index_item(
+        self,
+        item: Dict[str, Any],
+        symbol_index: Dict[str, ExtendedGhostRef],
+        short_index: Dict[str, ExtendedGhostRef],
+    ) -> None:
+        """Hydrate a single raw item dictionary and index it into symbol_index and short_index.
+
+        Args:
+            item: Raw GhostRef dictionary.
+            symbol_index: Target full-path and name symbol index.
+            short_index: Target lowercase short-name and mnemonic index.
+        """
+        try:
+            ref = GhostInspector.hydrate(item)
+            if ref.api_path:
+                symbol_index[ref.api_path] = ref
+            if ref.name:
+                symbol_index[ref.name] = ref
+                short_index[ref.name.lower()] = ref
+            mnemonic = item.get("mnemonic")
+            if mnemonic:
+                symbol_index[str(mnemonic)] = ref
+                short_index[str(mnemonic).lower()] = ref
+        except (AttributeError, TypeError, ValueError, KeyError) as exc:
+            _LOGGER.debug("Skipping invalid GhostRef item during indexing: %s", exc)
+
     def load_target(self, target: str) -> Dict[str, ExtendedGhostRef]:
         """Lazily load and index all symbols for a target framework or ISA.
 
@@ -109,122 +175,53 @@ class GroundingEngine:
             Dictionary mapping symbol keys to their hydrated ExtendedGhostRef objects.
         """
         norm_target = target.lower().replace("-", "_")
-        if norm_target in self._target_cache:
-            return self._target_cache[norm_target]
+        with self._lock:
+            if norm_target in self._target_cache:
+                return self._target_cache[norm_target]
 
-        files = self._discover_target_files(norm_target)
-        symbol_index: Dict[str, ExtendedGhostRef] = {}
-        short_index: Dict[str, ExtendedGhostRef] = {}
+            files = self._discover_target_files(norm_target)
+            symbol_index: Dict[str, ExtendedGhostRef] = {}
+            short_index: Dict[str, ExtendedGhostRef] = {}
 
-        for file_path in files:
-            raw_data: Any = None
-            if file_path.endswith(".gz"):
-                with gzip.open(file_path, "rt", encoding="utf-8") as gf:
-                    raw_data = json.load(gf)
-            else:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    raw_data = json.load(f)
+            for file_path in files:
+                raw_data = load_json_data(file_path)
+                for item in _extract_raw_items(raw_data):
+                    self._index_item(item, symbol_index, short_index)
 
-            raw_items: List[Dict[str, Any]] = []
-            if isinstance(raw_data, list):
-                raw_items = raw_data
-            elif isinstance(raw_data, dict):
-                if "categories" in raw_data and isinstance(
-                    raw_data["categories"], dict
-                ):
-                    for cat_items in raw_data["categories"].values():
-                        if isinstance(cat_items, list):
-                            raw_items.extend(cat_items)
-                elif "items" in raw_data and isinstance(raw_data["items"], list):
-                    raw_items = raw_data["items"]
-                else:
-                    raw_items = [raw_data]
+            if not symbol_index and self._repository is not None:
+                repo_snap = self._repository.get(norm_target)
+                for item in _extract_raw_items(repo_snap):
+                    self._index_item(item, symbol_index, short_index)
 
-            for item in raw_items:
-                if not isinstance(item, dict):
-                    continue
+            if not symbol_index:
                 try:
-                    ref = GhostInspector.hydrate(item)
-                    if ref.api_path:
-                        symbol_index[ref.api_path] = ref
-                    if ref.name:
-                        symbol_index[ref.name] = ref
-                        short_index[ref.name.lower()] = ref
-                    # For hardware ISAs, map mnemonic as well
-                    mnemonic = item.get("mnemonic")
-                    if mnemonic:
-                        symbol_index[str(mnemonic)] = ref
-                        short_index[str(mnemonic).lower()] = ref
+                    from ml_ecosystem_snapshots.api import (
+                        FRAMEWORK_COLLECTORS,
+                        extract_snapshot,
+                    )
+
+                    if norm_target in FRAMEWORK_COLLECTORS:
+                        snap = extract_snapshot(norm_target)
+                        for item in _extract_raw_items(snap):
+                            self._index_item(item, symbol_index, short_index)
                 except (
                     AttributeError,
                     TypeError,
                     ValueError,
                     KeyError,
-                    IndexError,
-                    SyntaxError,
-                    OSError,
                     ImportError,
+                    OSError,
                     RuntimeError,
-                    Exception,
-                ):
-                    continue
+                ) as exc:
+                    _LOGGER.debug(
+                        "Fallback snapshot extraction failed for %s: %s",
+                        norm_target,
+                        exc,
+                    )
 
-        if not symbol_index:
-            try:
-                from ml_ecosystem_snapshots.api import (
-                    FRAMEWORK_COLLECTORS,
-                    extract_snapshot,
-                )
-
-                if norm_target in FRAMEWORK_COLLECTORS:
-                    snap = extract_snapshot(norm_target)
-                    if isinstance(snap, dict) and "categories" in snap:
-                        for cat_items in snap["categories"].values():
-                            if isinstance(cat_items, list):
-                                for item in cat_items:
-                                    if not isinstance(item, dict):
-                                        continue
-                                    try:
-                                        ref = GhostInspector.hydrate(item)
-                                        if ref.api_path:
-                                            symbol_index[ref.api_path] = ref
-                                        if ref.name:
-                                            symbol_index[ref.name] = ref
-                                            short_index[ref.name.lower()] = ref
-                                        mnemonic = item.get("mnemonic")
-                                        if mnemonic:
-                                            symbol_index[str(mnemonic)] = ref
-                                            short_index[str(mnemonic).lower()] = ref
-                                    except (
-                                        AttributeError,
-                                        TypeError,
-                                        ValueError,
-                                        KeyError,
-                                        IndexError,
-                                        SyntaxError,
-                                        OSError,
-                                        ImportError,
-                                        RuntimeError,
-                                        Exception,
-                                    ):
-                                        continue
-            except (
-                AttributeError,
-                TypeError,
-                ValueError,
-                KeyError,
-                IndexError,
-                SyntaxError,
-                OSError,
-                ImportError,
-                RuntimeError,
-                Exception,
-            ):
-                pass
-
-        self._target_cache[norm_target] = symbol_index
-        self._short_name_cache[norm_target] = short_index
-        return symbol_index
+            self._target_cache[norm_target] = symbol_index
+            self._short_name_cache[norm_target] = short_index
+            return symbol_index
 
     def has_symbol(self, target: str, symbol: str) -> bool:
         """Check if a symbol exists within the target ground-truth dataset.
@@ -281,7 +278,6 @@ class GroundingEngine:
         best_candidate: Optional[str] = None
         best_distance = max_distance + 1
 
-        # Check against both full paths and short names
         all_candidates: Set[str] = set()
         for ref in index.values():
             if ref.api_path:
@@ -298,7 +294,6 @@ class GroundingEngine:
                 best_distance = dist
                 best_candidate = cand
             elif dist == best_distance and best_candidate is not None:
-                # Prefer shorter, more direct candidates on tie
                 if len(cand) < len(best_candidate):
                     best_candidate = cand
 
@@ -343,3 +338,6 @@ class GroundingEngine:
 
         matches.sort(key=lambda x: (x[0], len(x[1]), x[1]))
         return [m[1] for m in matches[:top_k]]
+
+
+__all__ = ["GroundingEngine", "_extract_raw_items", "compute_levenshtein"]

@@ -73,9 +73,9 @@ def test_collect_api_numba_live(monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock inspect function.
 
         Args:
-            obj: Input parameter value.
-            name: Input parameter value.
-            is_public: Input parameter value.
+            obj: Target Numba object to inspect.
+            name: Fully-qualified symbol path.
+            is_public: Whether the symbol is publicly exported.
 
         Returns:
             A mocked GhostRef.

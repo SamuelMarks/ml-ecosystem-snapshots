@@ -11,8 +11,9 @@ import json
 import os
 import sqlite3
 import tempfile
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Tuple
 
+from .exceptions import SnapshotSchemaError
 from .utils import get_custom_snapshots_paths
 
 
@@ -245,6 +246,9 @@ def index_snapshot_file(json_path: str, conn: sqlite3.Connection) -> int:
 
     Returns:
         Number of symbols indexed.
+
+    Raises:
+        SnapshotSchemaError: If the snapshot JSON file cannot be parsed or is not a valid object or array.
     """
     if not os.path.isfile(json_path):
         return 0
@@ -259,12 +263,22 @@ def index_snapshot_file(json_path: str, conn: sqlite3.Connection) -> int:
     if row and row["file_hash"] == file_hash:
         return 0
 
-    if json_path.endswith(".gz"):
-        with gzip.open(json_path, "rt", encoding="utf-8") as gf:
-            data = json.load(gf)
-    else:
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    try:
+        if json_path.endswith(".gz"):
+            with gzip.open(json_path, "rt", encoding="utf-8") as gf:
+                data = json.load(gf)
+        else:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+    except (json.JSONDecodeError, OSError, EOFError) as exc:
+        raise SnapshotSchemaError(
+            f"Invalid snapshot JSON payload in '{json_path}': {exc}"
+        ) from exc
+
+    if not isinstance(data, (dict, list)):
+        raise SnapshotSchemaError(
+            f"Snapshot payload in '{json_path}' must be a JSON object or array, got {type(data).__name__}."
+        )
 
     file_name = os.path.basename(json_path)
     framework, version = extract_framework_and_version(file_name)
@@ -286,7 +300,7 @@ def index_snapshot_file(json_path: str, conn: sqlite3.Connection) -> int:
             items.extend(data["instructions"])
         elif "items" in data and isinstance(data["items"], list):
             items.extend(data["items"])
-    elif isinstance(data, list):
+    else:
         items.extend(data)
 
     with conn:
@@ -495,7 +509,8 @@ def lookup_symbol(
         cur.execute(sql, params)
         row = cur.fetchone()
         if row:
-            return cast(Dict[str, Any], json.loads(row["json_data"]))
+            parsed_sym: Dict[str, Any] = json.loads(row["json_data"])
+            return parsed_sym
         return None
 
 

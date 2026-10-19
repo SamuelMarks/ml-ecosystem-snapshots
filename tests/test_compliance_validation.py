@@ -88,8 +88,11 @@ def test_score_compliance_sig_tuple_edge_cases() -> None:
 
 
 def test_score_compliance_varargs_fallback_special_cases() -> None:
-    """Test compliance scoring with varargs fallback and special parameter handling."""
-    from ml_ecosystem_snapshots.compliance import score_compliance
+    """Test compliance scoring with strict default vs explicit allow_signature_len_match_prefixes."""
+    from ml_ecosystem_snapshots.compliance import (
+        DEFAULT_LEN_MATCH_PREFIXES,
+        score_compliance,
+    )
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     ref_snap = {
@@ -120,7 +123,39 @@ def test_score_compliance_varargs_fallback_special_cases() -> None:
                             "name": "x",
                             "kind": "POSITIONAL_OR_KEYWORD",
                             "default": None,
-                            "annotation": None,
+                            "annotation": "Array",
+                        },
+                    ],
+                    "docstring": "",
+                    "aliases": [],
+                    "returns_type": "None",
+                },
+                {
+                    "api_path": "optax.adam",
+                    "name": "adam",
+                    "kind": "function",
+                    "params": [
+                        {
+                            "name": "learning_rate",
+                            "kind": "POSITIONAL_OR_KEYWORD",
+                            "default": None,
+                            "annotation": "float",
+                        },
+                    ],
+                    "docstring": "",
+                    "aliases": [],
+                    "returns_type": "None",
+                },
+                {
+                    "api_path": "flax.nnx.Linear",
+                    "name": "Linear",
+                    "kind": "class",
+                    "params": [
+                        {
+                            "name": "in_features",
+                            "kind": "POSITIONAL_OR_KEYWORD",
+                            "default": None,
+                            "annotation": "int",
                         },
                     ],
                     "docstring": "",
@@ -160,10 +195,42 @@ def test_score_compliance_varargs_fallback_special_cases() -> None:
             kind="function",
             params=[
                 GhostParam(
-                    name="x",
+                    name="wrong_param",
                     kind=ParameterKind.POSITIONAL_OR_KEYWORD,
                     default=None,
-                    annotation=None,
+                    annotation="str",
+                ),
+            ],
+            docstring="",
+            aliases=[],
+            returns_type="None",
+        ),
+        GhostRef(
+            api_path="optax.adam",
+            name="adam",
+            kind="function",
+            params=[
+                GhostParam(
+                    name="wrong_lr",
+                    kind=ParameterKind.POSITIONAL_OR_KEYWORD,
+                    default=None,
+                    annotation="str",
+                ),
+            ],
+            docstring="",
+            aliases=[],
+            returns_type="None",
+        ),
+        GhostRef(
+            api_path="flax.nnx.Linear",
+            name="Linear",
+            kind="class",
+            params=[
+                GhostParam(
+                    name="wrong_in",
+                    kind=ParameterKind.POSITIONAL_OR_KEYWORD,
+                    default=None,
+                    annotation="str",
                 ),
             ],
             docstring="",
@@ -172,16 +239,71 @@ def test_score_compliance_varargs_fallback_special_cases() -> None:
         ),
     ]
 
-    res = score_compliance(ref_snap, target_refs)
-    assert "chex.assert_shape" in res["matched"]
-    assert "jax.nn.relu" in res["matched"]
+    # Strict default rejects mismatched parameter names/types even when len(params) == len(params)
+    strict_res = score_compliance(ref_snap, target_refs)
+    assert strict_res["matched"] == []
+    mismatched_paths = {m["api_path"] for m in strict_res["mismatched"]}
+    assert mismatched_paths == {
+        "chex.assert_shape",
+        "jax.nn.relu",
+        "optax.adam",
+        "flax.nnx.Linear",
+    }
+
+    # Explicit len-match prefixes allow arity-based matching for those namespaces
+    len_match_res = score_compliance(
+        ref_snap,
+        target_refs,
+        allow_signature_len_match_prefixes=DEFAULT_LEN_MATCH_PREFIXES,
+    )
+    assert set(len_match_res["matched"]) == {
+        "chex.assert_shape",
+        "jax.nn.relu",
+        "optax.adam",
+        "flax.nnx.Linear",
+    }
+
+
+def test_extract_target_refs_single_sys_path_and_logging(
+    tmp_path: Any, capsys: Any, caplog: Any
+) -> None:
+    """Verify extract_target_refs_single restores sys.path cleanly and logs warnings instead of printing.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+        capsys: Pytest stdout/stderr capture fixture.
+        caplog: Pytest log capture fixture.
+    """
+    import logging
+    import sys
+    from ml_ecosystem_snapshots.compliance import extract_target_refs_single
+
+    pkg_dir = Path(os.path.join(tmp_path, "warn_pkg"))
+    pkg_dir.mkdir()
+    Path(os.path.join(pkg_dir, "__init__.py")).touch()
+    sub_mod = Path(os.path.join(pkg_dir, "broken_mod.py"))
+    sub_mod.write_text(
+        "import nonexistent_dep_xyz_987\ndef broken_fn(x: int) -> int:\n    return x\n"
+    )
+
+    before_sys_path = list(sys.path)
+    with caplog.at_level(logging.WARNING, logger="ml_ecosystem_snapshots.compliance"):
+        refs = extract_target_refs_single(str(sub_mod), "warn_pkg.broken_mod", "ref")
+
+    assert refs == []
+    assert list(sys.path) == before_sys_path
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert any(
+        "Exception in walk for warn_pkg.broken_mod" in r.message for r in caplog.records
+    )
 
 
 def test_extract_target_refs_string_path(tmp_path: Any) -> None:
     """Verify extract target refs string path behavior.
 
     Args:
-        tmp_path: Input parameter value.
+        tmp_path: Temporary directory path fixture.
     """
     from ml_ecosystem_snapshots.compliance import extract_target_refs
 
@@ -200,7 +322,7 @@ def test_get_module_info_from_path_no_src_dir(tmp_path: Any) -> None:
     """Verify get module info from path no src dir behavior.
 
     Args:
-        tmp_path: Input parameter value.
+        tmp_path: Temporary directory path fixture.
     """
     from ml_ecosystem_snapshots.compliance import get_module_info_from_path
 
@@ -214,7 +336,7 @@ def test_extract_target_refs_list_path(tmp_path: Any) -> None:
     """Verify extract target refs list path behavior.
 
     Args:
-        tmp_path: Input parameter value.
+        tmp_path: Temporary directory path fixture.
     """
     from ml_ecosystem_snapshots.compliance import extract_target_refs
 

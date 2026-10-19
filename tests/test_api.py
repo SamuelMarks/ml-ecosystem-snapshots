@@ -43,7 +43,7 @@ def test_get_all_members() -> None:
             """Execute helper getattr  .
 
             Args:
-                name: Input parameter value.
+                name: Package distribution name to look up.
 
 
             Raises:
@@ -74,7 +74,7 @@ def test_get_pkg_version(mocker: Any) -> None:
     """Verify get pkg version behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     mocker.patch("importlib.metadata.version", return_value="1.2.3")
     assert get_pkg_version("torch") == "1.2.3"
@@ -89,7 +89,7 @@ def test_extract_snapshot(mocker: Any) -> None:
     """Verify extract snapshot behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     # unknown framework
     assert extract_snapshot("nonexistent") == {}
@@ -107,8 +107,8 @@ def test_extract_snapshot(mocker: Any) -> None:
         """Execute helper fake collect.
 
         Args:
-            cat: Input parameter value.
-            include_nonpublic: Input parameter value.
+            cat: Semantic tier category to collect.
+            include_nonpublic: Whether non-public symbols are included.
 
 
         Raises:
@@ -136,8 +136,8 @@ def test_extract_snapshot(mocker: Any) -> None:
         """Execute helper fake empty.
 
         Args:
-            cat: Input parameter value.
-            include_nonpublic: Input parameter value.
+            cat: Semantic tier category to collect.
+            include_nonpublic: Whether non-public symbols are included.
 
 
         Returns:
@@ -153,7 +153,7 @@ def test_extract_all_snapshots(mocker: Any) -> None:
     """Verify extract all snapshots behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     mocker.patch(
         "ml_ecosystem_snapshots.api.extract_snapshot",
@@ -170,7 +170,7 @@ def test_write_snapshot(tmp_path: Any) -> None:
     """Verify write snapshot behavior.
 
     Args:
-        tmp_path: Input parameter value.
+        tmp_path: Temporary directory path fixture.
     """
     data = {"version": "2.0.0+cpu", "categories": {}}
     out_dir = Path(os.path.join(tmp_path, "out"))
@@ -472,7 +472,7 @@ def test_api_version_aliases(mocker: Any) -> None:
     """Verify api version aliases behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     import ml_ecosystem_snapshots.api as api
 

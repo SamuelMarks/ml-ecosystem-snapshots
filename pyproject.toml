@@ -33,6 +33,7 @@ allow-direct-references = true
 
 [tool.mypy]
 mypy_path = "src"
+files = ["src", "tests", "scripts"]
 ignore_missing_imports = true
 strict = true
 warn_unused_ignores = true
@@ -43,10 +44,6 @@ artifacts = [
     "src/ml_ecosystem_snapshots/*.json.gz",
     "src/ml_ecosystem_snapshots/**/*.json",
     "src/ml_ecosystem_snapshots/**/*.json.gz",
-    "src/ml_framework_snapshots/*.json",
-    "src/ml_framework_snapshots/*.json.gz",
-    "src/ml_framework_snapshots/**/*.json",
-    "src/ml_framework_snapshots/**/*.json.gz",
 ]
 exclude = [
     "/.venv_311",
@@ -71,20 +68,12 @@ include = [
     "src/ml_ecosystem_snapshots/*.json.gz",
     "src/ml_ecosystem_snapshots/**/*.json",
     "src/ml_ecosystem_snapshots/**/*.json.gz",
-    "src/ml_framework_snapshots/*.json",
-    "src/ml_framework_snapshots/*.json.gz",
-    "src/ml_framework_snapshots/**/*.json",
-    "src/ml_framework_snapshots/**/*.json.gz",
 ]
 artifacts = [
     "src/ml_ecosystem_snapshots/*.json",
     "src/ml_ecosystem_snapshots/*.json.gz",
     "src/ml_ecosystem_snapshots/**/*.json",
     "src/ml_ecosystem_snapshots/**/*.json.gz",
-    "src/ml_framework_snapshots/*.json",
-    "src/ml_framework_snapshots/*.json.gz",
-    "src/ml_framework_snapshots/**/*.json",
-    "src/ml_framework_snapshots/**/*.json.gz",
 ]
 exclude = [
     "*.db",
@@ -103,3 +92,6 @@ lint.ignore = ["E501"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.interrogate]
+ignore-overloaded-functions = true

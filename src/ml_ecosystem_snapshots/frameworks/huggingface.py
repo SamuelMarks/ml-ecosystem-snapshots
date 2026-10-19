@@ -8,11 +8,11 @@ from ml_ecosystem_snapshots.models import GhostInspector, sanitize_type_str
 
 
 def _extract_generation_kwargs(obj: Any, ref: GhostRef) -> None:
-    """Extract generation kwargs.
+    """Extract generation keyword arguments from a model's `generate` method signature.
 
     Args:
-        obj: Input parameter value.
-        ref: Input parameter value.
+        obj: Target Hugging Face model class or callable exposing `generate`.
+        ref: Populated `GhostRef` to augment with generation keyword arguments.
     """
     gen_method = getattr(obj, "generate")
     try:
@@ -43,27 +43,16 @@ def _extract_generation_kwargs(obj: Any, ref: GhostRef) -> None:
                         annotation=anno_str,
                     )
                 )
-    except (
-        AttributeError,
-        TypeError,
-        ValueError,
-        KeyError,
-        IndexError,
-        SyntaxError,
-        OSError,
-        ImportError,
-        RuntimeError,
-        Exception,
-    ):
+    except (AttributeError, TypeError, ValueError, KeyError):
         pass
 
 
 def _parse_pretrained_config(obj: Any, ref: GhostRef) -> None:
-    """Parse pretrained config.
+    """Extract class-level `__annotations__` fields from a PreTrainedConfig subclass.
 
     Args:
-        obj: Input parameter value.
-        ref: Input parameter value.
+        obj: Target configuration class object.
+        ref: Populated `GhostRef` to augment with configuration attributes.
     """
     if not hasattr(obj, "__annotations__"):
         return
@@ -86,12 +75,12 @@ def _parse_pretrained_config(obj: Any, ref: GhostRef) -> None:
 
 
 def _handle_automodel_factory(obj: Any, name: str, ref: GhostRef) -> None:
-    """Handle auto model factory.
+    """Ensure `AutoModel*` factory classes expose a `config: PreTrainedConfig` parameter.
 
     Args:
-        obj: Input parameter value.
-        name: Input parameter value.
-        ref: Input parameter value.
+        obj: Target AutoModel factory class.
+        name: Symbol name of the AutoModel class.
+        ref: Populated `GhostRef` to augment with `config`.
     """
     if not any(p.name == "config" for p in ref.params):
         ref.params.append(
@@ -110,16 +99,16 @@ def collect_huggingface(
     category: SemanticTier,
     include_nonpublic: bool = False,
 ) -> List[GhostRef]:
-    """Collect huggingface APIs.
+    """Collect Hugging Face ecosystem APIs for a given package and semantic tier.
 
     Args:
-        module_name: Input parameter value.
-        category_mapping: Input parameter value.
-        category: Input parameter value.
-        include_nonpublic: Input parameter value.
+        module_name: Top-level package name ('transformers', 'diffusers', or 'tokenizers').
+        category_mapping: Mapping of `SemanticTier` to matched symbol name substrings.
+        category: Target `SemanticTier` to collect.
+        include_nonpublic: Whether to include private (`_`-prefixed) symbols.
 
     Returns:
-        List of GhostRefs.
+        List of `GhostRef` objects.
     """
     import importlib
 
@@ -163,12 +152,9 @@ def collect_huggingface(
             TypeError,
             ValueError,
             KeyError,
-            IndexError,
-            SyntaxError,
-            OSError,
             ImportError,
+            OSError,
             RuntimeError,
-            Exception,
         ):
             continue
 
@@ -202,12 +188,9 @@ def collect_huggingface(
                 TypeError,
                 ValueError,
                 KeyError,
-                IndexError,
-                SyntaxError,
-                OSError,
                 ImportError,
+                OSError,
                 RuntimeError,
-                Exception,
             ):
                 pass
 
@@ -217,14 +200,14 @@ def collect_huggingface(
 def collect_transformers(
     category: SemanticTier, include_nonpublic: bool = False
 ) -> List[GhostRef]:
-    """Collect transformers API.
+    """Collect Hugging Face `transformers` APIs.
 
     Args:
-        category: Input parameter value.
-        include_nonpublic: Input parameter value.
+        category: Target `SemanticTier` to collect.
+        include_nonpublic: Whether to include non-public symbols.
 
     Returns:
-        List of GhostRefs.
+        List of `GhostRef` objects.
     """
     mapping = {
         SemanticTier.MODEL: ["Config", "Model", "Pipeline", "Tokenizer"],
@@ -236,14 +219,14 @@ def collect_transformers(
 def collect_diffusers(
     category: SemanticTier, include_nonpublic: bool = False
 ) -> List[GhostRef]:
-    """Collect diffusers API.
+    """Collect Hugging Face `diffusers` APIs.
 
     Args:
-        category: Input parameter value.
-        include_nonpublic: Input parameter value.
+        category: Target `SemanticTier` to collect.
+        include_nonpublic: Whether to include non-public symbols.
 
     Returns:
-        List of GhostRefs.
+        List of `GhostRef` objects.
     """
     mapping = {
         SemanticTier.MODEL: ["Model", "Pipeline"],
@@ -256,14 +239,14 @@ def collect_diffusers(
 def collect_tokenizers(
     category: SemanticTier, include_nonpublic: bool = False
 ) -> List[GhostRef]:
-    """Collect tokenizers API.
+    """Collect Hugging Face `tokenizers` APIs.
 
     Args:
-        category: Input parameter value.
-        include_nonpublic: Input parameter value.
+        category: Target `SemanticTier` to collect.
+        include_nonpublic: Whether to include non-public symbols.
 
     Returns:
-        List of GhostRefs.
+        List of `GhostRef` objects.
     """
     mapping = {
         SemanticTier.MODEL: ["Tokenizer", "Model"],

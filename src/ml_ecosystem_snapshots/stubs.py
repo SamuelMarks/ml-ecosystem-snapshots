@@ -93,7 +93,7 @@ def _format_param_list(
 
 def generate_stubs(
     snapshot_data: Union[
-        SnapshotEnvelope, Mapping[str, Any], Sequence[Mapping[str, Any]], Any
+        SnapshotEnvelope, Mapping[str, Any], Sequence[Mapping[str, Any]]
     ],
     output_dir: str,
     include_nonpublic: bool = False,

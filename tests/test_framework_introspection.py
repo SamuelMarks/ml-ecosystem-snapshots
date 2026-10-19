@@ -133,8 +133,8 @@ def test_onnxruntime_collect_api_edge_branches(mocker: Any) -> None:
         """Mock inspect function.
 
         Args:
-            obj: Input parameter value.
-            path: Input parameter value.
+            obj: Target live object to inspect.
+            path: Dotted canonical API path.
 
         Returns:
             A mocked GhostRef.
@@ -542,8 +542,8 @@ def test_mlx_collect_api_all_branches(mocker: Any) -> None:
         """Mock inspect function.
 
         Args:
-            obj: Input parameter value.
-            path: Input parameter value.
+            obj: Target live object to inspect.
+            path: Dotted canonical API path.
 
         Returns:
             A mocked GhostRef.
@@ -1238,8 +1238,8 @@ def test_jax_array_ops_inspect_exceptions(mocker: Any) -> None:
         """Mock inspect function.
 
         Args:
-            obj: Input parameter value.
-            name: Input parameter value.
+            obj: Target live object to inspect.
+            name: Dotted canonical API path.
             **kwargs: Variable arguments.
 
         Returns:

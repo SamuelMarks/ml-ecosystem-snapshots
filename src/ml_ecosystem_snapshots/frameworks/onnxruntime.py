@@ -1,27 +1,37 @@
-"""Onnxruntime module."""
+"""ONNX Runtime API Snapshot Extractor."""
+
+from __future__ import annotations
 
 import importlib
+import logging
 from typing import List
-from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+from ml_switcheroo_ir.schema.ghost import (
+    GhostParam,
+    GhostRef,
+    ParameterKind,
+    SemanticTier,
+)
+
 from ml_ecosystem_snapshots.models import GhostInspector
-from ml_switcheroo_ir.schema.ghost import GhostRef
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
 ) -> List[GhostRef]:
-    """Collect onnxruntime API.
+    """Collect ONNX Runtime API symbols for the requested semantic tier.
 
     Args:
-        category: Input parameter value.
-        include_nonpublic: Input parameter value.
+        category: Target `SemanticTier` category (`MODEL` or `UTIL`).
+        include_nonpublic: Whether to include private (`_`-prefixed) symbols.
 
     Returns:
-        List of GhostRefs.
+        List of extracted `GhostRef` definitions.
     """
     results: List[GhostRef] = []
 
-    # We mainly target models/InferenceSession and Utils
     target_cats = {SemanticTier.MODEL, SemanticTier.UTIL}
     if category not in target_cats:
         return results
@@ -47,17 +57,9 @@ def collect_api(
             try:
                 ref = inspector.inspect(obj, f"onnxruntime.{name}")
                 if ref:
-                    # Introspect execution providers from the signature or dynamically
-                    # Usually providers is a kwarg in InferenceSession.__init__
                     if name == "InferenceSession":
-                        # Ensure 'providers' is in parameters
                         has_providers = any(p.name == "providers" for p in ref.params)
                         if not has_providers:
-                            from ml_switcheroo_ir.schema.ghost import (
-                                GhostParam,
-                                ParameterKind,
-                            )
-
                             ref.params.append(
                                 GhostParam(
                                     name="providers",
@@ -77,8 +79,7 @@ def collect_api(
                 OSError,
                 ImportError,
                 RuntimeError,
-                Exception,
-            ):
-                pass
+            ) as exc:
+                _LOGGER.debug("Skipping onnxruntime.%s: %s", name, exc)
 
     return results

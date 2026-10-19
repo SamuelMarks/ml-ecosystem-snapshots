@@ -101,7 +101,7 @@ def test_ghost_inspector_c_extension(mocker: Any) -> None:
     """Verify ghost inspector c extension behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     # Mock inspect.signature to raise ValueError
     mocker.patch("inspect.signature", side_effect=ValueError)
@@ -155,7 +155,7 @@ def test_unrepresentable_default() -> None:
         """Execute helper f. a.
 
         Args:
-            a: Input parameter value.
+            a: First positional operand.
         """
         pass
 
@@ -175,7 +175,7 @@ def test_memory_address_default() -> None:
         """Execute helper f. a.
 
         Args:
-            a: Input parameter value.
+            a: First positional operand.
         """
         pass
 
@@ -194,7 +194,7 @@ def test_callable_default() -> None:
         """Execute helper f. a.
 
         Args:
-            a: Input parameter value.
+            a: First positional operand.
         """
         pass
 
@@ -228,7 +228,7 @@ def test_ghost_inspector_str_throws() -> None:
         """Execute helper f. a.
 
         Args:
-            a: Input parameter value.
+            a: First positional operand.
         """
         pass
 
@@ -240,7 +240,7 @@ def test_ghost_inspector_c_extension_class(mocker: Any) -> None:
     """Verify ghost inspector c extension class behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     mocker.patch("inspect.signature", side_effect=ValueError)
 
@@ -282,7 +282,7 @@ def test_ghost_inspector_str_has_address() -> None:
         """Execute helper f. a.
 
         Args:
-            a: Input parameter value.
+            a: First positional operand.
         """
         pass
 
@@ -294,7 +294,7 @@ def test_ghost_inspector_cdd_raises_no_typ(mocker: Any) -> None:
     """Verify ghost inspector cdd raises no typ behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     mocker.patch(
         "cdd.docstring.parse.docstring",
@@ -313,7 +313,7 @@ def test_ghost_inspector_is_public(mocker: Any) -> None:
     """Verify ghost inspector is public behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     # test explicit override
     ref = GhostInspector.inspect(dummy_func, "tests.dummy_func", is_public=False)
@@ -352,7 +352,7 @@ def test_ghost_inspector_annotation_str() -> None:
         """Execute helper f. a.
 
         Args:
-            a: Input parameter value.
+            a: First positional operand.
         """
         pass
 
@@ -372,7 +372,7 @@ def test_ghost_inspector_cdd_fallback() -> None:
         Args:
         x (int): The value.
 
-            x: Input parameter value.
+            x: Input tensor or scalar operand.
         """
         pass
 
@@ -392,7 +392,7 @@ def test_ghost_inspector_annotation_name() -> None:
         """Execute helper dummy func anno. x.
 
         Args:
-            x: Input parameter value.
+            x: Input tensor or scalar operand.
         """
         pass
 
@@ -405,7 +405,7 @@ def test_ghost_inspector_annotation_name_mock(mocker: Any) -> None:
     """Verify ghost inspector annotation name mock behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     # Mock get_type_hints to raise an Exception so it falls back to raw annotations
     mocker.patch("typing.get_type_hints", side_effect=Exception("Failed"))
@@ -419,7 +419,7 @@ def test_ghost_inspector_annotation_name_mock(mocker: Any) -> None:
         """Execute helper dummy func anno. x.
 
         Args:
-            x: Input parameter value.
+            x: Input tensor or scalar operand.
         """
         pass
 
@@ -431,7 +431,7 @@ def test_ghost_inspector_annotation_str_mock(mocker: Any) -> None:
     """Verify ghost inspector annotation str mock behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     mocker.patch("typing.get_type_hints", side_effect=Exception("Failed"))
 
@@ -439,7 +439,7 @@ def test_ghost_inspector_annotation_str_mock(mocker: Any) -> None:
         """Execute helper dummy func anno str. x.
 
         Args:
-            x: Input parameter value.
+            x: Input tensor or scalar operand.
         """
         pass
 
@@ -459,7 +459,7 @@ def test_ghost_inspector_cdd_anno_fallback() -> None:
         Args:
         x (int): The value.
 
-            x: Input parameter value.
+            x: Input tensor or scalar operand.
         """
         pass
 
@@ -487,7 +487,7 @@ def test_ghost_inspector_griffe_params(mocker: Any) -> None:
     """Verify ghost inspector griffe params behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
 
     class FakeKind:
@@ -497,7 +497,7 @@ def test_ghost_inspector_griffe_params(mocker: Any) -> None:
             """Execute helper init  . name.
 
             Args:
-                name: Input parameter value.
+                name: Parameter or symbol identifier.
             """
             self.name = name
 
@@ -510,10 +510,10 @@ def test_ghost_inspector_griffe_params(mocker: Any) -> None:
             """Execute helper init  . name kind_name default annotation.
 
             Args:
-                annotation: Input parameter value.
-                default: Input parameter value.
-                kind_name: Input parameter value.
-                name: Input parameter value.
+                annotation: Parameter type annotation string.
+                default: Parameter default value string.
+                kind_name: Parameter kind identifier.
+                name: Parameter or symbol identifier.
             """
             self.name = name
             self.kind = FakeKind(kind_name) if kind_name else None
@@ -537,7 +537,7 @@ def test_ghost_inspector_griffe_params(mocker: Any) -> None:
         """Execute helper dummy func griffe.
 
         Args:
-            z: Input parameter value.
+            z: Input parameter operand.
         """
         pass
 
@@ -570,7 +570,7 @@ def test_ghost_inspector_griffe_overloads(mocker: Any) -> None:
     """Verify ghost inspector griffe overloads behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
 
     class FakeParam:
@@ -582,10 +582,10 @@ def test_ghost_inspector_griffe_overloads(mocker: Any) -> None:
             """Execute helper init  . name kind_name default annotation.
 
             Args:
-                annotation: Input parameter value.
-                default: Input parameter value.
-                kind_name: Input parameter value.
-                name: Input parameter value.
+                annotation: Parameter type annotation string.
+                default: Parameter default value string.
+                kind_name: Parameter kind identifier.
+                name: Parameter or symbol identifier.
             """
             self.name = name
 
@@ -610,8 +610,8 @@ def test_ghost_inspector_griffe_overloads(mocker: Any) -> None:
             """Execute helper init  . parameters returns.
 
             Args:
-                parameters: Input parameter value.
-                returns: Input parameter value.
+                parameters: List of Griffe parameter nodes.
+                returns: Return annotation string or node.
             """
             self.parameters = parameters
             self.returns = returns
@@ -869,7 +869,7 @@ def test_ghost_inspector_c_ext_overloads_with_literal_and_standard_enum(
     mock_c_sig.overloads = [mock_ov]
 
     mocker.patch(
-        "ml_ecosystem_snapshots.models.extract_c_extension_signature",
+        "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
         return_value=mock_c_sig,
     )
 
@@ -1053,7 +1053,7 @@ def test_ghost_inspector_griffe_param_not_in_cdd(mocker: Any) -> None:
         return_value={"params": {"x": {"doc": "x doc"}}},
     )
     mocker.patch(
-        "ml_ecosystem_snapshots.models.extract_griffe_docstring_metadata",
+        "ml_ecosystem_snapshots.introspection.inspector.extract_griffe_docstring_metadata",
         return_value={
             "params": {"extra_param": {"doc": "extra param doc", "typ": "int"}}
         },

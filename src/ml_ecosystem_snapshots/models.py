@@ -11,7 +11,6 @@ working against cached snapshots instead of requiring heavy libraries
 
 from __future__ import annotations
 
-import ast
 from typing import Any, Dict, List, Optional, TypedDict
 
 from ml_switcheroo_ir.schema.ghost import (
@@ -31,6 +30,7 @@ from ml_switcheroo_ir.schema.ghost import (
     SnapshotEnvelope as SnapshotEnvelope,
 )
 
+# --- Backward-compatibility re-exports from introspection / serialization / utils ---
 from ml_ecosystem_snapshots.introspection.ast_kwargs import (
     extract_accepted_kwargs_from_ast,
 )
@@ -94,11 +94,10 @@ class CanonicalOpSpec(TypedDict, total=False):
 
 
 __all__ = [
+    # --- Core Schema Models ---
     "CanonicalOpSpec",
     "ExtendedGhostParam",
     "ExtendedGhostRef",
-    "FRAMEWORK_CAPABILITIES",
-    "GhostInspector",
     "GhostInstructionRef",
     "GhostIsaRef",
     "GhostMlirRef",
@@ -111,11 +110,13 @@ __all__ = [
     "OperandDirection",
     "ParameterKind",
     "RawParamSpec",
+    "SnapshotEnvelope",
+    # --- Backward-Compatibility Introspection & Hydration Re-Exports ---
+    "FRAMEWORK_CAPABILITIES",
+    "GhostInspector",
     "STANDARD_ARG_MAP",
     "STANDARD_ENUM_MAP",
-    "SnapshotEnvelope",
     "_GRIFFE_CACHE",
-    "ast",
     "extract_accepted_kwargs_from_ast",
     "extract_c_extension_signature",
     "extract_griffe_docstring_metadata",

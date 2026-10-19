@@ -41,7 +41,7 @@ def test_ghost_inspector_aten_overload_merge_and_returns() -> None:
     with (
         patch("inspect.signature", side_effect=ValueError),
         patch(
-            "ml_ecosystem_snapshots.models.extract_c_extension_signature",
+            "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
             return_value=c_sig,
         ),
         patch(
@@ -70,7 +70,7 @@ def test_ghost_inspector_opaque_c_extension_none_env_tags() -> None:
     with (
         patch("inspect.signature", side_effect=ValueError),
         patch(
-            "ml_ecosystem_snapshots.models.extract_c_extension_signature",
+            "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
             return_value=None,
         ),
         patch(

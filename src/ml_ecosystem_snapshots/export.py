@@ -10,7 +10,7 @@ def _ghost_to_cdd_ir(ref: GhostRef) -> Dict[str, Any]:
     """Convert a GhostRef to cdd-python Intermediate Representation (IR).
 
     Args:
-        ref: Input parameter value.
+        ref: The `GhostRef` instance to convert into a cdd-python IR dictionary.
 
     Returns:
         The cdd IR representation.
@@ -62,12 +62,12 @@ def to_json_schema(ref: GhostRef) -> Dict[str, Any]:
 
     """
     import cdd.json_schema.emit
-    from typing import cast
 
     ir = _ghost_to_cdd_ir(ref)
-    return cast(
-        Dict[str, Any], cdd.json_schema.emit.json_schema(ir, identifier=ref.api_path)
+    schema: Dict[str, Any] = cdd.json_schema.emit.json_schema(
+        ir, identifier=ref.api_path
     )
+    return schema
 
 
 def to_openapi(refs: Sequence[GhostRef]) -> Dict[str, Any]:
@@ -95,9 +95,8 @@ def to_openapi(refs: Sequence[GhostRef]) -> Dict[str, Any]:
             )
         )
 
-    from typing import cast
-
-    return cast(Dict[str, Any], cdd.compound.openapi.emit.openapi(nm_cruds))
+    spec: Dict[str, Any] = cdd.compound.openapi.emit.openapi(nm_cruds)
+    return spec
 
 
 def to_pydantic(ref: GhostRef, validate_varargs: bool = False) -> str:
@@ -633,6 +632,7 @@ def export_scoped_prompt_context(
     framework: str,
     module_prefix: Optional[str] = None,
     max_symbols: int = 50,
+    repository: Optional[Any] = None,
 ) -> str:
     """Export a scoped prompt context with a hierarchical summary index.
 
@@ -643,18 +643,15 @@ def export_scoped_prompt_context(
         framework: Name of the framework (e.g. 'torch', 'stablehlo', 'nvidia_sass').
         module_prefix: Optional namespace filter (e.g. 'torch.nn.functional', 'arith').
         max_symbols: Maximum number of detailed symbols to include (default: 50).
+        repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
         Structured Markdown string containing an index summary followed by detailed signatures.
     """
-    import ml_ecosystem_snapshots.mcp_server as _mcp_server
-    from ml_ecosystem_snapshots.mcp.cache import get_framework_snapshot
+    from ml_ecosystem_snapshots.mcp.cache import resolve_snapshot
     from ml_ecosystem_snapshots.models import GhostInspector
 
-    active_get_snap = getattr(
-        _mcp_server, "get_framework_snapshot", get_framework_snapshot
-    )
-    snap = active_get_snap(framework)
+    snap = resolve_snapshot(framework, repository=repository)
     categories = snap.get("categories", {})
 
     all_raw_items: List[Dict[str, Any]] = []

@@ -1,6 +1,6 @@
-"""Script to generate backward-compatible ml_ecosystem_snapshots shim package.
+"""Script to generate backward-compatible ml_framework_snapshots shim package.
 
-Creates thin forwarding modules in src/ml_ecosystem_snapshots mirroring
+Creates thin forwarding modules in src/ml_framework_snapshots mirroring
 src/ml_ecosystem_snapshots with 100% docstrings and full symbol re-exports.
 """
 
@@ -19,8 +19,6 @@ def generate_shims(
         eco_dir: Source directory of canonical `ml_ecosystem_snapshots` package.
         fw_dir: Target directory for generated `ml_framework_snapshots` shims.
     """
-    nl = chr(10)
-
     for root, _dirs, files in os.walk(eco_dir):
         rel = os.path.relpath(root, eco_dir)
         target_dir = os.path.join(fw_dir, rel) if rel != "." else fw_dir
@@ -56,8 +54,11 @@ def generate_shims(
                     "from __future__ import annotations",
                     "",
                     "from typing import Any, List",
+                    "from ml_ecosystem_snapshots._alias import register_alias_finder as _register_alias_finder",
                     "import " + eco_target + " as _orig_mod",
                     "from " + eco_target + " import *  # noqa: F401, F403",
+                    "",
+                    "_register_alias_finder()",
                     "",
                     "__all__: List[str] = getattr(",
                     "    _orig_mod,",
@@ -88,7 +89,7 @@ def generate_shims(
                     "",
                 ]
                 with open(target_file, "w", encoding="utf-8") as fh:
-                    fh.write(nl.join(parts))
+                    fh.write(chr(10).join(parts))
             elif f == ".gitignore":
                 target_file = os.path.join(target_dir, f)
                 with open(os.path.join(root, f), encoding="utf-8") as sfh:

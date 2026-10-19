@@ -5,7 +5,7 @@ from __future__ import annotations
 import difflib
 from typing import Dict, List, Optional, Union
 
-from ml_ecosystem_snapshots.mcp.cache import get_framework_snapshot
+from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository, resolve_snapshot
 from ml_ecosystem_snapshots.mcp.tools.translation import (
     CONCEPT_ALIAS_MAP,
     load_concept_map,
@@ -18,6 +18,7 @@ def search_apis(
     limit: int = 10,
     version: Optional[str] = None,
     custom_concept_map: Optional[Union[str, Dict[str, Dict[str, List[str]]]]] = None,
+    repository: Optional[SnapshotRepository] = None,
 ) -> List[str]:
     """Search available APIs in a framework snapshot by keyword or concept with fuzzy fallback.
 
@@ -27,28 +28,21 @@ def search_apis(
         limit: Maximum number of matches to return.
         version: Optional framework version string.
         custom_concept_map: Optional custom concept ontology path or dictionary.
+        repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
         List of matching API paths.
     """
-    import ml_ecosystem_snapshots.mcp_server as _mcp_server
-
-    active_get_snap = getattr(
-        _mcp_server, "get_framework_snapshot", get_framework_snapshot
-    )
-    active_load_map = getattr(_mcp_server, "load_concept_map", load_concept_map)
-    default_alias_map = getattr(_mcp_server, "CONCEPT_ALIAS_MAP", CONCEPT_ALIAS_MAP)
-
     q = query.lower().strip()
     matches: List[str] = []
 
     active_concept_map: Dict[str, Dict[str, List[str]]]
     if isinstance(custom_concept_map, str):
-        active_concept_map = active_load_map(custom_concept_map)
+        active_concept_map = load_concept_map(custom_concept_map)
     elif isinstance(custom_concept_map, dict):
         active_concept_map = custom_concept_map
     else:
-        active_concept_map = default_alias_map
+        active_concept_map = CONCEPT_ALIAS_MAP
 
     if q in active_concept_map:
         for alias in active_concept_map[q].get(framework, []):
@@ -73,7 +67,7 @@ def search_apis(
     except Exception:
         pass
 
-    snap = active_get_snap(framework, version=version)
+    snap = resolve_snapshot(framework, version=version, repository=repository)
 
     all_paths: List[str] = []
     for _cat, items in snap.get("categories", {}).items():

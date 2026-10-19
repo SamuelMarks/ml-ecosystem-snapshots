@@ -32,8 +32,11 @@ def cmd_capture(args: argparse.Namespace) -> None:
     """
     from rich.progress import Progress
 
-    import ml_ecosystem_snapshots.cli as cli_pkg
-    from ml_ecosystem_snapshots.api import get_available_frameworks
+    from ml_ecosystem_snapshots.api import (
+        extract_snapshot,
+        get_available_frameworks,
+        write_snapshot,
+    )
 
     warnings.filterwarnings(
         "ignore",
@@ -59,11 +62,11 @@ def cmd_capture(args: argparse.Namespace) -> None:
         task = progress.add_task("[cyan]Scanning frameworks...", total=len(target_fws))
         for fw in target_fws:
             progress.update(task, description=f"[cyan]Scanning {fw}...")
-            snapshot_data = cli_pkg.extract_snapshot(
+            snapshot_data = extract_snapshot(
                 fw, include_nonpublic=args.include_nonpublic
             )
             if snapshot_data:
-                path = cli_pkg.write_snapshot(fw, snapshot_data, args.out_dir)
+                path = write_snapshot(fw, snapshot_data, args.out_dir)
                 progress.console.print(f"[green]Saved snapshot to {path}[/green]")
             else:
                 progress.console.print(
@@ -216,7 +219,6 @@ def cmd_verify_local_cache(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.index import get_cache_dir
 
-    nl = chr(10)
     pkg_dir = _get_pkg_dir()
     cache_dir = getattr(args, "cache_dir", None) or get_cache_dir()
     search_dirs = [
@@ -241,7 +243,7 @@ def cmd_verify_local_cache(args: argparse.Namespace) -> None:
         print(f"No snapshot files discovered in cache directories: {search_dirs}")
         return
 
-    print(f"Verifying local snapshot cache across {len(discovered)} files...{nl}")
+    print(f"Verifying local snapshot cache across {len(discovered)} files...\n")
     has_errors = False
 
     for fpath in discovered:
@@ -275,10 +277,10 @@ def cmd_verify_local_cache(args: argparse.Namespace) -> None:
             print(f"  [FAIL] {fname:35s} Corrupted or invalid: {e}")
 
     if has_errors:
-        print(f"{nl}Cache verification failed: corrupted snapshots detected.")
+        print("\nCache verification failed: corrupted snapshots detected.")
         sys.exit(1)
     else:
-        print(f"{nl}Cache verification passed: {len(discovered)} snapshots verified.")
+        print(f"\nCache verification passed: {len(discovered)} snapshots verified.")
 
 
 __all__ = [

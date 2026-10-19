@@ -5,7 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-from ml_ecosystem_snapshots.mcp.cache import get_framework_snapshot
+from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository, resolve_snapshot
+from ml_ecosystem_snapshots.mcp.models import IsaCheckResult
 
 
 def check_sass_instruction(
@@ -14,7 +15,8 @@ def check_sass_instruction(
     modifiers: Optional[List[str]] = None,
     sm_arch: Optional[str] = None,
     control_codes: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    repository: Optional[SnapshotRepository] = None,
+) -> IsaCheckResult:
     """Validate whether an NVIDIA SASS assembly instruction is valid and supported.
 
     Args:
@@ -23,16 +25,12 @@ def check_sass_instruction(
         modifiers: Optional list of instruction modifiers (e.g. ['.SAT', '.FTZ']).
         sm_arch: Optional target SM architecture (e.g. 'sm_80', 'sm_90').
         control_codes: Optional control code dictionary (e.g. {'stall_count': 1, 'latency_ticks': 4}).
+        repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
         Validation report dictionary with is_valid, supported_architectures, and errors.
     """
-    import ml_ecosystem_snapshots.mcp_server as _mcp_server
-
-    active_get_snap = getattr(
-        _mcp_server, "get_framework_snapshot", get_framework_snapshot
-    )
-    snap = active_get_snap("nvidia_sass")
+    snap = resolve_snapshot("nvidia_sass", repository=repository)
     inst = None
     raw_mnemonic = mnemonic.upper().strip()
     extracted_modifiers: List[str] = []
@@ -167,7 +165,8 @@ def check_rdna_instruction(
     gfx_arch: Optional[str] = None,
     modifiers: Optional[List[str]] = None,
     wave_size: Optional[int] = None,
-) -> Dict[str, Any]:
+    repository: Optional[SnapshotRepository] = None,
+) -> IsaCheckResult:
     """Validate whether an AMD RDNA assembly instruction is valid and supported.
 
     Args:
@@ -177,16 +176,12 @@ def check_rdna_instruction(
         gfx_arch: Optional target GFX architecture (e.g. 'GFX11/RDNA3').
         modifiers: Optional list of modifiers (e.g. ['-src', 'clamp', 'omod:2']).
         wave_size: Optional wavefront execution size (32 or 64).
+        repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
         Validation report dictionary with is_valid, supported_architectures, and errors.
     """
-    import ml_ecosystem_snapshots.mcp_server as _mcp_server
-
-    active_get_snap = getattr(
-        _mcp_server, "get_framework_snapshot", get_framework_snapshot
-    )
-    snap = active_get_snap("amd_rdna")
+    snap = resolve_snapshot("amd_rdna", repository=repository)
     inst = None
     target_name = mnemonic.lower().strip()
     extracted_suffix = None
@@ -304,7 +299,7 @@ def check_ptx_instruction(
     scope: Optional[str] = None,
     vector_width: Optional[str] = None,
     sm_arch: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> IsaCheckResult:
     """Validate whether an NVIDIA PTX assembly instruction is valid on target SM architecture.
 
     Args:

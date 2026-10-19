@@ -60,7 +60,7 @@ def test_triton_collect() -> None:
                 """Execute helper side effect.
 
                 Args:
-                    name: Input parameter value.
+                    name: Attribute name requested on dynamic module.
 
 
                 Raises:

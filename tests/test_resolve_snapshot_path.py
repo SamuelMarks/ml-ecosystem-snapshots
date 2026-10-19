@@ -12,7 +12,7 @@ def test_resolve_snapshot_path_existing_file(tmp_path: Any) -> None:
     """Verify resolve snapshot path existing file behavior.
 
     Args:
-        tmp_path: Input parameter value.
+        tmp_path: Temporary directory path fixture.
     """
     file_path = Path(os.path.join(tmp_path, "my_snapshot.json"))
     file_path.touch()
@@ -25,7 +25,7 @@ def test_resolve_snapshot_path_append_json(tmp_path: Any) -> None:
     """Verify resolve snapshot path append json behavior.
 
     Args:
-        tmp_path: Input parameter value.
+        tmp_path: Temporary directory path fixture.
     """
     file_path = Path(os.path.join(tmp_path, "my_snapshot.json"))
     file_path.touch()
@@ -40,7 +40,7 @@ def test_resolve_snapshot_path_fallback_to_repo(tmp_path: Any) -> None:
     """Verify resolve snapshot path fallback to repo behavior.
 
     Args:
-        tmp_path: Input parameter value.
+        tmp_path: Temporary directory path fixture.
     """
     # Mock __file__ so repo root points to our temp directory
     pkg_dir = Path(
@@ -79,7 +79,7 @@ def test_resolve_snapshot_path_not_found(tmp_path: Any) -> None:
     """Verify resolve snapshot path not found behavior.
 
     Args:
-        tmp_path: Input parameter value.
+        tmp_path: Temporary directory path fixture.
     """
     # Should just return the input path if nothing works
     with patch("ml_ecosystem_snapshots.cli.__file__", "/tmp/does_not_exist/cli.py"):
@@ -91,7 +91,7 @@ def test_resolve_multiple_matches(tmp_path: Any) -> None:
     """Verify resolve multiple matches behavior.
 
     Args:
-        tmp_path: Input parameter value.
+        tmp_path: Temporary directory path fixture.
     """
     pkg_dir = Path(
         os.path.join(Path(os.path.join(tmp_path, "src")), "ml_ecosystem_snapshots")
@@ -116,7 +116,7 @@ def test_resolve_no_matches_in_existing_dir(tmp_path: Any) -> None:
     """Test when snapshots_dir exists but no glob matches are found.
 
     Args:
-        tmp_path: Input parameter value.
+        tmp_path: Temporary directory path fixture.
     """
     pkg_dir = Path(
         os.path.join(Path(os.path.join(tmp_path, "src")), "ml_ecosystem_snapshots")

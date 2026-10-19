@@ -11,12 +11,15 @@ def test_deepspeed_missing() -> None:
     """Verify DeepSpeed collector fallback and parameter extraction when DeepSpeed is absent or mocked."""
     from ml_ecosystem_snapshots.frameworks.deepspeed import collect_api
 
-    with patch("importlib.import_module", side_effect=ImportError):
+    with patch(
+        "ml_ecosystem_snapshots.frameworks.deepspeed.importlib.import_module",
+        side_effect=ImportError,
+    ):
         assert collect_api(SemanticTier.MODEL) == []
     assert collect_api(SemanticTier.LOSS) == []
 
     class DeepspeedMock:
-        """Mock DeepSpeed module exposing initialize and nothing attributes."""
+        """Mock DeepSpeed module exposing initialize and _hidden attributes."""
 
         def __dir__(self) -> Any:
             """Return mock directory listing.
@@ -26,42 +29,49 @@ def test_deepspeed_missing() -> None:
             """
             return ["_hidden", "initialize", "nothing"]
 
-        def initialize(self) -> Any:
-            """Mock initialize method."""
+        def _hidden(self, x: int = 1) -> int:
+            """Mock private helper.
+
+            Args:
+                x: Integer parameter.
+
+            Returns:
+                Unchanged integer.
+            """
+            return x
+
+        def initialize(self, model: Any = None) -> Any:
+            """Mock initialize method without config_params so collector injects it.
+
+            Args:
+                model: Model object.
+            """
             pass
 
-        def nothing(self) -> Any:
-            """Mock nothing method."""
-            pass
+        nothing = None
 
     with patch(
-        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
-        side_effect=lambda obj, name: (
-            None
-            if "nothing" in name
-            else MagicMock(params=[MagicMock(**{"name": "config_params"})])
-        ),
+        "ml_ecosystem_snapshots.frameworks.deepspeed.importlib.import_module",
+        return_value=DeepspeedMock(),
     ):
-        with patch("importlib.import_module", return_value=DeepspeedMock()):
-            res_pub = collect_api(SemanticTier.MODEL)
-            assert len(res_pub) == 1
-            res_nonpub = collect_api(SemanticTier.MODEL, include_nonpublic=True)
-            assert len(res_nonpub) == 1
-
-    with patch(
-        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
-        return_value=MagicMock(params=[]),
-    ):
-        with patch("importlib.import_module", return_value=DeepspeedMock()):
-            res_empty = collect_api(SemanticTier.MODEL)
-            assert len(res_empty) == 1
+        res_pub = collect_api(SemanticTier.MODEL)
+        assert len(res_pub) == 1
+        assert res_pub[0].api_path == "deepspeed.initialize"
+        assert any(p.name == "model" for p in res_pub[0].params)
+        assert any(p.name == "config_params" for p in res_pub[0].params)
+        res_nonpub = collect_api(SemanticTier.MODEL, include_nonpublic=True)
+        assert len(res_nonpub) == 1
 
 
 def test_onnxruntime_missing() -> None:
     """Verify ONNX Runtime collector fallback and InferenceSession extraction when mocked."""
     from ml_ecosystem_snapshots.frameworks.onnxruntime import collect_api
+    from ml_ecosystem_snapshots.models import GhostInspector
 
-    with patch("importlib.import_module", side_effect=ImportError):
+    with patch(
+        "ml_ecosystem_snapshots.frameworks.onnxruntime.importlib.import_module",
+        side_effect=ImportError,
+    ):
         assert collect_api(SemanticTier.MODEL) == []
     assert collect_api(SemanticTier.LOSS) == []
 
@@ -74,53 +84,143 @@ def test_onnxruntime_missing() -> None:
             Returns:
                 List of mock member names.
             """
-            return ["_hidden", "InferenceSession", "nothing"]
+            return [
+                "_hidden",
+                "InferenceSession",
+                "SessionWithProviders",
+                "get_available_providers",
+                "nothing",
+            ]
 
-        def InferenceSession(self) -> Any:
-            """Mock InferenceSession constructor."""
-            pass
+        def InferenceSession(self, path_or_bytes: str) -> None:
+            """Mock InferenceSession factory without providers parameter.
 
-        def nothing(self) -> Any:
-            """Mock nothing attribute."""
-            pass
+            Args:
+                path_or_bytes: Path or bytes to ONNX model.
+            """
+            return None
 
-    with patch(
-        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
-        side_effect=lambda obj, name: (
-            None
-            if "nothing" in name
-            else MagicMock(params=[MagicMock(**{"name": "path_or_bytes"})])
+        def get_available_providers(self) -> Any:
+            """Mock UTIL function in onnxruntime."""
+            return []
+
+        class SessionWithProviders:
+            """Mock Session class already containing providers parameter."""
+
+            def __init__(self, path_or_bytes: str, providers: Any = None) -> None:
+                """Initialize session with providers parameter.
+
+                Args:
+                    path_or_bytes: Path or bytes to ONNX model.
+                    providers: Execution providers sequence.
+                """
+                self.path = path_or_bytes
+                self.providers = providers
+
+        nothing = None
+
+    with (
+        patch(
+            "griffe.load",
+            side_effect=ImportError("no griffe"),
+        ),
+        patch(
+            "ml_ecosystem_snapshots.frameworks.onnxruntime.importlib.import_module",
+            return_value=OnnxMock(),
         ),
     ):
-        with patch("importlib.import_module", return_value=OnnxMock()):
-            res_pub = collect_api(SemanticTier.MODEL)
-            assert len(res_pub) == 1
-            res_nonpub = collect_api(SemanticTier.MODEL, include_nonpublic=True)
-            assert len(res_nonpub) == 1
+        res_pub = collect_api(SemanticTier.MODEL)
+        assert len(res_pub) == 2
+        inf_ref = next(r for r in res_pub if r.name == "InferenceSession")
+        assert any(p.name == "path_or_bytes" for p in inf_ref.params)
+        assert any(p.name == "providers" for p in inf_ref.params)
+        res_nonpub = collect_api(SemanticTier.MODEL, include_nonpublic=True)
+        assert len(res_nonpub) == 2
+        res_util = collect_api(SemanticTier.UTIL)
+        assert len(res_util) >= 1
 
-    with patch(
-        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
-        return_value=MagicMock(params=[]),
-    ):
-        with patch("importlib.import_module", return_value=OnnxMock()):
-            res_empty = collect_api(SemanticTier.MODEL)
-            assert len(res_empty) == 1
+    # Cover branch where InferenceSession already defines providers and when inspect returns None or raises
+    class OnnxAlreadyHasProviders:
+        """Mock ONNX Runtime module where InferenceSession already defines providers."""
+
+        def __dir__(self) -> Any:
+            """Return mock directory listing.
+
+            Returns:
+                List of mock member names.
+            """
+            return ["InferenceSession", "BadSession"]
+
+        class InferenceSession:
+            """Mock InferenceSession class with providers parameter."""
+
+            def __init__(self, path_or_bytes: str, providers: Any = None) -> None:
+                """Initialize session with providers parameter.
+
+                Args:
+                    path_or_bytes: Model path.
+                    providers: Execution providers.
+                """
+                self.path = path_or_bytes
+                self.providers = providers
+
+        def BadSession(self) -> Any:
+            """Mock session raising TypeError during inspection."""
+            pass
+
+    orig_inspect = GhostInspector.inspect
+
+    def selective_inspect(obj: Any, name: str) -> Any:
+        """Delegate to GhostInspector.inspect except for BadSession.
+
+        Args:
+            obj: Object to inspect.
+            name: API path string.
+
+        Returns:
+            Extracted GhostRef.
+
+        Raises:
+            TypeError: When inspecting BadSession.
+        """
+        if "BadSession" in name:
+            raise TypeError("broken session")
+        return orig_inspect(obj, name)
+
+    with patch.object(GhostInspector, "inspect", side_effect=selective_inspect):
+        with patch(
+            "ml_ecosystem_snapshots.frameworks.onnxruntime.importlib.import_module",
+            return_value=OnnxAlreadyHasProviders(),
+        ):
+            res_prov = collect_api(SemanticTier.MODEL)
+            assert len(res_prov) == 1
+            assert sum(1 for p in res_prov[0].params if p.name == "providers") == 1
+
+    with patch.object(GhostInspector, "inspect", return_value=None):
+        with patch(
+            "ml_ecosystem_snapshots.frameworks.onnxruntime.importlib.import_module",
+            return_value=OnnxAlreadyHasProviders(),
+        ):
+            assert collect_api(SemanticTier.MODEL) == []
 
 
 def test_triton_missing() -> None:
     """Verify Triton collector fallback and constexpr kernel annotation extraction."""
-    from ml_ecosystem_snapshots.frameworks.triton import collect_api
+    from ml_ecosystem_snapshots.frameworks.triton import (
+        _extract_triton_kernel,
+        collect_api,
+    )
+    from ml_ecosystem_snapshots.models import GhostInspector
 
-    with patch("importlib.import_module", side_effect=ImportError):
+    with patch(
+        "ml_ecosystem_snapshots.frameworks.triton.importlib.import_module",
+        side_effect=ImportError,
+    ):
         assert collect_api(SemanticTier.UTIL) == []
     assert collect_api(SemanticTier.LOSS) == []
 
-    mock_mod = MagicMock()
-    with patch.dict("sys.modules", {"triton": mock_mod}):
-        res_sys = collect_api(SemanticTier.UTIL)
-        assert isinstance(res_sys, list)
-
-    setattr(mock_mod, "__dir__", lambda self: ["_hidden", "fn", "not_ref"])
+    fake_tl = types.ModuleType("triton.language")
+    fake_tl_math = types.ModuleType("triton.language.math")
 
     def fake_fn(a: Any, b: Any, c: Any) -> Any:
         """Mock Triton JIT function with constexpr annotation.
@@ -135,39 +235,83 @@ def test_triton_missing() -> None:
     fake_fn.__annotations__ = {"a": "int constexpr", "b": "float"}
 
     class Wrap:
-        """Wrapper class holding a Triton JIT function."""
+        """Callable wrapper class holding a Triton JIT function."""
 
-        fn = fake_fn
+        fn = staticmethod(fake_fn)
 
-    mock_mod.fn = Wrap
-    mock_mod.not_ref = (
-        lambda: None
-    )  # mock inspector will return None for this because it's not a valid ref or we can mock inspector
+        def __call__(self, *args: Any, **kwargs: Any) -> Any:
+            """Invoke wrapped kernel function.
 
-    param_a = MagicMock()
-    param_a.name = "a"
-    param_b = MagicMock()
-    param_b.name = "b"
+            Args:
+                args: Positional arguments.
+                kwargs: Keyword arguments.
+
+            Returns:
+                Result of `fake_fn`.
+            """
+            return fake_fn(*args, **kwargs)
+
+    setattr(fake_tl, "kernel_op", Wrap())
+    setattr(fake_tl, "_private_op", fake_fn)
+    setattr(fake_tl, "non_callable", 123)
+    setattr(fake_tl_math, "sin", fake_fn)
+    setattr(fake_tl_math, "_priv_math", fake_fn)
+    setattr(fake_tl_math, "non_callable", 456)
+    setattr(fake_tl, "math", fake_tl_math)
 
     with patch(
-        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
-        side_effect=lambda obj, name: (
-            None if "not_ref" in name else MagicMock(params=[param_a, param_b])
-        ),
+        "ml_ecosystem_snapshots.frameworks.triton.importlib.import_module",
+        return_value=fake_tl,
     ):
-        with patch(
-            "importlib.import_module",
-            side_effect=lambda x: (
-                mock_mod
-                if x == "triton.language" or x == "triton"
-                else ImportError("No")
-            ),
-        ):
-            res_triton = collect_api(SemanticTier.UTIL)
-            assert len(res_triton) >= 1
+        res_triton = collect_api(SemanticTier.UTIL)
+        assert len(res_triton) == 2
+        kernel_ref = next(
+            r for r in res_triton if r.api_path == "triton.language.kernel_op"
+        )
+        param_a = next(p for p in kernel_ref.params if p.name == "a")
+        assert param_a.annotation == "tl.constexpr"
 
-    from ml_ecosystem_snapshots.frameworks.triton import _extract_triton_kernel
-    from ml_ecosystem_snapshots.models import GhostInspector
+        res_nonpub = collect_api(SemanticTier.UTIL, include_nonpublic=True)
+        assert len(res_nonpub) >= 4
+
+    # Cover branch where tl.math is not a module
+    fake_tl_no_math = types.ModuleType("triton.language")
+    setattr(fake_tl_no_math, "kernel_op", Wrap())
+    with patch(
+        "ml_ecosystem_snapshots.frameworks.triton.importlib.import_module",
+        return_value=fake_tl_no_math,
+    ):
+        assert len(collect_api(SemanticTier.UTIL)) == 1
+
+    # Cover branches where _extract_triton_kernel returns None or triton.language raises ImportError
+    def import_triton_only(name: str) -> Any:
+        """Return fake_tl for triton and raise ImportError for triton.language.
+
+        Args:
+            name: Module name.
+
+        Returns:
+            Fake triton module.
+
+        Raises:
+            ImportError: When importing triton.language.
+        """
+        if name == "triton":
+            return fake_tl
+        raise ImportError("no triton.language")
+
+    with patch(
+        "ml_ecosystem_snapshots.frameworks.triton.importlib.import_module",
+        side_effect=import_triton_only,
+    ):
+        assert collect_api(SemanticTier.UTIL) == []
+
+    with patch.object(GhostInspector, "inspect", return_value=None):
+        with patch(
+            "ml_ecosystem_snapshots.frameworks.triton.importlib.import_module",
+            return_value=fake_tl,
+        ):
+            assert collect_api(SemanticTier.UTIL) == []
 
     class NoAnno:
         """Kernel callable without annotations."""
@@ -422,7 +566,7 @@ def test_huggingface_missing() -> None:
             A mocked GhostRef or None.
         """
         if "ThrowConfig" in name:
-            raise Exception("test")
+            raise RuntimeError("test")
         if "RefNone" in name:
             return None
         if "AutoModelA" in name:
@@ -667,17 +811,20 @@ def test_deepspeed_fallback_edges(mocker: Any) -> None:
     )
 
     def mock_inspect(obj: Any, name: str) -> Any:
-        """Mock inspect function.
+        """Mock inspect function raising ValueError for error_op.
 
         Args:
-            obj: Input parameter value.
-            name: Input parameter value.
+            obj: Target object being inspected.
+            name: Fully qualified API name.
 
         Returns:
             A mocked GhostRef.
+
+        Raises:
+            ValueError: When inspecting `error_op`.
         """
         if "error_op" in name:
-            raise Exception("simulated error")
+            raise ValueError("simulated error")
         if "none_ref" in name:
             return None
         if "initialize" in name:

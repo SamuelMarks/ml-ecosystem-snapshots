@@ -13,8 +13,8 @@ class BaseLayer:
         """Execute helper init  .
 
         Args:
-            hidden_dim: Input parameter value.
-            dropout: Input parameter value.
+            hidden_dim: Hidden layer dimension size.
+            dropout: Dropout probability rate.
         """
         pass
 
@@ -26,8 +26,8 @@ class SubLayer(BaseLayer):
         """Execute helper init  .
 
         Args:
-            name: Input parameter value.
-            kwargs: Input parameter value.
+            name: Submodule layer identifier.
+            kwargs: Forwarded keyword arguments to parent initializer.
         """
         super().__init__(**kwargs)
 

@@ -4,21 +4,99 @@ This module provides functionality to parse arbitrary Python files or packages
 and compare them against a reference ML framework snapshot.
 """
 
-import os
+from __future__ import annotations
 
+import contextlib
 import importlib
-import sys
-
-
+import logging
+import os
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
-import griffe
+import re
+import sys
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    TypedDict,
+    Union,
+)
 
+import griffe
 from ml_switcheroo_ir.schema.ghost import GhostRef
+
 from ml_ecosystem_snapshots.utils import (
     get_framework_docstring_parser,
     resolve_griffe_parser,
 )
+
+
+class ComplianceMismatchEntry(TypedDict, total=False):
+    """Typed mismatch entry within `ComplianceScoreReport`."""
+
+    api_path: str
+    expected: List[Tuple[Any, ...]]
+    actual: List[Tuple[Any, ...]]
+    reason: str
+
+
+class ComplianceScoreReport(TypedDict, total=False):
+    """Typed compliance report returned by `score_compliance`."""
+
+    score_percentage: float
+    total_endpoints: int
+    matched: List[str]
+    missing: List[str]
+    mismatched: List[ComplianceMismatchEntry]
+    opaque_signatures: List[str]
+    warnings: List[str]
+
+
+class SnippetComplianceReport(TypedDict, total=False):
+    """Typed compliance report returned by MLIR, WGSL, SASS, and RDNA snippet verifiers."""
+
+    is_compliant: bool
+    total_ops: int
+    verified_ops: int
+    total_instructions: int
+    verified_instructions: int
+    errors: List[str]
+
+
+_LOGGER = logging.getLogger(__name__)
+
+DEFAULT_NAMESPACE_PREFIX_MAP: Dict[str, str] = {
+    "zero_jax": "jax",
+    "zero_optax": "optax",
+    "zero_chex": "chex",
+    "zero_orbax": "orbax",
+    "zero_grain": "grain",
+}
+
+
+@contextlib.contextmanager
+def _temporary_sys_path(search_path: str) -> Iterator[None]:
+    """Temporarily prepend `search_path` to `sys.path` if not already present.
+
+    Args:
+        search_path: Directory path to add to `sys.path`.
+
+    Yields:
+        None while `search_path` is active on `sys.path`.
+    """
+    added = False
+    if search_path not in sys.path:
+        sys.path.insert(0, search_path)
+        added = True
+    try:
+        yield
+    finally:
+        if added:
+            sys.path.remove(search_path)
 
 
 def get_module_info_from_path(
@@ -67,7 +145,6 @@ def get_module_info_from_path(
         parts = list(rel_path.parts)
         if parts[-1].endswith(".py"):
             parts[-1] = parts[-1][:-3]
-            # Handle __init__.py files
             if parts[-1] == "__init__":
                 parts.pop()
         mod_name = ".".join(parts)
@@ -95,7 +172,6 @@ def extract_target_ast(file_path: str, target_prefix: str = "") -> Any:
 
     Returns:
         The extracted Griffe module AST.
-
     """
     search_path, mod_name = get_module_info_from_path(file_path, target_prefix)
     parser_choice = get_framework_docstring_parser(mod_name.split(".")[0])
@@ -105,13 +181,19 @@ def extract_target_ast(file_path: str, target_prefix: str = "") -> Any:
     )
 
 
-def align_namespace(api_path: str, target_prefix: str, reference_prefix: str) -> str:
+def align_namespace(
+    api_path: str,
+    target_prefix: str,
+    reference_prefix: str,
+    prefix_map: Optional[Mapping[str, str]] = None,
+) -> str:
     """Align a target namespace path to a reference namespace path.
 
     Args:
         api_path: The API path to align.
         target_prefix: The prefix in the target namespace.
         reference_prefix: The prefix in the reference namespace.
+        prefix_map: Optional mapping of custom source prefixes to reference prefixes.
 
     Returns:
         The aligned namespace string.
@@ -119,20 +201,16 @@ def align_namespace(api_path: str, target_prefix: str, reference_prefix: str) ->
     if api_path == target_prefix:
         return reference_prefix
 
-    # Explicit handling for known zero_* mappings
-    mapping = {
-        "zero_jax": "jax",
-        "zero_optax": "optax",
-        "zero_chex": "chex",
-        "zero_orbax": "orbax",
-        "zero_grain": "grain",
-    }
+    mapping = (
+        dict(prefix_map)
+        if prefix_map is not None
+        else dict(DEFAULT_NAMESPACE_PREFIX_MAP)
+    )
 
-    # Check if api_path starts with zero_flax.jax, zero_flax.optax, etc.
-    if api_path.startswith(f"{target_prefix}.jax."):
-        return api_path.replace(f"{target_prefix}.jax.", "jax.", 1)
-    if api_path.startswith(f"{target_prefix}.optax."):
-        return api_path.replace(f"{target_prefix}.optax.", "optax.", 1)
+    for sub_target in ("jax", "optax"):
+        candidate_prefix = f"{target_prefix}.{sub_target}."
+        if api_path.startswith(candidate_prefix):
+            return api_path.replace(candidate_prefix, f"{sub_target}.", 1)
 
     for z_pref, r_pref in mapping.items():
         if api_path.startswith(z_pref + "."):
@@ -164,13 +242,9 @@ def extract_target_refs_single(
     Returns:
         List of GhostRefs.
     """
-    import griffe
     from ml_ecosystem_snapshots.models import GhostInspector
 
     search_path, mod_name = get_module_info_from_path(file_path, target_prefix)
-
-    if search_path not in sys.path:
-        sys.path.insert(0, search_path)
 
     parser_choice = get_framework_docstring_parser(mod_name.split(".")[0])
     resolved_parser = resolve_griffe_parser(parser_choice)
@@ -181,11 +255,11 @@ def extract_target_refs_single(
     refs: List[GhostRef] = []
 
     def walk(node: Any, current_path: str) -> None:
-        """Walk the Griffe AST.
+        """Recursively traverse a Griffe AST node and inspect public symbols.
 
         Args:
-            node: node
-            current_path: path
+            node: Griffe AST node (`Module`, `Class`, `Function`, or `Alias`).
+            current_path: Dotted Python module/symbol path of `node`.
         """
         if isinstance(node, (griffe.Function, griffe.Class, griffe.Alias)):
             try:
@@ -201,15 +275,14 @@ def extract_target_refs_single(
                     except ImportError:
                         break
 
-                # Retrieve remaining attributes from the imported module
                 obj = live_mod
                 for p in parts[i:]:
                     obj = getattr(obj, p)
 
-                if getattr(node, "path", "").startswith("zero_jax."):
+                node_path = getattr(node, "path", "")
+                if node_path.startswith("zero_jax."):
                     current_path = (
-                        getattr(node, "path")
-                        .replace("zero_jax.", f"{target_prefix}.jax.", 1)
+                        node_path.replace("zero_jax.", f"{target_prefix}.jax.", 1)
                         .replace(".activation", "")
                         .replace(".nn.nn", ".nn")
                         .replace(".initializers.initializers", ".initializers")
@@ -223,47 +296,55 @@ def extract_target_refs_single(
                 )
                 refs.append(GhostInspector.inspect(obj, aligned_path))
             except Exception as e:
-                print(f"Exception in walk for {current_path}: {e}")
-                # Silently skip items that cannot be imported or inspected
-                pass
+                _LOGGER.warning("Exception in walk for %s: %s", current_path, e)
 
         if isinstance(node, (griffe.Module, griffe.Class)):
             for name, member in node.members.items():
                 if not name.startswith("_"):
                     walk(member, f"{current_path}.{name}")
 
-    walk(mod_ast, mod_name)
+    with _temporary_sys_path(search_path):
+        walk(mod_ast, mod_name)
     return refs
+
+
+DEFAULT_LEN_MATCH_PREFIXES: Tuple[str, ...] = (
+    "chex.",
+    "jax.nn.",
+    "optax.",
+    "flax.nnx.",
+)
 
 
 def score_compliance(
     reference_snapshot: Mapping[str, Any],
     target_refs: Sequence[GhostRef],
     strict_c_extensions: bool = False,
-) -> Dict[str, Any]:
+    allow_signature_len_match_prefixes: Optional[Sequence[str]] = None,
+) -> ComplianceScoreReport:
     """Score the compliance of target refs against a reference snapshot.
 
     Args:
         reference_snapshot: The reference snapshot dictionary or envelope containing categories.
         target_refs: The extracted and aligned GhostRefs from the target.
         strict_c_extensions: Whether to reject fallback matches with opaque C-extension signatures.
+        allow_signature_len_match_prefixes: Optional sequence of API prefixes where matching
+            parameter arity (`len(params)`) is treated as compliant even if parameter names differ.
 
     Returns:
         A dictionary containing compliance metrics.
     """
-    # Flatten the reference snapshot into a dictionary keyed by api_path
     reference_map: Dict[str, GhostRef] = {}
-    for cat, items in reference_snapshot.get("categories", {}).items():
+    for _cat, items in reference_snapshot.get("categories", {}).items():
         for item in items:
             ref = GhostRef.model_validate(item)
             reference_map[ref.api_path] = ref
-            # also map aliases
             for alias in ref.aliases or []:
                 reference_map[alias] = ref
 
     target_map = {ref.api_path: ref for ref in target_refs}
 
-    total_reference_endpoints = len(set(ref.api_path for ref in reference_map.values()))
+    total_reference_endpoints = len({ref.api_path for ref in reference_map.values()})
     if total_reference_endpoints == 0:
         return {
             "score_percentage": 0.0,
@@ -274,11 +355,30 @@ def score_compliance(
             "warnings": [],
         }
 
-    matched = []
-    missing = []
-    mismatched = []
-    opaque_signatures = []
-    warnings = []
+    matched: List[str] = []
+    missing: List[str] = []
+    mismatched: List[ComplianceMismatchEntry] = []
+    opaque_signatures: List[str] = []
+    warnings: List[str] = []
+
+    def sig_tuple(p: Any) -> Tuple[Any, ...]:
+        """Build a normalized `(name, kind, default, annotation)` tuple for parameter comparison.
+
+        Args:
+            p: A `GhostParam` or parameter-like object with `name`, `kind`, `default`, and `annotation`.
+
+        Returns:
+            Normalized 4-tuple `(name, kind, default, annotation)`.
+        """
+        ann = p.annotation
+        if isinstance(ann, str) and ann.startswith('"') and ann.endswith('"'):
+            ann = ann[1:-1]
+        if isinstance(ann, str) and ann.startswith("'") and ann.endswith("'"):
+            ann = ann[1:-1]
+        default = p.default
+        if default in ("'```(None)```'", "```(None)```", "'___NONE___'"):
+            default = "None"
+        return (p.name, p.kind, default, ann)
 
     for api_path, ref_obj in reference_map.items():
         if api_path not in target_map:
@@ -286,31 +386,6 @@ def score_compliance(
             continue
 
         target_obj = target_map[api_path]
-
-        # Compare parameters
-        def sig_tuple(p: Any) -> Tuple[Any, ...]:
-            """Tuple.
-
-            Args:
-                p: param
-
-            Returns:
-                tuple
-            """
-            ann = p.annotation
-            if isinstance(ann, str) and ann.startswith('"') and ann.endswith('"'):
-                ann = ann[1:-1]
-            if isinstance(ann, str) and ann.startswith("'") and ann.endswith("'"):
-                ann = ann[1:-1]
-            default = p.default
-            if default == "'```(None)```'":
-                default = "None"
-            if default == "```(None)```":
-                default = "None"
-            if default == "'___NONE___'":
-                default = None
-                default = "None"
-            return (p.name, p.kind, default, ann)
 
         ref_sig = [sig_tuple(p) for p in ref_obj.params]
         tgt_sig = [sig_tuple(p) for p in target_obj.params]
@@ -347,17 +422,19 @@ def score_compliance(
         if ref_sig == tgt_sig:
             matched.append(api_path)
         else:
-            # Check for compatible supersets (e.g. kwargs fallback)
             has_varargs = any("VAR_POSITIONAL" in p.kind for p in target_obj.params)
             has_varkwargs = any("VAR_KEYWORD" in p.kind for p in target_obj.params)
 
-            if api_path.startswith("chex.") or (
-                (
-                    api_path.startswith("jax.nn.")
-                    or api_path.startswith("optax.")
-                    or api_path.startswith("flax.nnx.")
+            if (
+                allow_signature_len_match_prefixes is not None
+                and any(
+                    api_path.startswith(pref)
+                    for pref in allow_signature_len_match_prefixes
                 )
-                and len(ref_obj.params) == len(target_obj.params)
+                and (
+                    api_path.startswith("chex.")
+                    or len(ref_obj.params) == len(target_obj.params)
+                )
             ):
                 matched.append(api_path)
                 continue
@@ -402,7 +479,7 @@ def extract_target_refs(
     return refs
 
 
-def check_mlir_text_compliance(mlir_text: str) -> Dict[str, Any]:
+def check_mlir_text_compliance(mlir_text: str) -> SnippetComplianceReport:
     """Verify that an MLIR / StableHLO text snippet uses valid operations, attributes, and operands.
 
     Args:
@@ -411,7 +488,6 @@ def check_mlir_text_compliance(mlir_text: str) -> Dict[str, Any]:
     Returns:
         Compliance dictionary with is_compliant, total_ops, verified_ops, and errors.
     """
-    import re
     from ml_ecosystem_snapshots.mcp_server import check_mlir_op
 
     errors: List[str] = []
@@ -459,7 +535,7 @@ def check_mlir_text_compliance(mlir_text: str) -> Dict[str, Any]:
     }
 
 
-def check_wgsl_shader_compliance(shader_text: str) -> Dict[str, Any]:
+def check_wgsl_shader_compliance(shader_text: str) -> SnippetComplianceReport:
     """Verify that a WebGPU WGSL shader snippet uses valid builtin operations.
 
     Args:
@@ -468,7 +544,6 @@ def check_wgsl_shader_compliance(shader_text: str) -> Dict[str, Any]:
     Returns:
         Compliance dictionary with is_compliant, total_ops, verified_ops, and errors.
     """
-    import re
     from ml_ecosystem_snapshots.mcp_server import check_wgsl_op
 
     errors: List[str] = []
@@ -477,7 +552,6 @@ def check_wgsl_shader_compliance(shader_text: str) -> Dict[str, Any]:
 
     call_pattern = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)")
 
-    # Standard WGSL control and reserved keywords to ignore
     ignored_keywords = {
         "fn",
         "if",
@@ -527,7 +601,7 @@ def check_wgsl_shader_compliance(shader_text: str) -> Dict[str, Any]:
 
 def check_sass_assembly_compliance(
     assembly_text: str, sm_arch: Optional[str] = None
-) -> Dict[str, Any]:
+) -> SnippetComplianceReport:
     """Verify that an NVIDIA SASS assembly snippet is valid for the target SM architecture.
 
     Args:
@@ -537,7 +611,6 @@ def check_sass_assembly_compliance(
     Returns:
         Compliance dictionary with is_compliant, total_instructions, and errors.
     """
-    import re
     from ml_ecosystem_snapshots.mcp_server import check_sass_instruction
 
     errors: List[str] = []
@@ -588,7 +661,7 @@ def check_sass_assembly_compliance(
 
 def check_rdna_assembly_compliance(
     assembly_text: str, gfx_arch: Optional[str] = None
-) -> Dict[str, Any]:
+) -> SnippetComplianceReport:
     """Verify that an AMD RDNA assembly snippet is valid for the target GFX architecture.
 
     Args:
@@ -598,7 +671,6 @@ def check_rdna_assembly_compliance(
     Returns:
         Compliance dictionary with is_compliant, total_instructions, and errors.
     """
-    import re
     from ml_ecosystem_snapshots.mcp_server import check_rdna_instruction
 
     errors: List[str] = []
@@ -729,7 +801,6 @@ def validate_matmul_shapes(
                 )
         return True, [], None
 
-    # Vector-Matrix (1D x >=2D): (K,) x (...B, K, N) -> (...B, N)
     if len(shape_a) == 1 and len(shape_b) >= 2:
         k_lhs = shape_a[0]
         k_rhs = shape_b[-2]
@@ -744,7 +815,6 @@ def validate_matmul_shapes(
         out_n = int(shape_b[-1]) if str(shape_b[-1]).isdigit() else -1
         return True, batch_res + [out_n], None
 
-    # Matrix-Vector (>=2D x 1D): (...B, M, K) x (K,) -> (...B, M)
     if len(shape_a) >= 2 and len(shape_b) == 1:
         k_lhs = shape_a[-1]
         k_rhs = shape_b[0]

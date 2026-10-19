@@ -53,10 +53,10 @@ def test_cmd_check(
     """Test basic check command reporting.
 
     Args:
-        mock_file: mock
-        mock_extract: mock
-        mock_score: mock
-        capsys: capsys fixture
+        mock_file: Mocked file open callable.
+        mock_extract: Mocked `extract_target_refs` callable.
+        mock_score: Mocked `score_compliance` callable.
+        capsys: Pytest stdout/stderr capture fixture.
     """
     args = argparse.Namespace(
         snapshot_json="dummy.json",
@@ -100,10 +100,10 @@ def test_cmd_check_pagination(
     """Test pagination in check command reporting.
 
     Args:
-        mock_file: mock
-        mock_extract: mock
-        mock_score: mock
-        capsys: capsys fixture
+        mock_file: Mocked file open callable.
+        mock_extract: Mocked `extract_target_refs` callable.
+        mock_score: Mocked `score_compliance` callable.
+        capsys: Pytest stdout/stderr capture fixture.
     """
     args = argparse.Namespace(
         snapshot_json="dummy.json",
@@ -143,10 +143,10 @@ def test_cmd_check_no_missing_mismatched(
     """Test check command with complete compliance.
 
     Args:
-        mock_file: mock
-        mock_extract: mock
-        mock_score: mock
-        capsys: capsys fixture
+        mock_file: Mocked file open callable.
+        mock_extract: Mocked `extract_target_refs` callable.
+        mock_score: Mocked `score_compliance` callable.
+        capsys: Pytest stdout/stderr capture fixture.
     """
     args = argparse.Namespace(
         snapshot_json="dummy.json",
@@ -173,9 +173,9 @@ def test_cmd_check_output_formatting(mocker: Any, capsys: Any, tmp_path: Any) ->
     """Verify cmd check output formatting behavior.
 
     Args:
-        capsys: Input parameter value.
-        mocker: Input parameter value.
-        tmp_path: Input parameter value.
+        capsys: Pytest stdout/stderr capture fixture.
+        mocker: Pytest mocker fixture.
+        tmp_path: Pytest temporary directory fixture.
     """
     from ml_ecosystem_snapshots.cli import cmd_check
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
@@ -214,7 +214,8 @@ def test_cmd_check_output_formatting(mocker: Any, capsys: Any, tmp_path: Any) ->
     snap_file.write_text(json.dumps(snapshot))
 
     mocker.patch(
-        "ml_ecosystem_snapshots.cli.resolve_snapshot_path", return_value=str(snap_file)
+        "ml_ecosystem_snapshots.cli.resolver.resolve_snapshot_path",
+        return_value=str(snap_file),
     )
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.extract_target_refs", return_value=[]

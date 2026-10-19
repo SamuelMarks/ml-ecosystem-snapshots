@@ -10,7 +10,7 @@ import datetime
 import concurrent.futures
 import json
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ml_switcheroo_ir.schema.ghost import SemanticTier
 from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
@@ -440,6 +440,78 @@ def _consolidate_aliases(refs: List[GhostRef]) -> List[GhostRef]:
     return list(consolidated.values())
 
 
+FRAMEWORK_PROVENANCE_METADATA: Dict[str, Dict[str, Any]] = {
+    "nvidia_sass": {
+        "supported_microarchitectures": [
+            "sm_70",
+            "sm_75",
+            "sm_80",
+            "sm_86",
+            "sm_89",
+            "sm_90",
+            "sm_100",
+        ],
+        "source_type": "binary_disassembly",
+        "upstream_commit": "cuda-12.6-toolkit",
+        "upstream_version": "12.6.0",
+    },
+    "nvidia_ptx": {
+        "supported_microarchitectures": [
+            "sm_50",
+            "sm_60",
+            "sm_70",
+            "sm_75",
+            "sm_80",
+            "sm_86",
+            "sm_89",
+            "sm_90",
+            "sm_100",
+        ],
+        "source_type": "tablegen",
+        "upstream_commit": "cuda-12.6",
+        "upstream_version": "8.5",
+    },
+    "amd_rdna": {
+        "supported_microarchitectures": [
+            "GFX9/CDNA",
+            "GFX10/RDNA1",
+            "GFX10.3/RDNA2",
+            "GFX11/RDNA3",
+            "GFX11.5",
+            "GFX12/RDNA4",
+        ],
+        "source_type": "tablegen",
+        "upstream_commit": "llvm-project-19.1.0",
+        "upstream_version": "19.1.0",
+    },
+    "stablehlo": {
+        "source_type": "tablegen",
+        "upstream_commit": "v1.9.0",
+        "upstream_version": "1.9.0",
+    },
+    "mlir": {
+        "source_type": "tablegen",
+        "upstream_commit": "llvmorg-19.1.0",
+        "upstream_version": "19.1.0",
+    },
+    "html_dsl": {
+        "source_type": "python_dsl",
+        "upstream_commit": "ml-switcheroo-v0.0.2",
+        "upstream_version": "0.0.2",
+    },
+    "latex_dsl": {
+        "source_type": "python_dsl",
+        "upstream_commit": "ml-switcheroo-v0.0.2",
+        "upstream_version": "0.0.2",
+    },
+    "tikz": {
+        "source_type": "python_dsl",
+        "upstream_commit": "ml-switcheroo-v0.0.2",
+        "upstream_version": "0.0.2",
+    },
+}
+
+
 def extract_snapshot(
     framework_name: str, include_nonpublic: bool = False
 ) -> Dict[str, Any]:
@@ -469,69 +541,19 @@ def extract_snapshot(
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "categories": {},
     }
-    if framework_name == "nvidia_sass":
-        snapshot_data["supported_microarchitectures"] = [
-            "sm_70",
-            "sm_75",
-            "sm_80",
-            "sm_86",
-            "sm_89",
-            "sm_90",
-            "sm_100",
-        ]
-        snapshot_data["source_type"] = "binary_disassembly"
-        snapshot_data["upstream_commit"] = "cuda-12.6-toolkit"
-        snapshot_data["upstream_version"] = "12.6.0"
-    elif framework_name == "nvidia_ptx":
-        snapshot_data["supported_microarchitectures"] = [
-            "sm_50",
-            "sm_60",
-            "sm_70",
-            "sm_75",
-            "sm_80",
-            "sm_86",
-            "sm_89",
-            "sm_90",
-            "sm_100",
-        ]
-        snapshot_data["source_type"] = "tablegen"
-        snapshot_data["upstream_commit"] = "cuda-12.6"
-        snapshot_data["upstream_version"] = "8.5"
-    elif framework_name == "amd_rdna":
-        snapshot_data["supported_microarchitectures"] = [
-            "GFX9/CDNA",
-            "GFX10/RDNA1",
-            "GFX10.3/RDNA2",
-            "GFX11/RDNA3",
-            "GFX11.5",
-            "GFX12/RDNA4",
-        ]
-        snapshot_data["source_type"] = "tablegen"
-        snapshot_data["upstream_commit"] = "llvm-project-19.1.0"
-        snapshot_data["upstream_version"] = "19.1.0"
-    elif framework_name == "stablehlo":
-        snapshot_data["source_type"] = "tablegen"
-        snapshot_data["upstream_commit"] = "v1.9.0"
-        snapshot_data["upstream_version"] = "1.9.0"
-    elif framework_name == "mlir":
-        snapshot_data["source_type"] = "tablegen"
-        snapshot_data["upstream_commit"] = "llvmorg-19.1.0"
-        snapshot_data["upstream_version"] = "19.1.0"
-    elif framework_name in ("html_dsl", "latex_dsl", "tikz"):
-        # DSL dialects are sourced from ml-switcheroo v0.0.2
-        snapshot_data["source_type"] = "python_dsl"
-        snapshot_data["upstream_commit"] = "ml-switcheroo-v0.0.2"
-        snapshot_data["upstream_version"] = "0.0.2"
+    if framework_name in FRAMEWORK_PROVENANCE_METADATA:
+        for k, v in FRAMEWORK_PROVENANCE_METADATA[framework_name].items():
+            snapshot_data[k] = list(v) if isinstance(v, list) else v
     found_any = False
 
     def _process_category(cat: SemanticTier) -> Tuple[str, List[Dict[str, Any]]]:
-        """Process a single category.
+        """Collect, consolidate, and serialize all API symbols for a semantic tier.
 
         Args:
-            cat: category
+            cat: The `SemanticTier` enum category to extract.
 
         Returns:
-            tuple
+            A tuple of `(category_name, serialized_ghost_ref_dicts)`.
         """
         try:
             refs = collect_func(cat, include_nonpublic)
@@ -585,6 +607,7 @@ def extract_snapshot_isolated(
     Returns:
         The extracted snapshot dictionary, or empty dict on failure.
     """
+    import logging
     import subprocess
 
     env = os.environ.copy()
@@ -615,9 +638,12 @@ def extract_snapshot_isolated(
             env=env,
         )
         if proc.returncode == 0 and proc.stdout.strip():
-            return cast(Dict[str, Any], json.loads(proc.stdout))
+            parsed_snap: Dict[str, Any] = json.loads(proc.stdout)
+            return parsed_snap
     except Exception as e:
-        print(f"Subprocess extraction failed for {framework}: {e}")
+        logging.getLogger(__name__).warning(
+            "Subprocess extraction failed for %s: %s", framework, e
+        )
 
     return {}
 
@@ -734,4 +760,7 @@ def validate_snapshot_envelope(snapshot_dict: Any) -> SnapshotEnvelope:
         envelope_data["generated_at"] = datetime.datetime.now(
             datetime.timezone.utc
         ).isoformat()
-    return SnapshotEnvelope.model_validate(envelope_data)
+    try:
+        return SnapshotEnvelope.model_validate(envelope_data)
+    except (ValueError, TypeError) as exc:
+        raise SnapshotSchemaError(f"Invalid snapshot envelope schema: {exc}") from exc

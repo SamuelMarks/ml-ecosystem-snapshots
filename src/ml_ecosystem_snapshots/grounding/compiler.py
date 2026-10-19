@@ -1,6 +1,8 @@
 """Compiler IR grounding verifiers for StableHLO and MLIR core dialects."""
 
-from typing import Any, Dict, List, Optional
+from __future__ import annotations
+
+from typing import Any, Dict, List, Mapping, Optional
 
 from ml_ecosystem_snapshots.grounding.engine import GroundingEngine
 from ml_ecosystem_snapshots.grounding.models import (
@@ -14,18 +16,36 @@ def validate_stablehlo_op(
     operand_types: List[str],
     attributes: Dict[str, Any],
     engine: Optional[GroundingEngine] = None,
+    result_types: Optional[List[str]] = None,
+    regions: Optional[Dict[str, Any]] = None,
 ) -> GroundingReport:
     """Verify a StableHLO operation against the official StableHLO specification.
+
+    Delegates trait verification, SSA type constraint validation, structured
+    dimension number checks, and region verification to the canonical IR
+    validators shared with `check_mlir_op`.
 
     Args:
         op_name: Operation name (e.g., 'stablehlo.dot_general', 'dot_general', 'stablehlo.add').
         operand_types: Types of SSA input operands (e.g., ['tensor<128x64xf32>', 'tensor<64x256xf32>']).
         attributes: Dictionary of operation attributes (e.g., {'dot_dimension_numbers': {...}}).
         engine: Optional GroundingEngine instance.
+        result_types: Optional list of SSA result type strings.
+        regions: Optional dictionary of regions mapping region name to block_arguments and yield_types.
 
     Returns:
         GroundingReport containing diagnostic results and grounding status.
     """
+    from ml_ecosystem_snapshots.frameworks.mlir import (
+        validate_mlir_traits,
+        validate_mlir_type,
+    )
+    from ml_ecosystem_snapshots.frameworks.stablehlo import validate_stablehlo_region
+    from ml_ecosystem_snapshots.mcp.tools.ir import (
+        _infer_implicit_mlir_traits,
+        _validate_mlir_structured_attributes,
+    )
+
     eng = engine or GroundingEngine()
     full_op_name = (
         op_name if op_name.startswith("stablehlo.") else f"stablehlo.{op_name}"
@@ -64,7 +84,10 @@ def validate_stablehlo_op(
             )
 
     if full_op_name == "stablehlo.convolution":
-        if "dimension_numbers" not in attributes:
+        if (
+            "dimension_numbers" not in attributes
+            and "conv_dimension_numbers" not in attributes
+        ):
             report.add_diagnostic(
                 field="attributes.dimension_numbers",
                 message="Operation 'stablehlo.convolution' requires 'dimension_numbers' attribute.",
@@ -77,11 +100,22 @@ def validate_stablehlo_op(
     expected_operands = (
         raw_operands
         if raw_operands is not None
-        else [p for p in ref.params if getattr(p, "role", None) != "ATTRIBUTE"]
+        else [
+            p
+            for p in ref.params
+            if "ATTRIBUTE" not in str(getattr(p, "role", ""))
+            and getattr(p, "annotation", None) != "Region"
+        ]
     )
     if expected_operands:
-        # Check if variadic
-        is_variadic = getattr(ref, "has_varargs", False)
+        is_variadic = getattr(ref, "has_varargs", False) or any(
+            "variadic"
+            in str(
+                getattr(o, "annotation", "")
+                or (o.get("type", "") if isinstance(o, dict) else "")
+            ).lower()
+            for o in expected_operands
+        )
         if not is_variadic and len(operand_types) != len(expected_operands):
             report.add_diagnostic(
                 field="operands",
@@ -92,6 +126,63 @@ def validate_stablehlo_op(
                 severity=DiagnosticSeverity.ERROR,
             )
 
+        for i, (op_info, actual_type) in enumerate(
+            zip(expected_operands, operand_types)
+        ):
+            constraint = str(
+                op_info.get("type", "")
+                if isinstance(op_info, dict)
+                else getattr(op_info, "annotation", "") or ""
+            )
+            for te in validate_mlir_type(actual_type, constraint=constraint):
+                report.add_diagnostic(
+                    field=f"operands[{i}]",
+                    message=f"Operand {i} for '{full_op_name}': {te}",
+                    severity=DiagnosticSeverity.ERROR,
+                )
+
+    meta = ref.domain_metadata or {}
+    base_traits = list(meta.get("traits") or getattr(ref, "traits", None) or [])
+    traits = _infer_implicit_mlir_traits(full_op_name, base_traits)
+    for trait_err in validate_mlir_traits(
+        op_name=full_op_name,
+        traits=traits,
+        operand_types=operand_types if operand_types else None,
+        result_types=result_types,
+        attributes=list(attributes.keys()) if attributes else None,
+        structured_attributes=attributes if attributes else None,
+    ):
+        report.add_diagnostic(
+            field="traits",
+            message=trait_err,
+            severity=DiagnosticSeverity.ERROR,
+        )
+
+    if attributes:
+        for attr_err in _validate_mlir_structured_attributes(
+            structured_attributes=attributes,
+            operand_types=operand_types if operand_types else None,
+            result_types=result_types,
+        ):
+            report.add_diagnostic(
+                field="attributes",
+                message=attr_err,
+                severity=DiagnosticSeverity.ERROR,
+            )
+
+    if regions:
+        for reg_name, reg_spec in regions.items():
+            b_args = reg_spec.get("block_arguments") or reg_spec.get("block_args") or []
+            y_types = reg_spec.get("yield_types") or []
+            for reg_err in validate_stablehlo_region(
+                full_op_name, reg_name, b_args, y_types
+            ):
+                report.add_diagnostic(
+                    field=f"regions.{reg_name}",
+                    message=reg_err,
+                    severity=DiagnosticSeverity.ERROR,
+                )
+
     return report
 
 
@@ -101,8 +192,13 @@ def validate_mlir_op(
     operand_count: int,
     attributes: Dict[str, Any],
     engine: Optional[GroundingEngine] = None,
+    operand_types: Optional[List[str]] = None,
+    result_types: Optional[List[str]] = None,
 ) -> GroundingReport:
     """Verify an MLIR operation against core MLIR TableGen definitions.
+
+    Delegates trait verification, SSA type constraint validation, and structured
+    attribute checks to the canonical IR validators shared with `check_mlir_op`.
 
     Args:
         dialect: The MLIR dialect (e.g., 'arith', 'math', 'tensor', 'linalg', 'scf').
@@ -110,10 +206,21 @@ def validate_mlir_op(
         operand_count: Number of SSA value operands passed to the operation.
         attributes: Dictionary of buildable MLIR attributes.
         engine: Optional GroundingEngine instance.
+        operand_types: Optional list of SSA operand type strings.
+        result_types: Optional list of SSA result type strings.
 
     Returns:
         GroundingReport containing diagnostic results and grounding status.
     """
+    from ml_ecosystem_snapshots.frameworks.mlir import (
+        validate_mlir_traits,
+        validate_mlir_type,
+    )
+    from ml_ecosystem_snapshots.mcp.tools.ir import (
+        _infer_implicit_mlir_traits,
+        _validate_mlir_structured_attributes,
+    )
+
     eng = engine or GroundingEngine()
     full_path = op_name if op_name.startswith(f"{dialect}.") else f"{dialect}.{op_name}"
 
@@ -141,17 +248,76 @@ def validate_mlir_op(
     expected_operands = (
         raw_operands
         if raw_operands is not None
-        else [p for p in ref.params if getattr(p, "role", None) != "ATTRIBUTE"]
+        else [
+            p
+            for p in ref.params
+            if "ATTRIBUTE" not in str(getattr(p, "role", ""))
+            and getattr(p, "annotation", None) != "Region"
+        ]
     )
     if expected_operands and operand_count != len(expected_operands):
+        is_variadic = getattr(ref, "has_varargs", False) or any(
+            "variadic"
+            in str(
+                getattr(o, "annotation", "")
+                or (o.get("type", "") if isinstance(o, dict) else "")
+            ).lower()
+            for o in expected_operands
+        )
+        if not is_variadic:
+            report.add_diagnostic(
+                field="operand_count",
+                message=(
+                    f"MLIR operation '{full_path}' expects {len(expected_operands)} operands, "
+                    f"but received {operand_count}."
+                ),
+                severity=DiagnosticSeverity.ERROR,
+            )
+
+    if operand_types is not None:
+        for i, (op_info, actual_type) in enumerate(
+            zip(expected_operands, operand_types)
+        ):
+            constraint = str(
+                op_info.get("type", "")
+                if isinstance(op_info, dict)
+                else getattr(op_info, "annotation", "") or ""
+            )
+            for te in validate_mlir_type(actual_type, constraint=constraint):
+                report.add_diagnostic(
+                    field=f"operands[{i}]",
+                    message=f"Operand {i} for '{full_path}': {te}",
+                    severity=DiagnosticSeverity.ERROR,
+                )
+
+    meta = ref.domain_metadata or {}
+    base_traits = list(meta.get("traits") or getattr(ref, "traits", None) or [])
+    traits = _infer_implicit_mlir_traits(full_path, base_traits)
+    for trait_err in validate_mlir_traits(
+        op_name=full_path,
+        traits=traits,
+        operand_types=operand_types,
+        result_types=result_types,
+        attributes=list(attributes.keys()) if attributes else None,
+        structured_attributes=attributes if attributes else None,
+    ):
         report.add_diagnostic(
-            field="operand_count",
-            message=(
-                f"MLIR operation '{full_path}' expects {len(expected_operands)} operands, "
-                f"but received {operand_count}."
-            ),
+            field="traits",
+            message=trait_err,
             severity=DiagnosticSeverity.ERROR,
         )
+
+    if attributes:
+        for attr_err in _validate_mlir_structured_attributes(
+            structured_attributes=attributes,
+            operand_types=operand_types,
+            result_types=result_types,
+        ):
+            report.add_diagnostic(
+                field="attributes",
+                message=attr_err,
+                severity=DiagnosticSeverity.ERROR,
+            )
 
     return report
 
@@ -159,7 +325,7 @@ def validate_mlir_op(
 def _validate_ssa_domain_op(
     target_framework: str,
     symbol_name: str,
-    res: Dict[str, Any],
+    res: Mapping[str, Any],
     unrecognized_label: str,
     missing_field: str = "operation",
     err_field: str = "operation",
@@ -372,3 +538,15 @@ def validate_webgl_op(
         unrecognized_label="WebGL / GLSL builtin",
         engine=engine,
     )
+
+
+__all__ = [
+    "_validate_ssa_domain_op",
+    "validate_metal_op",
+    "validate_mlir_op",
+    "validate_onnx_op",
+    "validate_stablehlo_op",
+    "validate_wasm_op",
+    "validate_webgl_op",
+    "validate_wgsl_op",
+]

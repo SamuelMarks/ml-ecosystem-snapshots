@@ -19,6 +19,8 @@ from ml_switcheroo_ir.schema.ghost import (
     ParameterKind,
 )
 
+from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
+
 
 def hydrate_ghost_ref(data: Dict[str, Any]) -> ExtendedGhostRef:
     """Hydrate a dictionary payload into a validated `ExtendedGhostRef` or polymorphic subclass.
@@ -28,7 +30,12 @@ def hydrate_ghost_ref(data: Dict[str, Any]) -> ExtendedGhostRef:
 
     Returns:
         Hydrated `ExtendedGhostRef` instance.
+
+    Raises:
+        SnapshotSchemaError: If `data` is not a dictionary or violates the `ExtendedGhostRef` schema.
     """
+    if not isinstance(data, dict):
+        raise SnapshotSchemaError("GhostRef payload must be a dictionary.")
     # Synthesize domain_type and required fields for raw dumps if missing
     if "mnemonic" in data and ("name" not in data or "operands" in data):
         name = str(data.get("name") or data["mnemonic"])
@@ -173,23 +180,26 @@ def hydrate_ghost_ref(data: Dict[str, Any]) -> ExtendedGhostRef:
         data = dict(data)
         data["kind"] = "function"
 
-    if "params" in data and isinstance(data["params"], list):
-        data = dict(data)
-        hydrated_params = []
-        for p in data["params"]:
-            if isinstance(p, dict):
-                p_dict = dict(p)
-                if "kind" not in p_dict:
-                    p_dict["kind"] = ParameterKind.POSITIONAL_OR_KEYWORD
-                if "default" in p_dict and p_dict["default"] is not None:
-                    if not isinstance(p_dict["default"], str):
-                        p_dict["default"] = str(p_dict["default"])
-                hydrated_params.append(ExtendedGhostParam.model_validate(p_dict))
-            else:
-                hydrated_params.append(p)
-        data["params"] = hydrated_params
+    try:
+        if "params" in data and isinstance(data["params"], list):
+            data = dict(data)
+            hydrated_params = []
+            for p in data["params"]:
+                if isinstance(p, dict):
+                    p_dict = dict(p)
+                    if "kind" not in p_dict:
+                        p_dict["kind"] = ParameterKind.POSITIONAL_OR_KEYWORD
+                    if "default" in p_dict and p_dict["default"] is not None:
+                        if not isinstance(p_dict["default"], str):
+                            p_dict["default"] = str(p_dict["default"])
+                    hydrated_params.append(ExtendedGhostParam.model_validate(p_dict))
+                else:
+                    hydrated_params.append(p)
+            data["params"] = hydrated_params
 
-    res = ref_cls.model_validate(data)
+        res = ref_cls.model_validate(data)
+    except (ValueError, TypeError) as exc:
+        raise SnapshotSchemaError(f"Invalid GhostRef schema: {exc}") from exc
     assert isinstance(res, ExtendedGhostRef)
     return res
 

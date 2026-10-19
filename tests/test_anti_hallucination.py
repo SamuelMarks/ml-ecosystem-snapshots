@@ -402,7 +402,7 @@ def test_mcp_server_protocol(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
     mocker.patch(
@@ -521,7 +521,7 @@ def test_mcp_server_branches(mocker: Any) -> None:
         mocker: Pytest mocker fixture.
     """
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.extract_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.extract_snapshot",
         return_value={
             "categories": {
                 "math": [
@@ -601,9 +601,9 @@ def test_get_framework_snapshot_list_format(tmp_path: Any, monkeypatch: Any) -> 
     snap_dir = tmp_path / "snapshots"
     snap_dir.mkdir(parents=True, exist_ok=True)
     (snap_dir / "customlist_ops.json").write_text(json.dumps([{"name": "op1"}]))
-    import ml_ecosystem_snapshots.mcp_server as mcp_mod
+    import ml_ecosystem_snapshots.mcp.cache as cache_mod
 
-    monkeypatch.setattr(mcp_mod, "__file__", str(tmp_path / "mcp_server.py"))
+    monkeypatch.setattr(cache_mod, "__file__", str(tmp_path / "mcp" / "cache.py"))
     snap = get_framework_snapshot("customlist")
     assert "categories" in snap
     assert "UTIL" in snap["categories"]
@@ -723,7 +723,7 @@ def test_check_hallucination_positional_and_strict(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
     mocker.patch(
@@ -848,7 +848,7 @@ def test_mcp_server_search_without_path(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
     res = search_apis("custom", "func_without_path")
@@ -878,7 +878,7 @@ def test_check_hallucination_strict_and_max_args(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
 
@@ -923,7 +923,7 @@ def test_check_hallucination_pytorch_factory_strict_kwargs(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
     mocker.patch(
@@ -997,7 +997,7 @@ def test_get_api_signature_and_check_hallucination_overload_resolution(
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
     mocker.patch(
@@ -1045,7 +1045,7 @@ def test_check_sass_instruction_extra_branches(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
 
@@ -1091,7 +1091,7 @@ def test_check_rdna_instruction_extra_branches(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
 
@@ -1133,7 +1133,7 @@ def test_check_mlir_op_variadic_operands(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
 
@@ -1186,7 +1186,7 @@ def test_check_mlir_op_structured_attributes_and_type_constraints(
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
 
@@ -1363,7 +1363,7 @@ def test_check_mlir_op_structured_attributes_and_type_constraints(
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=float_op,
     )
     # Valid float
@@ -1497,7 +1497,7 @@ def test_check_hallucination_string_enum_values(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
 
@@ -1763,7 +1763,7 @@ def test_synthetic_hallucination_benchmark_suite(mocker: Any) -> None:
         return orig_get_snap(framework, version=version)
 
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         side_effect=mock_get_snap,
     )
     mocker.patch(
@@ -1772,6 +1772,7 @@ def test_synthetic_hallucination_benchmark_suite(mocker: Any) -> None:
     )
 
     detected = 0
+    res: Any
     for case in hallucination_cases:
         kind = case[0]
         if kind == "api_kwarg":
@@ -1808,9 +1809,9 @@ def test_synthetic_hallucination_benchmark_suite(mocker: Any) -> None:
                 detected += 1
 
     # Verify 100% detection rate across all 500+ synthetic hallucinations
-    assert detected == len(hallucination_cases), (
-        f"Detection rate: {detected}/{len(hallucination_cases)}"
-    )
+    assert detected == len(
+        hallucination_cases
+    ), f"Detection rate: {detected}/{len(hallucination_cases)}"
 
 
 def test_mcp_server_remaining_branches(mocker: Any) -> None:
@@ -1863,7 +1864,7 @@ def test_mcp_server_remaining_branches(mocker: Any) -> None:
         }
     }
     with patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap_lit,
     ):
         res_lit = check_hallucination(
@@ -1915,7 +1916,7 @@ def test_mcp_server_remaining_branches(mocker: Any) -> None:
         }
     }
     with patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap_mlir,
     ):
         res_var = check_mlir_op("custom.variadic", operand_types=["f32", "f32"])
@@ -1992,7 +1993,7 @@ def test_mcp_server_remaining_branches(mocker: Any) -> None:
         }
     }
     with patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap_no_operands,
     ):
         res_from_params = check_mlir_op("custom.from_params", operands_count=1)
@@ -2144,7 +2145,7 @@ def test_opaque_c_extension_guardrails(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
     mocker.patch(
@@ -2227,7 +2228,7 @@ def test_opaque_c_extension_guardrails(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap_named,
     )
     res_named = check_hallucination(
@@ -2284,7 +2285,7 @@ def test_framework_agnostic_dtype_validation(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap_dtypes,
     )
     mocker.patch(
@@ -2591,7 +2592,7 @@ def test_check_hallucination_parameter_allowed_values_error(mocker: Any) -> None
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
     res = check_hallucination(
@@ -2630,11 +2631,11 @@ def test_hallucination_accepted_kwargs_bounded_vs_unconstrained(
     }
     mock_snap = {"categories": {"layers": [mock_entry]}}
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_api_signature",
+        "ml_ecosystem_snapshots.mcp.tools.hallucination.get_api_signature",
         return_value=mock_entry,
     )
 

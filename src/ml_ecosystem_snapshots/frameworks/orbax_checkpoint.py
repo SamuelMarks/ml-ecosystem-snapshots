@@ -9,7 +9,7 @@ from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 try:
     import orbax.checkpoint as ocp
-except ImportError:
+except Exception:
     ocp = None
 
 

@@ -19,19 +19,18 @@ original_sig = inspect.signature
 
 
 def patched_sig(target: Any, *args: Any, **kwargs: Any) -> Any:
-    """Execute helper patched sig.
+    """Raise ValueError for `dummy_c_ext` and delegate other targets to `inspect.signature`.
 
     Args:
-        target: Input parameter value.
-        args: Input parameter value.
-        kwargs: Input parameter value.
-
+        target: Callable object to inspect.
+        args: Positional arguments forwarded to `inspect.signature`.
+        kwargs: Keyword arguments forwarded to `inspect.signature`.
 
     Raises:
-        ValueError: Exception.
+        ValueError: When `target` is `dummy_c_ext`.
 
     Returns:
-        Computed result.
+        The `inspect.Signature` for `target`.
     """
     if target is dummy_c_ext:
         raise ValueError("no signature found")
@@ -278,3 +277,50 @@ def test_opaque_c_extension_existing_environment_tags() -> None:
         assert len(ref.params) == 2
         assert ref.params[0].name == "args"
         assert ref.params[1].name == "kwargs"
+
+
+def test_c_extension_signature_sequence_operations() -> None:
+    """Verify CExtensionSignature MutableSequence operations, slicing, equality, and repr."""
+    from ml_ecosystem_snapshots.c_extension_sig import (
+        CExtensionSignature,
+        ParsedParamTuple,
+    )
+
+    sig = CExtensionSignature(
+        params=[
+            ("x", "POSITIONAL_OR_KEYWORD", None, "Tensor"),
+            ParsedParamTuple("y", "POSITIONAL_OR_KEYWORD", "1", "int"),
+        ],
+        returns_type="Tensor",
+    )
+    assert len(sig) == 2
+    assert sig[0].name == "x"
+    assert len(sig[0:1]) == 1
+
+    # Single-index assignment with tuple and ParsedParamTuple
+    sig[0] = ("a", "POSITIONAL_ONLY", None, "Tensor")
+    assert sig[0][0] == "a"
+    sig[0] = ParsedParamTuple("a2", "POSITIONAL_ONLY", None, "Tensor")
+    assert sig[0][0] == "a2"
+
+    # Slice assignment
+    sig[0:1] = [
+        ("b", "POSITIONAL_OR_KEYWORD", None, "float"),
+        ParsedParamTuple("c", "KEYWORD_ONLY", "0", "int"),
+    ]
+    assert len(sig) == 3
+
+    # Insert and delitem
+    sig.insert(1, ("inserted", "POSITIONAL_OR_KEYWORD", None, "str"))
+    assert len(sig) == 4
+    sig.insert(1, ParsedParamTuple("inserted2", "POSITIONAL_OR_KEYWORD", None, "str"))
+    assert len(sig) == 5
+    del sig[1]
+    assert len(sig) == 4
+
+    # Equality and repr
+    sig_copy = CExtensionSignature(params=list(sig))
+    assert sig == sig_copy
+    assert sig == list(sig)
+    assert sig != "not_a_sig"
+    assert "ParsedParamTuple" in repr(sig) or "('b'" in repr(sig)

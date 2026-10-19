@@ -33,8 +33,8 @@ def test_collect_transformers() -> None:
             """Execute helper generate.
 
             Args:
-                input_ids: Input parameter value.
-                max_length: Input parameter value.
+                input_ids: Input token ID tensor.
+                max_length: Maximum generation sequence length.
 
 
             Returns:

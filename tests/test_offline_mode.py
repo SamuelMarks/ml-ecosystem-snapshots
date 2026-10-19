@@ -93,9 +93,9 @@ def test_zero_db_files_in_repo() -> None:
             continue
         for fname in filenames:
             for ext in forbidden_exts:
-                assert not fname.endswith(ext), (
-                    f"Forbidden database file detected in repo: {os.path.join(dirpath, fname)}"
-                )
+                assert not fname.endswith(
+                    ext
+                ), f"Forbidden database file detected in repo: {os.path.join(dirpath, fname)}"
 
 
 def test_index_db_stored_in_cache_dir_only(tmp_path: Any, monkeypatch: Any) -> None:
@@ -134,9 +134,9 @@ def test_wheel_package_contents_and_no_db(tmp_path: Any) -> None:
         namelist = zf.namelist()
         # Assert no database files
         for name in namelist:
-            assert not name.endswith((".db", ".sqlite", ".sqlite3")), (
-                f"Database file inside wheel: {name}"
-            )
+            assert not name.endswith(
+                (".db", ".sqlite", ".sqlite3")
+            ), f"Database file inside wheel: {name}"
 
         # Assert JSON snapshots are present if bundled
         json_files = [n for n in namelist if n.endswith(".json")]

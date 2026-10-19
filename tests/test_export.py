@@ -66,7 +66,7 @@ def test_ghost_to_cdd_ir(sample_ghost_ref: Any) -> None:
     """Verify ghost to cdd ir behavior.
 
     Args:
-        sample_ghost_ref: Input parameter value.
+        sample_ghost_ref: Sample GhostRef fixture for export testing.
     """
     ir = _ghost_to_cdd_ir(sample_ghost_ref)
 
@@ -97,7 +97,7 @@ def test_to_json_schema(sample_ghost_ref: Any) -> None:
     """Verify to json schema behavior.
 
     Args:
-        sample_ghost_ref: Input parameter value.
+        sample_ghost_ref: Sample GhostRef fixture for export testing.
     """
     schema = to_json_schema(sample_ghost_ref)
 
@@ -117,7 +117,7 @@ def test_to_openapi(sample_ghost_ref: Any) -> None:
     """Verify to openapi behavior.
 
     Args:
-        sample_ghost_ref: Input parameter value.
+        sample_ghost_ref: Sample GhostRef fixture for export testing.
     """
     openapi_dict = to_openapi([sample_ghost_ref])
 
@@ -135,7 +135,7 @@ def test_to_pydantic(sample_ghost_ref: Any) -> None:
     """Verify to pydantic behavior.
 
     Args:
-        sample_ghost_ref: Input parameter value.
+        sample_ghost_ref: Sample GhostRef fixture for export testing.
     """
     code = to_pydantic(sample_ghost_ref)
     assert "class Linear(BaseModel):" in code
@@ -165,7 +165,7 @@ def test_to_protobuf(sample_ghost_ref: Any) -> None:
     """Verify to protobuf behavior.
 
     Args:
-        sample_ghost_ref: Input parameter value.
+        sample_ghost_ref: Sample GhostRef fixture for export testing.
     """
     code = to_protobuf(sample_ghost_ref)
     assert 'syntax = "proto3";' in code
@@ -543,7 +543,7 @@ def test_export_scoped_prompt_context(mocker: Any) -> None:
         return orig_get_snap(framework, version=version)
 
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         side_effect=mock_get_snap,
     )
 
@@ -578,7 +578,7 @@ def test_export_scoped_prompt_context(mocker: Any) -> None:
         }
     }
     with patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     ):
         ctx = export_scoped_prompt_context("test_fw", max_symbols=50)
@@ -882,7 +882,7 @@ def test_export_coverage_hardening() -> None:
         }
     }
     with patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_mixed_snap,
     ):
         scoped_nn = export_scoped_prompt_context("torch", module_prefix="torch.nn")

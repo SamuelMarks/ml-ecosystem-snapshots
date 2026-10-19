@@ -1,28 +1,37 @@
-"""Deepspeed module."""
+"""DeepSpeed API Snapshot Extractor."""
+
+from __future__ import annotations
 
 import importlib
+import logging
 from typing import List
-from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+from ml_switcheroo_ir.schema.ghost import (
+    GhostParam,
+    GhostRef,
+    ParameterKind,
+    SemanticTier,
+)
+
 from ml_ecosystem_snapshots.models import GhostInspector
-from ml_switcheroo_ir.schema.ghost import GhostRef
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
 ) -> List[GhostRef]:
-    """Collect deepspeed API.
+    """Collect DeepSpeed API symbols for the requested semantic tier.
 
     Args:
-        category: Input parameter value.
-        include_nonpublic: Input parameter value.
+        category: Target `SemanticTier` category (`MODEL` or `UTIL`).
+        include_nonpublic: Whether to include private (`_`-prefixed) symbols.
 
     Returns:
-        List of GhostRefs.
+        List of extracted `GhostRef` definitions.
     """
     results: List[GhostRef] = []
 
-    # DeepSpeed mainly provides training, inference, and utilities.
-    # We categorize 'initialize' and config-related things to MODEL or UTIL.
     if category not in (SemanticTier.MODEL, SemanticTier.UTIL):
         return results
 
@@ -52,14 +61,8 @@ def collect_api(
                 ref = inspector.inspect(obj, f"deepspeed.{name}")
                 if ref:
                     if name == "initialize":
-                        # Map distributed configuration dictionaries into structured elements.
                         has_config = any(p.name == "config_params" for p in ref.params)
                         if not has_config:
-                            from ml_switcheroo_ir.schema.ghost import (
-                                GhostParam,
-                                ParameterKind,
-                            )
-
                             ref.params.append(
                                 GhostParam(
                                     name="config_params",
@@ -79,8 +82,7 @@ def collect_api(
                 OSError,
                 ImportError,
                 RuntimeError,
-                Exception,
-            ):
-                pass
+            ) as exc:
+                _LOGGER.debug("Skipping deepspeed.%s: %s", name, exc)
 
     return results

@@ -16,8 +16,8 @@ def test_build_and_run(mocker: Any, tmp_path: Path) -> None:
     """Test build_and_run function.
 
     Args:
-        mocker: Input parameter value.
-        tmp_path: Input parameter value.
+        mocker: Pytest mocker fixture.
+        tmp_path: Temporary directory path fixture.
     """
     mock_run = mocker.patch("subprocess.run")
 
@@ -73,8 +73,8 @@ def test_upload_to_s3_success(mocker: Any, tmp_path: Path) -> None:
     """Test upload_to_s3 function with boto3.
 
     Args:
-        mocker: Input parameter value.
-        tmp_path: Input parameter value.
+        mocker: Pytest mocker fixture.
+        tmp_path: Temporary directory path fixture.
     """
     mock_boto3 = mocker.MagicMock()
     mock_s3 = mocker.MagicMock()
@@ -105,8 +105,8 @@ def test_upload_to_s3_empty_dir(mocker: Any, tmp_path: Path) -> None:
     """Test upload_to_s3 with empty directory.
 
     Args:
-        mocker: Input parameter value.
-        tmp_path: Input parameter value.
+        mocker: Pytest mocker fixture.
+        tmp_path: Temporary directory path fixture.
     """
     mock_boto3 = mocker.MagicMock()
     mock_s3 = mocker.MagicMock()
@@ -124,8 +124,8 @@ def test_upload_to_s3_import_error(mocker: Any, tmp_path: Path) -> None:
     """Test upload_to_s3 function without boto3.
 
     Args:
-        mocker: Input parameter value.
-        tmp_path: Input parameter value.
+        mocker: Pytest mocker fixture.
+        tmp_path: Temporary directory path fixture.
     """
     mocker.patch.dict("sys.modules", {"boto3": None})
     mock_print = mocker.patch("builtins.print")
@@ -138,8 +138,8 @@ def test_upload_to_s3_other_error(mocker: Any, tmp_path: Path) -> None:
     """Test upload_to_s3 function handling generic exceptions.
 
     Args:
-        mocker: Input parameter value.
-        tmp_path: Input parameter value.
+        mocker: Pytest mocker fixture.
+        tmp_path: Temporary directory path fixture.
     """
     mock_boto3 = mocker.MagicMock()
     mock_boto3.client.side_effect = Exception("Test error")
@@ -155,8 +155,8 @@ def test_main_default(mocker: Any, tmp_path: Path) -> None:
     """Test main function with default args.
 
     Args:
-        mocker: Input parameter value.
-        tmp_path: Input parameter value.
+        mocker: Pytest mocker fixture.
+        tmp_path: Temporary directory path fixture.
     """
     mocker.patch("sys.argv", ["matrix_runner.py", "--output-dir", str(tmp_path)])
     mock_build = mocker.patch(
@@ -174,8 +174,8 @@ def test_main_with_matrix_and_s3(mocker: Any, tmp_path: Path) -> None:
     """Test main function with custom matrix and s3.
 
     Args:
-        mocker: Input parameter value.
-        tmp_path: Input parameter value.
+        mocker: Pytest mocker fixture.
+        tmp_path: Temporary directory path fixture.
     """
     matrix_file = tmp_path / "matrix.json"
     matrix_file.write_text(json.dumps({"test_fw": ["1.0"]}))

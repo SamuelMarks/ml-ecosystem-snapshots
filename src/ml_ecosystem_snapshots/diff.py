@@ -159,8 +159,8 @@ def _is_breaking_change(
 
 
 def diff_snapshots(
-    snap1: Union[SnapshotEnvelope, Mapping[str, Any], Sequence[Mapping[str, Any]], Any],
-    snap2: Union[SnapshotEnvelope, Mapping[str, Any], Sequence[Mapping[str, Any]], Any],
+    snap1: Union[SnapshotEnvelope, Mapping[str, Any], Sequence[Mapping[str, Any]]],
+    snap2: Union[SnapshotEnvelope, Mapping[str, Any], Sequence[Mapping[str, Any]]],
 ) -> DiffResult:
     """Diffs two snapshots to find changes.
 

@@ -955,3 +955,329 @@ def test_grounding_new_verifiers() -> None:
 
     webgl_unknown = validate_webgl_op("nonexistent_webgl_op")
     assert webgl_unknown.has_errors
+
+
+def test_unified_grounding_and_mcp_parity_branches(tmp_path: Any) -> None:
+    """Verify unified Grounding SDK and MCP validator branches across Python, ISA, IR, and Engine.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
+    from ml_ecosystem_snapshots.grounding.python_fw import _normalize_candidate_dict
+    from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository
+
+    assert _normalize_candidate_dict({"name": "raw"}) == {"name": "raw"}
+
+    # 1. GroundingEngine with SnapshotRepository fallback
+    repo = SnapshotRepository()
+    repo.put(
+        "custom_repo_fw",
+        {
+            "categories": {
+                "math": [
+                    {
+                        "name": "op",
+                        "api_path": "custom_repo_fw.op",
+                        "kind": "function",
+                        "params": [
+                            {
+                                "name": "x",
+                                "kind": "POSITIONAL_OR_KEYWORD",
+                                "allowed_dtypes": ["float32"],
+                            }
+                        ],
+                    }
+                ]
+            }
+        },
+    )
+    empty_dir = str(tmp_path / "empty_repo_dir")
+    os.makedirs(empty_dir, exist_ok=True)
+    eng_repo = GroundingEngine(base_dirs=[empty_dir], repository=repo)
+    assert eng_repo.has_symbol("custom_repo_fw", "custom_repo_fw.op")
+
+    # Python dtype error branch in validate_python_call
+    py_dt_err = validate_python_call(
+        framework="custom_repo_fw",
+        api_path="custom_repo_fw.op",
+        args=["x"],
+        kwargs={},
+        engine=eng_repo,
+        arg_dtypes=["int32"],
+    )
+    assert not py_dt_err.is_grounded
+    assert any(d.field == "arguments" for d in py_dt_err.diagnostics)
+
+    # Python secondary overload positional arity acceptance
+    ov_dir = str(tmp_path / "ov_dir")
+    os.makedirs(ov_dir, exist_ok=True)
+    with open(os.path.join(ov_dir, "ovfw_v1.0.json"), "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "categories": {
+                    "math": [
+                        {
+                            "name": "func",
+                            "api_path": "ovfw.func",
+                            "kind": "function",
+                            "params": [{"name": "a", "kind": "POSITIONAL_OR_KEYWORD"}],
+                            "overloads": [
+                                {
+                                    "name": "func",
+                                    "api_path": "ovfw.func",
+                                    "kind": "function",
+                                    "params": [
+                                        {"name": "a", "kind": "POSITIONAL_OR_KEYWORD"},
+                                        {"name": "b", "kind": "POSITIONAL_OR_KEYWORD"},
+                                    ],
+                                }
+                            ],
+                        }
+                    ]
+                }
+            },
+            f,
+        )
+    eng_ov = GroundingEngine(base_dirs=[ov_dir])
+    res_ov_pos = validate_python_call(
+        "ovfw", "ovfw.func", args=[1, 2], kwargs={}, engine=eng_ov
+    )
+    assert res_ov_pos.is_grounded
+
+    res_ov_pos_bad_kw = validate_python_call(
+        "ovfw",
+        "ovfw.func",
+        args=[1, 2],
+        kwargs={"bad_kw": 1},
+        engine=eng_ov,
+    )
+    assert not res_ov_pos_bad_kw.is_grounded
+
+    # 2. SASS: modifier conflict, register error, directionality error, control_codes error
+    sass_err_rep = validate_sass_instruction(
+        mnemonic="FFMA",
+        architecture="sm_80",
+        operands=["0x10", "R999", "R2", "R3"],
+        modifiers=[".RN", ".RZ"],
+        control_codes={"stall_count": 99},
+    )
+    assert not sass_err_rep.is_grounded
+    fields = {d.field for d in sass_err_rep.diagnostics}
+    assert "modifiers" in fields
+    assert "operands[1]" in fields
+    assert "operands" in fields
+    assert "control_codes" in fields
+
+    # 3. RDNA: unsupported gfx_arch, microarch wave_size error, encoding mismatch, modifier error, operand count mismatch, register error, constant bus error
+    rdna_err_rep = validate_rdna_instruction(
+        mnemonic="V_DUAL_FMAC_F32",
+        gfx_arch="GFX9",
+        operands=["v999", "s0", "s1", "s2", "v1"],
+        modifiers=["omod:2"],
+        encoding="SOP1",
+        wave_size=64,
+    )
+    assert not rdna_err_rep.is_grounded
+    rdna_fields = {d.field for d in rdna_err_rep.diagnostics}
+    assert "gfx_arch" in rdna_fields
+    assert "encoding" in rdna_fields
+    assert "modifiers" in rdna_fields
+    assert "operands" in rdna_fields
+    assert "operands[0]" in rdna_fields
+
+    # RDNA constant bus violation on VOP2 instruction in GFX9
+    rdna_cbus = validate_rdna_instruction(
+        mnemonic="V_ADD_F32",
+        gfx_arch="GFX9",
+        operands=["v0", "s0", "s1"],
+    )
+    assert not rdna_cbus.is_grounded
+    assert any(
+        "Constant bus" in d.message or "constant bus" in d.message.lower()
+        for d in rdna_cbus.diagnostics
+    )
+
+    # MLIR variadic op with operand_count != len(expected_operands)
+    mlir_var_dir = str(tmp_path / "mlir_var_dir")
+    os.makedirs(mlir_var_dir, exist_ok=True)
+    with open(os.path.join(mlir_var_dir, "mlir_v1.0.json"), "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "categories": {
+                    "ops": [
+                        {
+                            "name": "variadic_op",
+                            "api_path": "func.variadic_op",
+                            "kind": "operation",
+                            "params": [
+                                {
+                                    "name": "inputs",
+                                    "kind": "POSITIONAL_OR_KEYWORD",
+                                    "annotation": "Variadic<AnyType>",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            },
+            f,
+        )
+    eng_mlir_var = GroundingEngine(base_dirs=[mlir_var_dir])
+    var_rep = validate_mlir_op(
+        "func", "variadic_op", operand_count=3, attributes={}, engine=eng_mlir_var
+    )
+    assert var_rep.is_grounded
+
+    # Python keepdim / keepdims suggestion branches
+    keep_dir = str(tmp_path / "keep_dir")
+    os.makedirs(keep_dir, exist_ok=True)
+    with open(os.path.join(keep_dir, "torch_v1.0.json"), "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "categories": {
+                    "math": [
+                        {
+                            "name": "sum",
+                            "api_path": "torch.sum",
+                            "kind": "function",
+                            "params": [
+                                {"name": "input", "kind": "POSITIONAL_OR_KEYWORD"},
+                                {"name": "keepdim", "kind": "KEYWORD_ONLY"},
+                            ],
+                        }
+                    ]
+                }
+            },
+            f,
+        )
+    with open(os.path.join(keep_dir, "numpy_v1.0.json"), "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "categories": {
+                    "math": [
+                        {
+                            "name": "sum",
+                            "api_path": "numpy.sum",
+                            "kind": "function",
+                            "params": [
+                                {"name": "a", "kind": "POSITIONAL_OR_KEYWORD"},
+                                {"name": "keepdims", "kind": "KEYWORD_ONLY"},
+                            ],
+                        }
+                    ]
+                }
+            },
+            f,
+        )
+    eng_keep = GroundingEngine(base_dirs=[keep_dir])
+    rep_t_kd = validate_python_call(
+        "torch", "torch.sum", args=[1], kwargs={"keepdims": True}, engine=eng_keep
+    )
+    assert any(d.suggested_fix == "keepdim" for d in rep_t_kd.diagnostics)
+    rep_np_kd = validate_python_call(
+        "numpy", "numpy.sum", args=[1], kwargs={"keepdim": True}, engine=eng_keep
+    )
+    assert any(d.suggested_fix == "keepdims" for d in rep_np_kd.diagnostics)
+
+    # 4. StableHLO & MLIR: type errors, trait errors, structured attribute errors, region errors
+    shlo_err = validate_stablehlo_op(
+        op_name="stablehlo.add",
+        operand_types=["tensor<4xf32>", "tensor<8xi32>"],
+        attributes={"comparison_direction": "INVALID_DIR"},
+        result_types=["tensor<4xf32>"],
+    )
+    assert not shlo_err.is_grounded
+    shlo_fields = {d.field for d in shlo_err.diagnostics}
+    assert "traits" in shlo_fields
+    assert "attributes" in shlo_fields
+
+    shlo_reg_err = validate_stablehlo_op(
+        op_name="stablehlo.reduce",
+        operand_types=["tensor<4xf32>", "tensor<f32>"],
+        attributes={},
+        regions={"body": {"block_arguments": ["tensor<f32>"], "yield_types": []}},
+    )
+    assert any(d.field == "regions.body" for d in shlo_reg_err.diagnostics)
+
+    # RDNA empty gfx_arch branch
+    rdna_no_arch = validate_rdna_instruction(
+        mnemonic="V_ADD_F32",
+        gfx_arch="",
+        operands=["v0", "v1", "v2"],
+    )
+    assert rdna_no_arch.is_grounded
+
+    # Custom MLIR op with explicit type constraint to trigger operand type error
+    mlir_custom_dir = str(tmp_path / "mlir_custom")
+    os.makedirs(mlir_custom_dir, exist_ok=True)
+    with open(
+        os.path.join(mlir_custom_dir, "mlir_exhaustive.json"), "w", encoding="utf-8"
+    ) as f:
+        json.dump(
+            [
+                {
+                    "name": "arith.custom_op",
+                    "api_path": "arith.custom_op",
+                    "kind": "operation",
+                    "operands": [{"name": "lhs", "type": "AnyFloat"}],
+                    "params": [{"name": "lhs", "annotation": "AnyFloat"}],
+                },
+                {
+                    "name": "stablehlo.custom_op",
+                    "api_path": "stablehlo.custom_op",
+                    "kind": "operation",
+                    "operands": [{"name": "lhs", "type": "AnyFloat"}],
+                    "params": [{"name": "lhs", "annotation": "AnyFloat"}],
+                },
+            ],
+            f,
+        )
+    with open(
+        os.path.join(mlir_custom_dir, "stablehlo_exhaustive.json"),
+        "w",
+        encoding="utf-8",
+    ) as f:
+        json.dump(
+            [
+                {
+                    "name": "stablehlo.custom_op",
+                    "api_path": "stablehlo.custom_op",
+                    "kind": "operation",
+                    "operands": [{"name": "lhs", "type": "AnyFloat"}],
+                    "params": [{"name": "lhs", "annotation": "AnyFloat"}],
+                }
+            ],
+            f,
+        )
+    eng_mlir = GroundingEngine(base_dirs=[mlir_custom_dir])
+    shlo_type_err = validate_stablehlo_op(
+        op_name="stablehlo.custom_op",
+        operand_types=["i32"],
+        attributes={},
+        engine=eng_mlir,
+    )
+    assert any(d.field == "operands[0]" for d in shlo_type_err.diagnostics)
+
+    mlir_type_err = validate_mlir_op(
+        dialect="arith",
+        op_name="custom_op",
+        operand_count=1,
+        attributes={"comparison_direction": "BAD"},
+        engine=eng_mlir,
+        operand_types=["i32"],
+        result_types=["f64"],
+    )
+    assert not mlir_type_err.is_grounded
+    mlir_fields = {d.field for d in mlir_type_err.diagnostics}
+    assert "operands[0]" in mlir_fields
+    assert "attributes" in mlir_fields
+
+    mlir_trait_err = validate_mlir_op(
+        dialect="arith",
+        op_name="addf",
+        operand_count=2,
+        attributes={},
+        operand_types=["tensor<4xf32>", "tensor<8xf32>"],
+        result_types=["tensor<4xf32>"],
+    )
+    assert any(d.field == "traits" for d in mlir_trait_err.diagnostics)

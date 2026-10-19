@@ -14,7 +14,7 @@ def test_get_test_coverage_success(mocker: Any) -> None:
     """Test get_test_coverage when pytest returns output with TOTAL.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     mocker.patch("os.path.exists", return_value=True)
     mock_run = mocker.patch("subprocess.run")
@@ -26,7 +26,7 @@ def test_get_test_coverage_fail(mocker: Any) -> None:
     """Test get_test_coverage when pytest output fails.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     mock_run = mocker.patch("subprocess.run")
     mock_run.return_value.stdout = "No total here"
@@ -91,7 +91,7 @@ def test_get_doc_coverage_success(mocker: Any) -> None:
     """Test get_doc_coverage when interrogate returns success.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     mock_run = mocker.patch("subprocess.run")
     mock_run.return_value.stdout = "RESULT: PASSED (minimum: 80.0%, actual: 95.5%)"
@@ -102,7 +102,7 @@ def test_get_doc_coverage_fail(mocker: Any) -> None:
     """Test get_doc_coverage when interrogate fails to match.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     mock_run = mocker.patch("subprocess.run")
     mock_run.return_value.stdout = "RESULT: PASSED"
@@ -113,7 +113,7 @@ def test_get_doc_coverage_file_not_found(mocker: Any) -> None:
     """Test get_doc_coverage when interrogate is missing.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     mock_run = mocker.patch("subprocess.run")
     mock_run.side_effect = FileNotFoundError()
@@ -139,8 +139,8 @@ def test_get_color(cov: Any, expected: str) -> None:
     """Test get_color with various inputs.
 
     Args:
-        cov: Input parameter value.
-        expected: Input parameter value.
+        cov: Coverage percentage string.
+        expected: Expected shield badge color name.
     """
     assert get_color(cov) == expected
 
@@ -149,8 +149,8 @@ def test_main(mocker: Any, tmp_path: Any) -> None:
     """Test main function updates README.
 
     Args:
-        mocker: Input parameter value.
-        tmp_path: Input parameter value.
+        mocker: Pytest mocker fixture.
+        tmp_path: Temporary directory path fixture.
     """
     mocker.patch("scripts.update_shields.get_test_coverage", return_value="100")
     mocker.patch("scripts.update_shields.get_doc_coverage", return_value="100")
@@ -174,8 +174,8 @@ def test_main_replace_existing(mocker: Any, tmp_path: Any) -> None:
     """Test main function replaces existing badges.
 
     Args:
-        mocker: Input parameter value.
-        tmp_path: Input parameter value.
+        mocker: Pytest mocker fixture.
+        tmp_path: Temporary directory path fixture.
     """
     mocker.patch("scripts.update_shields.get_test_coverage", return_value="90")
     mocker.patch("scripts.update_shields.get_doc_coverage", return_value="85")

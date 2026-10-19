@@ -64,7 +64,7 @@ def test_version_aware_mcp_queries(mocker: Any) -> None:
         return mock_snap_v23
 
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         side_effect=mock_get_snap,
     )
     # Also bypass SQLite lookup so it queries snapshot
@@ -170,9 +170,9 @@ def test_expanded_semantic_concept_maps() -> None:
     ]
 
     for concept in required_concepts:
-        assert concept in CONCEPT_ALIAS_MAP, (
-            f"Concept '{concept}' missing from CONCEPT_ALIAS_MAP"
-        )
+        assert (
+            concept in CONCEPT_ALIAS_MAP
+        ), f"Concept '{concept}' missing from CONCEPT_ALIAS_MAP"
         aliases = CONCEPT_ALIAS_MAP[concept]
         assert "torch" in aliases
         assert len(aliases["torch"]) > 0
@@ -277,7 +277,7 @@ def test_check_code_block_python(mocker: Any) -> None:
         return {"categories": {}}
 
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         side_effect=mock_get_snap,
     )
     mocker.patch("ml_ecosystem_snapshots.index.lookup_symbol", return_value=None)
@@ -413,7 +413,7 @@ def test_mcp_server_disk_and_index_fallbacks(mocker: Any, tmp_path: Any) -> None
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_data,
     )
     sig = get_api_signature("custom_fw", "custom_fw.fn")
@@ -456,7 +456,7 @@ def test_search_apis_edge_cases(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
     # limit=10 ensures len(matches) < limit (branch 467->469)
@@ -502,7 +502,7 @@ def test_check_hallucination_dtypes_and_ranks_edge_cases(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     )
     mocker.patch(
@@ -631,7 +631,7 @@ def test_check_mlir_op_and_stablehlo_additional_branches(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_mlir_snap,
     )
     res_existing_traits = check_mlir_op(
@@ -706,19 +706,19 @@ def test_validate_source_code_and_jsonrpc_additional_branches(mocker: Any) -> No
         mocker: Pytest mocker fixture.
     """
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.check_hallucination",
+        "ml_ecosystem_snapshots.mcp.tools.hallucination.check_hallucination",
         return_value={"is_hallucinated": False},
     )
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.check_mlir_op",
+        "ml_ecosystem_snapshots.mcp.tools.hallucination.check_mlir_op",
         return_value={"is_valid": True},
     )
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.check_sass_instruction",
+        "ml_ecosystem_snapshots.mcp.tools.hallucination.check_sass_instruction",
         return_value={"is_valid": True},
     )
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.check_rdna_instruction",
+        "ml_ecosystem_snapshots.mcp.tools.hallucination.check_rdna_instruction",
         return_value={"is_valid": True},
     )
     mocker.patch(
@@ -882,7 +882,7 @@ def test_shape_and_dtype_grounding(mocker: Any) -> None:
         return orig_lookup_symbol(framework, api_path, version=version)
 
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         side_effect=mock_get_snap,
     )
     mocker.patch(
@@ -984,7 +984,7 @@ def test_explain_anti_pattern_tool(mocker: Any) -> None:
     from ml_ecosystem_snapshots.mcp_server import explain_anti_pattern
 
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_api_signature",
+        "ml_ecosystem_snapshots.mcp.tools.hallucination.get_api_signature",
         return_value={"params": [{"name": "input"}, {"name": "dim"}]},
     )
 
@@ -1124,7 +1124,7 @@ def test_mcp_edge_error_handling(mocker: Any) -> None:
         return orig_lookup_symbol(framework, api_path, version=version)
 
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         side_effect=mock_get_snap,
     )
     mocker.patch(
@@ -1228,10 +1228,8 @@ def test_get_framework_snapshot_extraction_exception(mocker: Any) -> None:
 
     _SNAPSHOT_CACHE.clear()
     mock_extract = mocker.MagicMock(side_effect=RuntimeError("extraction failure"))
-    mocker.patch("ml_ecosystem_snapshots.mcp_server.extract_snapshot", mock_extract)
-    mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.is_offline_mode", return_value=False
-    )
+    mocker.patch("ml_ecosystem_snapshots.mcp.cache.extract_snapshot", mock_extract)
+    mocker.patch("ml_ecosystem_snapshots.mcp.cache.is_offline_mode", return_value=False)
 
     res = get_framework_snapshot("torch")
     assert res == {"categories": {}}
@@ -1300,7 +1298,7 @@ def test_check_code_block_import_tracking(mocker: Any) -> None:
         }
     }
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_torch,
     )
     mocker.patch(
@@ -1350,7 +1348,7 @@ def test_check_hallucination_known_enums_without_allowed_values(
     from ml_ecosystem_snapshots.mcp_server import check_hallucination
 
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_api_signature",
+        "ml_ecosystem_snapshots.mcp.tools.hallucination.get_api_signature",
         return_value={
             "name": "custom_op",
             "api_path": "custom.custom_op",
@@ -1358,7 +1356,7 @@ def test_check_hallucination_known_enums_without_allowed_values(
         },
     )
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value={"categories": {"ops": []}},
     )
 
@@ -1586,7 +1584,7 @@ def test_check_hallucination_non_int_rank() -> None:
         }
     }
     with patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     ):
         res = check_hallucination(
@@ -1646,3 +1644,48 @@ def test_all_14_mcp_tools_dispatch() -> None:
         assert len(content) > 0
         parsed_res = json.loads(content[0]["text"])
         assert "is_valid" in parsed_res or "op_exists" in parsed_res
+
+
+def test_injectable_snapshot_repository_across_mcp_tools(mocker: Any) -> None:
+    """Verify explicit SnapshotRepository injection across MCP tool functions and resolve_snapshot.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository, resolve_snapshot
+
+    mocker.patch("ml_ecosystem_snapshots.index.lookup_symbol", return_value=None)
+    repo = SnapshotRepository(backing_store={})
+    repo.preload(
+        "custom_injected_fw",
+        {
+            "categories": {
+                "ops": [
+                    {
+                        "name": "injected_op",
+                        "api_path": "custom_injected_fw.injected_op",
+                        "params": [{"name": "alpha", "kind": "POSITIONAL_OR_KEYWORD"}],
+                    }
+                ]
+            }
+        },
+    )
+
+    sig = get_api_signature(
+        "custom_injected_fw",
+        "custom_injected_fw.injected_op",
+        repository=repo,
+    )
+    assert sig is not None
+    assert sig["name"] == "injected_op"
+
+    res = check_hallucination(
+        "custom_injected_fw",
+        "custom_injected_fw.injected_op",
+        kwargs=["alpha"],
+        repository=repo,
+    )
+    assert res["is_hallucinated"] is False
+
+    snap_bundled = resolve_snapshot("amd_rdna", prefer_bundled=True)
+    assert "categories" in snap_bundled

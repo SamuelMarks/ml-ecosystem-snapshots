@@ -48,8 +48,8 @@ def create_module(name: str, attrs: dict[str, Any]) -> types.ModuleType:
     """Execute helper create module.
 
     Args:
-        name: Input parameter value.
-        attrs: Input parameter value.
+        name: Synthetic module name.
+        attrs: Dictionary of module attributes to populate.
 
 
     Returns:
@@ -65,7 +65,7 @@ def test_torch_collect(mocker: Any) -> None:
     """Verify torch collect behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
@@ -429,7 +429,7 @@ def test_torch_import_error(mocker: Any) -> None:
     """Verify torch import error behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
@@ -458,7 +458,7 @@ def test_torch_typeerror(mocker: Any) -> None:
     """Verify torch typeerror behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
@@ -492,7 +492,7 @@ def test_tensorflow_collect(mocker: Any) -> None:
     """Verify tensorflow collect behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
 
@@ -807,7 +807,7 @@ def test_keras_collect(mocker: Any) -> None:
     """Verify keras collect behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import keras as keras_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -983,7 +983,7 @@ def test_mlx_collect(mocker: Any) -> None:
     """Verify mlx collect behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import mlx as mlx_fw
 
@@ -1083,7 +1083,7 @@ def test_jax_collect(mocker: Any) -> None:
     """Verify jax collect behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import jax as jax_fw
     from ml_ecosystem_snapshots.frameworks.optax_shim import OptaxScanner
@@ -1306,7 +1306,7 @@ def test_flax_nnx_collect(mocker: Any) -> None:
     """Verify flax nnx collect behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import flax_nnx as flax_fw
 
@@ -1374,7 +1374,7 @@ def test_optax_shim_collect(mocker: Any) -> None:
     """Verify optax shim collect behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     import ml_ecosystem_snapshots.frameworks.optax_shim as o_shim
 
@@ -1487,7 +1487,7 @@ def test_sklearn_collect(mocker: Any) -> None:
     """Verify sklearn collect behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -1505,7 +1505,7 @@ def test_sklearn_collect(mocker: Any) -> None:
             """Execute helper init  .
 
             Args:
-                n_estimators: Input parameter value.
+                n_estimators: Number of boosting or forest estimators.
             """
             pass
 
@@ -1518,8 +1518,8 @@ def test_sklearn_collect(mocker: Any) -> None:
         """Execute helper accuracy score.
 
         Args:
-            y_true: Input parameter value.
-            y_pred: Input parameter value.
+            y_true: Ground-truth target labels.
+            y_pred: Predicted target labels.
         """
         pass
 
@@ -1575,7 +1575,7 @@ def test_sklearn_import_error(mocker: Any) -> None:
     """Verify sklearn import error behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -1590,7 +1590,7 @@ def test_sklearn_module_import_error(mocker: Any) -> None:
     """Verify sklearn module import error behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -1644,7 +1644,7 @@ def test_sklearn_scan_module_edge_cases(mocker: Any) -> None:
     """Verify sklearn scan module edge cases behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
     import types
@@ -1698,7 +1698,7 @@ def test_sklearn_scan_module_branches(mocker: Any) -> None:
     """Verify sklearn scan module branches behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
     import types
@@ -1738,7 +1738,7 @@ def test_sklearn_scan_module_exception(mocker: Any) -> None:
     """Verify sklearn scan module exception behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
     import types
@@ -1756,19 +1756,33 @@ def test_numpy_collect(mocker: Any) -> None:
     """Verify numpy collect behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     import ml_ecosystem_snapshots.frameworks.numpy as np_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
     from ml_ecosystem_snapshots.models import GhostInspector
 
-    def tanh() -> Any:
-        """Docstring."""
-        pass
+    def tanh(x: float) -> float:
+        """Compute hyperbolic tangent.
 
-    def exp() -> Any:
-        """Docstring."""
-        pass
+        Args:
+            x: Input value.
+
+        Returns:
+            Hyperbolic tangent of `x`.
+        """
+        return x
+
+    def exp(x: float) -> float:
+        """Compute exponential.
+
+        Args:
+            x: Input value.
+
+        Returns:
+            Exponential of `x`.
+        """
+        return x
 
     fake_np = create_module(
         "numpy",
@@ -1794,15 +1808,15 @@ def test_numpy_collect(mocker: Any) -> None:
     original_inspect = GhostInspector.inspect
 
     def mock_inspect(obj: Any, api_path: Any, **kwargs: Any) -> Any:
-        """Mock inspect function.
+        """Mock inspect function delegating to real GhostInspector.inspect except on minimum.
 
         Args:
-            obj: Input parameter value.
-            api_path: Input parameter value.
+            obj: Target live object to inspect.
+            api_path: Dotted canonical API path.
             **kwargs: Variable arguments.
 
         Returns:
-            A mocked GhostRef.
+            A populated `GhostRef`.
         """
         if "minimum" in api_path:
             raise ValueError("mock error")
@@ -1818,6 +1832,11 @@ def test_numpy_collect(mocker: Any) -> None:
     assert "tanh" in names
     assert "exp" in names
     assert "not_callable" not in names
+    tanh_ref = next(x for x in res if x.name == "tanh")
+    assert tanh_ref.api_path == "numpy.tanh"
+    assert tanh_ref.kind == "function"
+    assert tanh_ref.returns_type == "float"
+    assert any(p.name == "x" and p.annotation == "float" for p in tanh_ref.params)
 
     # Array API
     res_array = np_shim.collect_api(SemanticTier.ARRAY_API)
@@ -1841,27 +1860,40 @@ def test_orbax_collect(mocker: Any) -> None:
     """Verify orbax collect behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     import ml_ecosystem_snapshots.frameworks.orbax_checkpoint as ocp_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
     from ml_ecosystem_snapshots.models import GhostInspector
 
-    def checkpoint() -> Any:
-        """Docstring."""
-        pass
+    def checkpoint(directory: str) -> bool:
+        """Save checkpoint to directory.
+
+        Args:
+            directory: Target directory path.
+
+        Returns:
+            True on success.
+        """
+        return bool(directory)
 
     def _priv() -> Any:
-        """Docstring."""
+        """Private helper."""
         pass
 
     class Checkpointer:
-        """Docstring."""
+        """Checkpoint manager class."""
 
-        pass
+        def __init__(self, handler: Any) -> None:
+            """Initialize Checkpointer.
+
+            Args:
+                handler: Checkpoint handler instance.
+            """
+            self.handler = handler
 
     def error_func() -> Any:
-        """Docstring."""
+        """Function triggering simulated inspection error."""
         pass
 
     fake_ocp = create_module(
@@ -1879,15 +1911,15 @@ def test_orbax_collect(mocker: Any) -> None:
     original_inspect = GhostInspector.inspect
 
     def mock_inspect(obj: Any, api_path: Any, **kwargs: Any) -> Any:
-        """Mock inspect function.
+        """Mock inspect function delegating to real GhostInspector.inspect except on error_func.
 
         Args:
-            obj: Input parameter value.
-            api_path: Input parameter value.
+            obj: Target live object to inspect.
+            api_path: Dotted canonical API path.
             **kwargs: Variable arguments.
 
         Returns:
-            A mocked GhostRef.
+            A populated `GhostRef`.
         """
         if "error_func" in api_path:
             raise ValueError("mock error")
@@ -1903,6 +1935,11 @@ def test_orbax_collect(mocker: Any) -> None:
     assert "checkpoint" in names
     assert "Checkpointer" in names
     assert "_priv" not in names
+    ckpt_ref = next(x for x in res if x.name == "checkpoint")
+    assert ckpt_ref.api_path == "orbax.checkpoint.checkpoint"
+    assert ckpt_ref.kind == "function"
+    assert ckpt_ref.returns_type == "bool"
+    assert any(p.name == "directory" and p.annotation == "str" for p in ckpt_ref.params)
 
     # Include non-public
     res_all = ocp_shim.collect_api(SemanticTier.ARRAY_API, include_nonpublic=True)
@@ -1922,28 +1959,36 @@ def test_pax_collect(mocker: Any) -> None:
     """Verify pax collect behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     import ml_ecosystem_snapshots.frameworks.pax as pax_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
     from ml_ecosystem_snapshots.models import GhostInspector
 
     class Linear:
-        """Docstring."""
+        """Praxis Linear layer."""
 
-        pass
+        def __init__(self, input_dims: int = 64, output_dims: int = 128) -> None:
+            """Initialize Linear layer.
+
+            Args:
+                input_dims: Input feature dimension.
+                output_dims: Output feature dimension.
+            """
+            self.input_dims = input_dims
+            self.output_dims = output_dims
 
     class _PrivLayer:
-        """Docstring."""
+        """Private Praxis layer."""
 
         pass
 
     def not_a_class() -> Any:
-        """Docstring."""
+        """Helper function."""
         pass
 
     class ErrorClass:
-        """Docstring."""
+        """Simulated failing class."""
 
         pass
 
@@ -1962,15 +2007,15 @@ def test_pax_collect(mocker: Any) -> None:
     original_inspect = GhostInspector.inspect
 
     def mock_inspect(obj: Any, api_path: Any, **kwargs: Any) -> Any:
-        """Mock inspect function.
+        """Mock inspect function delegating to real GhostInspector.inspect except on ErrorClass.
 
         Args:
-            obj: Input parameter value.
-            api_path: Input parameter value.
+            obj: Target live object to inspect.
+            api_path: Dotted canonical API path.
             **kwargs: Variable arguments.
 
         Returns:
-            A mocked GhostRef.
+            A populated `GhostRef`.
         """
         if "ErrorClass" in api_path:
             raise ValueError("mock error")
@@ -1985,6 +2030,10 @@ def test_pax_collect(mocker: Any) -> None:
     names = [x.name for x in res]
     assert "Linear" in names
     assert "_PrivLayer" not in names
+    lin_ref = next(x for x in res if x.name == "Linear")
+    assert lin_ref.api_path == "praxis.layers.Linear"
+    assert lin_ref.kind == "class"
+    assert any(p.name == "input_dims" and p.default == "64" for p in lin_ref.params)
 
     # Empty
     res2 = pax_shim.collect_api(SemanticTier.ACTIVATION)
@@ -1999,15 +2048,23 @@ def test_triton_collect(mocker: Any) -> None:
     """Verify triton collect behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     import ml_ecosystem_snapshots.frameworks.triton as triton_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
     import importlib
 
-    def cdiv() -> Any:
-        """Docstring."""
-        pass
+    def cdiv(x: int, div: int) -> int:
+        """Ceiling division.
+
+        Args:
+            x: Dividend integer.
+            div: Divisor integer.
+
+        Returns:
+            Ceiling quotient.
+        """
+        return (x + div - 1) // div
 
     fake_triton = create_module("triton", {"cdiv": cdiv, "_priv": lambda: None})
 
@@ -2016,7 +2073,7 @@ def test_triton_collect(mocker: Any) -> None:
     original_import = importlib.import_module
 
     def mock_import(name: Any, *args: Any, **kwargs: Any) -> Any:
-        """Mock import function.
+        """Mock import function returning synthetic triton modules.
 
         Args:
             name: The module name.
@@ -2024,20 +2081,10 @@ def test_triton_collect(mocker: Any) -> None:
             **kwargs: Arbitrary keyword arguments.
 
         Returns:
-            The imported module or raises.
-        """
-        """Docstring.
-
-        Args:
-            **kwargs: Parameter.
-            *args: Parameter.
-            name: Parameter.
+            The imported module.
 
         Raises:
-            ImportError: Exception.
-
-        Returns:
-            Return value.
+            ImportError: If `triton_fail` is imported.
         """
         if name == "triton":
             return fake_triton
@@ -2051,6 +2098,11 @@ def test_triton_collect(mocker: Any) -> None:
 
     res = triton_shim.collect_api(SemanticTier.UTIL)
     assert "cdiv" in [x.name for x in res]
+    cdiv_ref = next(x for x in res if x.name == "cdiv")
+    assert cdiv_ref.api_path == "triton.language.cdiv"
+    assert cdiv_ref.kind == "function"
+    assert cdiv_ref.returns_type == "int"
+    assert [p.name for p in cdiv_ref.params] == ["x", "div"]
 
     # Import error
     mocker.patch("importlib.import_module", side_effect=ImportError)
@@ -2061,7 +2113,7 @@ def test_deepspeed_collect(mocker: Any) -> None:
     """Verify deepspeed collect behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     import ml_ecosystem_snapshots.frameworks.deepspeed as ds_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -2070,13 +2122,28 @@ def test_deepspeed_collect(mocker: Any) -> None:
     # Early return for unsupported category (line 26 -> 27)
     assert ds_shim.collect_api(SemanticTier.LOSS) == []
 
-    def initialize() -> Any:
-        """Docstring."""
-        pass
+    def initialize(model: Any, config_params: str = "ds_config.json") -> Any:
+        """Initialize DeepSpeed engine.
 
-    def helper_util() -> Any:
-        """Docstring."""
-        pass
+        Args:
+            model: Target PyTorch module.
+            config_params: Path or dict of DeepSpeed configuration.
+
+        Returns:
+            Initialized DeepSpeed engine tuple.
+        """
+        return model, config_params
+
+    def helper_util(flag: bool = True) -> bool:
+        """DeepSpeed utility helper.
+
+        Args:
+            flag: Boolean configuration flag.
+
+        Returns:
+            Passed flag.
+        """
+        return flag
 
     fake_ds = create_module(
         "deepspeed", {"initialize": initialize, "helper_util": helper_util}
@@ -2085,7 +2152,7 @@ def test_deepspeed_collect(mocker: Any) -> None:
     original_import = importlib.import_module
 
     def mock_import(name: Any, *args: Any, **kwargs: Any) -> Any:
-        """Mock import function.
+        """Mock import function returning synthetic deepspeed module.
 
         Args:
             name: The module name.
@@ -2093,17 +2160,7 @@ def test_deepspeed_collect(mocker: Any) -> None:
             **kwargs: Arbitrary keyword arguments.
 
         Returns:
-            The imported module or raises.
-        """
-        """Docstring.
-
-        Args:
-            **kwargs: Parameter.
-            *args: Parameter.
-            name: Parameter.
-
-        Returns:
-            Return value.
+            The imported module.
         """
         if name == "deepspeed":
             return fake_ds
@@ -2114,10 +2171,18 @@ def test_deepspeed_collect(mocker: Any) -> None:
     res = ds_shim.collect_api(SemanticTier.MODEL)
     assert "initialize" in [x.name for x in res]
     assert "helper_util" not in [x.name for x in res]
+    init_ref = next(x for x in res if x.name == "initialize")
+    assert init_ref.api_path == "deepspeed.initialize"
+    assert init_ref.kind == "function"
+    assert any(p.name == "model" for p in init_ref.params)
+    assert any(p.name == "config_params" for p in init_ref.params)
 
     # UTIL category includes helper_util
     res_util = ds_shim.collect_api(SemanticTier.UTIL)
     assert "helper_util" in [x.name for x in res_util]
+    util_ref = next(x for x in res_util if x.name == "helper_util")
+    assert util_ref.api_path == "deepspeed.helper_util"
+    assert util_ref.returns_type == "bool"
 
     mocker.patch("importlib.import_module", side_effect=ImportError)
     assert not ds_shim.collect_api(SemanticTier.MODEL)
@@ -2127,23 +2192,33 @@ def test_onnxruntime_collect(mocker: Any) -> None:
     """Verify onnxruntime collect behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     import ml_ecosystem_snapshots.frameworks.onnxruntime as ort_shim
-    from ml_switcheroo_ir.schema.ghost import SemanticTier, GhostRef
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
     import importlib
 
     # Early return for unsupported category (line 26 -> 27)
     assert ort_shim.collect_api(SemanticTier.LOSS) == []
 
     class InferenceSession:
-        """Docstring."""
+        """ONNX Runtime InferenceSession class."""
 
-        pass
+        def __init__(self, path_or_bytes: str) -> None:
+            """Initialize InferenceSession without explicit providers parameter.
 
-    def get_device() -> Any:
-        """Docstring."""
-        pass
+            Args:
+                path_or_bytes: Path or serialized ONNX model bytes.
+            """
+            self.path_or_bytes = path_or_bytes
+
+    def get_device() -> str:
+        """Return active execution device.
+
+        Returns:
+            Device identifier string.
+        """
+        return "CPU"
 
     fake_ort = create_module(
         "onnxruntime", {"InferenceSession": InferenceSession, "get_device": get_device}
@@ -2152,7 +2227,7 @@ def test_onnxruntime_collect(mocker: Any) -> None:
     original_import = importlib.import_module
 
     def mock_import(name: Any, *args: Any, **kwargs: Any) -> Any:
-        """Mock import function.
+        """Mock import function returning synthetic onnxruntime module.
 
         Args:
             name: The module name.
@@ -2160,17 +2235,7 @@ def test_onnxruntime_collect(mocker: Any) -> None:
             **kwargs: Arbitrary keyword arguments.
 
         Returns:
-            The imported module or raises.
-        """
-        """Docstring.
-
-        Args:
-            **kwargs: Parameter.
-            *args: Parameter.
-            name: Parameter.
-
-        Returns:
-            Return value.
+            The imported module.
         """
         if name == "onnxruntime":
             return fake_ort
@@ -2178,22 +2243,16 @@ def test_onnxruntime_collect(mocker: Any) -> None:
 
     mocker.patch("importlib.import_module", side_effect=mock_import)
 
-    # Return a ref missing 'providers' to trigger lines 56-58
-    dummy_ref = GhostRef(
-        name="InferenceSession",
-        api_path="onnxruntime.InferenceSession",
-        kind="class",
-        params=[],
-    )
-    mocker.patch(
-        "ml_ecosystem_snapshots.frameworks.onnxruntime.GhostInspector.inspect",
-        return_value=dummy_ref,
-    )
-
-    # Filters out get_device for MODEL (branch 46 -> 36)
+    # Filters out get_device for MODEL and injects 'providers' parameter via real GhostInspector.inspect
     res = ort_shim.collect_api(SemanticTier.MODEL)
     assert "InferenceSession" in [x.name for x in res]
-    assert any(p.name == "providers" for p in res[0].params)
+    sess_ref = res[0]
+    assert sess_ref.api_path == "onnxruntime.InferenceSession"
+    assert sess_ref.kind == "class"
+    assert any(
+        p.name == "path_or_bytes" and p.annotation == "str" for p in sess_ref.params
+    )
+    assert any(p.name == "providers" for p in sess_ref.params)
 
     mocker.patch("importlib.import_module", side_effect=ImportError)
     assert not ort_shim.collect_api(SemanticTier.MODEL)
@@ -2203,21 +2262,35 @@ def test_huggingface_collect(mocker: Any) -> None:
     """Verify huggingface collect behavior.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     import ml_ecosystem_snapshots.frameworks.huggingface as hf_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
     import importlib
 
     class PreTrainedModel:
-        """Docstring."""
+        """Base class for Hugging Face pretrained models."""
 
-        pass
+        def __init__(self, config: Any = None) -> None:
+            """Initialize PreTrainedModel.
+
+            Args:
+                config: Model configuration object.
+            """
+            self.config = config
 
     class Trainer:
-        """Docstring."""
+        """Hugging Face training loop orchestrator."""
 
-        pass
+        def __init__(self, model: Any = None, args: Any = None) -> None:
+            """Initialize Trainer.
+
+            Args:
+                model: Model to train.
+                args: Training arguments.
+            """
+            self.model = model
+            self.args = args
 
     fake_transformers = create_module(
         "transformers", {"PreTrainedModel": PreTrainedModel, "Trainer": Trainer}
@@ -2226,7 +2299,7 @@ def test_huggingface_collect(mocker: Any) -> None:
     original_import = importlib.import_module
 
     def mock_import(name: Any, *args: Any, **kwargs: Any) -> Any:
-        """Mock import function.
+        """Mock import function returning synthetic transformers module.
 
         Args:
             name: The module name.
@@ -2234,17 +2307,7 @@ def test_huggingface_collect(mocker: Any) -> None:
             **kwargs: Arbitrary keyword arguments.
 
         Returns:
-            The imported module or raises.
-        """
-        """Docstring.
-
-        Args:
-            **kwargs: Parameter.
-            *args: Parameter.
-            name: Parameter.
-
-        Returns:
-            Return value.
+            The imported module.
         """
         if name == "transformers":
             return fake_transformers
@@ -2255,9 +2318,16 @@ def test_huggingface_collect(mocker: Any) -> None:
     res = hf_shim.collect_transformers(SemanticTier.MODEL)
     names = [x.name for x in res]
     assert "PreTrainedModel" in names
+    ptm_ref = next(x for x in res if x.name == "PreTrainedModel")
+    assert ptm_ref.api_path == "transformers.PreTrainedModel"
+    assert ptm_ref.kind == "class"
+    assert any(p.name == "config" for p in ptm_ref.params)
 
     res2 = hf_shim.collect_transformers(SemanticTier.UTIL)
     assert "Trainer" in [x.name for x in res2]
+    trainer_ref = next(x for x in res2 if x.name == "Trainer")
+    assert trainer_ref.api_path == "transformers.Trainer"
+    assert [p.name for p in trainer_ref.params] == ["model", "args"]
 
     mocker.patch("importlib.import_module", side_effect=ImportError)
     assert not hf_shim.collect_transformers(SemanticTier.MODEL)
@@ -2267,7 +2337,7 @@ def test_maxtext_collect(mocker: Any) -> None:
     """Test the maxtext API collector.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import maxtext as maxtext_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -2325,7 +2395,7 @@ def test_mlir_collect(mocker: Any) -> None:
     """Test the mlir API collector.
 
     Args:
-        mocker: Input parameter value.
+        mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import mlir as mlir_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier

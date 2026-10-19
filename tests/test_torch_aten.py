@@ -443,7 +443,7 @@ def test_check_hallucination_dtype_and_rank_validation() -> None:
 
     with (
         patch(
-            "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+            "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
             return_value=mock_snap,
         ),
         patch(
@@ -528,7 +528,7 @@ def test_handle_mcp_message_dtypes_and_ranks() -> None:
     from unittest.mock import patch
 
     with patch(
-        "ml_ecosystem_snapshots.mcp_server.get_framework_snapshot",
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     ):
         msg = {

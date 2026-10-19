@@ -17,12 +17,13 @@ def cmd_stubs(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command line arguments containing input, out_dir, and include_nonpublic.
     """
-    import ml_ecosystem_snapshots.cli as cli_pkg
+    from ml_ecosystem_snapshots.cli.resolver import resolve_snapshot_path
+    from ml_ecosystem_snapshots.stubs import generate_stubs
 
-    path = cli_pkg.resolve_snapshot_path(args.input)
+    path = resolve_snapshot_path(args.input)
     with open(path, "r", encoding="utf-8") as f:
         snap = json.load(f)
-    cli_pkg.generate_stubs(snap, args.out_dir, include_nonpublic=args.include_nonpublic)
+    generate_stubs(snap, args.out_dir, include_nonpublic=args.include_nonpublic)
     print(f"Stubs generated in {args.out_dir}")
 
 
@@ -38,10 +39,9 @@ def cmd_export(args: argparse.Namespace) -> None:
     Raises:
         ValueError: If an unsupported export format is requested.
     """
-    import ml_ecosystem_snapshots.cli as cli_pkg
+    from ml_ecosystem_snapshots.cli.resolver import resolve_snapshot_path
 
-    nl = chr(10)
-    path = cli_pkg.resolve_snapshot_path(args.input)
+    path = resolve_snapshot_path(args.input)
     with open(path, "r", encoding="utf-8") as f:
         snap = json.load(f)
 
@@ -63,7 +63,7 @@ def cmd_export(args: argparse.Namespace) -> None:
         out_path = os.path.join(args.out_dir, "openapi.json")
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(openapi_spec, f, indent=2, sort_keys=True)
-            f.write(nl)
+            f.write("\n")
         print(f"Exported OpenAPI spec to {out_path}")
     elif args.format == "json_schema":
         from ml_ecosystem_snapshots.export import to_json_schema
@@ -73,7 +73,7 @@ def cmd_export(args: argparse.Namespace) -> None:
             out_path = os.path.join(args.out_dir, f"{ref.name}.schema.json")
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(schema, f, indent=2, sort_keys=True)
-                f.write(nl)
+                f.write("\n")
         print(f"Exported {len(refs)} JSON schemas to {args.out_dir}")
     elif args.format == "pydantic":
         from ml_ecosystem_snapshots.export import to_pydantic
@@ -169,7 +169,7 @@ def cmd_export(args: argparse.Namespace) -> None:
         ts_defs = [to_typescript_interface(ref) for ref in refs]
         out_path = os.path.join(args.out_dir, "interfaces.d.ts")
         with open(out_path, "w", encoding="utf-8") as f:
-            f.write((nl + nl).join(ts_defs) + nl)
+            f.write("\n\n".join(ts_defs) + "\n")
         print(f"Exported {len(refs)} TypeScript interfaces to {out_path}")
     else:
         raise ValueError(f"Unknown format: {args.format}")

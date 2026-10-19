@@ -55,7 +55,7 @@ def run_stdio_loop(
         try:
             req = json.loads(line_clean)
             resp = message_handler(req)
-            out_s.write(json.dumps(resp) + chr(10))
+            out_s.write(json.dumps(resp) + "\n")
             out_s.flush()
         except Exception as e:
             err_resp = {
@@ -63,7 +63,7 @@ def run_stdio_loop(
                 "id": None,
                 "error": {"code": -32700, "message": f"Parse error: {e}"},
             }
-            out_s.write(json.dumps(err_resp) + chr(10))
+            out_s.write(json.dumps(err_resp) + "\n")
             out_s.flush()
 
 

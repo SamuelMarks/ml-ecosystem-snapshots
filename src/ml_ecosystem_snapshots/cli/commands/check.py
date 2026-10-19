@@ -7,12 +7,12 @@ import collections
 import json
 import os
 import sys
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Mapping
 
 
 def _run_domain_op_check_cli(
     args: argparse.Namespace,
-    check_fn: Callable[..., Dict[str, Any]],
+    check_fn: Callable[..., Mapping[str, Any]],
     label: str,
     op_attr: str = "op_name",
     count_attr: str = "inputs_count",
@@ -64,13 +64,11 @@ def cmd_check(args: argparse.Namespace) -> None:
         args: Parsed command line arguments containing snapshot_json, target_path,
               target_prefix, and reference_prefix.
     """
-    import ml_ecosystem_snapshots.cli as cli_pkg
+    from ml_ecosystem_snapshots.cli.resolver import resolve_snapshot_path
     from ml_ecosystem_snapshots.compliance import extract_target_refs, score_compliance
     from ml_switcheroo_ir.schema.ghost import GhostRef
 
-    nl = chr(10)
-    bs = chr(92)
-    path = cli_pkg.resolve_snapshot_path(args.snapshot_json)
+    path = resolve_snapshot_path(args.snapshot_json)
     with open(path, "r", encoding="utf-8") as f:
         reference_snapshot = json.load(f)
 
@@ -126,8 +124,8 @@ def cmd_check(args: argparse.Namespace) -> None:
     results = score_compliance(reference_snapshot, target_refs)
 
     score = results.get("score_percentage", 0.0)
-    print(f"{nl}--- Compliance Report ---")
-    print(f"Overall Compliance: {score}%{nl}")
+    print("\n--- Compliance Report ---")
+    print(f"Overall Compliance: {score}%\n")
 
     print("Breakdown by Module:")
     matched_by_mod = collections.defaultdict(list)
@@ -150,7 +148,7 @@ def cmd_check(args: argparse.Namespace) -> None:
 
     missing = results.get("missing", [])
     if missing:
-        print(f"{nl}Missing APIs ({len(missing)}):{nl}")
+        print(f"\nMissing APIs ({len(missing)}):\n")
 
         ref_map: Dict[str, GhostRef] = {}
         for _cat, items in reference_snapshot.get("categories", {}).items():
@@ -192,10 +190,7 @@ def cmd_check(args: argparse.Namespace) -> None:
             doc = ref.docstring or ""
             if doc:
                 doc = (
-                    doc.strip()
-                    .split(nl + nl)[0]
-                    .replace(nl, " ")
-                    .replace("|", bs + "|")
+                    doc.strip().split("\n\n")[0].replace("\n", " ").replace("|", "\\|")
                 )
                 if len(doc) > 100:
                     doc = doc[:97] + "..."
@@ -208,10 +203,10 @@ def cmd_check(args: argparse.Namespace) -> None:
 
     mismatched = results.get("mismatched", [])
     if mismatched:
-        print(f"{nl}Mismatched APIs ({len(mismatched)}):")
+        print(f"\nMismatched APIs ({len(mismatched)}):")
         for item in sorted(mismatched, key=lambda x: x["api_path"])[:20]:
             print(
-                f"  ~ {item['api_path']}{nl}    Expected: {item.get('expected')}{nl}    Actual:   {item.get('actual')}"
+                f"  ~ {item['api_path']}\n    Expected: {item.get('expected')}\n    Actual:   {item.get('actual')}"
             )
         if len(mismatched) > 20:
             print(f"  ~ ... and {len(mismatched) - 20} more")
@@ -260,26 +255,26 @@ def cmd_check_sass(args: argparse.Namespace) -> None:
         else None
     )
 
-    res = check_sass_instruction(
+    inst_res = check_sass_instruction(
         mnemonic=args.mnemonic,
         operands=operands,
         modifiers=modifiers,
         sm_arch=args.sm_arch,
     )
 
-    if not res.get("is_valid"):
+    if not inst_res.get("is_valid"):
         print(f"SASS Instruction '{args.mnemonic}' Invalid:")
-        for err in res.get("errors", []):
+        for err in inst_res.get("errors", []):
             print(f"  - {err}")
         sys.exit(1)
     else:
         print(f"SASS Instruction '{args.mnemonic}' is valid.")
         print(
-            f"  Supported Architectures: {', '.join(res.get('supported_architectures', []))}"
+            f"  Supported Architectures: {', '.join(inst_res.get('supported_architectures', []))}"
         )
-        if res.get("valid_modifiers"):
+        if inst_res.get("valid_modifiers"):
             print(
-                f"  Recognized Modifiers:    {', '.join(res.get('valid_modifiers', []))}"
+                f"  Recognized Modifiers:    {', '.join(inst_res.get('valid_modifiers', []))}"
             )
 
 
@@ -326,7 +321,7 @@ def cmd_check_rdna(args: argparse.Namespace) -> None:
         else None
     )
 
-    res = check_rdna_instruction(
+    inst_res = check_rdna_instruction(
         mnemonic=args.mnemonic,
         operands=operands,
         encoding=args.encoding,
@@ -335,18 +330,18 @@ def cmd_check_rdna(args: argparse.Namespace) -> None:
         wave_size=args.wave_size,
     )
 
-    if not res.get("is_valid"):
+    if not inst_res.get("is_valid"):
         print(f"RDNA Instruction '{args.mnemonic}' Invalid:")
-        for err in res.get("errors", []):
+        for err in inst_res.get("errors", []):
             print(f"  - {err}")
         sys.exit(1)
     else:
         print(f"RDNA Instruction '{args.mnemonic}' is valid.")
         print(
-            f"  Supported Architectures: {', '.join(res.get('supported_architectures', []))}"
+            f"  Supported Architectures: {', '.join(inst_res.get('supported_architectures', []))}"
         )
-        if res.get("encoding"):
-            print(f"  Encoding:                {res.get('encoding')}")
+        if inst_res.get("encoding"):
+            print(f"  Encoding:                {inst_res.get('encoding')}")
 
 
 def cmd_check_ptx(args: argparse.Namespace) -> None:
@@ -436,21 +431,21 @@ def cmd_check_mlir(args: argparse.Namespace) -> None:
         else None
     )
 
-    res = check_mlir_op(
+    op_res = check_mlir_op(
         op_name=args.op_name,
         operands_count=args.operands_count,
         attributes=attrs,
     )
 
-    if not res.get("is_valid"):
+    if not op_res.get("is_valid"):
         print(f"MLIR Operation '{args.op_name}' Invalid:")
-        for err in res.get("errors", []):
+        for err in op_res.get("errors", []):
             print(f"  - {err}")
         sys.exit(1)
 
     print(f"MLIR Operation '{args.op_name}' is valid.")
-    print(f"  Operands:   {len(res.get('expected_operands', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
+    print(f"  Operands:   {len(op_res.get('expected_operands', []))}")
+    print(f"  Attributes: {', '.join(op_res.get('expected_attributes', []))}")
 
 
 def cmd_check_stablehlo(args: argparse.Namespace) -> None:
@@ -491,21 +486,21 @@ def cmd_check_stablehlo(args: argparse.Namespace) -> None:
         else None
     )
 
-    res = check_stablehlo_op(
+    op_res = check_stablehlo_op(
         op_name=args.op_name,
         operands_count=args.operands_count,
         attributes=attrs,
     )
 
-    if not res.get("is_valid"):
+    if not op_res.get("is_valid"):
         print(f"StableHLO Operation '{args.op_name}' Invalid:")
-        for err in res.get("errors", []):
+        for err in op_res.get("errors", []):
             print(f"  - {err}")
         sys.exit(1)
 
     print(f"StableHLO Operation '{args.op_name}' is valid.")
-    print(f"  Operands:   {len(res.get('expected_operands', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
+    print(f"  Operands:   {len(op_res.get('expected_operands', []))}")
+    print(f"  Attributes: {', '.join(op_res.get('expected_attributes', []))}")
 
 
 def cmd_check_wgsl(args: argparse.Namespace) -> None:

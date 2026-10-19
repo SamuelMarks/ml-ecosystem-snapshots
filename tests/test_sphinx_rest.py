@@ -242,7 +242,7 @@ def test_ghost_inspector_merge_branches(mocker: Any) -> None:
     )
 
     mocker.patch(
-        "ml_ecosystem_snapshots.models.extract_griffe_docstring_metadata",
+        "ml_ecosystem_snapshots.introspection.inspector.extract_griffe_docstring_metadata",
         return_value={
             "params": {
                 "a": {"doc": "Augmented doc", "typ": "int", "default": None},
@@ -396,7 +396,7 @@ def test_ghost_inspector_griffe_return_type_fallback(mocker: Any) -> None:
         return_value={"params": {}, "returns": None},
     )
     mocker.patch(
-        "ml_ecosystem_snapshots.models.extract_griffe_docstring_metadata",
+        "ml_ecosystem_snapshots.introspection.inspector.extract_griffe_docstring_metadata",
         return_value={
             "params": {},
             "returns": {"typ": "torch.Tensor", "doc": "Output."},

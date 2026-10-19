@@ -160,7 +160,7 @@ def sanitize_type_str(typ_str: Optional[str]) -> Optional[str]:
             """Flatten attribute access for simplified type names.
 
             Args:
-                node: Input parameter value.
+                node: AST Attribute node to normalize.
 
             Returns:
                 The transformed node.

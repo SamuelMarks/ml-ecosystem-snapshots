@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from ml_ecosystem_snapshots.mcp.cache import get_framework_snapshot
+from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository, resolve_snapshot
 
 
 def get_api_signature(
-    framework: str, api_path: str, version: Optional[str] = None
+    framework: str,
+    api_path: str,
+    version: Optional[str] = None,
+    repository: Optional[SnapshotRepository] = None,
 ) -> Optional[Dict[str, Any]]:
     """Retrieve the exact ground-truth GhostRef signature for an API.
 
@@ -16,16 +19,11 @@ def get_api_signature(
         framework: The framework name.
         api_path: The canonical API path (e.g. 'torch.sum').
         version: Optional framework version string.
+        repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
         The serialized GhostRef dictionary or None if not found.
     """
-    import ml_ecosystem_snapshots.mcp_server as _mcp_server
-
-    active_get_snap = getattr(
-        _mcp_server, "get_framework_snapshot", get_framework_snapshot
-    )
-
     try:
         from ml_ecosystem_snapshots.index import lookup_symbol
 
@@ -35,7 +33,7 @@ def get_api_signature(
     except Exception:
         pass
 
-    snap = active_get_snap(framework, version=version)
+    snap = resolve_snapshot(framework, version=version, repository=repository)
     for _cat, items in snap.get("categories", {}).items():
         for item in items:
             if (
