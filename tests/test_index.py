@@ -4,12 +4,16 @@ Validates 100% coverage across schema initialization, snapshot ingestion,
 FTS5 full-text querying, symbol lookups, cache directory resolution, and cleanup.
 """
 
+from __future__ import annotations
+
 import json
 import os
+from pathlib import Path
 import tempfile
-from typing import Any, cast
 from unittest import mock
 from unittest.mock import patch
+
+import pytest
 
 from ml_ecosystem_snapshots.index import (
     clear_index,
@@ -24,30 +28,33 @@ from ml_ecosystem_snapshots.index import (
     lookup_symbol,
     search_index,
 )
+from ml_ecosystem_snapshots.models import JsonValue
 
 
-def test_get_cache_dir_custom_env(monkeypatch: Any, tmp_path: Any) -> None:
-    """Test get_cache_dir when ML_FRAMEWORK_SNAPSHOTS_CACHE_DIR is set.
+def test_get_cache_dir_custom_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Test get_cache_dir when ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR is set.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
         tmp_path: Pytest temporary directory fixture.
     """
     custom_dir = str(tmp_path / "custom_cache")
-    monkeypatch.setenv("ML_FRAMEWORK_SNAPSHOTS_CACHE_DIR", custom_dir)
+    monkeypatch.setenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", custom_dir)
     res = get_cache_dir()
     assert res == custom_dir
     assert os.path.isdir(custom_dir)
 
 
-def test_get_cache_dir_xdg_env(monkeypatch: Any, tmp_path: Any) -> None:
+def test_get_cache_dir_xdg_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Test get_cache_dir when XDG_CACHE_HOME is set.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
         tmp_path: Pytest temporary directory fixture.
     """
-    monkeypatch.delenv("ML_FRAMEWORK_SNAPSHOTS_CACHE_DIR", raising=False)
+    monkeypatch.delenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", raising=False)
     xdg_dir = str(tmp_path / "xdg_cache")
     monkeypatch.setenv("XDG_CACHE_HOME", xdg_dir)
     res = get_cache_dir()
@@ -55,14 +62,16 @@ def test_get_cache_dir_xdg_env(monkeypatch: Any, tmp_path: Any) -> None:
     assert os.path.isdir(res)
 
 
-def test_get_cache_dir_fallback(monkeypatch: Any, tmp_path: Any) -> None:
+def test_get_cache_dir_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """Test get_cache_dir fallback to ~/.cache.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
         tmp_path: Pytest temporary directory fixture.
     """
-    monkeypatch.delenv("ML_FRAMEWORK_SNAPSHOTS_CACHE_DIR", raising=False)
+    monkeypatch.delenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", raising=False)
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
     monkeypatch.setattr(
         "os.path.expanduser", lambda path: str(tmp_path) if path == "~" else path
@@ -73,13 +82,13 @@ def test_get_cache_dir_fallback(monkeypatch: Any, tmp_path: Any) -> None:
     assert os.path.isdir(res)
 
 
-def test_get_cache_dir_filenotfound_fallback(monkeypatch: Any) -> None:
+def test_get_cache_dir_filenotfound_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test get_cache_dir falls back to temp directory if creating cache dir raises FileNotFoundError.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    monkeypatch.delenv("ML_FRAMEWORK_SNAPSHOTS_CACHE_DIR", raising=False)
+    monkeypatch.delenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", raising=False)
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     def mock_makedirs(path: str, exist_ok: bool = False) -> None:
@@ -101,13 +110,15 @@ def test_get_cache_dir_filenotfound_fallback(monkeypatch: Any) -> None:
     assert res == expected
 
 
-def test_get_cache_dir_filenotfound_and_fallback_error(monkeypatch: Any) -> None:
+def test_get_cache_dir_filenotfound_and_fallback_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test get_cache_dir when both cache dir and fallback creation fail.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    monkeypatch.delenv("ML_FRAMEWORK_SNAPSHOTS_CACHE_DIR", raising=False)
+    monkeypatch.delenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", raising=False)
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     def mock_makedirs(path: str, exist_ok: bool = False) -> None:
@@ -131,14 +142,16 @@ def test_get_cache_dir_filenotfound_and_fallback_error(monkeypatch: Any) -> None
     assert res == expected
 
 
-def test_get_cache_dir_fileexists_fallback(monkeypatch: Any, tmp_path: Any) -> None:
+def test_get_cache_dir_fileexists_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """Test get_cache_dir ignores FileExistsError when path exists as file or isdir is mocked.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
         tmp_path: Pytest temporary directory fixture.
     """
-    monkeypatch.delenv("ML_FRAMEWORK_SNAPSHOTS_CACHE_DIR", raising=False)
+    monkeypatch.delenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", raising=False)
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
     monkeypatch.setattr(
         "os.path.expanduser", lambda path: str(tmp_path) if path == "~" else path
@@ -162,19 +175,19 @@ def test_get_cache_dir_fileexists_fallback(monkeypatch: Any, tmp_path: Any) -> N
     assert res == expected
 
 
-def test_get_index_db_path(monkeypatch: Any, tmp_path: Any) -> None:
+def test_get_index_db_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Test get_index_db_path returns index.db inside cache dir.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
         tmp_path: Pytest temporary directory fixture.
     """
-    monkeypatch.setenv("ML_FRAMEWORK_SNAPSHOTS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", str(tmp_path))
     db_path = get_index_db_path()
     assert db_path == os.path.join(str(tmp_path), "index.db")
 
 
-def test_compute_file_sha256(tmp_path: Any) -> None:
+def test_compute_file_sha256(tmp_path: Path) -> None:
     """Test compute_file_sha256 computes correct checksum.
 
     Args:
@@ -203,7 +216,7 @@ def test_extract_framework_and_version() -> None:
     assert extract_framework_and_version("stablehlo.json") == ("stablehlo", "latest")
 
 
-def test_init_db_and_index_snapshot_file(tmp_path: Any) -> None:
+def test_init_db_and_index_snapshot_file(tmp_path: Path) -> None:
     """Test creating database schema and indexing snapshot items.
 
     Args:
@@ -220,7 +233,7 @@ def test_init_db_and_index_snapshot_file(tmp_path: Any) -> None:
     assert index_snapshot_file("non_existent.json", conn) == 0
 
     # 2. Test indexing a snapshot dictionary with categories
-    snap_data = {
+    snap_data: dict[str, dict[str, list[dict[str, str] | str]]] = {
         "categories": {
             "math": [
                 {
@@ -358,14 +371,13 @@ def test_init_db_and_index_snapshot_file(tmp_path: Any) -> None:
         json.dump(weird_items_snap, f)
     assert index_snapshot_file(json_weird_items_path, conn) == 0
 
-    empty_snap: dict[str, Any] = {}
+    empty_snap: dict[str, JsonValue] = {}
     json_empty_path = str(tmp_path / "empty_v1.0.0.json")
     with open(json_empty_path, "w", encoding="utf-8") as f:
         json.dump(empty_snap, f)
     assert index_snapshot_file(json_empty_path, conn) == 0
 
     # 7. Test non-dict non-list JSON payload raises SnapshotSchemaError
-    import pytest
     from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
 
     json_scalar_path = str(tmp_path / "scalar_v1.0.0.json")
@@ -375,7 +387,9 @@ def test_init_db_and_index_snapshot_file(tmp_path: Any) -> None:
         index_snapshot_file(json_scalar_path, conn)
 
 
-def test_ensure_index_and_search_index(tmp_path: Any, monkeypatch: Any) -> None:
+def test_ensure_index_and_search_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test ensure_index populates database and search_index queries FTS5.
 
     Args:
@@ -383,7 +397,7 @@ def test_ensure_index_and_search_index(tmp_path: Any, monkeypatch: Any) -> None:
         tmp_path: Pytest temporary directory fixture.
     """
     db_file = str(tmp_path / "search_test.db")
-    monkeypatch.setenv("ML_FRAMEWORK_SNAPSHOTS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", str(tmp_path))
 
     # Create dummy snapshot files in cache dir
     snap_dir = tmp_path / "snapshots"
@@ -466,7 +480,7 @@ def test_ensure_index_and_search_index(tmp_path: Any, monkeypatch: Any) -> None:
     assert indexed_count == 1
 
 
-def test_lookup_symbol(tmp_path: Any) -> None:
+def test_lookup_symbol(tmp_path: Path) -> None:
     """Test lookup_symbol exact resolution.
 
     Args:
@@ -507,7 +521,7 @@ def test_lookup_symbol(tmp_path: Any) -> None:
     assert lookup_symbol("torch", "torch.nonexistent", db_path=db_file) is None
 
 
-def test_clear_index(tmp_path: Any) -> None:
+def test_clear_index(tmp_path: Path) -> None:
     """Test clear_index removes database file.
 
     Args:
@@ -534,14 +548,16 @@ def test_clear_index(tmp_path: Any) -> None:
         assert clear_index(db_file) is False
 
 
-def test_get_available_snapshot_files(tmp_path: Any, monkeypatch: Any) -> None:
+def test_get_available_snapshot_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test get_available_snapshot_files discovers files from search paths.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
         tmp_path: Pytest temporary directory fixture.
     """
-    monkeypatch.setenv("ML_FRAMEWORK_SNAPSHOTS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", str(tmp_path))
     cached_snap = tmp_path / "snapshots"
     cached_snap.mkdir(parents=True, exist_ok=True)
     dummy_json = cached_snap / "cached_v1.0.0.json"
@@ -551,7 +567,7 @@ def test_get_available_snapshot_files(tmp_path: Any, monkeypatch: Any) -> None:
     assert any("cached_v1.0.0.json" in f for f in files)
 
 
-def test_get_readonly_connection_and_clean_cache(tmp_path: Any) -> None:
+def test_get_readonly_connection_and_clean_cache(tmp_path: Path) -> None:
     """Test get_readonly_connection and clean_index_cache operations.
 
     Args:
@@ -600,19 +616,21 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Any) -> None:
 
     orig_connect = sqlite3.connect
 
-    def mock_connect(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+    def mock_connect(database: str, uri: bool = False) -> sqlite3.Connection:
         """Mock sqlite3 connect to simulate readonly failure.
 
         Args:
-            *args: Connection arguments.
-            **kwargs: Connection keyword arguments.
+            database: Database path or URI.
+            uri: Whether database is a URI.
 
         Returns:
             A sqlite3.Connection instance.
         """
-        if args and "mode=ro" in str(args[0]):
+        if "mode=ro" in str(database):
             raise sqlite3.OperationalError("Readonly open failed")
-        return cast(sqlite3.Connection, orig_connect(*args, **kwargs))
+        conn_res = orig_connect(database, uri=uri)
+        assert isinstance(conn_res, sqlite3.Connection)
+        return conn_res
 
     with patch(
         "ml_ecosystem_snapshots.index.sqlite3.connect", side_effect=mock_connect
@@ -627,9 +645,9 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Any) -> None:
 
         def __init__(self) -> None:
             """Initialize MockConn."""
-            self.row_factory: Any = None
+            self.row_factory: object = None
 
-        def execute(self, sql: str, *args: Any, **kwargs: Any) -> Any:
+        def execute(self, sql: str, *args: object, **kwargs: object) -> mock.MagicMock:
             """Mock execute method to raise OperationalError on WAL pragma.
 
             Args:
@@ -648,7 +666,7 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Any) -> None:
             """Enter context manager."""
             return self
 
-        def __exit__(self, *args: Any) -> None:
+        def __exit__(self, *args: object) -> None:
             """Exit context manager.
 
             Args:
@@ -661,7 +679,7 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Any) -> None:
         assert conn_pragma is not None
 
 
-def test_index_snapshot_file_with_target_and_version(tmp_path: Any) -> None:
+def test_index_snapshot_file_with_target_and_version(tmp_path: Path) -> None:
     """Test index_snapshot_file extracts framework and version from top-level metadata.
 
     Args:
@@ -690,7 +708,9 @@ def test_index_snapshot_file_with_target_and_version(tmp_path: Any) -> None:
     assert res["name"] == "custom_op"
 
 
-def test_discover_local_snapshots_filtering(tmp_path: Any, monkeypatch: Any) -> None:
+def test_discover_local_snapshots_filtering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test get_available_snapshot_files filters non-json files.
 
     Args:

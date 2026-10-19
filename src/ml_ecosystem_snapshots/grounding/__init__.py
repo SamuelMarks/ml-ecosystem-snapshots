@@ -1,5 +1,7 @@
 """Anti-Hallucination Grounding SDK for machine learning frameworks and hardware ISAs."""
 
+from __future__ import annotations
+
 from ml_ecosystem_snapshots.grounding.compiler import (
     validate_metal_op,
     validate_mlir_op,

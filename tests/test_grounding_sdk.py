@@ -1,10 +1,14 @@
 """Exhaustive test suite for the Anti-Hallucination Grounding SDK."""
 
+from __future__ import annotations
+
 import gzip
+from pathlib import Path
+import pytest
 import json
 import os
-from typing import Any
 
+from ml_ecosystem_snapshots.models import GhostRef
 from ml_ecosystem_snapshots.grounding import (
     DiagnosticSeverity,
     GroundingDiagnostic,
@@ -46,23 +50,19 @@ def test_grounding_models() -> None:
         target="stablehlo",
         symbol="stablehlo.add",
     )
-    assert not report.has_errors
-    assert report.is_grounded
+    assert [report.has_errors, report.is_grounded] == [False, True]
 
     report.add_diagnostic("info_field", "Informational note", DiagnosticSeverity.INFO)
-    assert not report.has_errors
-    assert report.is_grounded
+    assert [report.has_errors, report.is_grounded] == [False, True]
 
     report.add_diagnostic("warn_field", "Warning message", DiagnosticSeverity.WARNING)
-    assert not report.has_errors
-    assert report.is_grounded
+    assert [report.has_errors, report.is_grounded] == [False, True]
 
     report.add_diagnostic("err_field", "Error message", DiagnosticSeverity.ERROR)
-    assert report.has_errors
-    assert not report.is_grounded
+    assert [report.has_errors, report.is_grounded] == [True, False]
 
 
-def test_grounding_engine_custom_dir(tmp_path: Any) -> None:
+def test_grounding_engine_custom_dir(tmp_path: Path) -> None:
     """Test GroundingEngine loading from custom directory with json and json.gz.
 
     Args:
@@ -185,7 +185,7 @@ def test_grounding_engine_custom_dir(tmp_path: Any) -> None:
     assert "single" in targets
 
 
-def test_grounding_engine_suggestions_and_fuzzy(tmp_path: Any) -> None:
+def test_grounding_engine_suggestions_and_fuzzy(tmp_path: Path) -> None:
     """Test suggestion and fuzzy searching in GroundingEngine.
 
     Args:
@@ -414,7 +414,7 @@ def test_validate_mlir_op() -> None:
     assert any(d.field == "operand_count" for d in report_count.diagnostics)
 
 
-def test_validate_python_call(tmp_path: Any) -> None:
+def test_validate_python_call(tmp_path: Path) -> None:
     """Test validate_python_call with mock framework snapshot.
 
     Args:
@@ -567,7 +567,9 @@ def test_validate_python_call(tmp_path: Any) -> None:
     assert res_ov.is_grounded
 
 
-def test_grounding_engine_edge_branches(tmp_path: Any, monkeypatch: Any) -> None:
+def test_grounding_engine_edge_branches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test edge branches in compiler, hardware, and engine modules.
 
     Args:
@@ -734,11 +736,11 @@ def test_grounding_engine_edge_branches(tmp_path: Any, monkeypatch: Any) -> None
     assert prim_eng.load_target("prim") == {}
 
     # Test hydrate exception handling
-    from ml_ecosystem_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
     orig_hydrate = GhostInspector.hydrate
 
-    def bad_hydrate(d: Any) -> Any:
+    def bad_hydrate(d: dict[str, object]) -> GhostRef:
         """Simulate failure during GhostInspector.hydrate.
 
         Args:
@@ -763,7 +765,9 @@ def test_grounding_engine_edge_branches(tmp_path: Any, monkeypatch: Any) -> None
     assert fail_eng.load_target("fail") == {}
 
 
-def test_grounding_engine_collector_fallback(tmp_path: Any, monkeypatch: Any) -> None:
+def test_grounding_engine_collector_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test GroundingEngine collector fallback when files are absent on disk.
 
     Args:
@@ -785,7 +789,7 @@ def test_grounding_engine_collector_fallback(tmp_path: Any, monkeypatch: Any) ->
     # 3. Exception during extract_snapshot returns empty dict
     import ml_ecosystem_snapshots.api as api_mod
 
-    def mock_extract_fail(target: str) -> Any:
+    def mock_extract_fail(target: str) -> dict[str, object]:
         """Simulate extraction failure.
 
         Args:
@@ -801,7 +805,7 @@ def test_grounding_engine_collector_fallback(tmp_path: Any, monkeypatch: Any) ->
     assert eng_fail.load_target("tikz") == {}
 
     # 4. Fallback with malformed items and hydrate exception
-    def mock_extract_malformed(target: str) -> Any:
+    def mock_extract_malformed(target: str) -> dict[str, object]:
         """Return snapshot with malformed items for coverage.
 
         Args:
@@ -836,11 +840,11 @@ def test_grounding_engine_collector_fallback(tmp_path: Any, monkeypatch: Any) ->
             }
         }
 
-    from ml_ecosystem_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
     orig_hydrate = GhostInspector.hydrate
 
-    def bad_hydrate(d: Any) -> Any:
+    def bad_hydrate(d: dict[str, object]) -> GhostRef:
         """Simulate hydrate error for item named fail.
 
         Args:
@@ -852,7 +856,7 @@ def test_grounding_engine_collector_fallback(tmp_path: Any, monkeypatch: Any) ->
         Raises:
             ValueError: If item is named 'fail'.
         """
-        if isinstance(d, dict) and d.get("name") == "fail":
+        if d.get("name") == "fail":
             raise ValueError("simulated error")
         return orig_hydrate(d)
 
@@ -957,7 +961,7 @@ def test_grounding_new_verifiers() -> None:
     assert webgl_unknown.has_errors
 
 
-def test_unified_grounding_and_mcp_parity_branches(tmp_path: Any) -> None:
+def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
     """Verify unified Grounding SDK and MCP validator branches across Python, ISA, IR, and Engine.
 
     Args:
@@ -1220,14 +1224,26 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Any) -> None:
                     "api_path": "arith.custom_op",
                     "kind": "operation",
                     "operands": [{"name": "lhs", "type": "AnyFloat"}],
-                    "params": [{"name": "lhs", "annotation": "AnyFloat"}],
+                    "params": [
+                        {
+                            "name": "lhs",
+                            "kind": "POSITIONAL_ONLY",
+                            "annotation": "AnyFloat",
+                        }
+                    ],
                 },
                 {
                     "name": "stablehlo.custom_op",
                     "api_path": "stablehlo.custom_op",
                     "kind": "operation",
                     "operands": [{"name": "lhs", "type": "AnyFloat"}],
-                    "params": [{"name": "lhs", "annotation": "AnyFloat"}],
+                    "params": [
+                        {
+                            "name": "lhs",
+                            "kind": "POSITIONAL_ONLY",
+                            "annotation": "AnyFloat",
+                        }
+                    ],
                 },
             ],
             f,
@@ -1244,7 +1260,13 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Any) -> None:
                     "api_path": "stablehlo.custom_op",
                     "kind": "operation",
                     "operands": [{"name": "lhs", "type": "AnyFloat"}],
-                    "params": [{"name": "lhs", "annotation": "AnyFloat"}],
+                    "params": [
+                        {
+                            "name": "lhs",
+                            "kind": "POSITIONAL_ONLY",
+                            "annotation": "AnyFloat",
+                        }
+                    ],
                 }
             ],
             f,

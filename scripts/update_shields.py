@@ -1,11 +1,11 @@
 """Script to compute test and documentation coverage and update README.md shield badges."""
 
-import os
-import sys
-from typing import Any
+from __future__ import annotations
 
+import os
 import re
 import subprocess
+import sys
 
 
 def get_test_coverage() -> str:
@@ -76,7 +76,7 @@ def get_doc_coverage() -> str:
     return "unknown"
 
 
-def get_color(coverage: Any) -> str:
+def get_color(coverage: str | float | int) -> str:
     """Determine the badge color based on coverage.
 
     Args:

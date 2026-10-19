@@ -13,63 +13,269 @@ import os
 from pathlib import Path
 import re
 import sys
-from typing import (
-    Any,
-    Dict,
-    Iterator,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Tuple,
-    TypedDict,
-    Union,
-)
+import typing
+from typing_extensions import TypeAlias
 
 import griffe
-from ml_switcheroo_ir.schema.ghost import GhostRef
+from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef
+import pydantic
 
+from ml_ecosystem_snapshots.models import JsonValue, SnapshotEnvelope
 from ml_ecosystem_snapshots.utils import (
     get_framework_docstring_parser,
     resolve_griffe_parser,
 )
 
+ParamSignatureTuple: TypeAlias = tuple[
+    str, str, typing.Optional[str], typing.Optional[str]
+]
 
-class ComplianceMismatchEntry(TypedDict, total=False):
+
+class ComplianceMismatchEntry(pydantic.BaseModel):
     """Typed mismatch entry within `ComplianceScoreReport`."""
 
+    model_config = pydantic.ConfigDict(extra="forbid")
+
     api_path: str
-    expected: List[Tuple[Any, ...]]
-    actual: List[Tuple[Any, ...]]
-    reason: str
+    expected: list[ParamSignatureTuple] = pydantic.Field(default_factory=list)
+    actual: list[ParamSignatureTuple] = pydantic.Field(default_factory=list)
+    reason: str | None = None
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["api_path"]) -> str: ...
+
+    @typing.overload
+    def __getitem__(
+        self, key: typing.Literal["expected", "actual"]
+    ) -> list[ParamSignatureTuple]: ...
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["reason"]) -> str | None: ...
+
+    @typing.overload
+    def __getitem__(self, key: str) -> str | list[ParamSignatureTuple] | JsonValue: ...
+
+    def __getitem__(self, key: str) -> str | list[ParamSignatureTuple] | JsonValue:
+        """Retrieve a mismatch entry field by dictionary key.
+
+        Args:
+            key: Field name ('api_path', 'expected', 'actual', or 'reason').
+
+        Returns:
+            Field value.
+        """
+        val: str | list[ParamSignatureTuple] | JsonValue = getattr(self, key)
+        return val
 
 
-class ComplianceScoreReport(TypedDict, total=False):
+class ComplianceScoreReport(pydantic.BaseModel):
     """Typed compliance report returned by `score_compliance`."""
 
-    score_percentage: float
-    total_endpoints: int
-    matched: List[str]
-    missing: List[str]
-    mismatched: List[ComplianceMismatchEntry]
-    opaque_signatures: List[str]
-    warnings: List[str]
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    score_percentage: float = 0.0
+    total_endpoints: int = 0
+    matched: list[str] = pydantic.Field(default_factory=list)
+    missing: list[str] = pydantic.Field(default_factory=list)
+    mismatched: list[ComplianceMismatchEntry] = pydantic.Field(default_factory=list)
+    opaque_signatures: list[str] = pydantic.Field(default_factory=list)
+    warnings: list[str] = pydantic.Field(default_factory=list)
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["score_percentage"]) -> float: ...
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["total_endpoints"]) -> int: ...
+
+    @typing.overload
+    def __getitem__(
+        self,
+        key: typing.Literal["matched", "missing", "opaque_signatures", "warnings"],
+    ) -> list[str]: ...
+
+    @typing.overload
+    def __getitem__(
+        self, key: typing.Literal["mismatched"]
+    ) -> list[ComplianceMismatchEntry]: ...
+
+    @typing.overload
+    def __getitem__(
+        self, key: str
+    ) -> float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue: ...
+
+    def __getitem__(
+        self, key: str
+    ) -> float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue:
+        """Retrieve a compliance report field by dictionary key.
+
+        Args:
+            key: Field name.
+
+        Returns:
+            Field value.
+        """
+        val: float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue = (
+            getattr(self, key)
+        )
+        return val
+
+    @typing.overload
+    def get(
+        self,
+        key: typing.Literal["score_percentage"],
+        default: float = 0.0,
+    ) -> float: ...
+
+    @typing.overload
+    def get(
+        self,
+        key: typing.Literal["total_endpoints"],
+        default: int = 0,
+    ) -> int: ...
+
+    @typing.overload
+    def get(
+        self,
+        key: typing.Literal["matched", "missing", "opaque_signatures", "warnings"],
+        default: list[str] | None = None,
+    ) -> list[str]: ...
+
+    @typing.overload
+    def get(
+        self,
+        key: typing.Literal["mismatched"],
+        default: list[ComplianceMismatchEntry] | None = None,
+    ) -> list[ComplianceMismatchEntry]: ...
+
+    @typing.overload
+    def get(
+        self,
+        key: str,
+        default: (
+            float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue
+        ) = None,
+    ) -> float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue: ...
+
+    def get(
+        self,
+        key: str,
+        default: (
+            float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue
+        ) = None,
+    ) -> float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue:
+        """Retrieve a compliance report field by key with an optional default.
+
+        Args:
+            key: Field name.
+            default: Default value when absent.
+
+        Returns:
+            Field value or `default`.
+        """
+        val: float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue = (
+            getattr(self, key, default)
+        )
+        return val
 
 
-class SnippetComplianceReport(TypedDict, total=False):
+class SnippetComplianceReport(pydantic.BaseModel):
     """Typed compliance report returned by MLIR, WGSL, SASS, and RDNA snippet verifiers."""
 
-    is_compliant: bool
-    total_ops: int
-    verified_ops: int
-    total_instructions: int
-    verified_instructions: int
-    errors: List[str]
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    is_compliant: bool = False
+    total_ops: int = 0
+    verified_ops: int = 0
+    total_instructions: int = 0
+    verified_instructions: int = 0
+    errors: list[str] = pydantic.Field(default_factory=list)
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["is_compliant"]) -> bool: ...
+
+    @typing.overload
+    def __getitem__(
+        self,
+        key: typing.Literal[
+            "total_ops",
+            "verified_ops",
+            "total_instructions",
+            "verified_instructions",
+        ],
+    ) -> int: ...
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["errors"]) -> list[str]: ...
+
+    @typing.overload
+    def __getitem__(self, key: str) -> list[str] | JsonValue: ...
+
+    def __getitem__(self, key: str) -> bool | int | list[str] | JsonValue:
+        """Retrieve a snippet compliance field by dictionary key.
+
+        Args:
+            key: Field name.
+
+        Returns:
+            Field value.
+        """
+        val: bool | int | list[str] | JsonValue = getattr(self, key)
+        return val
+
+    @typing.overload
+    def get(
+        self,
+        key: typing.Literal["is_compliant"],
+        default: bool = False,
+    ) -> bool: ...
+
+    @typing.overload
+    def get(
+        self,
+        key: typing.Literal[
+            "total_ops",
+            "verified_ops",
+            "total_instructions",
+            "verified_instructions",
+        ],
+        default: int = 0,
+    ) -> int: ...
+
+    @typing.overload
+    def get(
+        self,
+        key: typing.Literal["errors"],
+        default: list[str] | None = None,
+    ) -> list[str]: ...
+
+    @typing.overload
+    def get(
+        self,
+        key: str,
+        default: bool | int | list[str] | JsonValue = None,
+    ) -> bool | int | list[str] | JsonValue: ...
+
+    def get(
+        self,
+        key: str,
+        default: bool | int | list[str] | JsonValue = None,
+    ) -> bool | int | list[str] | JsonValue:
+        """Retrieve a snippet compliance field by key with an optional default.
+
+        Args:
+            key: Field name.
+            default: Default value when absent.
+
+        Returns:
+            Field value or `default`.
+        """
+        val: bool | int | list[str] | JsonValue = getattr(self, key, default)
+        return val
 
 
 _LOGGER = logging.getLogger(__name__)
 
-DEFAULT_NAMESPACE_PREFIX_MAP: Dict[str, str] = {
+DEFAULT_NAMESPACE_PREFIX_MAP: dict[str, str] = {
     "zero_jax": "jax",
     "zero_optax": "optax",
     "zero_chex": "chex",
@@ -79,7 +285,7 @@ DEFAULT_NAMESPACE_PREFIX_MAP: Dict[str, str] = {
 
 
 @contextlib.contextmanager
-def _temporary_sys_path(search_path: str) -> Iterator[None]:
+def _temporary_sys_path(search_path: str) -> typing.Iterator[None]:
     """Temporarily prepend `search_path` to `sys.path` if not already present.
 
     Args:
@@ -101,7 +307,7 @@ def _temporary_sys_path(search_path: str) -> Iterator[None]:
 
 def get_module_info_from_path(
     file_path: str, target_prefix: str = ""
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     """Resolve a file path to a root search path and a module name.
 
     This function ascends the directory tree starting from the given path
@@ -160,7 +366,9 @@ def get_module_info_from_path(
     return search_path, mod_name
 
 
-def extract_target_ast(file_path: str, target_prefix: str = "") -> Any:
+def extract_target_ast(
+    file_path: str, target_prefix: str = ""
+) -> griffe.Module | griffe.Object | None:
     """Extract the Griffe AST for an arbitrary target path.
 
     This function dynamically determines the module name and search path
@@ -176,16 +384,18 @@ def extract_target_ast(file_path: str, target_prefix: str = "") -> Any:
     search_path, mod_name = get_module_info_from_path(file_path, target_prefix)
     parser_choice = get_framework_docstring_parser(mod_name.split(".")[0])
     resolved_parser = resolve_griffe_parser(parser_choice)
-    return griffe.load(
+    loaded = griffe.load(
         mod_name, search_paths=[search_path], docstring_parser=resolved_parser
     )
+    assert isinstance(loaded, (griffe.Module, griffe.Object))
+    return loaded
 
 
 def align_namespace(
     api_path: str,
     target_prefix: str,
     reference_prefix: str,
-    prefix_map: Optional[Mapping[str, str]] = None,
+    prefix_map: typing.Mapping[str, str] | None = None,
 ) -> str:
     """Align a target namespace path to a reference namespace path.
 
@@ -227,7 +437,7 @@ def align_namespace(
 
 def extract_target_refs_single(
     file_path: str, target_prefix: str, reference_prefix: str
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Extract a list of GhostRefs from a single target file path.
 
     This function parses the path using Griffe to find public definitions,
@@ -242,7 +452,7 @@ def extract_target_refs_single(
     Returns:
         List of GhostRefs.
     """
-    from ml_ecosystem_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
     search_path, mod_name = get_module_info_from_path(file_path, target_prefix)
 
@@ -252,9 +462,11 @@ def extract_target_refs_single(
         mod_name, search_paths=[search_path], docstring_parser=resolved_parser
     )
 
-    refs: List[GhostRef] = []
+    refs: list[GhostRef] = []
 
-    def walk(node: Any, current_path: str) -> None:
+    def walk(
+        node: griffe.Module | griffe.Object | griffe.Alias, current_path: str
+    ) -> None:
         """Recursively traverse a Griffe AST node and inspect public symbols.
 
         Args:
@@ -275,7 +487,7 @@ def extract_target_refs_single(
                     except ImportError:
                         break
 
-                obj = live_mod
+                obj: object = live_mod
                 for p in parts[i:]:
                     obj = getattr(obj, p)
 
@@ -304,23 +516,15 @@ def extract_target_refs_single(
                     walk(member, f"{current_path}.{name}")
 
     with _temporary_sys_path(search_path):
+        assert isinstance(mod_ast, (griffe.Module, griffe.Object, griffe.Alias))
         walk(mod_ast, mod_name)
     return refs
 
 
-DEFAULT_LEN_MATCH_PREFIXES: Tuple[str, ...] = (
-    "chex.",
-    "jax.nn.",
-    "optax.",
-    "flax.nnx.",
-)
-
-
 def score_compliance(
-    reference_snapshot: Mapping[str, Any],
-    target_refs: Sequence[GhostRef],
+    reference_snapshot: SnapshotEnvelope | typing.Mapping[str, object],
+    target_refs: typing.Sequence[GhostRef],
     strict_c_extensions: bool = False,
-    allow_signature_len_match_prefixes: Optional[Sequence[str]] = None,
 ) -> ComplianceScoreReport:
     """Score the compliance of target refs against a reference snapshot.
 
@@ -328,14 +532,19 @@ def score_compliance(
         reference_snapshot: The reference snapshot dictionary or envelope containing categories.
         target_refs: The extracted and aligned GhostRefs from the target.
         strict_c_extensions: Whether to reject fallback matches with opaque C-extension signatures.
-        allow_signature_len_match_prefixes: Optional sequence of API prefixes where matching
-            parameter arity (`len(params)`) is treated as compliant even if parameter names differ.
 
     Returns:
-        A dictionary containing compliance metrics.
+        A `ComplianceScoreReport` containing compliance metrics.
     """
-    reference_map: Dict[str, GhostRef] = {}
-    for _cat, items in reference_snapshot.get("categories", {}).items():
+    reference_map: dict[str, GhostRef] = {}
+    cats_obj: object = (
+        reference_snapshot.categories
+        if isinstance(reference_snapshot, SnapshotEnvelope)
+        else reference_snapshot.get("categories", {})
+    )
+    assert isinstance(cats_obj, dict)
+    for _cat, items in cats_obj.items():
+        assert isinstance(items, list)
         for item in items:
             ref = GhostRef.model_validate(item)
             reference_map[ref.api_path] = ref
@@ -346,39 +555,43 @@ def score_compliance(
 
     total_reference_endpoints = len({ref.api_path for ref in reference_map.values()})
     if total_reference_endpoints == 0:
-        return {
-            "score_percentage": 0.0,
-            "matched": [],
-            "missing": [],
-            "mismatched": [],
-            "opaque_signatures": [],
-            "warnings": [],
-        }
+        return ComplianceScoreReport(
+            score_percentage=0.0,
+            total_endpoints=0,
+            matched=[],
+            missing=[],
+            mismatched=[],
+            opaque_signatures=[],
+            warnings=[],
+        )
 
-    matched: List[str] = []
-    missing: List[str] = []
-    mismatched: List[ComplianceMismatchEntry] = []
-    opaque_signatures: List[str] = []
-    warnings: List[str] = []
+    matched: list[str] = []
+    missing: list[str] = []
+    mismatched: list[ComplianceMismatchEntry] = []
+    opaque_signatures: list[str] = []
+    warnings: list[str] = []
 
-    def sig_tuple(p: Any) -> Tuple[Any, ...]:
+    def sig_tuple(p: GhostParam) -> ParamSignatureTuple:
         """Build a normalized `(name, kind, default, annotation)` tuple for parameter comparison.
 
         Args:
-            p: A `GhostParam` or parameter-like object with `name`, `kind`, `default`, and `annotation`.
+            p: A `GhostParam` with `name`, `kind`, `default`, and `annotation`.
 
         Returns:
             Normalized 4-tuple `(name, kind, default, annotation)`.
         """
+        name_val = p.name
+        kind_val = str(p.kind)
         ann = p.annotation
+        default = p.default
+
         if isinstance(ann, str) and ann.startswith('"') and ann.endswith('"'):
             ann = ann[1:-1]
         if isinstance(ann, str) and ann.startswith("'") and ann.endswith("'"):
             ann = ann[1:-1]
-        default = p.default
         if default in ("'```(None)```'", "```(None)```", "'___NONE___'"):
             default = "None"
-        return (p.name, p.kind, default, ann)
+        return (name_val, kind_val, default, ann)
 
     for api_path, ref_obj in reference_map.items():
         if api_path not in target_map:
@@ -408,12 +621,12 @@ def score_compliance(
             )
             if strict_c_extensions:
                 mismatched.append(
-                    {
-                        "api_path": api_path,
-                        "expected": ref_sig,
-                        "actual": tgt_sig,
-                        "reason": "Opaque C-extension signature fallback rejected under strict_c_extensions",
-                    }
+                    ComplianceMismatchEntry(
+                        api_path=api_path,
+                        expected=ref_sig,
+                        actual=tgt_sig,
+                        reason="Opaque C-extension signature fallback rejected under strict_c_extensions",
+                    )
                 )
             else:
                 matched.append(api_path)
@@ -425,42 +638,33 @@ def score_compliance(
             has_varargs = any("VAR_POSITIONAL" in p.kind for p in target_obj.params)
             has_varkwargs = any("VAR_KEYWORD" in p.kind for p in target_obj.params)
 
-            if (
-                allow_signature_len_match_prefixes is not None
-                and any(
-                    api_path.startswith(pref)
-                    for pref in allow_signature_len_match_prefixes
-                )
-                and (
-                    api_path.startswith("chex.")
-                    or len(ref_obj.params) == len(target_obj.params)
-                )
-            ):
-                matched.append(api_path)
-                continue
             if has_varargs and has_varkwargs:
                 matched.append(api_path)
             else:
                 mismatched.append(
-                    {"api_path": api_path, "expected": ref_sig, "actual": tgt_sig}
+                    ComplianceMismatchEntry(
+                        api_path=api_path, expected=ref_sig, actual=tgt_sig
+                    )
                 )
 
     score_percentage = (len(matched) / total_reference_endpoints) * 100.0
 
-    return {
-        "score_percentage": round(score_percentage, 2),
-        "total_endpoints": total_reference_endpoints,
-        "matched": matched,
-        "missing": missing,
-        "mismatched": mismatched,
-        "opaque_signatures": opaque_signatures,
-        "warnings": warnings,
-    }
+    return ComplianceScoreReport(
+        score_percentage=round(score_percentage, 2),
+        total_endpoints=total_reference_endpoints,
+        matched=matched,
+        missing=missing,
+        mismatched=mismatched,
+        opaque_signatures=opaque_signatures,
+        warnings=warnings,
+    )
 
 
 def extract_target_refs(
-    file_paths: Union[Sequence[str], str], target_prefix: str, reference_prefix: str
-) -> List[GhostRef]:
+    file_paths: typing.Sequence[str] | str,
+    target_prefix: str,
+    reference_prefix: str,
+) -> list[GhostRef]:
     """Extract a list of GhostRefs from multiple target file paths.
 
     Args:
@@ -473,7 +677,7 @@ def extract_target_refs(
     """
     if isinstance(file_paths, str):
         file_paths = [file_paths]
-    refs = []
+    refs: list[GhostRef] = []
     for fp in file_paths:
         refs.extend(extract_target_refs_single(fp, target_prefix, reference_prefix))
     return refs
@@ -486,11 +690,11 @@ def check_mlir_text_compliance(mlir_text: str) -> SnippetComplianceReport:
         mlir_text: Text snippet of MLIR or StableHLO assembly code.
 
     Returns:
-        Compliance dictionary with is_compliant, total_ops, verified_ops, and errors.
+        `SnippetComplianceReport` with `is_compliant`, `total_ops`, `verified_ops`, and `errors`.
     """
     from ml_ecosystem_snapshots.mcp_server import check_mlir_op
 
-    errors: List[str] = []
+    errors: list[str] = []
     total_ops = 0
     verified_ops = 0
 
@@ -523,16 +727,18 @@ def check_mlir_text_compliance(mlir_text: str) -> SnippetComplianceReport:
                     f"Invalid MLIR operation '{op_name}' on line: '{cleaned}'"
                 )
             elif not res.get("is_valid"):
-                errors.extend(res.get("errors", []))
+                raw_errs = res.get("errors", [])
+                assert isinstance(raw_errs, list)
+                errors.extend([str(e) for e in raw_errs])
             else:
                 verified_ops += 1
 
-    return {
-        "is_compliant": len(errors) == 0,
-        "total_ops": total_ops,
-        "verified_ops": verified_ops,
-        "errors": errors,
-    }
+    return SnippetComplianceReport(
+        is_compliant=len(errors) == 0,
+        total_ops=total_ops,
+        verified_ops=verified_ops,
+        errors=errors,
+    )
 
 
 def check_wgsl_shader_compliance(shader_text: str) -> SnippetComplianceReport:
@@ -542,11 +748,11 @@ def check_wgsl_shader_compliance(shader_text: str) -> SnippetComplianceReport:
         shader_text: Text snippet of WebGPU WGSL shader code.
 
     Returns:
-        Compliance dictionary with is_compliant, total_ops, verified_ops, and errors.
+        `SnippetComplianceReport` with `is_compliant`, `total_ops`, `verified_ops`, and `errors`.
     """
     from ml_ecosystem_snapshots.mcp_server import check_wgsl_op
 
-    errors: List[str] = []
+    errors: list[str] = []
     total_ops = 0
     verified_ops = 0
 
@@ -591,16 +797,16 @@ def check_wgsl_shader_compliance(shader_text: str) -> SnippetComplianceReport:
                 else:
                     errors.extend(res.get("errors", []))
 
-    return {
-        "is_compliant": len(errors) == 0,
-        "total_ops": total_ops,
-        "verified_ops": verified_ops,
-        "errors": errors,
-    }
+    return SnippetComplianceReport(
+        is_compliant=len(errors) == 0,
+        total_ops=total_ops,
+        verified_ops=verified_ops,
+        errors=errors,
+    )
 
 
 def check_sass_assembly_compliance(
-    assembly_text: str, sm_arch: Optional[str] = None
+    assembly_text: str, sm_arch: str | None = None
 ) -> SnippetComplianceReport:
     """Verify that an NVIDIA SASS assembly snippet is valid for the target SM architecture.
 
@@ -609,11 +815,11 @@ def check_sass_assembly_compliance(
         sm_arch: Optional target SM architecture (e.g. 'sm_80', 'sm_90').
 
     Returns:
-        Compliance dictionary with is_compliant, total_instructions, and errors.
+        `SnippetComplianceReport` with `is_compliant`, `total_instructions`, and `errors`.
     """
     from ml_ecosystem_snapshots.mcp_server import check_sass_instruction
 
-    errors: List[str] = []
+    errors: list[str] = []
     total_insts = 0
     verified_insts = 0
 
@@ -647,20 +853,22 @@ def check_sass_assembly_compliance(
                 sm_arch=sm_arch,
             )
             if not res.get("is_valid"):
-                errors.extend(res.get("errors", []))
+                raw_errs = res.get("errors", [])
+                assert isinstance(raw_errs, list)
+                errors.extend([str(e) for e in raw_errs])
             else:
                 verified_insts += 1
 
-    return {
-        "is_compliant": len(errors) == 0,
-        "total_instructions": total_insts,
-        "verified_instructions": verified_insts,
-        "errors": errors,
-    }
+    return SnippetComplianceReport(
+        is_compliant=len(errors) == 0,
+        total_instructions=total_insts,
+        verified_instructions=verified_insts,
+        errors=errors,
+    )
 
 
 def check_rdna_assembly_compliance(
-    assembly_text: str, gfx_arch: Optional[str] = None
+    assembly_text: str, gfx_arch: str | None = None
 ) -> SnippetComplianceReport:
     """Verify that an AMD RDNA assembly snippet is valid for the target GFX architecture.
 
@@ -669,11 +877,11 @@ def check_rdna_assembly_compliance(
         gfx_arch: Optional target GFX architecture (e.g. 'GFX11/RDNA3', 'GFX9/CDNA').
 
     Returns:
-        Compliance dictionary with is_compliant, total_instructions, and errors.
+        `SnippetComplianceReport` with `is_compliant`, `total_instructions`, and `errors`.
     """
     from ml_ecosystem_snapshots.mcp_server import check_rdna_instruction
 
-    errors: List[str] = []
+    errors: list[str] = []
     total_insts = 0
     verified_insts = 0
 
@@ -697,21 +905,23 @@ def check_rdna_assembly_compliance(
             total_insts += 1
             res = check_rdna_instruction(mnemonic, operands=operands, gfx_arch=gfx_arch)
             if not res.get("is_valid"):
-                errors.extend(res.get("errors", []))
+                raw_errs = res.get("errors", [])
+                assert isinstance(raw_errs, list)
+                errors.extend([str(e) for e in raw_errs])
             else:
                 verified_insts += 1
 
-    return {
-        "is_compliant": len(errors) == 0,
-        "total_instructions": total_insts,
-        "verified_instructions": verified_insts,
-        "errors": errors,
-    }
+    return SnippetComplianceReport(
+        is_compliant=len(errors) == 0,
+        total_instructions=total_insts,
+        verified_instructions=verified_insts,
+        errors=errors,
+    )
 
 
 def validate_broadcast_shapes(
-    shape_a: Sequence[Union[int, str]], shape_b: Sequence[Union[int, str]]
-) -> Tuple[bool, Optional[List[int]], Optional[str]]:
+    shape_a: typing.Sequence[int | str], shape_b: typing.Sequence[int | str]
+) -> tuple[bool, list[int] | None, str | None]:
     """Validate NumPy/PyTorch broadcasting compatibility between two tensor shapes.
 
     Rules:
@@ -730,7 +940,7 @@ def validate_broadcast_shapes(
     reversed_b = list(reversed(shape_b))
     max_len = max(len(reversed_a), len(reversed_b))
 
-    result_shape: List[int] = []
+    result_shape: list[int] = []
     for i in range(max_len):
         dim_a = reversed_a[i] if i < len(reversed_a) else 1
         dim_b = reversed_b[i] if i < len(reversed_b) else 1
@@ -763,10 +973,10 @@ def validate_broadcast_shapes(
 
 
 def validate_matmul_shapes(
-    shape_a: Sequence[Union[int, str]],
-    shape_b: Sequence[Union[int, str]],
+    shape_a: typing.Sequence[int | str],
+    shape_b: typing.Sequence[int | str],
     strict_2d: bool = False,
-) -> Tuple[bool, Optional[List[int]], Optional[str]]:
+) -> tuple[bool, list[int] | None, str | None]:
     """Validate matrix multiplication shape and contracting inner-dimension constraints.
 
     Rules:
@@ -865,7 +1075,7 @@ def validate_matmul_shapes(
     return True, out_shape, None
 
 
-DTYPE_BITWIDTHS: Dict[str, int] = {
+DTYPE_BITWIDTHS: dict[str, int] = {
     "float64": 64,
     "int64": 64,
     "uint64": 64,
@@ -914,7 +1124,7 @@ def get_dtype_bitwidth(dtype_name: str) -> int:
     return DTYPE_BITWIDTHS.get(clean, 32)
 
 
-def estimate_tensor_memory_bytes(shape: Sequence[int], dtype_name: str) -> float:
+def estimate_tensor_memory_bytes(shape: typing.Sequence[int], dtype_name: str) -> float:
     """Estimate memory footprint in bytes supporting sub-byte and quantized bitwidths.
 
     Args:
@@ -932,7 +1142,7 @@ def estimate_tensor_memory_bytes(shape: Sequence[int], dtype_name: str) -> float
     return total_bits / 8.0
 
 
-def validate_dtype_for_op(op_name: str, dtype_name: str) -> Tuple[bool, Optional[str]]:
+def validate_dtype_for_op(op_name: str, dtype_name: str) -> tuple[bool, str | None]:
     """Validate that a data type is legally applicable to a mathematical operator.
 
     Rejects quantized, integer, boolean, and non-numeric types for transcendental

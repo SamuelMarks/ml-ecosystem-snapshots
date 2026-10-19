@@ -1,13 +1,21 @@
 """Huggingface module."""
 
+from __future__ import annotations
+
 import inspect
-from typing import Dict, List, Any
-from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
-from ml_switcheroo_ir.schema.ghost import GhostRef, GhostParam
-from ml_ecosystem_snapshots.models import GhostInspector, sanitize_type_str
+
+from ml_switcheroo_ir.schema.ghost import (
+    GhostParam,
+    GhostRef,
+    ParameterKind,
+    SemanticTier,
+)
+
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.sanitize import sanitize_type_str
 
 
-def _extract_generation_kwargs(obj: Any, ref: GhostRef) -> None:
+def _extract_generation_kwargs(obj: object, ref: GhostRef) -> None:
     """Extract generation keyword arguments from a model's `generate` method signature.
 
     Args:
@@ -47,7 +55,7 @@ def _extract_generation_kwargs(obj: Any, ref: GhostRef) -> None:
         pass
 
 
-def _parse_pretrained_config(obj: Any, ref: GhostRef) -> None:
+def _parse_pretrained_config(obj: object, ref: GhostRef) -> None:
     """Extract class-level `__annotations__` fields from a PreTrainedConfig subclass.
 
     Args:
@@ -57,16 +65,15 @@ def _parse_pretrained_config(obj: Any, ref: GhostRef) -> None:
     if not hasattr(obj, "__annotations__"):
         return
 
-    for (
-        attr_name,
-        attr_type,
-    ) in obj.__annotations__.items():
+    raw_annos = getattr(obj, "__annotations__", {})
+    assert isinstance(raw_annos, dict)
+    for attr_name, attr_type in raw_annos.items():
         if not any(p.name == attr_name for p in ref.params):
             anno_str = str(attr_type) if not isinstance(attr_type, str) else attr_type
             final_anno = sanitize_type_str(anno_str) if anno_str else None
             ref.params.append(
                 GhostParam(
-                    name=attr_name,
+                    name=str(attr_name),
                     kind=ParameterKind.POSITIONAL_OR_KEYWORD,
                     default=None,
                     annotation=final_anno,
@@ -74,7 +81,7 @@ def _parse_pretrained_config(obj: Any, ref: GhostRef) -> None:
             )
 
 
-def _handle_automodel_factory(obj: Any, name: str, ref: GhostRef) -> None:
+def _handle_automodel_factory(obj: object, name: str, ref: GhostRef) -> None:
     """Ensure `AutoModel*` factory classes expose a `config: PreTrainedConfig` parameter.
 
     Args:
@@ -95,10 +102,10 @@ def _handle_automodel_factory(obj: Any, name: str, ref: GhostRef) -> None:
 
 def collect_huggingface(
     module_name: str,
-    category_mapping: Dict[SemanticTier, List[str]],
+    category_mapping: dict[SemanticTier, list[str]],
     category: SemanticTier,
     include_nonpublic: bool = False,
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect Hugging Face ecosystem APIs for a given package and semantic tier.
 
     Args:
@@ -112,7 +119,7 @@ def collect_huggingface(
     """
     import importlib
 
-    results: List[GhostRef] = []
+    results: list[GhostRef] = []
 
     # Check if this category is handled
     if category not in category_mapping:
@@ -174,7 +181,7 @@ def collect_huggingface(
         if obj_cat == category:
             try:
                 ref = inspector.inspect(obj, f"{module_name}.{name}")
-                if ref:
+                if ref is not None:
                     if "Config" in name:
                         _parse_pretrained_config(obj, ref)
                     if name.startswith("AutoModel"):
@@ -199,7 +206,7 @@ def collect_huggingface(
 
 def collect_transformers(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect Hugging Face `transformers` APIs.
 
     Args:
@@ -218,7 +225,7 @@ def collect_transformers(
 
 def collect_diffusers(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect Hugging Face `diffusers` APIs.
 
     Args:
@@ -238,7 +245,7 @@ def collect_diffusers(
 
 def collect_tokenizers(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect Hugging Face `tokenizers` APIs.
 
     Args:

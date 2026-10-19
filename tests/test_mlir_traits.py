@@ -1,11 +1,15 @@
 """Tests for MLIR type hierarchy, dialect traits, and verification rules."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
-from typing import Any
+from pathlib import Path
 from unittest import mock
+
 import pytest
+import pytest_mock
 
 from ml_switcheroo_ir.schema.ghost import SemanticTier
 from ml_ecosystem_snapshots.frameworks import mlir
@@ -218,7 +222,7 @@ def test_check_mlir_op_with_traits() -> None:
     )
 
 
-def test_cli_check_mlir(capsys: Any, tmp_path: Any) -> None:
+def test_cli_check_mlir(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     """Test CLI check-mlir subcommand.
 
     Args:
@@ -290,7 +294,7 @@ def test_cli_check_mlir(capsys: Any, tmp_path: Any) -> None:
         cmd_check_mlir(args_file_invalid)
 
 
-def test_mlir_collect_api(mocker: Any) -> None:
+def test_mlir_collect_api(mocker: pytest_mock.MockerFixture) -> None:
     """Test collect_api on MLIR framework module.
 
     Args:

@@ -1,13 +1,19 @@
 """Tests for AST analysis edge cases, parser fallbacks, and exception handling in GhostInspector."""
 
+from __future__ import annotations
+
 import ast
-from typing import Any, List
+import inspect
+import typing
 from unittest.mock import patch
 
-from ml_ecosystem_snapshots.models import (
-    GhostInspector,
+import pytest_mock
+
+from ml_ecosystem_snapshots.introspection.ast_kwargs import (
     extract_accepted_kwargs_from_ast,
 )
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_switcheroo_ir.schema.ghost import GhostRef
 
 
 class BaseParentModel:
@@ -63,7 +69,7 @@ class SimpleClassModel:
 
 
 def target_fn_ast_edges(
-    self: Any, ast_arg: int = 42, broken_arg: str = "x", hint_arg: int = 1
+    self: object, ast_arg: int = 42, broken_arg: str = "x", hint_arg: int = 1
 ) -> None:
     """Target function for AST default edges.
 
@@ -100,7 +106,7 @@ class MroParentClass:
 class MroChildClass(MroParentClass):
     """Child class calling super with **kwargs."""
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(self, **kwargs: int) -> None:
         """Initialize MroChildClass.
 
         Args:
@@ -120,27 +126,33 @@ def test_extract_accepted_kwargs_subscript_branches() -> None:
     assert isinstance(fn_def, ast.FunctionDef)
 
     # 1. slice is Index(Constant('alpha')) -> covers hasattr(ast, 'Index') and idx_val as string Constant
-    idx2: Any = ast.slice.__new__(ast.Index)
-    idx2.value = ast.Constant(value="alpha")
+    idx2 = ast.slice.__new__(ast.Index)
+    setattr(idx2, "value", ast.Constant(value="alpha"))
     stmt1 = fn_def.body[1]
     assert isinstance(stmt1, ast.Expr)
     assert isinstance(stmt1.value, ast.Subscript)
-    stmt1.value.slice = idx2
+    setattr(stmt1.value, "slice", idx2)
 
     # 2. slice is Index(Constant(999)) -> covers idx_val with non-string Constant
-    idx3: Any = ast.slice.__new__(ast.Index)
-    idx3.value = ast.Constant(value=999)
+    idx3 = ast.slice.__new__(ast.Index)
+    setattr(idx3, "value", ast.Constant(value=999))
     sub3 = ast.Subscript(
-        value=ast.Name(id="kwargs", ctx=ast.Load()), slice=idx3, ctx=ast.Load()
+        value=ast.Name(id="kwargs", ctx=ast.Load()),
+        slice=ast.Constant(value=999),
+        ctx=ast.Load(),
     )
+    setattr(sub3, "slice", idx3)
     fn_def.body.append(ast.Expr(value=sub3))
 
     # 3. slice is Index(Name('x')) -> covers idx_val with non-Constant node
-    idx4: Any = ast.slice.__new__(ast.Index)
-    idx4.value = ast.Name(id="x", ctx=ast.Load())
+    idx4 = ast.slice.__new__(ast.Index)
+    setattr(idx4, "value", ast.Name(id="x", ctx=ast.Load()))
     sub4 = ast.Subscript(
-        value=ast.Name(id="kwargs", ctx=ast.Load()), slice=idx4, ctx=ast.Load()
+        value=ast.Name(id="kwargs", ctx=ast.Load()),
+        slice=ast.Name(id="x", ctx=ast.Load()),
+        ctx=ast.Load(),
     )
+    setattr(sub4, "slice", idx4)
     fn_def.body.append(ast.Expr(value=sub4))
 
     # 4. slice is Name('var') -> covers slice_node that is neither Constant nor Index
@@ -167,7 +179,7 @@ def test_ghost_inspector_unwrap_max_depth() -> None:
         None.
     """
 
-    def make_wrapper(inner: Any) -> Any:
+    def make_wrapper(inner: object) -> object:
         """Create function wrapper with __wrapped__ attribute.
 
         Args:
@@ -177,7 +189,7 @@ def test_ghost_inspector_unwrap_max_depth() -> None:
             Wrapped callable.
         """
 
-        def wrapped(*args: Any, **kwargs: Any) -> Any:
+        def wrapped(*args: object, **kwargs: object) -> object:
             """Wrapped function.
 
             Args:
@@ -187,6 +199,7 @@ def test_ghost_inspector_unwrap_max_depth() -> None:
             Returns:
                 Call result.
             """
+            assert callable(inner)
             return inner(*args, **kwargs)
 
         setattr(wrapped, "__wrapped__", inner)
@@ -203,7 +216,7 @@ def test_ghost_inspector_unwrap_max_depth() -> None:
         """
         return x
 
-    curr: Any = base_func
+    curr: object = base_func
     for _ in range(12):
         curr = make_wrapper(curr)
 
@@ -211,7 +224,9 @@ def test_ghost_inspector_unwrap_max_depth() -> None:
     assert ref.has_arg("x")
 
 
-def test_ghost_inspector_cdd_docstring_exception(mocker: Any) -> None:
+def test_ghost_inspector_cdd_docstring_exception(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test GhostInspector handles exception in cdd_docstring_parsers.docstring.
 
     Args:
@@ -240,7 +255,9 @@ def test_ghost_inspector_cdd_docstring_exception(mocker: Any) -> None:
     assert ref.has_arg("x")
 
 
-def test_ghost_inspector_griffe_docstring_exception(mocker: Any) -> None:
+def test_ghost_inspector_griffe_docstring_exception(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test GhostInspector handles exception in extract_griffe_docstring_metadata.
 
     Args:
@@ -276,7 +293,7 @@ def test_ghost_inspector_super_init_branches() -> None:
     assert ref.has_arg("a")
 
 
-def test_ghost_inspector_cdd_parsed_ir_none(mocker: Any) -> None:
+def test_ghost_inspector_cdd_parsed_ir_none(mocker: pytest_mock.MockerFixture) -> None:
     """Test GhostInspector when cdd_parsed_ir has no params attribute.
 
     Args:
@@ -293,7 +310,9 @@ def test_ghost_inspector_cdd_parsed_ir_none(mocker: Any) -> None:
     assert ref.has_arg("x")
 
 
-def test_ghost_inspector_cdd_ast_params_edges(mocker: Any) -> None:
+def test_ghost_inspector_cdd_ast_params_edges(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test GhostInspector cdd_ast_params handling for self, AST defaults, and hints.
 
     Args:
@@ -324,7 +343,7 @@ def test_ghost_inspector_cdd_ast_params_edges(mocker: Any) -> None:
 
     orig_unparse = ast.unparse
 
-    def mock_unparse(node: Any) -> str:
+    def mock_unparse(node: ast.AST) -> str:
         """Mock unparse raising on BrokenAST.
 
         Args:
@@ -353,7 +372,9 @@ def test_ghost_inspector_cdd_ast_params_edges(mocker: Any) -> None:
     assert ref.has_arg("hint_arg")
 
 
-def test_ghost_inspector_standard_fallback_exception_in_cdd_branch(mocker: Any) -> None:
+def test_ghost_inspector_standard_fallback_exception_in_cdd_branch(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test GhostInspector handles exception in inspect.signature within CDD branch.
 
     Args:
@@ -376,7 +397,9 @@ def test_ghost_inspector_standard_fallback_exception_in_cdd_branch(mocker: Any) 
     assert ref.has_arg("x")
 
 
-def test_ghost_inspector_parent_mro_signature_exception(mocker: Any) -> None:
+def test_ghost_inspector_parent_mro_signature_exception(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test GhostInspector handles exception when parent signature inspection fails during super kwargs resolution.
 
     Args:
@@ -385,9 +408,11 @@ def test_ghost_inspector_parent_mro_signature_exception(mocker: Any) -> None:
     Returns:
         None.
     """
-    real_signature = __import__("inspect").signature
+    real_signature = inspect.signature
 
-    def mock_signature(obj: Any, *args: Any, **kwargs: Any) -> Any:
+    def mock_signature(
+        obj: object, *args: object, **kwargs: object
+    ) -> inspect.Signature:
         """Mock signature raising on MroParentClass.__init__.
 
         Args:
@@ -403,7 +428,8 @@ def test_ghost_inspector_parent_mro_signature_exception(mocker: Any) -> None:
         """
         if obj == MroParentClass.__init__:
             raise TypeError("parent init signature failure")
-        return real_signature(obj, *args, **kwargs)
+        assert callable(obj)
+        return real_signature(obj)
 
     mocker.patch("inspect.signature", side_effect=mock_signature)
 
@@ -411,7 +437,9 @@ def test_ghost_inspector_parent_mro_signature_exception(mocker: Any) -> None:
     assert ref.api_path == "MroChildClass"
 
 
-def test_ghost_inspector_torch_target_infer_exception(mocker: Any) -> None:
+def test_ghost_inspector_torch_target_infer_exception(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test GhostInspector handles infer_torch_dtype_and_rank exceptions.
 
     Args:
@@ -457,17 +485,21 @@ def test_ghost_inspector_overload_without_parameters() -> None:
 
         is_class = False
         is_function = True
-        parameters: List[Any] = []
+        parameters: list[object] = []
         docstring = None
         overloads = [BareOverload()]
 
     ref = GhostInspector.inspect(FakeNodeWithOverload(), "bare_overload_fn")
     assert ref.overloads is not None
     assert len(ref.overloads) == 1
-    assert ref.overloads[0].returns_type == "int"
+    ov0 = ref.overloads[0]
+    assert isinstance(ov0, GhostRef)
+    assert ov0.returns_type == "int"
 
 
-def test_ghost_inspector_c_ext_overload_infer_exception(mocker: Any) -> None:
+def test_ghost_inspector_c_ext_overload_infer_exception(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test GhostInspector c_ext overloads when infer_torch_dtype_and_rank raises.
 
     Args:
@@ -484,10 +516,12 @@ def test_ghost_inspector_c_ext_overload_infer_exception(mocker: Any) -> None:
         side_effect=RuntimeError("simulated c_ext infer error"),
     )
 
-    class CExtSignature(List[Any]):
+    ParamTuple = tuple[str, str, typing.Optional[str], typing.Optional[str]]
+
+    class CExtSignature(list[ParamTuple]):
         """Mock C-extension signature list subclass."""
 
-        overloads: List[Any] = []
+        overloads: list[list[ParamTuple]] = []
         returns_type: str = "Tensor"
 
     fake_sig = CExtSignature([("x", "POSITIONAL_OR_KEYWORD", None, "Tensor")])
@@ -501,7 +535,7 @@ def test_ghost_inspector_c_ext_overload_infer_exception(mocker: Any) -> None:
     )
     mocker.patch("inspect.signature", side_effect=TypeError("no signature"))
 
-    def c_ext_dummy(x: Any) -> None:
+    def c_ext_dummy(x: object) -> None:
         """Dummy C extension function.
 
         Args:
@@ -512,4 +546,6 @@ def test_ghost_inspector_c_ext_overload_infer_exception(mocker: Any) -> None:
     ref = GhostInspector.inspect(c_ext_dummy, "torch.c_ext_dummy")
     assert ref.overloads is not None
     assert len(ref.overloads) == 1
-    assert ref.overloads[0].params[0].name == "x"
+    ov0 = ref.overloads[0]
+    assert isinstance(ov0, GhostRef)
+    assert ov0.params[0].name == "x"

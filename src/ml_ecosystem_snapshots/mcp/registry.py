@@ -3,31 +3,39 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Dict, List, Optional, Union
+import typing
+from typing_extensions import TypeAlias
 
-from pydantic import BaseModel, ConfigDict
+import pydantic
 
 from ml_ecosystem_snapshots.mcp.tools.domain_ops import build_domain_op_tool_schemas
+from ml_ecosystem_snapshots.mcp.protocol import JsonRpcResponseDict, JsonRpcResultDict
+from ml_ecosystem_snapshots.models import JsonValue
+
+ToolHandlerResult: TypeAlias = typing.Union[
+    pydantic.BaseModel, dict[str, JsonValue], list[str], None
+]
+ToolHandlerFn: TypeAlias = typing.Callable[[dict[str, JsonValue]], ToolHandlerResult]
 
 
-class McpToolSpec(BaseModel):
+class McpToolSpec(pydantic.BaseModel):
     """Pydantic model describing an MCP tool declaration and input schema."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
 
     name: str
     description: str
-    input_schema: Dict[str, Any]
-    handler: Optional[Callable[[Dict[str, Any]], Any]] = None
+    input_schema: dict[str, JsonValue]
+    handler: ToolHandlerFn | None = None
 
 
-def get_mcp_tools_list() -> List[Dict[str, Any]]:
+def get_mcp_tools_list() -> list[dict[str, JsonValue]]:
     """Return the MCP schema definition for available tools.
 
     Returns:
         List of MCP tool definitions with input schemas.
     """
-    core_tools: List[Dict[str, Any]] = [
+    core_tools: list[dict[str, JsonValue]] = [
         {
             "name": "get_api_signature",
             "description": "Look up the exact ground-truth API signature and parameters for an ML framework function.",
@@ -391,7 +399,59 @@ def get_mcp_tools_list() -> List[Dict[str, Any]]:
     return core_tools + build_domain_op_tool_schemas()
 
 
-def _build_dispatch_table() -> Dict[str, Callable[[Dict[str, Any]], Any]]:
+def _as_str_list(val: JsonValue) -> list[str] | None:
+    """Coerce a JSON value into `list[str] | None`.
+
+    Args:
+        val: Raw JSON value.
+
+    Returns:
+        List of strings if `val` is a list, otherwise None.
+    """
+    if isinstance(val, list):
+        return [str(x) for x in val]
+    return None
+
+
+def _as_int_or_none(val: JsonValue) -> int | None:
+    """Coerce a JSON value into `int | None`.
+
+    Args:
+        val: Raw JSON value.
+
+    Returns:
+        Integer value or None.
+    """
+    if isinstance(val, int) and not isinstance(val, bool):
+        return val
+    return None
+
+
+def _as_str_or_none(val: JsonValue) -> str | None:
+    """Coerce a JSON value into `str | None`.
+
+    Args:
+        val: Raw JSON value.
+
+    Returns:
+        String value or None.
+    """
+    return str(val) if val is not None else None
+
+
+def _as_dict_or_none(val: JsonValue) -> dict[str, JsonValue] | None:
+    """Coerce a JSON value into `dict[str, JsonValue] | None`.
+
+    Args:
+        val: Raw JSON value.
+
+    Returns:
+        Dictionary or None.
+    """
+    return dict(val) if isinstance(val, dict) else None
+
+
+def _build_dispatch_table() -> dict[str, ToolHandlerFn]:
     """Build the dictionary mapping MCP tool names to handler callables.
 
     Returns:
@@ -401,171 +461,173 @@ def _build_dispatch_table() -> Dict[str, Callable[[Dict[str, Any]], Any]]:
 
     return {
         "get_api_signature": lambda a: ms.get_api_signature(
-            a["framework"], a["api_path"], version=a.get("version")
+            str(a["framework"]),
+            str(a["api_path"]),
+            version=_as_str_or_none(a.get("version")),
         ),
         "search_apis": lambda a: ms.search_apis(
-            a["framework"],
-            a["query"],
-            a.get("limit", 10),
-            version=a.get("version"),
+            str(a["framework"]),
+            str(a["query"]),
+            _as_int_or_none(a.get("limit")) or 10,
+            version=_as_str_or_none(a.get("version")),
         ),
         "check_hallucination": lambda a: ms.check_hallucination(
-            a["framework"],
-            a["api_path"],
-            a.get("kwargs"),
-            args_count=a.get("args_count"),
-            strict_kwargs=a.get("strict_kwargs", True),
-            kwarg_values=a.get("kwarg_values"),
-            version=a.get("version"),
+            str(a["framework"]),
+            str(a["api_path"]),
+            _as_str_list(a.get("kwargs")),
+            args_count=_as_int_or_none(a.get("args_count")),
+            strict_kwargs=bool(a.get("strict_kwargs", True)),
+            kwarg_values=_as_dict_or_none(a.get("kwarg_values")),
+            version=_as_str_or_none(a.get("version")),
             arg_dtypes=a.get("arg_dtypes"),
             kwarg_dtypes=a.get("kwarg_dtypes"),
             arg_ranks=a.get("arg_ranks"),
             kwarg_ranks=a.get("kwarg_ranks"),
             arg_shapes=a.get("arg_shapes"),
             kwarg_shapes=a.get("kwarg_shapes"),
-            strict_c_extensions=a.get("strict_c_extensions", False),
+            strict_c_extensions=bool(a.get("strict_c_extensions", False)),
         ),
         "explain_anti_pattern": lambda a: ms.explain_anti_pattern(
-            a["framework"],
-            a["api_path"],
-            a["hallucinated_argument"],
+            str(a["framework"]),
+            str(a["api_path"]),
+            str(a["hallucinated_argument"]),
             passed_value=a.get("passed_value"),
         ),
         "check_sass_instruction": lambda a: ms.check_sass_instruction(
-            a["mnemonic"],
-            a.get("operands"),
-            a.get("modifiers"),
-            a.get("sm_arch"),
-            control_codes=a.get("control_codes"),
+            str(a["mnemonic"]),
+            _as_str_list(a.get("operands")),
+            _as_str_list(a.get("modifiers")),
+            _as_str_or_none(a.get("sm_arch")),
+            control_codes=_as_dict_or_none(a.get("control_codes")),
         ),
         "check_rdna_instruction": lambda a: ms.check_rdna_instruction(
-            a["mnemonic"],
-            a.get("operands"),
-            a.get("encoding"),
-            a.get("gfx_arch"),
-            modifiers=a.get("modifiers"),
-            wave_size=a.get("wave_size"),
+            str(a["mnemonic"]),
+            _as_str_list(a.get("operands")),
+            _as_str_or_none(a.get("encoding")),
+            _as_str_or_none(a.get("gfx_arch")),
+            modifiers=_as_str_list(a.get("modifiers")),
+            wave_size=_as_int_or_none(a.get("wave_size")),
         ),
         "check_ptx_instruction": lambda a: ms.check_ptx_instruction(
-            a["mnemonic"],
-            types=a.get("types"),
-            operands=a.get("operands"),
-            state_space=a.get("state_space"),
-            scope=a.get("scope"),
-            vector_width=a.get("vector_width"),
-            sm_arch=a.get("sm_arch"),
+            str(a["mnemonic"]),
+            types=_as_str_list(a.get("types")),
+            operands=_as_str_list(a.get("operands")),
+            state_space=_as_str_or_none(a.get("state_space")),
+            scope=_as_str_or_none(a.get("scope")),
+            vector_width=_as_str_or_none(a.get("vector_width")),
+            sm_arch=_as_str_or_none(a.get("sm_arch")),
         ),
         "check_mlir_op": lambda a: ms.check_mlir_op(
-            a["op_name"],
-            a.get("operands_count"),
-            a.get("attributes"),
-            a.get("operand_types"),
-            result_types=a.get("result_types"),
-            structured_attributes=a.get("structured_attributes"),
-            regions=a.get("regions"),
+            str(a["op_name"]),
+            _as_int_or_none(a.get("operands_count")),
+            _as_str_list(a.get("attributes")),
+            _as_str_list(a.get("operand_types")),
+            result_types=_as_str_list(a.get("result_types")),
+            structured_attributes=_as_dict_or_none(a.get("structured_attributes")),
+            regions=_as_dict_or_none(a.get("regions")),
         ),
         "check_stablehlo_op": lambda a: ms.check_stablehlo_op(
-            a["op_name"],
-            a.get("operands_count"),
-            a.get("attributes"),
-            a.get("operand_types"),
-            result_types=a.get("result_types"),
-            structured_attributes=a.get("structured_attributes"),
-            regions=a.get("regions"),
+            str(a["op_name"]),
+            _as_int_or_none(a.get("operands_count")),
+            _as_str_list(a.get("attributes")),
+            _as_str_list(a.get("operand_types")),
+            result_types=_as_str_list(a.get("result_types")),
+            structured_attributes=_as_dict_or_none(a.get("structured_attributes")),
+            regions=_as_dict_or_none(a.get("regions")),
         ),
         "check_code_block": lambda a: ms.check_code_block(
-            a["code"],
-            framework=a.get("framework"),
-            version=a.get("version"),
-            sm_arch=a.get("sm_arch"),
-            gfx_arch=a.get("gfx_arch"),
+            str(a["code"]),
+            framework=_as_str_or_none(a.get("framework")),
+            version=_as_str_or_none(a.get("version")),
+            sm_arch=_as_str_or_none(a.get("sm_arch")),
+            gfx_arch=_as_str_or_none(a.get("gfx_arch")),
         ),
         "translate_concept_arguments": lambda a: ms.translate_concept_arguments(
-            a["concept"],
-            a["source_framework"],
-            a["target_framework"],
-            a.get("source_kwargs", {}),
+            str(a["concept"]),
+            str(a["source_framework"]),
+            str(a["target_framework"]),
+            _as_dict_or_none(a.get("source_kwargs")) or {},
         ),
         "check_wgsl_op": lambda a: ms.check_wgsl_op(
-            a["op_name"],
-            inputs_count=a.get("inputs_count"),
-            attributes=a.get("attributes"),
+            str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
         ),
         "check_onnx_op": lambda a: ms.check_onnx_op(
-            a["op_name"],
-            domain=a.get("domain", ""),
-            inputs_count=a.get("inputs_count"),
-            attributes=a.get("attributes"),
+            str(a["op_name"]),
+            domain=str(a.get("domain", "")),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
         ),
         "check_metal_op": lambda a: ms.check_metal_op(
-            a["op_name"],
-            address_space=a.get("address_space"),
-            inputs_count=a.get("inputs_count"),
-            attributes=a.get("attributes"),
+            str(a["op_name"]),
+            address_space=_as_str_or_none(a.get("address_space")),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
         ),
         "check_wasm_instruction": lambda a: ms.check_wasm_instruction(
-            a["mnemonic"],
-            operands_count=a.get("operands_count"),
-            attributes=a.get("attributes"),
+            str(a["mnemonic"]),
+            operands_count=_as_int_or_none(a.get("operands_count")),
+            attributes=_as_str_list(a.get("attributes")),
         ),
         "check_webgl_op": lambda a: ms.check_webgl_op(
-            a["op_name"],
-            inputs_count=a.get("inputs_count"),
-            attributes=a.get("attributes"),
+            str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
         ),
         "check_cpp_op": lambda a: ms.check_cpp_op(
-            a["op_name"],
-            inputs_count=a.get("inputs_count"),
-            attributes=a.get("attributes"),
+            str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
         ),
         "check_array_api_op": lambda a: ms.check_array_api_op(
-            a["op_name"],
-            inputs_count=a.get("inputs_count"),
-            attributes=a.get("attributes"),
+            str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
         ),
         "check_scipy_op": lambda a: ms.check_scipy_op(
-            a["op_name"],
-            inputs_count=a.get("inputs_count"),
-            attributes=a.get("attributes"),
+            str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
         ),
         "check_torchvision_op": lambda a: ms.check_torchvision_op(
-            a["op_name"],
-            inputs_count=a.get("inputs_count"),
-            attributes=a.get("attributes"),
+            str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
         ),
         "check_torchaudio_op": lambda a: ms.check_torchaudio_op(
-            a["op_name"],
-            inputs_count=a.get("inputs_count"),
-            attributes=a.get("attributes"),
+            str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
         ),
         "check_safetensors_op": lambda a: ms.check_safetensors_op(
-            a["op_name"],
-            inputs_count=a.get("inputs_count"),
-            attributes=a.get("attributes"),
+            str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
         ),
         "check_aten_op": lambda a: ms.check_aten_op(
-            a["op_name"],
-            inputs_count=a.get("inputs_count"),
-            attributes=a.get("attributes"),
+            str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
         ),
         "check_nccl_op": lambda a: ms.check_nccl_op(
-            a["op_name"],
-            inputs_count=a.get("inputs_count"),
-            attributes=a.get("attributes"),
+            str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
         ),
         "check_flash_attention_op": lambda a: ms.check_flash_attention_op(
-            a["op_name"],
-            inputs_count=a.get("inputs_count"),
-            attributes=a.get("attributes"),
+            str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
         ),
     }
 
 
 def dispatch_tool_call(
-    msg_id: Optional[Union[str, int]],
-    tool_name: Optional[str],
-    args: Dict[str, Any],
-) -> Dict[str, Any]:
+    msg_id: str | int | None,
+    tool_name: str | None,
+    args: dict[str, JsonValue],
+) -> JsonRpcResponseDict:
     """Dispatch a `tools/call` MCP request via O(1) dictionary lookup.
 
     Args:
@@ -579,24 +641,37 @@ def dispatch_tool_call(
     table = _build_dispatch_table()
     handler = table.get(tool_name or "")
     if handler is None:
-        return {
-            "jsonrpc": "2.0",
-            "id": msg_id,
-            "error": {
-                "code": -32601,
-                "message": f"Unknown tool '{tool_name}'",
-            },
-        }
+        return JsonRpcResponseDict(
+            {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {
+                    "code": -32601,
+                    "message": f"Unknown tool '{tool_name}'",
+                },
+            }
+        )
 
     res = handler(args)
-    return {
-        "jsonrpc": "2.0",
-        "id": msg_id,
-        "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]},
-    }
+    payload = (
+        res.model_dump(exclude_none=True)
+        if isinstance(res, pydantic.BaseModel)
+        else res
+    )
+    return JsonRpcResponseDict(
+        {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": JsonRpcResultDict(
+                {"content": [{"type": "text", "text": json.dumps(payload, indent=2)}]}
+            ),
+        }
+    )
 
 
-def handle_mcp_message(message: Dict[str, Any]) -> Dict[str, Any]:
+def handle_mcp_message(
+    message: typing.Mapping[str, object],
+) -> JsonRpcResponseDict:
     """Handle an incoming JSON-RPC / MCP protocol message and generate a response.
 
     Args:
@@ -605,34 +680,45 @@ def handle_mcp_message(message: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         JSON-RPC response dictionary.
     """
-    msg_id = message.get("id")
-    method = message.get("method")
-    params = message.get("params", {})
+    raw_id = message.get("id")
+    msg_id = raw_id if isinstance(raw_id, (str, int)) else None
+    method = str(message.get("method") or "")
+    raw_params = message.get("params")
+    params = dict(raw_params) if isinstance(raw_params, dict) else {}
 
     if method == "tools/list":
-        return {
-            "jsonrpc": "2.0",
-            "id": msg_id,
-            "result": {"tools": get_mcp_tools_list()},
-        }
+        tools_list: list[JsonValue] = list(get_mcp_tools_list())
+        return JsonRpcResponseDict(
+            {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": JsonRpcResultDict({"tools": tools_list}),
+            }
+        )
 
     if method == "tools/call":
-        tool_name = params.get("name")
-        args = params.get("arguments", {})
+        raw_name = params.get("name")
+        tool_name = str(raw_name) if raw_name is not None else None
+        raw_args = params.get("arguments")
+        args = dict(raw_args) if isinstance(raw_args, dict) else {}
         return dispatch_tool_call(msg_id, tool_name, args)
 
-    return {
-        "jsonrpc": "2.0",
-        "id": msg_id,
-        "error": {
-            "code": -32601,
-            "message": f"Unknown JSON-RPC method '{method}'",
-        },
-    }
+    return JsonRpcResponseDict(
+        {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "error": {
+                "code": -32601,
+                "message": f"Unknown JSON-RPC method '{method}'",
+            },
+        }
+    )
 
 
 __all__ = [
     "McpToolSpec",
+    "ToolHandlerFn",
+    "ToolHandlerResult",
     "dispatch_tool_call",
     "get_mcp_tools_list",
     "handle_mcp_message",

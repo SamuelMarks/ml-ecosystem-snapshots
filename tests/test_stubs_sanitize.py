@@ -1,5 +1,7 @@
 """Unit tests and verification suite for stubs sanitize."""
 
+from __future__ import annotations
+
 from ml_ecosystem_snapshots.stubs import _sanitize_default
 
 

@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Tuple
+import typing
 
 from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository, resolve_snapshot
 from ml_ecosystem_snapshots.mcp.models import IrCheckResult
+from ml_ecosystem_snapshots.models import JsonValue
 
 
 def _extract_mlir_operands_and_attrs(
-    inst: Dict[str, Any],
-) -> Tuple[List[Any], List[str]]:
+    inst: dict[str, JsonValue],
+) -> tuple[list[str | dict[str, JsonValue]], list[str]]:
     """Extract expected SSA operands and attribute names from an operation record.
 
     Args:
@@ -20,33 +21,45 @@ def _extract_mlir_operands_and_attrs(
     Returns:
         Tuple of (operands_list, attribute_names_list).
     """
-    operands = inst.get("operands")
-    if operands is None:
+    raw_operands = inst.get("operands")
+    operands: list[str | dict[str, JsonValue]] = []
+    if isinstance(raw_operands, list):
+        operands = [dict(o) if isinstance(o, dict) else str(o) for o in raw_operands]
+    else:
+        raw_params = inst.get("params") or []
+        assert isinstance(raw_params, list)
         operands = [
-            p
-            for p in inst.get("params", [])
-            if str(p.get("kind")) in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
+            dict(p)
+            for p in raw_params
+            if isinstance(p, dict)
+            and str(p.get("kind")) in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
             and str(p.get("role")) != "IRParameterRole.ATTRIBUTE"
             and p.get("annotation") != "Region"
         ]
-    exp_attrs = [
-        str(a.get("name") if isinstance(a, dict) else a)
-        for a in (inst.get("attributes") or [])
-    ]
-    if not exp_attrs:
+
+    raw_attrs = inst.get("attributes")
+    exp_attrs: list[str] = []
+    if isinstance(raw_attrs, list):
         exp_attrs = [
-            str(p.get("name"))
-            for p in inst.get("params", [])
-            if (
-                str(p.get("kind")) == "KEYWORD_ONLY"
-                or str(p.get("role")) == "IRParameterRole.ATTRIBUTE"
-            )
-            and p.get("name")
+            str(a.get("name") if isinstance(a, dict) else a) for a in raw_attrs
         ]
-    return list(operands), exp_attrs
+    if not exp_attrs:
+        raw_params2 = inst.get("params")
+        if isinstance(raw_params2, list):
+            exp_attrs = [
+                str(p.get("name"))
+                for p in raw_params2
+                if isinstance(p, dict)
+                and (
+                    str(p.get("kind")) == "KEYWORD_ONLY"
+                    or str(p.get("role")) == "IRParameterRole.ATTRIBUTE"
+                )
+                and p.get("name")
+            ]
+    return operands, exp_attrs
 
 
-def _infer_implicit_mlir_traits(target_op: str, base_traits: List[str]) -> List[str]:
+def _infer_implicit_mlir_traits(target_op: str, base_traits: list[str]) -> list[str]:
     """Augment operation traits with implicit elementwise/type traits for core ops.
 
     Args:
@@ -89,7 +102,7 @@ def _infer_implicit_mlir_traits(target_op: str, base_traits: List[str]) -> List[
     return traits
 
 
-def _extract_tensor_rank(type_str: str) -> Optional[int]:
+def _extract_tensor_rank(type_str: str) -> int | None:
     """Extract the rank of an MLIR tensor type string such as 'tensor<128x64xf32>'.
 
     Args:
@@ -103,10 +116,10 @@ def _extract_tensor_rank(type_str: str) -> Optional[int]:
 
 
 def _validate_mlir_structured_attributes(
-    structured_attributes: Dict[str, Any],
-    operand_types: Optional[List[str]] = None,
-    result_types: Optional[List[str]] = None,
-) -> List[str]:
+    structured_attributes: typing.Mapping[str, object],
+    operand_types: list[str] | None = None,
+    result_types: list[str] | None = None,
+) -> list[str]:
     """Validate structured MLIR / StableHLO attributes (dimension numbers, enums, broadcast).
 
     Args:
@@ -125,7 +138,7 @@ def _validate_mlir_structured_attributes(
         validate_scatter_dimension_numbers,
     )
 
-    errors: List[str] = []
+    errors: list[str] = []
     for attr_key, attr_val in structured_attributes.items():
         k_low = attr_key.lower().replace("_", "")
         if "comparison" in k_low or "direction" in k_low:
@@ -257,22 +270,25 @@ def _validate_mlir_structured_attributes(
             if isinstance(attr_val, list):
                 op_shape = structured_attributes.get("operand_shape")
                 res_shape = structured_attributes.get("result_shape")
-                if op_shape is not None and res_shape is not None:
+                if isinstance(op_shape, list) and isinstance(res_shape, list):
+                    op_ints = [int(x) for x in op_shape if isinstance(x, int)]
+                    res_ints = [int(x) for x in res_shape if isinstance(x, int)]
+                    dim_ints = [int(x) for x in attr_val if isinstance(x, int)]
                     errors.extend(
-                        validate_broadcast_in_dim(op_shape, res_shape, attr_val)
+                        validate_broadcast_in_dim(op_ints, res_ints, dim_ints)
                     )
     return errors
 
 
 def check_mlir_op(
     op_name: str,
-    operands_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
-    operand_types: Optional[List[str]] = None,
-    result_types: Optional[List[str]] = None,
-    structured_attributes: Optional[Dict[str, Any]] = None,
-    regions: Optional[Dict[str, Any]] = None,
-    repository: Optional[SnapshotRepository] = None,
+    operands_count: int | None = None,
+    attributes: list[str] | None = None,
+    operand_types: list[str] | None = None,
+    result_types: list[str] | None = None,
+    structured_attributes: typing.Mapping[str, object] | None = None,
+    regions: typing.Mapping[str, object] | None = None,
+    repository: SnapshotRepository | None = None,
 ) -> IrCheckResult:
     """Validate whether an MLIR or StableHLO operation exists with expected signature.
 
@@ -287,29 +303,33 @@ def check_mlir_op(
         repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
-        Validation report dictionary with is_valid, expected_operands, and errors.
+        `IrCheckResult` validation report model with is_valid, expected_operands, and errors.
     """
     framework = "stablehlo" if op_name.startswith("stablehlo.") else "mlir"
     snap = resolve_snapshot(framework, repository=repository)
-    inst = None
+    inst: dict[str, JsonValue] | None = None
     target_op = op_name.strip()
-    for _cat_name, items in snap.get("categories", {}).items():
+    raw_cats = snap.get("categories") or {}
+    assert isinstance(raw_cats, dict)
+    for _cat_name, items in raw_cats.items():
+        assert isinstance(items, list)
         for item in items:
+            assert isinstance(item, dict)
             path = item.get("api_path") or item.get("name")
             if path == target_op:
-                inst = item
+                inst = dict(item)
                 break
         if inst:
             break
 
     if not inst:
-        return {
-            "is_valid": False,
-            "op_exists": False,
-            "errors": [f"Operation '{target_op}' does not exist in dialect snapshot."],
-        }
+        return IrCheckResult(
+            is_valid=False,
+            op_exists=False,
+            errors=[f"Operation '{target_op}' does not exist in dialect snapshot."],
+        )
 
-    errors: List[str] = []
+    errors: list[str] = []
     from ml_ecosystem_snapshots.frameworks.mlir import (
         validate_mlir_traits,
         validate_mlir_type,
@@ -320,7 +340,7 @@ def check_mlir_op(
 
     if operands_count is not None and len(operands) != operands_count:
         has_variadic = any(
-            "variadic" in (o.get("type", "") if isinstance(o, dict) else "").lower()
+            "variadic" in str(o.get("type", "") if isinstance(o, dict) else "").lower()
             for o in operands
         )
         if not has_variadic:
@@ -335,8 +355,10 @@ def check_mlir_op(
                     f"Attribute '{attr}' not recognized for '{target_op}'. Expected attributes: {exp_attrs}"
                 )
 
-    meta = inst.get("domain_metadata") or {}
-    base_traits = list(meta.get("traits") or inst.get("traits") or [])
+    raw_meta = inst.get("domain_metadata")
+    meta = dict(raw_meta) if isinstance(raw_meta, dict) else {}
+    raw_traits = meta.get("traits") or inst.get("traits")
+    base_traits = [str(t) for t in raw_traits] if isinstance(raw_traits, list) else []
     traits = _infer_implicit_mlir_traits(target_op, base_traits)
 
     trait_errs = validate_mlir_traits(
@@ -352,7 +374,8 @@ def check_mlir_op(
     if operand_types is not None:
         if len(operands) != len(operand_types):
             has_variadic = any(
-                "variadic" in (o.get("type", "") if isinstance(o, dict) else "").lower()
+                "variadic"
+                in str(o.get("type", "") if isinstance(o, dict) else "").lower()
                 for o in operands
             )
             if not has_variadic:
@@ -361,7 +384,7 @@ def check_mlir_op(
                 )
 
         for i, (op_info, actual_type) in enumerate(zip(operands, operand_types)):
-            constraint = (
+            constraint = str(
                 op_info.get("type", "") if isinstance(op_info, dict) else str(op_info)
             )
             type_errs = validate_mlir_type(actual_type, constraint=constraint)
@@ -405,32 +428,40 @@ def check_mlir_op(
     if regions:
         for reg_name, reg_spec in regions.items():
             if isinstance(reg_spec, dict):
-                b_args = (
-                    reg_spec.get("block_arguments") or reg_spec.get("block_args") or []
+                raw_b_args = reg_spec.get("block_arguments") or reg_spec.get(
+                    "block_args"
                 )
-                y_types = reg_spec.get("yield_types") or []
+                b_args = (
+                    [str(a) for a in raw_b_args] if isinstance(raw_b_args, list) else []
+                )
+                raw_y_types = reg_spec.get("yield_types")
+                y_types = (
+                    [str(t) for t in raw_y_types]
+                    if isinstance(raw_y_types, list)
+                    else []
+                )
                 errors.extend(
                     validate_stablehlo_region(target_op, reg_name, b_args, y_types)
                 )
 
-    return {
-        "is_valid": len(errors) == 0,
-        "op_exists": True,
-        "expected_operands": operands,
-        "expected_attributes": exp_attrs,
-        "errors": errors,
-    }
+    return IrCheckResult(
+        is_valid=len(errors) == 0,
+        op_exists=True,
+        expected_operands=operands,
+        expected_attributes=exp_attrs,
+        errors=errors,
+    )
 
 
 def check_stablehlo_op(
     op_name: str,
-    operands_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
-    operand_types: Optional[List[str]] = None,
-    result_types: Optional[List[str]] = None,
-    structured_attributes: Optional[Dict[str, Any]] = None,
-    regions: Optional[Dict[str, Any]] = None,
-    repository: Optional[SnapshotRepository] = None,
+    operands_count: int | None = None,
+    attributes: list[str] | None = None,
+    operand_types: list[str] | None = None,
+    result_types: list[str] | None = None,
+    structured_attributes: typing.Mapping[str, object] | None = None,
+    regions: typing.Mapping[str, object] | None = None,
+    repository: SnapshotRepository | None = None,
 ) -> IrCheckResult:
     """Validate a StableHLO operation against formal verification rules and schemas.
 
@@ -445,7 +476,7 @@ def check_stablehlo_op(
         repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
-        Validation report dictionary with is_valid, expected_operands, and errors.
+        `IrCheckResult` validation report model with is_valid, expected_operands, and errors.
     """
     clean_name = op_name if op_name.startswith("stablehlo.") else f"stablehlo.{op_name}"
     return check_mlir_op(

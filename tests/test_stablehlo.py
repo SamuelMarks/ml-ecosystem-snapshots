@@ -1,8 +1,12 @@
 """Tests for the StableHLO framework extractor."""
 
+from __future__ import annotations
+
 import json
+from pathlib import Path
+import pytest
+import pytest_mock
 import os
-from typing import Any
 from unittest import mock
 
 from ml_ecosystem_snapshots.frameworks import stablehlo as stablehlo_fw
@@ -22,7 +26,7 @@ def test_stablehlo_collect_real() -> None:
     assert abs_ops[0].params[0].name == "operand"
 
 
-def test_stablehlo_collect_mocked(mocker: Any) -> None:
+def test_stablehlo_collect_mocked(mocker: pytest_mock.MockerFixture) -> None:
     """Test the stablehlo API collector with mocked data.
 
     Args:
@@ -111,9 +115,13 @@ def test_stablehlo_regions_and_structured_schemas() -> None:
     assert isinstance(reduce_op, GhostMlirRef)
     assert reduce_op.domain_metadata is not None
     assert "regions" in reduce_op.domain_metadata
-    assert "body" in reduce_op.domain_metadata["regions"]
-    assert "block_arguments" in reduce_op.domain_metadata["regions"]["body"]
-    assert reduce_op.domain_metadata["regions"]["body"]["block_arguments"] == [
+    reduce_regions = reduce_op.domain_metadata["regions"]
+    assert isinstance(reduce_regions, dict)
+    assert "body" in reduce_regions
+    reduce_body = reduce_regions["body"]
+    assert isinstance(reduce_body, dict)
+    assert "block_arguments" in reduce_body
+    assert reduce_body["block_arguments"] == [
         "tensor<T>",
         "tensor<T>",
     ]
@@ -122,21 +130,28 @@ def test_stablehlo_regions_and_structured_schemas() -> None:
     while_op = ref_map["stablehlo.while"]
     assert isinstance(while_op, GhostMlirRef)
     assert while_op.domain_metadata is not None
-    assert "cond" in while_op.domain_metadata["regions"]
-    assert "body" in while_op.domain_metadata["regions"]
+    while_regions = while_op.domain_metadata["regions"]
+    assert isinstance(while_regions, dict)
+    assert "cond" in while_regions
+    assert "body" in while_regions
 
     assert "stablehlo.sort" in ref_map
     sort_op = ref_map["stablehlo.sort"]
     assert isinstance(sort_op, GhostMlirRef)
     assert sort_op.domain_metadata is not None
-    assert "comparator" in sort_op.domain_metadata["regions"]
-    assert sort_op.domain_metadata["regions"]["comparator"]["block_arguments"] == [
+    sort_regions = sort_op.domain_metadata["regions"]
+    assert isinstance(sort_regions, dict)
+    assert "comparator" in sort_regions
+    sort_comp = sort_regions["comparator"]
+    assert isinstance(sort_comp, dict)
+    assert sort_comp["block_arguments"] == [
         "tensor<T>",
         "tensor<T>",
     ]
 
     assert "structured_attribute_schemas" in reduce_op.domain_metadata
     schemas = reduce_op.domain_metadata["structured_attribute_schemas"]
+    assert isinstance(schemas, dict)
     assert "DotDimensionNumbersAttr" in schemas
     assert "ConvDimensionNumbersAttr" in schemas
     assert "ComparisonDirectionAttr" in schemas
@@ -151,10 +166,11 @@ def test_stablehlo_regions_and_structured_schemas() -> None:
     assert isinstance(dot_op, GhostMlirRef)
     assert dot_op.attributes is not None
     assert "dot_dimension_numbers" in dot_op.attributes
-    assert (
-        "lhs_batch_dimensions"
-        in dot_op.attributes["dot_dimension_numbers"]["properties"]
-    )
+    dot_dim_nums = dot_op.attributes["dot_dimension_numbers"]
+    assert isinstance(dot_dim_nums, dict)
+    dot_props = dot_dim_nums["properties"]
+    assert isinstance(dot_props, dict)
+    assert "lhs_batch_dimensions" in dot_props
 
 
 def test_validate_dot_dimension_numbers() -> None:
@@ -446,7 +462,9 @@ def test_validate_broadcast_and_binary_broadcasting() -> None:
     assert any("Incompatible broadcast dimensions" in e for e in bad_errs)
 
 
-def test_cli_check_stablehlo(capsys: Any, tmp_path: Any) -> None:
+def test_cli_check_stablehlo(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
     """Test CLI check-stablehlo subcommand.
 
     Args:

@@ -5,9 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from typing import List
 
-from ml_ecosystem_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_switcheroo_ir.schema.ghost import GhostRef
 
 
@@ -27,9 +26,6 @@ def cmd_stubs(args: argparse.Namespace) -> None:
     print(f"Stubs generated in {args.out_dir}")
 
 
-cmd_generate_stubs = cmd_stubs
-
-
 def cmd_export(args: argparse.Namespace) -> None:
     """Handle the export command for schemas, models, headers, and prompt contexts.
 
@@ -45,7 +41,7 @@ def cmd_export(args: argparse.Namespace) -> None:
     with open(path, "r", encoding="utf-8") as f:
         snap = json.load(f)
 
-    refs: List[GhostRef] = []
+    refs: list[GhostRef] = []
     if isinstance(snap, list):
         for item in snap:
             refs.append(GhostInspector.hydrate(item))
@@ -175,4 +171,4 @@ def cmd_export(args: argparse.Namespace) -> None:
         raise ValueError(f"Unknown format: {args.format}")
 
 
-__all__ = ["cmd_export", "cmd_generate_stubs", "cmd_stubs"]
+__all__ = ["cmd_export", "cmd_stubs"]

@@ -1,8 +1,12 @@
 """Tests for missing framework dependencies."""
 
+from __future__ import annotations
+
 import sys
+import pytest
+import pytest_mock
 import types
-from typing import Any
+import typing
 from unittest.mock import patch, MagicMock
 from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
 
@@ -21,7 +25,7 @@ def test_deepspeed_missing() -> None:
     class DeepspeedMock:
         """Mock DeepSpeed module exposing initialize and _hidden attributes."""
 
-        def __dir__(self) -> Any:
+        def __dir__(self) -> list[str]:
             """Return mock directory listing.
 
             Returns:
@@ -40,7 +44,7 @@ def test_deepspeed_missing() -> None:
             """
             return x
 
-        def initialize(self, model: Any = None) -> Any:
+        def initialize(self, model: object = None) -> None:
             """Mock initialize method without config_params so collector injects it.
 
             Args:
@@ -66,7 +70,7 @@ def test_deepspeed_missing() -> None:
 def test_onnxruntime_missing() -> None:
     """Verify ONNX Runtime collector fallback and InferenceSession extraction when mocked."""
     from ml_ecosystem_snapshots.frameworks.onnxruntime import collect_api
-    from ml_ecosystem_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
     with patch(
         "ml_ecosystem_snapshots.frameworks.onnxruntime.importlib.import_module",
@@ -78,7 +82,7 @@ def test_onnxruntime_missing() -> None:
     class OnnxMock:
         """Mock ONNX Runtime module exposing InferenceSession."""
 
-        def __dir__(self) -> Any:
+        def __dir__(self) -> list[str]:
             """Return mock directory listing.
 
             Returns:
@@ -100,14 +104,14 @@ def test_onnxruntime_missing() -> None:
             """
             return None
 
-        def get_available_providers(self) -> Any:
+        def get_available_providers(self) -> list[str]:
             """Mock UTIL function in onnxruntime."""
             return []
 
         class SessionWithProviders:
             """Mock Session class already containing providers parameter."""
 
-            def __init__(self, path_or_bytes: str, providers: Any = None) -> None:
+            def __init__(self, path_or_bytes: str, providers: object = None) -> None:
                 """Initialize session with providers parameter.
 
                 Args:
@@ -143,7 +147,7 @@ def test_onnxruntime_missing() -> None:
     class OnnxAlreadyHasProviders:
         """Mock ONNX Runtime module where InferenceSession already defines providers."""
 
-        def __dir__(self) -> Any:
+        def __dir__(self) -> list[str]:
             """Return mock directory listing.
 
             Returns:
@@ -154,7 +158,7 @@ def test_onnxruntime_missing() -> None:
         class InferenceSession:
             """Mock InferenceSession class with providers parameter."""
 
-            def __init__(self, path_or_bytes: str, providers: Any = None) -> None:
+            def __init__(self, path_or_bytes: str, providers: object = None) -> None:
                 """Initialize session with providers parameter.
 
                 Args:
@@ -164,13 +168,13 @@ def test_onnxruntime_missing() -> None:
                 self.path = path_or_bytes
                 self.providers = providers
 
-        def BadSession(self) -> Any:
+        def BadSession(self) -> None:
             """Mock session raising TypeError during inspection."""
             pass
 
     orig_inspect = GhostInspector.inspect
 
-    def selective_inspect(obj: Any, name: str) -> Any:
+    def selective_inspect(obj: object, name: str) -> object:
         """Delegate to GhostInspector.inspect except for BadSession.
 
         Args:
@@ -210,7 +214,7 @@ def test_triton_missing() -> None:
         _extract_triton_kernel,
         collect_api,
     )
-    from ml_ecosystem_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
     with patch(
         "ml_ecosystem_snapshots.frameworks.triton.importlib.import_module",
@@ -222,7 +226,7 @@ def test_triton_missing() -> None:
     fake_tl = types.ModuleType("triton.language")
     fake_tl_math = types.ModuleType("triton.language.math")
 
-    def fake_fn(a: Any, b: Any, c: Any) -> Any:
+    def fake_fn(a: object, b: object, c: object) -> None:
         """Mock Triton JIT function with constexpr annotation.
 
         Args:
@@ -239,7 +243,7 @@ def test_triton_missing() -> None:
 
         fn = staticmethod(fake_fn)
 
-        def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        def __call__(self, *args: object, **kwargs: object) -> None:
             """Invoke wrapped kernel function.
 
             Args:
@@ -284,7 +288,7 @@ def test_triton_missing() -> None:
         assert len(collect_api(SemanticTier.UTIL)) == 1
 
     # Cover branches where _extract_triton_kernel returns None or triton.language raises ImportError
-    def import_triton_only(name: str) -> Any:
+    def import_triton_only(name: str) -> types.ModuleType:
         """Return fake_tl for triton and raise ImportError for triton.language.
 
         Args:
@@ -316,7 +320,7 @@ def test_triton_missing() -> None:
     class NoAnno:
         """Kernel callable without annotations."""
 
-        def __call__(self, x: Any) -> Any:
+        def __call__(self, x: object) -> object:
             """Execute kernel callable.
 
             Args:
@@ -358,7 +362,7 @@ def test_huggingface_missing() -> None:
     class M:
         """Mock generation-capable model class."""
 
-        def generate(self, input: Any, *args: Any, **kwargs: Any) -> Any:
+        def generate(self, input: object, *args: object, **kwargs: object) -> None:
             """Mock generate method.
 
             Args:
@@ -390,7 +394,7 @@ def test_huggingface_missing() -> None:
         """Mock class with a property that raises ValueError on access."""
 
         @property
-        def bad(self) -> Any:
+        def bad(self) -> None:
             """Raise ValueError when accessed.
 
             Raises:
@@ -418,7 +422,7 @@ def test_huggingface_missing() -> None:
     class FakeMod:
         """Fake transformers module exposing config and AutoModel members."""
 
-        def __dir__(self) -> Any:
+        def __dir__(self) -> list[str]:
             """Return list of fake module attributes.
 
             Returns:
@@ -440,7 +444,7 @@ def test_huggingface_missing() -> None:
             ]
 
         @property
-        def bad(self) -> Any:
+        def bad(self) -> None:
             """Raise ValueError on attribute access.
 
             Raises:
@@ -449,7 +453,7 @@ def test_huggingface_missing() -> None:
             raise ValueError()
 
         @property
-        def DummyConfig(self) -> Any:
+        def DummyConfig(self) -> object:
             """Return a dummy config instance with empty annotations.
 
             Returns:
@@ -458,7 +462,7 @@ def test_huggingface_missing() -> None:
             return type("DummyConfig", (), {"__annotations__": {}})()
 
         @property
-        def EmptyConfig(self) -> Any:
+        def EmptyConfig(self) -> object:
             """Return an EmptyConfig instance with 'a' annotation.
 
             Returns:
@@ -467,7 +471,7 @@ def test_huggingface_missing() -> None:
             return type("EmptyConfig", (), {"__annotations__": {"a": int}})()
 
         @property
-        def EmptyConfigB(self) -> Any:
+        def EmptyConfigB(self) -> object:
             """Return an EmptyConfigB instance with 'b' annotation.
 
             Returns:
@@ -476,7 +480,7 @@ def test_huggingface_missing() -> None:
             return type("EmptyConfigB", (), {"__annotations__": {"b": int}})()
 
         @property
-        def AutoModelA(self) -> Any:
+        def AutoModelA(self) -> MagicMock:
             """Return a mock AutoModelA object.
 
             Returns:
@@ -485,7 +489,7 @@ def test_huggingface_missing() -> None:
             return MagicMock()
 
         @property
-        def AutoModelB(self) -> Any:
+        def AutoModelB(self) -> MagicMock:
             """Return a mock AutoModelB object.
 
             Returns:
@@ -494,7 +498,7 @@ def test_huggingface_missing() -> None:
             return MagicMock()
 
         @property
-        def Other(self) -> Any:
+        def Other(self) -> MagicMock:
             """Return a mock Other object.
 
             Returns:
@@ -503,7 +507,7 @@ def test_huggingface_missing() -> None:
             return MagicMock()
 
         @property
-        def ThrowConfig(self) -> Any:
+        def ThrowConfig(self) -> MagicMock:
             """Return a mock ThrowConfig object.
 
             Returns:
@@ -512,7 +516,7 @@ def test_huggingface_missing() -> None:
             return MagicMock()
 
         @property
-        def ReturnNone(self) -> Any:
+        def ReturnNone(self) -> None:
             """Return None for attribute lookup.
 
             Returns:
@@ -521,7 +525,7 @@ def test_huggingface_missing() -> None:
             return None
 
         @property
-        def GenModel(self) -> Any:
+        def GenModel(self) -> object:
             """Return a model instance with a generate method.
 
             Returns:
@@ -531,7 +535,9 @@ def test_huggingface_missing() -> None:
             class M:
                 """Mock inner model class with generate method."""
 
-                def generate(self, input: Any, *args: Any, **kwargs: Any) -> Any:
+                def generate(
+                    self, input: object, *args: object, **kwargs: object
+                ) -> None:
                     """Mock generate method.
 
                     Args:
@@ -544,7 +550,7 @@ def test_huggingface_missing() -> None:
             return M()
 
         @property
-        def RefNone(self) -> Any:
+        def RefNone(self) -> MagicMock:
             """Return a mock RefNone object.
 
             Returns:
@@ -552,7 +558,7 @@ def test_huggingface_missing() -> None:
             """
             return MagicMock()
 
-    def mock_inspect(obj: Any, name: Any) -> Any:
+    def mock_inspect(obj: object, name: str) -> object:
         """Return a mocked GhostRef or raise for ThrowConfig.
 
         Args:
@@ -592,7 +598,7 @@ def test_huggingface_missing() -> None:
         return MagicMock(params=[MagicMock(**{"name": "config"})])
 
     with patch(
-        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",
         side_effect=mock_inspect,
     ):
         with patch("importlib.import_module", return_value=FakeMod()):
@@ -647,14 +653,14 @@ def test_hardware_exhaustive_fallbacks() -> None:
         assert len(sass_refs) > 0
 
 
-def test_orbax_checkpoint_inspect_error(mocker: Any) -> None:
+def test_orbax_checkpoint_inspect_error(mocker: pytest_mock.MockerFixture) -> None:
     """Test orbax checkpoint exception handling during member inspection and member retrieval.
 
     Args:
         mocker: Pytest mocker fixture.
     """
     import ml_ecosystem_snapshots.frameworks.orbax_checkpoint as orbax_mod
-    from ml_ecosystem_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     def bad_fn() -> None:
@@ -687,7 +693,7 @@ def test_orbax_checkpoint_inspect_error(mocker: Any) -> None:
     assert res_outer == []
 
 
-def test_pax_import_fallback(monkeypatch: Any) -> None:
+def test_pax_import_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test pax import logic when praxis is available and unavailable.
 
     Args:
@@ -700,10 +706,10 @@ def test_pax_import_fallback(monkeypatch: Any) -> None:
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     # Available
-    fake_paxml: Any = types.ModuleType("paxml")
-    fake_praxis: Any = types.ModuleType("praxis")
-    fake_layers: Any = types.ModuleType("praxis.layers")
-    fake_praxis.layers = fake_layers
+    fake_paxml = types.ModuleType("paxml")
+    fake_praxis = types.ModuleType("praxis")
+    fake_layers = types.ModuleType("praxis.layers")
+    setattr(fake_praxis, "layers", fake_layers)
     monkeypatch.setitem(sys.modules, "paxml", fake_paxml)
     monkeypatch.setitem(sys.modules, "praxis", fake_praxis)
     monkeypatch.setitem(sys.modules, "praxis.layers", fake_layers)
@@ -721,7 +727,7 @@ def test_pax_import_fallback(monkeypatch: Any) -> None:
     importlib.reload(pax_mod)
 
 
-def test_sklearn_import_fallback(monkeypatch: Any) -> None:
+def test_sklearn_import_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test sklearn import logic when sklearn is unavailable.
 
     Args:
@@ -742,7 +748,9 @@ def test_sklearn_import_fallback(monkeypatch: Any) -> None:
     importlib.reload(sklearn_mod)
 
 
-def test_flax_nnx_import_fallback(monkeypatch: Any, mocker: Any) -> None:
+def test_flax_nnx_import_fallback(
+    monkeypatch: pytest.MonkeyPatch, mocker: pytest_mock.MockerFixture
+) -> None:
     """Test flax.nnx import fallback and inspection exception handling.
 
     Args:
@@ -763,16 +771,18 @@ def test_flax_nnx_import_fallback(monkeypatch: Any, mocker: Any) -> None:
     assert nnx_mod.collect_api(SemanticTier.LAYER) == []
 
     # 2. Available with issubclass TypeError
-    fake_nnx: Any = types.ModuleType("flax.nnx")
+    fake_nnx = types.ModuleType("flax.nnx")
 
     class BadClass:
         """Dummy uninheritable class to trigger TypeError in issubclass."""
 
         pass
 
-    fake_nnx.BadClass = BadClass
-    fake_nnx.Module = (
-        123  # Non-class causes issubclass(BadClass, 123) to raise TypeError
+    setattr(fake_nnx, "BadClass", BadClass)
+    setattr(
+        fake_nnx,
+        "Module",
+        123,  # Non-class causes issubclass(BadClass, 123) to raise TypeError
     )
     monkeypatch.setitem(sys.modules, "flax", types.ModuleType("flax"))
     monkeypatch.setitem(sys.modules, "flax.nnx", fake_nnx)
@@ -789,7 +799,7 @@ def test_flax_nnx_import_fallback(monkeypatch: Any, mocker: Any) -> None:
     importlib.reload(nnx_mod)
 
 
-def test_deepspeed_fallback_edges(mocker: Any) -> None:
+def test_deepspeed_fallback_edges(mocker: pytest_mock.MockerFixture) -> None:
     """Test deepspeed inspect exception handling and existing config_params.
 
     Args:
@@ -797,20 +807,20 @@ def test_deepspeed_fallback_edges(mocker: Any) -> None:
     """
     import types
     import ml_ecosystem_snapshots.frameworks.deepspeed as ds_mod
-    from ml_ecosystem_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, SemanticTier
 
-    fake_ds: Any = types.ModuleType("deepspeed")
-    fake_ds.initialize = lambda: None
-    fake_ds.none_ref = lambda: None
-    fake_ds.error_op = lambda: None
-    fake_ds.z_extra_util = lambda: None
+    fake_ds = types.ModuleType("deepspeed")
+    setattr(fake_ds, "initialize", lambda: None)
+    setattr(fake_ds, "none_ref", lambda: None)
+    setattr(fake_ds, "error_op", lambda: None)
+    setattr(fake_ds, "z_extra_util", lambda: None)
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.deepspeed.importlib.import_module",
         return_value=fake_ds,
     )
 
-    def mock_inspect(obj: Any, name: str) -> Any:
+    def mock_inspect(obj: object, name: str) -> GhostRef | None:
         """Mock inspect function raising ValueError for error_op.
 
         Args:
@@ -858,21 +868,27 @@ def test_deepspeed_fallback_edges(mocker: Any) -> None:
     assert res_util[0].name == "z_extra_util"
 
 
-def test_optax_shim_import_reload() -> None:
-    """Test optax_shim module reload handling when optax is missing and present.
+def test_optax_import_reload() -> None:
+    """Test optax module reload handling when optax is missing and present.
 
     Returns:
         None.
     """
     import importlib
-    from ml_ecosystem_snapshots.frameworks import optax_shim
+    import types
+    from ml_ecosystem_snapshots.frameworks import optax as optax_fw
 
     with patch.dict("sys.modules", {"optax": None}):
-        importlib.reload(optax_shim)
-        assert getattr(optax_shim, "optax") is None
+        importlib.reload(optax_fw)
+        assert getattr(optax_fw, "optax") is None
+
+    mock_optax = types.ModuleType("optax")
+    with patch.dict("sys.modules", {"optax": mock_optax}):
+        importlib.reload(optax_fw)
+        assert getattr(optax_fw, "optax") is mock_optax
 
     # Restore clean reload
-    importlib.reload(optax_shim)
+    importlib.reload(optax_fw)
     import ml_ecosystem_snapshots.frameworks.jax as jax_fw
 
     importlib.reload(jax_fw)
@@ -885,11 +901,19 @@ def test_orbax_checkpoint_import_reload() -> None:
         None.
     """
     import importlib
+    import types
     from ml_ecosystem_snapshots.frameworks import orbax_checkpoint
 
     with patch.dict("sys.modules", {"orbax.checkpoint": None, "orbax": None}):
         importlib.reload(orbax_checkpoint)
         assert getattr(orbax_checkpoint, "ocp") is None
+
+    mock_orbax = types.ModuleType("orbax")
+    mock_ocp = types.ModuleType("orbax.checkpoint")
+    setattr(mock_orbax, "checkpoint", mock_ocp)
+    with patch.dict("sys.modules", {"orbax": mock_orbax, "orbax.checkpoint": mock_ocp}):
+        importlib.reload(orbax_checkpoint)
+        assert getattr(orbax_checkpoint, "ocp") is mock_ocp
 
     # Restore clean reload
     importlib.reload(orbax_checkpoint)
@@ -915,23 +939,21 @@ def test_tensorflow_import_reload() -> None:
     tf_fw.tf = None
     real_import = builtins.__import__
 
-    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        """Mock import function.
-
-        Args:
-            name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            The imported module or raises.
-        """
+    def mock_import(
+        name: str,
+        globals: typing.Mapping[str, object] | None = None,
+        locals: typing.Mapping[str, object] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         """Mock import raising ImportError on tensorflow.
 
         Args:
             name: Module name.
-            *args: Positional args.
-            **kwargs: Keyword args.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             Imported module.
@@ -941,7 +963,7 @@ def test_tensorflow_import_reload() -> None:
         """
         if name == "tensorflow":
             raise ImportError("simulated tf error")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     with patch.dict(sys.modules):
         sys.modules.pop("tensorflow", None)
@@ -960,7 +982,7 @@ def test_tensorflow_import_reload() -> None:
     importlib.reload(tf_fw)
 
 
-def test_tensorflow_collect_live_image_lookup(monkeypatch: Any) -> None:
+def test_tensorflow_collect_live_image_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify _collect_live inspects tf.image and tf.lookup members.
 
     Args:
@@ -969,14 +991,14 @@ def test_tensorflow_collect_live_image_lookup(monkeypatch: Any) -> None:
     import types
     from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
-    from ml_ecosystem_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
     class MockLookupTable:
         """Mock lookup table class."""
 
         pass
 
-    def mock_resize(x: Any) -> Any:
+    def mock_resize(x: object) -> object:
         """Mock resize function.
 
         Args:
@@ -987,7 +1009,7 @@ def test_tensorflow_collect_live_image_lookup(monkeypatch: Any) -> None:
         """
         return x
 
-    def mock_private(x: Any) -> Any:
+    def mock_private(x: object) -> object:
         """Mock private function.
 
         Args:
@@ -1035,7 +1057,7 @@ def test_tensorflow_collect_live_image_lookup(monkeypatch: Any) -> None:
     assert any("tf.lookup._private_table" in r.api_path for r in refs_nonpublic)
 
     # 3. Exception in inspect
-    def mock_broken_inspect(obj: Any, name: str, **kwargs: Any) -> Any:
+    def mock_broken_inspect(obj: object, name: str, **kwargs: object) -> object:
         """Mock broken inspect raising on image, lookup, and nn.
 
         Args:
@@ -1051,7 +1073,7 @@ def test_tensorflow_collect_live_image_lookup(monkeypatch: Any) -> None:
         """
         if "image" in name or "lookup" in name or "nn" in name:
             raise RuntimeError("Inspect failure")
-        return GhostInspector.inspect(obj, name, **kwargs)
+        return GhostInspector.inspect(obj, name)
 
     monkeypatch.setattr(
         "ml_ecosystem_snapshots.frameworks.tensorflow.GhostInspector.inspect",
@@ -1062,7 +1084,7 @@ def test_tensorflow_collect_live_image_lookup(monkeypatch: Any) -> None:
     assert not any("tf.nn.relu" in r.api_path for r in refs_err)
 
 
-def test_tensorflow_get_tf_exception(monkeypatch: Any) -> None:
+def test_tensorflow_get_tf_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify _get_tf returns None when importing tensorflow raises Exception.
 
     Args:
@@ -1076,20 +1098,28 @@ def test_tensorflow_get_tf_exception(monkeypatch: Any) -> None:
 
     real_import = builtins.__import__
 
-    def failing_import(name: str, *args: Any, **kwargs: Any) -> Any:
+    def failing_import(
+        name: str,
+        globals: typing.Mapping[str, object] | None = None,
+        locals: typing.Mapping[str, object] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         """Failing import for tensorflow.
 
         Args:
             name: Module name.
-            *args: Positional args.
-            **kwargs: Keyword args.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             Module or raises RuntimeError.
         """
         if name == "tensorflow":
             raise RuntimeError("TF boom")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", failing_import)
     assert tf_fw._get_tf() is None

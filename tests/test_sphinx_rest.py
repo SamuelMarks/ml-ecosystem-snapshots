@@ -1,9 +1,12 @@
 """Tests for Griffe reST/Sphinx docstring parser integration and fallback."""
 
-from typing import Any
+from __future__ import annotations
+
+import pytest_mock
 import unittest.mock as mock
 
-from ml_ecosystem_snapshots.models import GhostInspector, sanitize_type_str
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.sanitize import sanitize_type_str
 from ml_ecosystem_snapshots.utils import (
     get_framework_docstring_parser,
     resolve_griffe_parser,
@@ -108,7 +111,7 @@ def test_resolve_griffe_parser() -> None:
 
     orig_hasattr = hasattr
 
-    def mock_hasattr(obj: Any, attr: str) -> bool:
+    def mock_hasattr(obj: object, attr: str) -> bool:
         """Mock hasattr to simulate missing 'rest' attribute on griffe.Parser.
 
         Args:
@@ -185,7 +188,7 @@ ValueError
 def test_ghost_inspector_sphinx_docstring() -> None:
     """Test GhostInspector inspection with full Sphinx docstring field lists."""
 
-    def dummy_op(x: Any, y: Any) -> Any:
+    def dummy_op(x: object, y: object) -> None:
         """Dummy op summary.
 
         :param x: Primary input vector.
@@ -212,7 +215,7 @@ def test_ghost_inspector_sphinx_docstring() -> None:
     assert "Primary input vector" in (x_param.description or "")
 
 
-def test_ghost_inspector_merge_branches(mocker: Any) -> None:
+def test_ghost_inspector_merge_branches(mocker: pytest_mock.MockerFixture) -> None:
     """Test merging branches: return description only, CDD exception cleanup, param doc/type augmentation.
 
     Args:
@@ -260,17 +263,19 @@ def test_ghost_inspector_merge_branches(mocker: Any) -> None:
 
     # Test hydrate with and without schema_version
     hydrated_with = GhostInspector.hydrate(
-        {"name": "op", "api_path": "op", "kind": "function", "schema_version": "2.0"}
+        {"name": "op", "api_path": "op", "kind": "function", "schema_version": "2.0.0"}
     )
-    assert hydrated_with.schema_version == "2.0"
+    assert hydrated_with.schema_version == "2.0.0"
 
     hydrated_without = GhostInspector.hydrate(
         {"name": "op", "api_path": "op", "kind": "function"}
     )
-    assert hydrated_without.schema_version == "1.2"
+    assert hydrated_without.schema_version == "2.0.0"
 
 
-def test_extract_griffe_docstring_metadata_edge_cases(mocker: Any) -> None:
+def test_extract_griffe_docstring_metadata_edge_cases(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test extract_griffe_docstring_metadata on anonymous parameters, nameless raises, and duplicates.
 
     Args:
@@ -280,7 +285,7 @@ def test_extract_griffe_docstring_metadata_edge_cases(mocker: Any) -> None:
     class MockParam:
         """Mock Griffe parameter element."""
 
-        def __init__(self, name: Any, desc: Any, anno: Any) -> None:
+        def __init__(self, name: str | None, desc: str, anno: str) -> None:
             """Initialize MockParam.
 
             Args:
@@ -296,7 +301,7 @@ def test_extract_griffe_docstring_metadata_edge_cases(mocker: Any) -> None:
     class MockReturn:
         """Mock Griffe return element."""
 
-        def __init__(self, desc: Any, anno: Any) -> None:
+        def __init__(self, desc: str, anno: str) -> None:
             """Initialize MockReturn.
 
             Args:
@@ -309,7 +314,7 @@ def test_extract_griffe_docstring_metadata_edge_cases(mocker: Any) -> None:
     class MockRaise:
         """Mock Griffe raise element."""
 
-        def __init__(self, anno: Any) -> None:
+        def __init__(self, anno: str | None) -> None:
             """Initialize MockRaise.
 
             Args:
@@ -320,7 +325,7 @@ def test_extract_griffe_docstring_metadata_edge_cases(mocker: Any) -> None:
     class MockSection:
         """Mock Griffe docstring section."""
 
-        def __init__(self, kind: str, value: Any) -> None:
+        def __init__(self, kind: str, value: object) -> None:
             """Initialize MockSection.
 
             Args:
@@ -360,7 +365,7 @@ def test_extract_griffe_docstring_metadata_edge_cases(mocker: Any) -> None:
 def test_ghost_inspector_custom_fault_and_doc_return() -> None:
     """Test GhostInspector capturing custom non-Error/Exception raises and doc-only returns."""
 
-    def fn(x: Any) -> Any:
+    def fn(x: object) -> None:
         """Function summary.
 
         :param x: Value.
@@ -375,14 +380,16 @@ def test_ghost_inspector_custom_fault_and_doc_return() -> None:
     assert not ref.has_arg("CustomFault")
 
 
-def test_ghost_inspector_griffe_return_type_fallback(mocker: Any) -> None:
+def test_ghost_inspector_griffe_return_type_fallback(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test GhostInspector extracting returns_type from Griffe when CDD does not find one.
 
     Args:
         mocker: Pytest mocker fixture.
     """
 
-    def dummy_ret(x: Any) -> Any:
+    def dummy_ret(x: object) -> None:
         """Dummy ret summary.
 
         :param x: Input.
@@ -409,7 +416,9 @@ def test_ghost_inspector_griffe_return_type_fallback(mocker: Any) -> None:
     assert ref.returns_description == "Output."
 
 
-def test_parse_docstring_with_griffe_unresolved(mocker: Any) -> None:
+def test_parse_docstring_with_griffe_unresolved(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test parse_docstring_with_griffe when a candidate parser cannot be resolved.
 
     Args:
@@ -417,7 +426,7 @@ def test_parse_docstring_with_griffe_unresolved(mocker: Any) -> None:
     """
     call_count = 0
 
-    def mock_resolve(name: str) -> Any:
+    def mock_resolve(name: str) -> object:
         """Mock resolve_griffe_parser to return None on the first call.
 
         Args:
@@ -473,7 +482,7 @@ def test_sanitize_type_str_with_sphinx_roles() -> None:
 def test_promote_documented_kwargs() -> None:
     """Test promoting documented kwargs from Sphinx/reST docstrings to formal GhostParams."""
 
-    def custom_layer(in_features: int, **kwargs: Any) -> None:
+    def custom_layer(in_features: int, **kwargs: object) -> None:
         """Initialize custom layer.
 
         Args:
@@ -562,17 +571,21 @@ def test_pytorch_modules_kwargs_promotion() -> None:
                 """
                 pass
 
-        nn_mod: Any = types.SimpleNamespace(Linear=Linear, Conv2d=Conv2d)
+        nn_mod: object = types.SimpleNamespace(Linear=Linear, Conv2d=Conv2d)
     else:
         nn_mod = nn
 
-    linear_ref = GhostInspector.inspect(nn_mod.Linear, "torch.nn.Linear", kind="class")
+    linear_ref = GhostInspector.inspect(
+        getattr(nn_mod, "Linear"), "torch.nn.Linear", kind="class"
+    )
     linear_param_names = {p.name for p in linear_ref.params}
     assert "in_features" in linear_param_names
     assert "out_features" in linear_param_names
     assert "bias" in linear_param_names
 
-    conv_ref = GhostInspector.inspect(nn_mod.Conv2d, "torch.nn.Conv2d", kind="class")
+    conv_ref = GhostInspector.inspect(
+        getattr(nn_mod, "Conv2d"), "torch.nn.Conv2d", kind="class"
+    )
     conv_param_names = {p.name for p in conv_ref.params}
     assert "in_channels" in conv_param_names
     assert "out_channels" in conv_param_names

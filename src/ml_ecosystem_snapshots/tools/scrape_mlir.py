@@ -11,20 +11,17 @@ import argparse
 import importlib
 import json
 import os
-import re
-import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+import sys
 
 _src_dir = str(Path(__file__).resolve().parent.parent.parent)
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-from ml_ecosystem_snapshots.tools.mlir_html import (  # noqa: E402
-    fetch_html,
-    parse_dialect_page,
-    parse_table,
-    scrape_stablehlo,
+from ml_ecosystem_snapshots.models import TableGenRecordModel  # noqa: E402
+from ml_ecosystem_snapshots.network_env import fetch_url  # noqa: E402
+from ml_ecosystem_snapshots.tools.build_stablehlo_snapshot import (  # noqa: E402
+    extract_ops,
 )
 from ml_ecosystem_snapshots.tools.mlir_tablegen import (  # noqa: E402
     TableGenASTParser,
@@ -34,17 +31,15 @@ from ml_ecosystem_snapshots.tools.mlir_tablegen import (  # noqa: E402
     parse_tablegen_args,
     parse_tablegen_regions,
     parse_tablegen_results,
-    parse_tblgen_json_dump,
     strip_tablegen_comments,
     validate_dialect_ops_ods,
 )
 from ml_ecosystem_snapshots.utils import (  # noqa: E402
     extract_tablegen_traits,
-    fetch_url,
 )
 
 MLIR_DOCS_URL = "https://mlir.llvm.org/docs/Dialects/"
-CORE_MLIR_DIALECTS: List[str] = [
+CORE_MLIR_DIALECTS: list[str] = [
     "arith",
     "math",
     "tensor",
@@ -61,8 +56,8 @@ CORE_MLIR_DIALECTS: List[str] = [
 
 
 def inspect_mlir_python_module(
-    dialects: Optional[List[str]] = None,
-) -> List[Dict[str, Any]]:
+    dialects: list[str] | None = None,
+) -> list[TableGenRecordModel]:
     """Inspect installed mlir.dialects Python modules for operation classes.
 
     Args:
@@ -72,7 +67,7 @@ def inspect_mlir_python_module(
         List of extracted operation dictionaries.
     """
     target_dialects = dialects or CORE_MLIR_DIALECTS
-    ops: List[Dict[str, Any]] = []
+    ops: list[TableGenRecordModel] = []
 
     for dialect in target_dialects:
         try:
@@ -84,15 +79,17 @@ def inspect_mlir_python_module(
                         cls, "OPERATION_NAME", f"{dialect}.{attr_name[:-2].lower()}"
                     )
                     ops.append(
-                        {
-                            "api_path": str(op_mnemonic),
-                            "dialect": dialect,
-                            "class_name": attr_name,
-                            "operands": [],
-                            "attributes": [],
-                            "description": cls.__doc__
-                            or f"MLIR {attr_name} operation.",
-                        }
+                        TableGenRecordModel(
+                            {
+                                "api_path": str(op_mnemonic),
+                                "dialect": dialect,
+                                "class_name": attr_name,
+                                "operands": [],
+                                "attributes": [],
+                                "description": cls.__doc__
+                                or f"MLIR {attr_name} operation.",
+                            }
+                        )
                     )
         except ImportError:
             continue
@@ -100,7 +97,7 @@ def inspect_mlir_python_module(
     return ops
 
 
-def main(argv: Optional[List[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     """Run the scraper and output enveloped mlir_exhaustive.json.
 
     Args:
@@ -134,8 +131,8 @@ def main(argv: Optional[List[str]] = None) -> None:
         os.path.dirname(__file__), "..", "frameworks", "mlir_exhaustive.json"
     )
 
-    all_ops: List[Dict[str, Any]] = []
-    seen_paths: Set[str] = set()
+    all_ops: list[TableGenRecordModel] = []
+    seen_paths: set[str] = set()
 
     dialect_map = {
         "arith": ["ArithOps.td"],
@@ -171,51 +168,34 @@ def main(argv: Optional[List[str]] = None) -> None:
                 if d_cap == "LLVMIR"
                 else f"https://raw.githubusercontent.com/llvm/llvm-project/{tag_ref}/mlir/include/mlir/Dialect/{d_cap}/IR/{td_file}"
             )
-            td_content = fetch_html(url)
+            td_content = fetch_url(url)
             if td_content:
-                parsed = parse_mlir_tablegen(td_content, d)
+                parsed = (
+                    parse_llvm_tblgen_json(td_content, d)
+                    if td_content.strip().startswith("{")
+                    else parse_mlir_tablegen(td_content, d)
+                )
                 for op in parsed:
-                    if op["api_path"] not in seen_paths:
-                        seen_paths.add(op["api_path"])
+                    api_p = str(op.get("api_path", ""))
+                    if api_p not in seen_paths:
+                        seen_paths.add(api_p)
                         all_ops.append(op)
 
     live_ops = inspect_mlir_python_module()
     for op in live_ops:
-        if op["api_path"] not in seen_paths:
-            seen_paths.add(op["api_path"])
+        api_p = str(op.get("api_path", ""))
+        if api_p not in seen_paths:
+            seen_paths.add(api_p)
             all_ops.append(op)
 
-    if not all_ops:
-        print(f"Fetching dialects from {MLIR_DOCS_URL}...")
-        index_html = fetch_html(MLIR_DOCS_URL)
-        dialect_links = re.findall(
-            r"""<a href="([^"]+)">'([a-zA-Z0-9_]+)' Dialect</a>""", index_html
-        )
-        if not dialect_links:
-            dialect_links = re.findall(
-                r"""<a href=([^>]+)>'([a-zA-Z0-9_]+)' Dialect</a>""",
-                index_html,
-            )
-
-        seen_urls = set()
-        for link, dialect_name in dialect_links:
-            dialect_url = (
-                f"https://mlir.llvm.org{link}" if link.startswith("/") else link
-            )
-            if dialect_url in seen_urls:
-                continue
-            seen_urls.add(dialect_url)
-
-            ops = parse_dialect_page(dialect_url, dialect_name)
-            for op in ops:
-                if op["api_path"] not in seen_paths:
-                    seen_paths.add(op["api_path"])
-                    all_ops.append(op)
-
-    stablehlo_ops = scrape_stablehlo()
+    try:
+        stablehlo_ops = extract_ops()
+    except RuntimeError:
+        stablehlo_ops = []
     for op in stablehlo_ops:
-        if op["api_path"] not in seen_paths:
-            seen_paths.add(op["api_path"])
+        api_p = str(op.get("api_path", ""))
+        if api_p not in seen_paths:
+            seen_paths.add(api_p)
             all_ops.append(op)
 
     exhaustive_data = {
@@ -239,20 +219,16 @@ __all__ = [
     "MLIR_DOCS_URL",
     "TableGenASTParser",
     "dump_ast_via_llvm_tooling",
+    "extract_ops",
     "extract_tablegen_traits",
-    "fetch_html",
     "fetch_url",
     "inspect_mlir_python_module",
     "main",
-    "parse_dialect_page",
     "parse_llvm_tblgen_json",
     "parse_mlir_tablegen",
-    "parse_table",
     "parse_tablegen_args",
     "parse_tablegen_regions",
     "parse_tablegen_results",
-    "parse_tblgen_json_dump",
-    "scrape_stablehlo",
     "strip_tablegen_comments",
     "validate_dialect_ops_ods",
 ]

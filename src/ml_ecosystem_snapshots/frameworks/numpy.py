@@ -1,23 +1,26 @@
 """Numpy API Snapshot Extractor."""
 
+from __future__ import annotations
+
 import inspect
-from typing import List
+import types
+
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
-from ml_ecosystem_snapshots.models import GhostInspector
 
-import typing
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
+np: types.ModuleType | None = None
 try:
     import numpy as _np
 
-    np: typing.Any = _np
+    np = _np
 except ImportError:
     np = None
 
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect numpy API.
 
     Args:
@@ -27,7 +30,7 @@ def collect_api(
     Returns:
         List of GhostRefs.
     """
-    results: List[GhostRef] = []
+    results: list[GhostRef] = []
     if not np:
         return results
 

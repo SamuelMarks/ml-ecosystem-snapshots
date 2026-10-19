@@ -1,6 +1,8 @@
 """Unit tests for ML-Switcheroo IR API snapshot extractor and framework integration."""
 
-from typing import Any, Dict, List
+from __future__ import annotations
+
+import pytest
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier, SnapshotEnvelope
 from ml_ecosystem_snapshots.api import (
@@ -14,7 +16,7 @@ from ml_ecosystem_snapshots.frameworks.ir import collect_api
 def test_collect_api_categories() -> None:
     """Test collect_api returns all expected IR symbols for supported semantic tiers."""
     for tier in (SemanticTier.ARRAY_API, SemanticTier.NEURAL, SemanticTier.UTIL):
-        refs: List[GhostRef] = collect_api(tier)
+        refs: list[GhostRef] = collect_api(tier)
         assert len(refs) == 15
 
         names = {ref.name for ref in refs}
@@ -44,7 +46,7 @@ def test_collect_api_unsupported_category() -> None:
 def test_ir_symbol_signatures_and_annotations() -> None:
     """Test parameter signatures and annotations for extracted IR symbols."""
     refs = collect_api(SemanticTier.ARRAY_API)
-    ref_by_name: Dict[str, GhostRef] = {ref.name: ref for ref in refs}
+    ref_by_name: dict[str, GhostRef] = {ref.name: ref for ref in refs}
 
     # Verify TensorSpec
     ts_ref = ref_by_name["TensorSpec"]
@@ -73,13 +75,15 @@ def test_ir_symbol_signatures_and_annotations() -> None:
 
 def test_extract_snapshot_ir_envelope() -> None:
     """Test end-to-end extraction and validation of the IR snapshot envelope."""
-    snap: Dict[str, Any] = extract_snapshot("ir")
+    snap = extract_snapshot("ir")
     assert snap.get("version") is not None
     assert snap.get("version") != "unknown"
     assert "categories" in snap
-    assert "neural" in snap["categories"]
-    assert "array" in snap["categories"]
-    assert "util" in snap["categories"]
+    categories = snap["categories"]
+    assert isinstance(categories, dict)
+    assert "neural" in categories
+    assert "array" in categories
+    assert "util" in categories
 
     # Validate snapshot schema compliance
     env = validate_snapshot_envelope(snap)
@@ -96,7 +100,7 @@ def test_get_pkg_version_ir() -> None:
     assert ver_sw == ver_ir
 
 
-def test_get_pkg_version_ir_fallback(monkeypatch: Any) -> None:
+def test_get_pkg_version_ir_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test get_pkg_version fallback when importing ml_switcheroo_ir raises Exception.
 
     Args:
@@ -104,9 +108,9 @@ def test_get_pkg_version_ir_fallback(monkeypatch: Any) -> None:
     """
     import builtins
 
-    real_import = builtins.__import__
+    real_import = getattr(builtins, "__import__")
 
-    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+    def mock_import(name: str, *args: object, **kwargs: object) -> object:
         """Mock import function.
 
         Args:
@@ -117,7 +121,6 @@ def test_get_pkg_version_ir_fallback(monkeypatch: Any) -> None:
         Returns:
             The imported module or raises.
         """
-        """Simulate missing ml_switcheroo_ir."""
         if name == "ml_switcheroo_ir":
             raise ImportError("simulated error")
         return real_import(name, *args, **kwargs)
@@ -125,3 +128,22 @@ def test_get_pkg_version_ir_fallback(monkeypatch: Any) -> None:
     monkeypatch.setattr(builtins, "__import__", mock_import)
     ver = get_pkg_version("ir")
     assert ver != "unknown"
+
+    import importlib.metadata
+
+    def raise_meta_err(_dist: str) -> str:
+        """Raise PackageNotFoundError for metadata lookup.
+
+        Args:
+            _dist: Distribution name.
+
+        Returns:
+            Never returns.
+
+        Raises:
+            RuntimeError: Simulated metadata failure.
+        """
+        raise RuntimeError("metadata missing")
+
+    monkeypatch.setattr(importlib.metadata, "version", raise_meta_err)
+    assert get_pkg_version("ir") != "unknown"

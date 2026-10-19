@@ -1,5 +1,7 @@
 """Tests for the generate_all_snapshots.py script."""
 
+from __future__ import annotations
+
 import os
 import sys
 import pytest

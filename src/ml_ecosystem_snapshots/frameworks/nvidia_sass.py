@@ -4,11 +4,13 @@ Provides a static snapshot of NVIDIA SASS instructions with accurate operand mod
 predicate guards, instruction modifiers, and multi-architecture targeting.
 """
 
+from __future__ import annotations
+
 from enum import Enum
 import json
 import os
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple, cast
+import typing
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -22,10 +24,12 @@ from ..models import (
     ExtendedGhostRef,
     GhostIsaRef,
     IRParameterRole,
+    IsaInstructionRecordModel,
+    JsonValue,
     OperandDirection,
 )
 
-ALL_SM_ARCHITECTURES: List[str] = [
+ALL_SM_ARCHITECTURES: list[str] = [
     "sm_70",
     "sm_75",
     "sm_80",
@@ -35,7 +39,7 @@ ALL_SM_ARCHITECTURES: List[str] = [
     "sm_100",
 ]
 
-DEFAULT_SASS_CONTROL_CODE_SCHEMA: Dict[str, Any] = {
+DEFAULT_SASS_CONTROL_CODE_SCHEMA: dict[str, JsonValue] = {
     "latency_ticks": {
         "type": "integer",
         "description": "Cycles before destination register is ready for subsequent dependent instructions.",
@@ -97,8 +101,8 @@ class SASSModifier(str, Enum):
     CV = ".CV"
 
 
-ROUNDING_MODIFIERS: Set[str] = {".RN", ".RZ", ".RM", ".RP"}
-CACHE_MODIFIERS: Set[str] = {".CG", ".CS", ".LU", ".CV"}
+ROUNDING_MODIFIERS: set[str] = {".RN", ".RZ", ".RM", ".RP"}
+CACHE_MODIFIERS: set[str] = {".CG", ".CS", ".LU", ".CV"}
 
 
 def get_sass_instruction_family(mnemonic: str) -> str:
@@ -146,9 +150,7 @@ def get_sass_instruction_family(mnemonic: str) -> str:
     return SASSInstructionFamily.ARITHMETIC.value
 
 
-def get_sass_latency_range(
-    family: str, sm_arch: Optional[str] = None
-) -> Tuple[int, int]:
+def get_sass_latency_range(family: str, sm_arch: str | None = None) -> tuple[int, int]:
     """Retrieve the legal cycle latency bounds for an instruction family on target architecture.
 
     Args:
@@ -178,8 +180,8 @@ def get_sass_latency_range(
 
 
 def validate_sass_register(
-    operand: str, role: str = "src", sm_arch: Optional[str] = None
-) -> List[str]:
+    operand: str, role: str = "src", sm_arch: str | None = None
+) -> list[str]:
     """Validate a single SASS register specification against hardware alignment and indexing rules.
 
     Validates:
@@ -199,7 +201,7 @@ def validate_sass_register(
     Returns:
         List of error strings identified during register validation.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     cleaned = operand.strip()
 
     # Check for register reuse flag
@@ -353,8 +355,8 @@ def validate_sass_register(
 
 
 def validate_sass_operand_directionality(
-    operands: List[str], mnemonic: str
-) -> List[str]:
+    operands: list[str], mnemonic: str
+) -> list[str]:
     """Validate operand directionality to ensure read-only elements are not assigned to write slots.
 
     Args:
@@ -364,7 +366,7 @@ def validate_sass_operand_directionality(
     Returns:
         List of directionality error messages.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     if not operands:
         return errors
 
@@ -407,7 +409,7 @@ def validate_sass_operand_directionality(
     return errors
 
 
-def validate_sass_modifiers(mnemonic: str, modifiers: List[str]) -> List[str]:
+def validate_sass_modifiers(mnemonic: str, modifiers: list[str]) -> list[str]:
     """Validate instruction modifier combinations for illegal conflicts.
 
     Checks:
@@ -422,7 +424,7 @@ def validate_sass_modifiers(mnemonic: str, modifiers: List[str]) -> List[str]:
     Returns:
         List of modifier conflict errors.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     norm_mods = [m if m.startswith(".") else f".{m}" for m in modifiers]
 
     # Check rounding mode conflicts
@@ -455,8 +457,10 @@ def validate_sass_modifiers(mnemonic: str, modifiers: List[str]) -> List[str]:
 
 
 def validate_sass_control_code(
-    mnemonic: str, control_codes: Dict[str, Any], sm_arch: Optional[str] = None
-) -> List[str]:
+    mnemonic: str,
+    control_codes: typing.Mapping[str, JsonValue],
+    sm_arch: str | None = None,
+) -> list[str]:
     """Validate control code attributes according to microarchitecture hardware constraints.
 
     Args:
@@ -467,7 +471,7 @@ def validate_sass_control_code(
     Returns:
         List of control code error messages.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     family = get_sass_instruction_family(mnemonic)
 
     # Stall count: 0-15
@@ -530,7 +534,7 @@ def validate_sass_control_code(
     return errors
 
 
-def parse_sass_modifiers(modifiers: List[str]) -> List[str]:
+def parse_sass_modifiers(modifiers: list[str]) -> list[str]:
     """Parse and normalize instruction modifiers into validated structured representations.
 
     Args:
@@ -539,7 +543,7 @@ def parse_sass_modifiers(modifiers: List[str]) -> List[str]:
     Returns:
         List of normalized modifier strings.
     """
-    normalized: List[str] = []
+    normalized: list[str] = []
     valid_values = {m.value for m in SASSModifier}
     for mod in modifiers:
         prefix = mod if str(mod).startswith(".") else f".{mod}"
@@ -552,7 +556,7 @@ def parse_sass_modifiers(modifiers: List[str]) -> List[str]:
 
 def tokenize_sass_line(
     line: str,
-) -> Tuple[Optional[str], str, List[str], List[str]]:
+) -> tuple[str | None, str, list[str], list[str]]:
     """Tokenize a SASS assembly line into predicate, mnemonic, modifiers, and operands.
 
     Args:
@@ -583,7 +587,7 @@ def tokenize_sass_line(
     return predicate, base_mnemonic, modifiers, operands
 
 
-def resolve_sm_architectures(arch_spec: Optional[Any]) -> List[str]:
+def resolve_sm_architectures(arch_spec: object) -> list[str]:
     """Resolve an SM architecture specification into discrete targeted SM architectures.
 
     Args:
@@ -595,7 +599,7 @@ def resolve_sm_architectures(arch_spec: Optional[Any]) -> List[str]:
     if not arch_spec:
         return list(ALL_SM_ARCHITECTURES)
     if isinstance(arch_spec, list):
-        return [a for a in arch_spec if a in ALL_SM_ARCHITECTURES]
+        return [str(a) for a in arch_spec if str(a) in ALL_SM_ARCHITECTURES]
     clean = str(arch_spec).lower().strip()
     if clean.endswith("+"):
         base = clean[:-1]
@@ -646,8 +650,8 @@ def normalize_sass_operand_type(raw_op: str) -> str:
 
 
 def build_structured_sass_operands(
-    operands: List[str], mnemonic: str
-) -> List[Dict[str, Any]]:
+    operands: list[str], mnemonic: str
+) -> list[dict[str, JsonValue]]:
     """Build structured operand records detailing roles, register classes, and immediate constraints.
 
     Args:
@@ -657,7 +661,7 @@ def build_structured_sass_operands(
     Returns:
         List of structured operand dictionaries detailing index, role, register_classes, and imm limits.
     """
-    structured: List[Dict[str, Any]] = []
+    structured: list[dict[str, JsonValue]] = []
     is_store = mnemonic.startswith("ST")
     is_branch = mnemonic in ("BRA", "BRX", "JMP", "JMX", "CALL", "RET")
     is_barrier = mnemonic in ("DEPBAR", "BAR", "SYNC", "WARPSYNC")
@@ -675,7 +679,7 @@ def build_structured_sass_operands(
         elif is_barrier:
             role = "barrier"
 
-        reg_classes: List[str] = []
+        reg_classes: list[str] = []
         op_u = op.upper()
         if "UR" in op_u:
             reg_classes.append("UR")
@@ -690,17 +694,17 @@ def build_structured_sass_operands(
         if "C[" in op_u or "CX[" in op_u:
             reg_classes.append("CBANK")
 
-        imm_type: Optional[str] = None
+        imm_type: str | None = None
         if re.match(r"^-?\d+\.\d+", op):
             imm_type = "float32"
         elif re.match(r"^-?(0x[0-9a-fA-F]+|\d+)$", op):
             imm_type = "int32"
 
-        rec: Dict[str, Any] = {
+        rec: dict[str, JsonValue] = {
             "index": idx,
             "raw_token": op,
             "role": role,
-            "register_classes": reg_classes,
+            "register_classes": list(reg_classes),
         }
         if imm_type:
             rec["immediate_type"] = imm_type
@@ -708,7 +712,7 @@ def build_structured_sass_operands(
     return structured
 
 
-def _get_canonical_fallback_sass() -> List[Dict[str, Any]]:
+def _get_canonical_fallback_sass() -> list[IsaInstructionRecordModel]:
     """Generate canonical baseline SASS instructions for offline operation when unbuilt.
 
     Returns:
@@ -716,7 +720,7 @@ def _get_canonical_fallback_sass() -> List[Dict[str, Any]]:
     """
     from ..tools.scrape_nvidia_sass import build_expanded_sass_catalog
 
-    base: List[Dict[str, Any]] = [
+    base: list[dict[str, JsonValue]] = [
         {
             "mnemonic": "MOV",
             "modifiers": [],
@@ -995,7 +999,7 @@ def _get_canonical_fallback_sass() -> List[Dict[str, Any]]:
     return build_expanded_sass_catalog(base)
 
 
-def _load_exhaustive_sass() -> List[Dict[str, Any]]:
+def _load_exhaustive_sass() -> list[IsaInstructionRecordModel]:
     """Loads the exhaustive NVIDIA SASS json dump or falls back to canonical offline catalog.
 
     Returns:
@@ -1005,27 +1009,39 @@ def _load_exhaustive_sass() -> List[Dict[str, Any]]:
     if not os.path.exists(json_path):
         return _get_canonical_fallback_sass()
     with open(json_path, "r", encoding="utf-8") as f:
-        data: Any = json.load(f)
+        data: JsonValue = json.load(f)
         if isinstance(data, dict):
-            if "categories" in data:
-                all_ops: List[Dict[str, Any]] = []
+            if "categories" in data and isinstance(data["categories"], dict):
+                all_ops: list[IsaInstructionRecordModel] = []
                 for cat_ops in data["categories"].values():
                     if isinstance(cat_ops, list):
-                        all_ops.extend(cat_ops)
+                        all_ops.extend(
+                            IsaInstructionRecordModel(item)
+                            for item in cat_ops
+                            if isinstance(item, dict)
+                        )
                 return all_ops
-            return cast(
-                List[Dict[str, Any]],
+            raw_cand = (
                 data.get("instructions")
                 or data.get("operations")
                 or data.get("items")
-                or [],
+                or []
             )
-        return cast(List[Dict[str, Any]], data)
+            return [
+                IsaInstructionRecordModel(item)
+                for item in (raw_cand if isinstance(raw_cand, list) else [])
+                if isinstance(item, dict)
+            ]
+        return [
+            IsaInstructionRecordModel(item)
+            for item in (data if isinstance(data, list) else [])
+            if isinstance(item, dict)
+        ]
 
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Entrypoint to collect the NVIDIA SASS API signature.
 
     Args:
@@ -1038,7 +1054,7 @@ def collect_api(
     if category != SemanticTier.UTIL:
         return []
 
-    refs: List[GhostRef] = []
+    refs: list[GhostRef] = []
 
     sass_data = _load_exhaustive_sass()
 
@@ -1047,7 +1063,10 @@ def collect_api(
         base_desc = str(
             inst_data.get("description", f"NVIDIA SASS {mnemonic} instruction.")
         )
-        raw_modifiers = inst_data.get("modifiers", [])
+        raw_mods = inst_data.get("modifiers", [])
+        raw_modifiers = [
+            str(m) for m in (raw_mods if isinstance(raw_mods, list) else [])
+        ]
         parsed_modifiers = parse_sass_modifiers(raw_modifiers)
 
         arch = inst_data.get("architecture")
@@ -1062,15 +1081,20 @@ def collect_api(
             f"Predicate Guard: Supported (@P0, @!P1)"
         )
 
-        operands_list: List[List[str]] = inst_data.get("operands", [])
+        raw_operands = inst_data.get("operands", [])
+        operands_list: list[list[str]] = [
+            [str(op) for op in sig]
+            for sig in (raw_operands if isinstance(raw_operands, list) else [])
+            if isinstance(sig, list)
+        ]
 
         # Find the maximum length signature for the canonical representation
-        max_sig: List[str] = []
+        max_sig: list[str] = []
         for sig in operands_list:
             if len(sig) > len(max_sig):
                 max_sig = sig
 
-        params: List[GhostParam] = []
+        params: list[GhostParam] = []
         for i, raw_op in enumerate(max_sig):
             op_type = normalize_sass_operand_type(raw_op)
             role = "dst" if i == 0 else f"src{i - 1}"
@@ -1087,19 +1111,24 @@ def collect_api(
                 )
             )
 
-        domain_metadata = {
-            "architecture": arch,
-            "valid_architectures": valid_archs,
-            "modifiers": parsed_modifiers,
+        arch_json: JsonValue = (
+            [str(a) for a in arch]
+            if isinstance(arch, list)
+            else (str(arch) if arch is not None else None)
+        )
+        domain_metadata: dict[str, JsonValue] = {
+            "architecture": arch_json,
+            "valid_architectures": list(valid_archs),
+            "modifiers": list(parsed_modifiers),
             "predicate_supported": True,
-            "operand_signatures": operands_list,
+            "operand_signatures": [list(s) for s in operands_list],
             "control_code_schema": DEFAULT_SASS_CONTROL_CODE_SCHEMA,
         }
 
         # Build overloads for all operand variations
-        overloads: List[ExtendedGhostRef] = []
+        overloads: list[dict[str, JsonValue] | GhostRef] = []
         for sig_idx, sig in enumerate(operands_list):
-            overload_params: List[GhostParam] = []
+            overload_params: list[GhostParam] = []
             for i, raw_op in enumerate(sig):
                 op_type = normalize_sass_operand_type(raw_op)
                 role = "dst" if i == 0 else f"src{i - 1}"
@@ -1127,6 +1156,13 @@ def collect_api(
                 )
             )
 
+        from ml_switcheroo_ir.schema.ghost import IsaStructuredOperandSpec
+
+        raw_struct_ops = build_structured_sass_operands(max_sig, mnemonic)
+        structured_ops: list[IsaStructuredOperandSpec | dict[str, JsonValue]] = [
+            IsaStructuredOperandSpec.model_validate(item) for item in raw_struct_ops
+        ]
+
         refs.append(
             GhostIsaRef(
                 name=mnemonic,
@@ -1141,7 +1177,7 @@ def collect_api(
                 instruction_modifiers=parsed_modifiers,
                 supported_architectures=valid_archs,
                 control_codes=DEFAULT_SASS_CONTROL_CODE_SCHEMA,
-                structured_operands=build_structured_sass_operands(max_sig, mnemonic),
+                structured_operands=structured_ops,
             )
         )
 

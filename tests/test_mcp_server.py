@@ -4,10 +4,17 @@ Tests version-aware MCP queries, SQLite FTS5 index lookups,
 batch code block verification (check_code_block), and expanded semantic concept maps.
 """
 
+from __future__ import annotations
+
 import json
-from typing import Any, Dict, Optional
+from pathlib import Path
+import types
+import typing
+import pytest
+import pytest_mock
 from unittest import mock
 
+from ml_ecosystem_snapshots.index import IndexedSymbolRecord
 from ml_ecosystem_snapshots.mcp_server import (
     CONCEPT_ALIAS_MAP,
     check_code_block,
@@ -18,15 +25,16 @@ from ml_ecosystem_snapshots.mcp_server import (
     handle_mcp_message,
     search_apis,
 )
+from ml_ecosystem_snapshots.models import JsonValue
 
 
-def test_version_aware_mcp_queries(mocker: Any) -> None:
+def test_version_aware_mcp_queries(mocker: pytest_mock.MockerFixture) -> None:
     """Test version-aware queries across get_api_signature, search_apis, and check_hallucination.
 
     Args:
         mocker: Pytest mocker fixture.
     """
-    mock_snap_v24 = {
+    mock_snap_v24: dict[str, JsonValue] = {
         "categories": {
             "math": [
                 {
@@ -37,7 +45,7 @@ def test_version_aware_mcp_queries(mocker: Any) -> None:
             ]
         }
     }
-    mock_snap_v23 = {
+    mock_snap_v23: dict[str, JsonValue] = {
         "categories": {
             "math": [
                 {
@@ -49,7 +57,9 @@ def test_version_aware_mcp_queries(mocker: Any) -> None:
         }
     }
 
-    def mock_get_snap(framework: str, version: Any = None) -> Dict[str, Any]:
+    def mock_get_snap(
+        framework: str, version: str | None = None
+    ) -> dict[str, JsonValue]:
         """Mock framework snapshot getter returning version-specific mock snapshot.
 
         Args:
@@ -101,7 +111,9 @@ def test_version_aware_mcp_queries(mocker: Any) -> None:
     assert res_v23_fail["is_hallucinated"] is True
 
 
-def test_sqlite_fts5_index_integration_in_mcp(mocker: Any) -> None:
+def test_sqlite_fts5_index_integration_in_mcp(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test get_api_signature and search_apis delegating to local SQLite FTS5 index.
 
     Args:
@@ -128,7 +140,7 @@ def test_sqlite_fts5_index_integration_in_mcp(mocker: Any) -> None:
     assert sig["api_path"] == "torch.fast_op"
 
     # search_apis returns fast SQLite results
-    matches = search_apis("torch", "fast_op")
+    matches = search_apis("torch", "fast_op", limit=1)
     assert "torch.fast_op" in matches
 
 
@@ -174,45 +186,58 @@ def test_expanded_semantic_concept_maps() -> None:
             concept in CONCEPT_ALIAS_MAP
         ), f"Concept '{concept}' missing from CONCEPT_ALIAS_MAP"
         aliases = CONCEPT_ALIAS_MAP[concept]
+        assert isinstance(aliases, dict)
         assert "torch" in aliases
-        assert len(aliases["torch"]) > 0
+        torch_aliases = aliases["torch"]
+        assert isinstance(torch_aliases, list)
+        assert len(torch_aliases) > 0
 
     # Test searching for concepts via search_apis
-    assert any("layer_norm" in a for a in search_apis("torch", "normalization"))
-    assert any(
-        "scaled_dot_product_attention" in a for a in search_apis("torch", "attention")
-    )
-    assert any("gelu" in a for a in search_apis("torch", "activations"))
-    assert any("all_reduce" in a for a in search_apis("torch", "collective"))
-    assert any("gather" in a for a in search_apis("torch", "gather"))
-    assert any("scatter" in a for a in search_apis("torch", "scatter"))
+    with mock.patch(
+        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
+        return_value={"categories": {}},
+    ):
+        assert any("layer_norm" in a for a in search_apis("torch", "normalization"))
+        assert any(
+            "scaled_dot_product_attention" in a
+            for a in search_apis("torch", "attention")
+        )
+        assert any("gelu" in a for a in search_apis("torch", "activations"))
+        assert any("all_reduce" in a for a in search_apis("torch", "collective"))
+        assert any("gather" in a for a in search_apis("torch", "gather"))
+        assert any("scatter" in a for a in search_apis("torch", "scatter"))
 
-    # Test load_concept_map and custom ontology
-    from ml_ecosystem_snapshots.mcp_server import load_concept_map
+        # Test load_concept_map and custom ontology
+        from ml_ecosystem_snapshots.mcp_server import load_concept_map
 
-    custom_map = {"custom_op": {"torch": ["torch.my_custom_op"]}}
-    res_custom = search_apis("torch", "custom_op", custom_concept_map=custom_map)
-    assert "torch.my_custom_op" in res_custom
+        custom_map: dict[str, JsonValue] = {
+            "custom_op": {"torch": ["torch.my_custom_op"]}
+        }
+        with mock.patch.dict(CONCEPT_ALIAS_MAP, custom_map, clear=False):
+            res_custom = search_apis("torch", "custom_op")
+            assert "torch.my_custom_op" in res_custom
 
-    assert load_concept_map("/nonexistent_path_to_ontology.json") == {}
+        assert load_concept_map("/nonexistent_path_to_ontology.json") == {}
 
-    # Test load_concept_map with non-dict JSON (e.g. list)
-    with mock.patch("builtins.open", mock.mock_open(read_data="[1, 2, 3]")):
-        with mock.patch("os.path.exists", return_value=True):
-            assert load_concept_map("/custom_list.json") == {}
+        # Test load_concept_map with non-dict JSON (e.g. list)
+        with mock.patch("builtins.open", mock.mock_open(read_data="[1, 2, 3]")):
+            with mock.patch("os.path.exists", return_value=True):
+                assert load_concept_map("/custom_list.json") == {}
 
-    # Test load_concept_map with invalid JSON (raises Exception)
-    with mock.patch("builtins.open", mock.mock_open(read_data="{invalid_json")):
-        with mock.patch("os.path.exists", return_value=True):
-            assert load_concept_map("/bad.json") == {}
+        # Test load_concept_map with invalid JSON (raises Exception)
+        with mock.patch("builtins.open", mock.mock_open(read_data="{invalid_json")):
+            with mock.patch("os.path.exists", return_value=True):
+                assert load_concept_map("/bad.json") == {}
 
-    # Test search_apis with custom_concept_map as file path string
-    with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(custom_map))):
-        with mock.patch("os.path.exists", return_value=True):
-            res_str = search_apis(
-                "torch", "custom_op", custom_concept_map="/custom.json"
-            )
-            assert "torch.my_custom_op" in res_str
+        # Test search_apis with custom concept map loaded from file path string
+        with mock.patch(
+            "builtins.open", mock.mock_open(read_data=json.dumps(custom_map))
+        ):
+            with mock.patch("os.path.exists", return_value=True):
+                loaded_map = load_concept_map("/custom.json")
+                with mock.patch.dict(CONCEPT_ALIAS_MAP, loaded_map, clear=False):
+                    res_str = search_apis("torch", "custom_op")
+                    assert "torch.my_custom_op" in res_str
 
     # Test load_concept_map with ML_SNAPSHOTS_CONCEPT_MAP
     import os
@@ -232,13 +257,13 @@ def test_expanded_semantic_concept_maps() -> None:
             assert load_concept_map() == DEFAULT_CONCEPT_MAP
 
 
-def test_check_code_block_python(mocker: Any) -> None:
+def test_check_code_block_python(mocker: pytest_mock.MockerFixture) -> None:
     """Test check_code_block batch verifying Python code with valid and hallucinated calls.
 
     Args:
         mocker: Pytest mocker fixture.
     """
-    mock_torch = {
+    mock_torch: dict[str, JsonValue] = {
         "categories": {
             "math": [
                 {
@@ -262,7 +287,9 @@ def test_check_code_block_python(mocker: Any) -> None:
         }
     }
 
-    def mock_get_snap(framework: str, version: Any = None) -> Dict[str, Any]:
+    def mock_get_snap(
+        framework: str, version: str | None = None
+    ) -> dict[str, JsonValue]:
         """Mock framework snapshot getter returning mock torch snapshot.
 
         Args:
@@ -371,7 +398,9 @@ def test_handle_mcp_message_check_code_block() -> None:
     assert '"is_valid": false' in resp["result"]["content"][0]["text"]
 
 
-def test_mcp_server_disk_and_index_fallbacks(mocker: Any, tmp_path: Any) -> None:
+def test_mcp_server_disk_and_index_fallbacks(
+    mocker: pytest_mock.MockerFixture, tmp_path: Path
+) -> None:
     """Test get_framework_snapshot and get_api_signature edge cases and fallbacks.
 
     Args:
@@ -421,7 +450,7 @@ def test_mcp_server_disk_and_index_fallbacks(mocker: Any, tmp_path: Any) -> None
     assert sig["api_path"] == "custom_fw.fn"
 
 
-def test_search_apis_edge_cases(mocker: Any) -> None:
+def test_search_apis_edge_cases(mocker: pytest_mock.MockerFixture) -> None:
     """Test search_apis branch coverage for aliases, FTS5 results, and snapshot scanning.
 
     Args:
@@ -472,7 +501,9 @@ def test_search_apis_edge_cases(mocker: Any) -> None:
     assert "torch.some_query_op" in res2
 
 
-def test_check_hallucination_dtypes_and_ranks_edge_cases(mocker: Any) -> None:
+def test_check_hallucination_dtypes_and_ranks_edge_cases(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test check_hallucination handling dict dtypes/ranks, length mismatches, and rank comparisons.
 
     Args:
@@ -570,7 +601,9 @@ def test_check_hallucination_dtypes_and_ranks_edge_cases(mocker: Any) -> None:
     assert "Floating-point or complex dtype required" in res_inv_int.get("reason", "")
 
 
-def test_check_mlir_op_and_stablehlo_additional_branches(mocker: Any) -> None:
+def test_check_mlir_op_and_stablehlo_additional_branches(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test check_mlir_op and check_stablehlo_op for traits, broadcast_in_dim, and regions.
 
     Args:
@@ -699,7 +732,9 @@ def test_check_mlir_op_and_stablehlo_additional_branches(mocker: Any) -> None:
     assert res_region["is_valid"]
 
 
-def test_validate_source_code_and_jsonrpc_additional_branches(mocker: Any) -> None:
+def test_validate_source_code_and_jsonrpc_additional_branches(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test check_code_block framework inference, AST edge cases, and JSON-RPC tool calls.
 
     Args:
@@ -791,13 +826,13 @@ v_add_f32 v0, v1, v2
     assert '"is_valid": true' in resp["result"]["content"][0]["text"]
 
 
-def test_shape_and_dtype_grounding(mocker: Any) -> None:
+def test_shape_and_dtype_grounding(mocker: pytest_mock.MockerFixture) -> None:
     """Test shape broadcasting, matmul contracting dimensions, and specialized dtype validations.
 
     Args:
         mocker: Pytest mocker fixture.
     """
-    mock_snap = {
+    mock_snap: dict[str, JsonValue] = {
         "categories": {
             "math": [
                 {
@@ -850,7 +885,9 @@ def test_shape_and_dtype_grounding(mocker: Any) -> None:
     orig_get_framework_snapshot = get_framework_snapshot
     orig_lookup_symbol = lookup_symbol
 
-    def mock_get_snap(framework: str, version: Any = None) -> Dict[str, Any]:
+    def mock_get_snap(
+        framework: str, version: str | None = None
+    ) -> dict[str, JsonValue]:
         """Return mock snapshot for torch, otherwise delegate to original getter.
 
         Args:
@@ -865,8 +902,8 @@ def test_shape_and_dtype_grounding(mocker: Any) -> None:
         return orig_get_framework_snapshot(framework, version)
 
     def mock_lookup(
-        framework: str, api_path: str, version: Any = None
-    ) -> Optional[Dict[str, Any]]:
+        framework: str, api_path: str, version: str | None = None
+    ) -> IndexedSymbolRecord | None:
         """Mock lookup_symbol returning None for torch.
 
         Args:
@@ -975,7 +1012,7 @@ def test_stablehlo_rank_and_conv_validation() -> None:
     assert any("Spatial dimensions count mismatch" in err for err in res_conv["errors"])
 
 
-def test_explain_anti_pattern_tool(mocker: Any) -> None:
+def test_explain_anti_pattern_tool(mocker: pytest_mock.MockerFixture) -> None:
     """Test explain_anti_pattern tool with known cross-framework patterns and unknown fallbacks.
 
     Args:
@@ -1049,13 +1086,13 @@ def test_explain_anti_pattern_tool(mocker: Any) -> None:
     assert '"canonical_argument": "dim"' in resp["result"]["content"][0]["text"]
 
 
-def test_mcp_edge_error_handling(mocker: Any) -> None:
+def test_mcp_edge_error_handling(mocker: pytest_mock.MockerFixture) -> None:
     """Test MCP server edge branches for hallucination checks, anti-patterns, and MLIR ops.
 
     Args:
         mocker: Pytest mocker fixture.
     """
-    mock_snap = {
+    mock_snap: dict[str, JsonValue] = {
         "categories": {
             "math": [
                 {
@@ -1092,7 +1129,9 @@ def test_mcp_edge_error_handling(mocker: Any) -> None:
     orig_get_framework_snapshot = get_framework_snapshot
     orig_lookup_symbol = lookup_symbol
 
-    def mock_get_snap(framework: str, version: Any = None) -> Dict[str, Any]:
+    def mock_get_snap(
+        framework: str, version: str | None = None
+    ) -> dict[str, JsonValue]:
         """Return mock snapshot for torch, otherwise delegate to original getter.
 
         Args:
@@ -1107,8 +1146,8 @@ def test_mcp_edge_error_handling(mocker: Any) -> None:
         return orig_get_framework_snapshot(framework, version)
 
     def mock_lookup(
-        framework: str, api_path: str, version: Any = None
-    ) -> Optional[Dict[str, Any]]:
+        framework: str, api_path: str, version: str | None = None
+    ) -> IndexedSymbolRecord | None:
         """Mock lookup_symbol returning None for torch.
 
         Args:
@@ -1215,7 +1254,9 @@ def test_mcp_edge_error_handling(mocker: Any) -> None:
     assert res_conv_nontensor_res["is_valid"] is True
 
 
-def test_get_framework_snapshot_extraction_exception(mocker: Any) -> None:
+def test_get_framework_snapshot_extraction_exception(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test get_framework_snapshot fallback to empty dict when runtime extraction raises exception.
 
     Args:
@@ -1267,7 +1308,7 @@ def test_translate_concept_arguments_direct_schema_key() -> None:
     assert res_dot["target_framework"] == "numpy"
 
 
-def test_check_code_block_import_tracking(mocker: Any) -> None:
+def test_check_code_block_import_tracking(mocker: pytest_mock.MockerFixture) -> None:
     """Test check_code_block tracks import and from...import statements to resolve canonical API paths.
 
     Args:
@@ -1335,7 +1376,7 @@ res5 = th.add(x, y, invalid_kw=123)
 
 
 def test_check_hallucination_known_enums_without_allowed_values(
-    mocker: Any,
+    mocker: pytest_mock.MockerFixture,
 ) -> None:
     """Test check_hallucination flags invalid values using known_enums when parameter lacks allowed_values (line 777).
 
@@ -1390,7 +1431,9 @@ def test_run_mcp_server_parse_error() -> None:
     assert "Parse error" in resp["error"]["message"]
 
 
-def test_get_framework_snapshot_corrupt_file(tmp_path: Any, monkeypatch: Any) -> None:
+def test_get_framework_snapshot_corrupt_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test get_framework_snapshot exception handling when reading corrupt snapshot file.
 
     Args:
@@ -1413,7 +1456,9 @@ def test_get_framework_snapshot_corrupt_file(tmp_path: Any, monkeypatch: Any) ->
     assert snap is not None
 
 
-def test_get_framework_snapshot_list_file(tmp_path: Any, monkeypatch: Any) -> None:
+def test_get_framework_snapshot_list_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test get_framework_snapshot loading a list format JSON file.
 
     Args:
@@ -1436,8 +1481,14 @@ def test_get_framework_snapshot_list_file(tmp_path: Any, monkeypatch: Any) -> No
     monkeypatch.setenv("ML_SNAPSHOTS_PATH", str(custom_dir))
     snap = get_framework_snapshot("customlist", version="1.0")
     assert "categories" in snap
-    assert "UTIL" in snap["categories"]
-    assert snap["categories"]["UTIL"][0]["name"] == "list_op"
+    cats = snap["categories"]
+    assert isinstance(cats, dict)
+    assert "UTIL" in cats
+    util_list = cats["UTIL"]
+    assert isinstance(util_list, list)
+    first_item = util_list[0]
+    assert isinstance(first_item, dict)
+    assert first_item["name"] == "list_op"
 
     _SNAPSHOT_CACHE.clear()
     ops_file = custom_dir / "customops_v1.0.json"
@@ -1446,11 +1497,17 @@ def test_get_framework_snapshot_list_file(tmp_path: Any, monkeypatch: Any) -> No
 
     snap_ops = get_framework_snapshot("customops", version="1.0")
     assert "categories" in snap_ops
-    assert "UTIL" in snap_ops["categories"]
-    assert snap_ops["categories"]["UTIL"][0]["name"] == "op1"
+    cats_ops = snap_ops["categories"]
+    assert isinstance(cats_ops, dict)
+    assert "UTIL" in cats_ops
+    util_ops = cats_ops["UTIL"]
+    assert isinstance(util_ops, list)
+    first_op = util_ops[0]
+    assert isinstance(first_op, dict)
+    assert first_op["name"] == "op1"
 
 
-def test_mcp_server_import_error(monkeypatch: Any) -> None:
+def test_mcp_server_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test fallback when importing api in mcp_server raises ImportError.
 
     Args:
@@ -1462,20 +1519,28 @@ def test_mcp_server_import_error(monkeypatch: Any) -> None:
 
     orig_import = builtins.__import__
 
-    def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
+    def fake_import(
+        name: str,
+        globals: typing.Mapping[str, object] | None = None,
+        locals: typing.Mapping[str, object] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         """Simulate missing ml_ecosystem_snapshots.api.
 
         Args:
             name: Module name.
-            *args: Positional arguments.
-            **kwargs: Keyword arguments.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             Imported module.
         """
         if name == "ml_ecosystem_snapshots.api":
             raise ImportError("simulated missing api")
-        return orig_import(name, *args, **kwargs)
+        return orig_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
     try:
@@ -1646,7 +1711,9 @@ def test_all_14_mcp_tools_dispatch() -> None:
         assert "is_valid" in parsed_res or "op_exists" in parsed_res
 
 
-def test_injectable_snapshot_repository_across_mcp_tools(mocker: Any) -> None:
+def test_injectable_snapshot_repository_across_mcp_tools(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Verify explicit SnapshotRepository injection across MCP tool functions and resolve_snapshot.
 
     Args:

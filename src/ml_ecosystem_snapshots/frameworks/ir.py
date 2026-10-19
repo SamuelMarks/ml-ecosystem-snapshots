@@ -3,7 +3,7 @@
 Extracts symbols and operations from ml_switcheroo_ir.
 """
 
-from typing import List
+from __future__ import annotations
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -15,7 +15,7 @@ from ml_switcheroo_ir.schema.ghost import (
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect IR API symbols for the given category.
 
     Args:
@@ -25,7 +25,7 @@ def collect_api(
     Returns:
         List of GhostRef definitions.
     """
-    refs: List[GhostRef] = []
+    refs: list[GhostRef] = []
 
     if category in (SemanticTier.ARRAY_API, SemanticTier.NEURAL, SemanticTier.UTIL):
         # 1. LogicalGraph
@@ -70,7 +70,7 @@ def collect_api(
                         name="initializers",
                         kind=ParameterKind.POSITIONAL_OR_KEYWORD,
                         default="None",
-                        annotation="dict[str, Any] | None",
+                        annotation="dict[str, InitializerValue] | None",
                     ),
                     GhostParam(
                         name="mesh",
@@ -165,7 +165,7 @@ def collect_api(
                         name="subgraphs",
                         kind=ParameterKind.POSITIONAL_OR_KEYWORD,
                         default="None",
-                        annotation="dict[str, Any] | None",
+                        annotation="dict[str, LogicalGraph | AttributeValue] | None",
                     ),
                     GhostParam(
                         name="device",
@@ -222,7 +222,7 @@ def collect_api(
                     GhostParam(
                         name="dims",
                         kind=ParameterKind.POSITIONAL_OR_KEYWORD,
-                        annotation="tuple[int | str, ...] | Sequence[int | str] | Any",
+                        annotation="tuple[DimensionType, ...] | Sequence[DimensionType] | TensorShape",
                     ),
                 ],
             )
@@ -336,12 +336,12 @@ def collect_api(
                     GhostParam(
                         name="args",
                         kind=ParameterKind.VAR_POSITIONAL,
-                        annotation="Any",
+                        annotation="Mapping[str, LogicalNode] | Iterable[tuple[str, LogicalNode]]",
                     ),
                     GhostParam(
                         name="kwargs",
                         kind=ParameterKind.VAR_KEYWORD,
-                        annotation="Any",
+                        annotation="LogicalNode",
                     ),
                 ],
             )
@@ -426,7 +426,7 @@ def collect_api(
                         annotation="LogicalGraph",
                     ),
                 ],
-                returns_type="dict[str, Any]",
+                returns_type="CommunicationVolumeReport",
             )
         )
         refs.append(

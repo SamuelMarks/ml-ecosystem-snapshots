@@ -1,7 +1,6 @@
 """Unit tests and verification suite for high perf."""
 
-from typing import Any
-
+from __future__ import annotations
 
 from unittest.mock import patch, MagicMock
 from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -24,14 +23,14 @@ def test_triton_collect() -> None:
         ],
     )
 
-    def constexpr() -> Any:
+    def constexpr() -> None:
         """Execute helper constexpr."""
         pass
 
     constexpr.__module__ = "triton.language"
     constexpr.__name__ = "constexpr"
 
-    def tensor() -> Any:
+    def tensor() -> None:
         """Execute helper tensor."""
         pass
 
@@ -52,11 +51,13 @@ def test_triton_collect() -> None:
     setattr(mock_math, "bad", 123)
     mock_tl.math = mock_math
 
-    with patch("ml_ecosystem_snapshots.models.GhostInspector.inspect") as mock_inspect:
+    with patch(
+        "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect"
+    ) as mock_inspect:
         mock_inspect.return_value = MagicMock()  # Return a dummy GhostRef
         with patch("importlib.import_module") as mock_import:
 
-            def side_effect(name: Any) -> Any:
+            def side_effect(name: str) -> object:
                 """Execute helper side effect.
 
                 Args:
@@ -128,7 +129,7 @@ def test_ds_collect() -> None:
     mock_ds = MagicMock()
     setattr(mock_ds, "__dir__", lambda self: ["initialize", "utils"])
 
-    def initialize() -> Any:
+    def initialize() -> None:
         """Execute helper initialize."""
         pass
 

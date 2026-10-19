@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union
+import typing
 
+from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel
 from ml_ecosystem_snapshots.tools.mlir_tablegen import (
     TableGenASTParser,
     strip_tablegen_comments,
@@ -53,7 +54,7 @@ def is_attribute(type_str: str) -> bool:
 
 def build_verification_and_region_metadata(
     op_name: str,
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
     """Construct verification rules and region signature metadata for a StableHLO op.
 
     Args:
@@ -62,7 +63,7 @@ def build_verification_and_region_metadata(
     Returns:
         Tuple of `(verification_rules, region_signatures)` dictionaries.
     """
-    verification_rules: Dict[str, Any] = {}
+    verification_rules: dict[str, JsonValue] = {}
     if op_name in ("dot_general", "dot"):
         verification_rules["dimension_numbers"] = "DotDimensionNumbersAttr"
     elif op_name in ("convolution", "conv"):
@@ -74,7 +75,7 @@ def build_verification_and_region_metadata(
     elif op_name in ("broadcast_in_dim",):
         verification_rules["broadcast"] = "broadcast_dimensions"
 
-    region_signatures: Dict[str, Any] = {}
+    region_signatures: dict[str, JsonValue] = {}
     if op_name == "reduce":
         region_signatures["body"] = {
             "block_arguments": ["tensor<T>", "tensor<T>"],
@@ -102,7 +103,7 @@ def build_verification_and_region_metadata(
     return verification_rules, region_signatures
 
 
-def parse_stablehlo_tablegen(content: str) -> List[Dict[str, Any]]:
+def parse_stablehlo_tablegen(content: str) -> list[TableGenRecordModel]:
     """Parse StableHLO TableGen / ODS definitions into structured operations.
 
     Args:
@@ -112,9 +113,9 @@ def parse_stablehlo_tablegen(content: str) -> List[Dict[str, Any]]:
         List of structured GhostRef operation dictionaries.
     """
     clean_content = TableGenASTParser(content).expand()
-    ghost_refs: List[Dict[str, Any]] = []
+    ghost_refs: list[TableGenRecordModel] = []
 
-    base_classes: Dict[str, Dict[str, Any]] = {}
+    base_classes: dict[str, dict[str, str | list[str] | None]] = {}
     for m in re.finditer(
         r"\bclass\s+([A-Za-z0-9_]+)(?:<[\s\S]*?>)?\s*(?::\s*([^{;]+))?\s*(\{|;)",
         clean_content,
@@ -150,7 +151,7 @@ def parse_stablehlo_tablegen(content: str) -> List[Dict[str, Any]]:
             "supers": supers,
         }
 
-    def resolve_field(cls_name: str, field_name: str) -> Optional[str]:
+    def resolve_field(cls_name: str, field_name: str) -> str | None:
         """Recursively resolve inherited TableGen fields from base classes.
 
         Args:
@@ -165,7 +166,8 @@ def parse_stablehlo_tablegen(content: str) -> List[Dict[str, Any]]:
         val = base_classes[cls_name].get(field_name)
         if val is not None:
             return str(val)
-        for s in base_classes[cls_name].get("supers", []):
+        raw_supers = base_classes[cls_name].get("supers", [])
+        for s in raw_supers if isinstance(raw_supers, list) else []:
             res = resolve_field(s, field_name)
             if res is not None:
                 return str(res)
@@ -237,7 +239,7 @@ def parse_stablehlo_tablegen(content: str) -> List[Dict[str, Any]]:
             else class_name
         )
 
-        traits: List[str] = []
+        traits: list[JsonValue] = []
         if "[" in targs_raw:
             traits.extend(extract_tablegen_traits(targs_raw))
         traits_in_body = re.search(r"let\s+traits\s*=\s*\[(.*?)\];", body, re.DOTALL)
@@ -259,14 +261,14 @@ def parse_stablehlo_tablegen(content: str) -> List[Dict[str, Any]]:
         elif not args_str and ("Cast" in base_cls or "Cast" in class_name):
             args_str = "HLO_Tensor:$operand"
 
-        params: List[Dict[str, Any]] = []
-        operands: List[Dict[str, str]] = []
-        attributes: List[Dict[str, str]] = []
+        params: list[JsonValue] = []
+        operands: list[JsonValue] = []
+        attributes: list[JsonValue] = []
 
         if args_str:
             depth_angle = 0
-            parts_list: List[str] = []
-            curr_chars: List[str] = []
+            parts_list: list[str] = []
+            curr_chars: list[str] = []
             for c in args_str:
                 if c == "<":
                     depth_angle += 1
@@ -298,7 +300,7 @@ def parse_stablehlo_tablegen(content: str) -> List[Dict[str, Any]]:
 
                 is_attr = is_attribute(arg_type)
                 kind = "KEYWORD_ONLY" if is_attr else "POSITIONAL_OR_KEYWORD"
-                p_entry = {
+                p_entry: dict[str, JsonValue] = {
                     "name": arg_name,
                     "annotation": arg_type,
                     "default": None,
@@ -312,7 +314,7 @@ def parse_stablehlo_tablegen(content: str) -> List[Dict[str, Any]]:
                 else:
                     operands.append({"name": arg_name, "type": arg_type})
 
-        regions: List[str] = []
+        regions: list[JsonValue] = []
         regions_match = re.search(
             r"let\s+regions\s*=\s*\(\s*region(.*?)\);", body, re.DOTALL
         )
@@ -348,13 +350,13 @@ def parse_stablehlo_tablegen(content: str) -> List[Dict[str, Any]]:
             "Binary" in base_cls or "Unary" in base_cls or "Cast" in base_cls
         ):
             res_str = "HLO_Tensor:$result"
-        returns_type = None
-        results: List[Dict[str, str]] = []
+        returns_type: str | None = None
+        results: list[JsonValue] = []
 
         if res_str:
             depth_angle = 0
-            res_parts_list: List[str] = []
-            res_curr_chars: List[str] = []
+            res_parts_list: list[str] = []
+            res_curr_chars: list[str] = []
             for c in res_str:
                 if c == "<":
                     depth_angle += 1
@@ -368,7 +370,7 @@ def parse_stablehlo_tablegen(content: str) -> List[Dict[str, Any]]:
             if res_curr_chars:
                 res_parts_list.append("".join(res_curr_chars).strip())
 
-            res_types: List[str] = []
+            res_types: list[str] = []
             for res_item in res_parts_list:
                 res_item = res_item.strip()
                 if not res_item:
@@ -392,37 +394,39 @@ def parse_stablehlo_tablegen(content: str) -> List[Dict[str, Any]]:
         )
 
         ghost_refs.append(
-            {
-                "api_path": f"stablehlo.{op_name}",
-                "name": op_name,
-                "class_name": clean_class_name,
-                "kind": "function",
-                "is_public": True,
-                "has_varargs": False,
-                "environment_tags": ["cpu", "cuda", "rocm", "tpu"],
-                "aliases": [],
-                "overloads": [],
-                "params": params,
-                "operands": operands,
-                "attributes": attributes,
-                "results": results,
-                "returns_type": returns_type,
-                "returns_description": None,
-                "raises": [],
-                "docstring": docstring,
-                "traits": traits,
-                "regions": regions,
-                "verification_rules": verification_rules,
-                "region_signatures": region_signatures,
-            }
+            TableGenRecordModel(
+                {
+                    "api_path": f"stablehlo.{op_name}",
+                    "name": op_name,
+                    "class_name": clean_class_name,
+                    "kind": "function",
+                    "is_public": True,
+                    "has_varargs": False,
+                    "environment_tags": ["cpu", "cuda", "rocm", "tpu"],
+                    "aliases": [],
+                    "overloads": [],
+                    "params": params,
+                    "operands": operands,
+                    "attributes": attributes,
+                    "results": results,
+                    "returns_type": returns_type,
+                    "returns_description": None,
+                    "raises": [],
+                    "docstring": docstring,
+                    "traits": traits,
+                    "regions": regions,
+                    "verification_rules": verification_rules,
+                    "region_signatures": region_signatures,
+                }
+            )
         )
 
     return ghost_refs
 
 
 def parse_stablehlo_llvm_tblgen_json(
-    json_data: Union[str, Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    json_data: str | typing.Mapping[str, object],
+) -> list[TableGenRecordModel]:
     """Parse JSON dump from llvm-tblgen -dump-json for StableHLO into structured GhostRef operations.
 
     Args:
@@ -432,23 +436,31 @@ def parse_stablehlo_llvm_tblgen_json(
         List of structured GhostRef operation dictionaries.
     """
     if isinstance(json_data, str):
-        data: Dict[str, Any] = json.loads(json_data)
+        data: typing.Mapping[str, object] = json.loads(json_data)
     else:
         data = json_data
 
-    ghost_refs: List[Dict[str, Any]] = []
-    instance_of = data.get("!instanceof", {})
-    op_def_names = set(instance_of.get("Op", []))
+    ghost_refs: list[TableGenRecordModel] = []
+    raw_instance_of = data.get("!instanceof", {})
+    raw_op_defs = (
+        raw_instance_of.get("Op", []) if isinstance(raw_instance_of, dict) else []
+    )
+    op_def_names = {
+        str(x) for x in (raw_op_defs if isinstance(raw_op_defs, list) else [])
+    }
 
     for rec_name, rec in data.items():
         if rec_name.startswith("!") or not isinstance(rec, dict):
             continue
 
-        superclasses = rec.get("!superclasses", [])
+        raw_supers = rec.get("!superclasses", [])
+        superclasses = [
+            str(s) for s in (raw_supers if isinstance(raw_supers, list) else [])
+        ]
         is_op = (
             rec_name in op_def_names
             or "StableHLO_Op" in superclasses
-            or any("StableHLO_" in str(s) for s in superclasses)
+            or any("StableHLO_" in s for s in superclasses)
             or rec_name.startswith("StableHLO_")
             or rec_name.endswith("Op")
         )
@@ -468,24 +480,25 @@ def parse_stablehlo_llvm_tblgen_json(
             )
             mnemonic = re.sub(r"(?<!^)(?=[A-Z])", "_", raw_name).lower()
 
-        op_name = mnemonic
-        params: List[Dict[str, Any]] = []
-        operands: List[Dict[str, str]] = []
-        attributes: List[Dict[str, str]] = []
+        op_name = str(mnemonic)
+        params: list[JsonValue] = []
+        operands: list[JsonValue] = []
+        attributes: list[JsonValue] = []
 
         raw_args = rec.get("arguments")
         if isinstance(raw_args, dict) and raw_args.get("kind") == "dag":
-            for arg in raw_args.get("args", []):
+            dag_args = raw_args.get("args", [])
+            for arg in dag_args if isinstance(dag_args, list) else []:
                 if isinstance(arg, (list, tuple)) and len(arg) >= 2:
                     arg_type_obj, arg_name = arg[0], str(arg[1])
                     arg_type = (
-                        arg_type_obj.get("def", "Type")
+                        str(arg_type_obj.get("def", "Type"))
                         if isinstance(arg_type_obj, dict)
                         else str(arg_type_obj)
                     )
                     is_attr = is_attribute(arg_type)
                     kind = "KEYWORD_ONLY" if is_attr else "POSITIONAL_OR_KEYWORD"
-                    p_entry = {
+                    p_entry: dict[str, JsonValue] = {
                         "name": arg_name,
                         "annotation": arg_type,
                         "default": None,
@@ -500,8 +513,12 @@ def parse_stablehlo_llvm_tblgen_json(
                         operands.append({"name": arg_name, "type": arg_type})
         elif isinstance(raw_args, list):
             for arg in raw_args:
-                aname = arg.get("name", "arg") if isinstance(arg, dict) else str(arg)
-                atype = arg.get("type", "Type") if isinstance(arg, dict) else "Type"
+                aname = (
+                    str(arg.get("name", "arg")) if isinstance(arg, dict) else str(arg)
+                )
+                atype = (
+                    str(arg.get("type", "Type")) if isinstance(arg, dict) else "Type"
+                )
                 is_attr = is_attribute(atype)
                 kind = "KEYWORD_ONLY" if is_attr else "POSITIONAL_OR_KEYWORD"
                 p_entry = {
@@ -518,10 +535,11 @@ def parse_stablehlo_llvm_tblgen_json(
                 else:
                     operands.append({"name": aname, "type": atype})
 
-        regions: List[str] = []
+        regions: list[JsonValue] = []
         raw_regions = rec.get("regions")
         if isinstance(raw_regions, dict) and raw_regions.get("kind") == "dag":
-            for reg in raw_regions.get("args", []):
+            dag_regs = raw_regions.get("args", [])
+            for reg in dag_regs if isinstance(dag_regs, list) else []:
                 if isinstance(reg, (list, tuple)) and len(reg) >= 2:
                     rname = str(reg[1])
                     regions.append(rname)
@@ -550,15 +568,16 @@ def parse_stablehlo_llvm_tblgen_json(
                     }
                 )
 
-        results: List[Dict[str, str]] = []
-        res_types: List[str] = []
+        results: list[JsonValue] = []
+        res_types: list[str] = []
         raw_results = rec.get("results")
         if isinstance(raw_results, dict) and raw_results.get("kind") == "dag":
-            for res in raw_results.get("args", []):
+            dag_res = raw_results.get("args", [])
+            for res in dag_res if isinstance(dag_res, list) else []:
                 if isinstance(res, (list, tuple)) and len(res) >= 2:
                     res_type_obj, res_name = res[0], str(res[1])
                     res_type = (
-                        res_type_obj.get("def", "Type")
+                        str(res_type_obj.get("def", "Type"))
                         if isinstance(res_type_obj, dict)
                         else str(res_type_obj)
                     )
@@ -566,22 +585,28 @@ def parse_stablehlo_llvm_tblgen_json(
                     res_types.append(res_type)
         elif isinstance(raw_results, list):
             for res in raw_results:
-                rname = res.get("name", "result") if isinstance(res, dict) else "result"
-                rtype = res.get("type", "Type") if isinstance(res, dict) else "Type"
+                rname = (
+                    str(res.get("name", "result"))
+                    if isinstance(res, dict)
+                    else "result"
+                )
+                rtype = (
+                    str(res.get("type", "Type")) if isinstance(res, dict) else "Type"
+                )
                 results.append({"name": rname, "type": rtype})
                 res_types.append(rtype)
 
-        returns_type = None
+        returns_type: str | None = None
         if len(res_types) == 1:
             returns_type = res_types[0]
         elif len(res_types) > 1:
             returns_type = f"tuple[{', '.join(res_types)}]"
 
-        traits: List[str] = []
+        traits: list[JsonValue] = []
         raw_traits = rec.get("traits", [])
         if isinstance(raw_traits, list):
             for t in raw_traits:
-                t_name = t.get("def") if isinstance(t, dict) else str(t)
+                t_name = str(t.get("def", "")) if isinstance(t, dict) else str(t)
                 if t_name:
                     traits.append(t_name)
 
@@ -592,35 +617,35 @@ def parse_stablehlo_llvm_tblgen_json(
         )
 
         ghost_refs.append(
-            {
-                "api_path": f"stablehlo.{op_name}",
-                "name": op_name,
-                "class_name": clean_class_name,
-                "kind": "function",
-                "is_public": True,
-                "has_varargs": False,
-                "environment_tags": ["cpu", "cuda", "rocm", "tpu"],
-                "aliases": [],
-                "overloads": [],
-                "params": params,
-                "operands": operands,
-                "attributes": attributes,
-                "results": results,
-                "returns_type": returns_type,
-                "returns_description": None,
-                "raises": [],
-                "docstring": docstring,
-                "traits": traits,
-                "regions": regions,
-                "verification_rules": verification_rules,
-                "region_signatures": region_signatures,
-            }
+            TableGenRecordModel(
+                {
+                    "api_path": f"stablehlo.{op_name}",
+                    "name": op_name,
+                    "class_name": clean_class_name,
+                    "kind": "function",
+                    "is_public": True,
+                    "has_varargs": False,
+                    "environment_tags": ["cpu", "cuda", "rocm", "tpu"],
+                    "aliases": [],
+                    "overloads": [],
+                    "params": params,
+                    "operands": operands,
+                    "attributes": attributes,
+                    "results": results,
+                    "returns_type": returns_type,
+                    "returns_description": None,
+                    "raises": [],
+                    "docstring": str(docstring) if docstring is not None else None,
+                    "traits": traits,
+                    "regions": regions,
+                    "verification_rules": verification_rules,
+                    "region_signatures": region_signatures,
+                }
+            )
         )
 
     return ghost_refs
 
-
-parse_tblgen_json_dump = parse_stablehlo_llvm_tblgen_json
 
 __all__ = [
     "TableGenASTParser",
@@ -628,6 +653,5 @@ __all__ = [
     "is_attribute",
     "parse_stablehlo_llvm_tblgen_json",
     "parse_stablehlo_tablegen",
-    "parse_tblgen_json_dump",
     "strip_tablegen_comments",
 ]

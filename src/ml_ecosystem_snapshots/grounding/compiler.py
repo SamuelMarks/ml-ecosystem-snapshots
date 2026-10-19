@@ -2,22 +2,24 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Optional
+import typing
 
 from ml_ecosystem_snapshots.grounding.engine import GroundingEngine
 from ml_ecosystem_snapshots.grounding.models import (
     DiagnosticSeverity,
     GroundingReport,
 )
+from ml_ecosystem_snapshots.mcp.models import DomainOpCheckResult
+from ml_ecosystem_snapshots.models import JsonValue
 
 
 def validate_stablehlo_op(
     op_name: str,
-    operand_types: List[str],
-    attributes: Dict[str, Any],
-    engine: Optional[GroundingEngine] = None,
-    result_types: Optional[List[str]] = None,
-    regions: Optional[Dict[str, Any]] = None,
+    operand_types: list[str],
+    attributes: typing.Mapping[str, JsonValue],
+    engine: GroundingEngine | None = None,
+    result_types: list[str] | None = None,
+    regions: typing.Mapping[str, JsonValue] | None = None,
 ) -> GroundingReport:
     """Verify a StableHLO operation against the official StableHLO specification.
 
@@ -70,7 +72,6 @@ def validate_stablehlo_op(
 
     report.matched_ref = ref
 
-    # Verify mandatory operation attributes
     if full_op_name == "stablehlo.dot_general":
         if (
             "dot_dimension_numbers" not in attributes
@@ -95,7 +96,6 @@ def validate_stablehlo_op(
                 suggested_fix="dimension_numbers",
             )
 
-    # Verify operand counts
     raw_operands = getattr(ref, "operands", None)
     expected_operands = (
         raw_operands
@@ -142,15 +142,17 @@ def validate_stablehlo_op(
                 )
 
     meta = ref.domain_metadata or {}
-    base_traits = list(meta.get("traits") or getattr(ref, "traits", None) or [])
+    raw_traits = meta.get("traits") or getattr(ref, "traits", None) or []
+    base_traits = [str(t) for t in raw_traits] if isinstance(raw_traits, list) else []
     traits = _infer_implicit_mlir_traits(full_op_name, base_traits)
+    attr_dict = dict(attributes)
     for trait_err in validate_mlir_traits(
         op_name=full_op_name,
         traits=traits,
         operand_types=operand_types if operand_types else None,
         result_types=result_types,
-        attributes=list(attributes.keys()) if attributes else None,
-        structured_attributes=attributes if attributes else None,
+        attributes=list(attr_dict.keys()) if attr_dict else None,
+        structured_attributes=attr_dict if attr_dict else None,
     ):
         report.add_diagnostic(
             field="traits",
@@ -158,9 +160,9 @@ def validate_stablehlo_op(
             severity=DiagnosticSeverity.ERROR,
         )
 
-    if attributes:
+    if attr_dict:
         for attr_err in _validate_mlir_structured_attributes(
-            structured_attributes=attributes,
+            structured_attributes=attr_dict,
             operand_types=operand_types if operand_types else None,
             result_types=result_types,
         ):
@@ -172,8 +174,15 @@ def validate_stablehlo_op(
 
     if regions:
         for reg_name, reg_spec in regions.items():
-            b_args = reg_spec.get("block_arguments") or reg_spec.get("block_args") or []
-            y_types = reg_spec.get("yield_types") or []
+            assert isinstance(reg_spec, dict)
+            raw_b_args = reg_spec.get("block_arguments") or reg_spec.get("block_args")
+            b_args = (
+                [str(a) for a in raw_b_args] if isinstance(raw_b_args, list) else []
+            )
+            raw_y_types = reg_spec.get("yield_types")
+            y_types = (
+                [str(t) for t in raw_y_types] if isinstance(raw_y_types, list) else []
+            )
             for reg_err in validate_stablehlo_region(
                 full_op_name, reg_name, b_args, y_types
             ):
@@ -190,10 +199,10 @@ def validate_mlir_op(
     dialect: str,
     op_name: str,
     operand_count: int,
-    attributes: Dict[str, Any],
-    engine: Optional[GroundingEngine] = None,
-    operand_types: Optional[List[str]] = None,
-    result_types: Optional[List[str]] = None,
+    attributes: typing.Mapping[str, JsonValue],
+    engine: GroundingEngine | None = None,
+    operand_types: list[str] | None = None,
+    result_types: list[str] | None = None,
 ) -> GroundingReport:
     """Verify an MLIR operation against core MLIR TableGen definitions.
 
@@ -243,7 +252,6 @@ def validate_mlir_op(
 
     report.matched_ref = ref
 
-    # Verify operands count
     raw_operands = getattr(ref, "operands", None)
     expected_operands = (
         raw_operands
@@ -291,15 +299,17 @@ def validate_mlir_op(
                 )
 
     meta = ref.domain_metadata or {}
-    base_traits = list(meta.get("traits") or getattr(ref, "traits", None) or [])
+    raw_traits = meta.get("traits") or getattr(ref, "traits", None) or []
+    base_traits = [str(t) for t in raw_traits] if isinstance(raw_traits, list) else []
     traits = _infer_implicit_mlir_traits(full_path, base_traits)
+    attr_dict = dict(attributes)
     for trait_err in validate_mlir_traits(
         op_name=full_path,
         traits=traits,
         operand_types=operand_types,
         result_types=result_types,
-        attributes=list(attributes.keys()) if attributes else None,
-        structured_attributes=attributes if attributes else None,
+        attributes=list(attr_dict.keys()) if attr_dict else None,
+        structured_attributes=attr_dict if attr_dict else None,
     ):
         report.add_diagnostic(
             field="traits",
@@ -307,9 +317,9 @@ def validate_mlir_op(
             severity=DiagnosticSeverity.ERROR,
         )
 
-    if attributes:
+    if attr_dict:
         for attr_err in _validate_mlir_structured_attributes(
-            structured_attributes=attributes,
+            structured_attributes=attr_dict,
             operand_types=operand_types,
             result_types=result_types,
         ):
@@ -325,18 +335,18 @@ def validate_mlir_op(
 def _validate_ssa_domain_op(
     target_framework: str,
     symbol_name: str,
-    res: Mapping[str, Any],
+    res: DomainOpCheckResult | typing.Mapping[str, JsonValue],
     unrecognized_label: str,
     missing_field: str = "operation",
     err_field: str = "operation",
-    engine: Optional[GroundingEngine] = None,
+    engine: GroundingEngine | None = None,
 ) -> GroundingReport:
-    """Build a GroundingReport from a domain operation verifier dictionary result.
+    """Build a GroundingReport from a domain operation verifier result.
 
     Args:
         target_framework: Framework identifier (e.g., 'wgsl', 'onnx', 'metal', 'wasm_simd', 'webgl').
         symbol_name: Operation or opcode name checked.
-        res: Result dictionary from `check_*_op`.
+        res: Result model or dictionary from `check_*_op`.
         unrecognized_label: Human-readable label for unrecognized symbol diagnostics.
         missing_field: Diagnostic field name when symbol is missing.
         err_field: Diagnostic field name for constraint errors.
@@ -351,7 +361,12 @@ def _validate_ssa_domain_op(
         target=target_framework,
         symbol=symbol_name,
     )
-    if not res.get("op_exists"):
+    op_exists = (
+        res.op_exists
+        if isinstance(res, DomainOpCheckResult)
+        else bool(res.get("op_exists"))
+    )
+    if not op_exists:
         suggested = eng.suggest_closest_symbol(target_framework, symbol_name)
         report.add_diagnostic(
             field=missing_field,
@@ -361,10 +376,14 @@ def _validate_ssa_domain_op(
         )
         return report
 
-    for err in res.get("errors", []):
+    raw_errs = (
+        res.errors if isinstance(res, DomainOpCheckResult) else res.get("errors", [])
+    )
+    assert isinstance(raw_errs, list)
+    for err in raw_errs:
         report.add_diagnostic(
             field=err_field,
-            message=err,
+            message=str(err),
             severity=DiagnosticSeverity.ERROR,
         )
     return report
@@ -372,9 +391,9 @@ def _validate_ssa_domain_op(
 
 def validate_wgsl_op(
     op_name: str,
-    operands_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
-    engine: Optional[GroundingEngine] = None,
+    operands_count: int | None = None,
+    attributes: list[str] | None = None,
+    engine: GroundingEngine | None = None,
 ) -> GroundingReport:
     """Verify a WebGPU WGSL builtin function or memory barrier against ground truth.
 
@@ -405,9 +424,9 @@ def validate_wgsl_op(
 
 def validate_onnx_op(
     op_name: str,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
-    engine: Optional[GroundingEngine] = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
+    engine: GroundingEngine | None = None,
 ) -> GroundingReport:
     """Verify an ONNX operator specification against the standard schema.
 
@@ -438,10 +457,10 @@ def validate_onnx_op(
 
 def validate_metal_op(
     op_name: str,
-    address_space: Optional[str] = None,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
-    engine: Optional[GroundingEngine] = None,
+    address_space: str | None = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
+    engine: GroundingEngine | None = None,
 ) -> GroundingReport:
     """Verify an Apple Metal Shading Language compute builtin against specifications.
 
@@ -474,9 +493,9 @@ def validate_metal_op(
 
 def validate_wasm_op(
     mnemonic: str,
-    operands_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
-    engine: Optional[GroundingEngine] = None,
+    operands_count: int | None = None,
+    attributes: list[str] | None = None,
+    engine: GroundingEngine | None = None,
 ) -> GroundingReport:
     """Verify a W3C WebAssembly SIMD opcode mnemonic against standard specifications.
 
@@ -509,9 +528,9 @@ def validate_wasm_op(
 
 def validate_webgl_op(
     op_name: str,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
-    engine: Optional[GroundingEngine] = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
+    engine: GroundingEngine | None = None,
 ) -> GroundingReport:
     """Verify a WebGL 2.0 / GLSL ES 3.00 shader builtin against standard specifications.
 

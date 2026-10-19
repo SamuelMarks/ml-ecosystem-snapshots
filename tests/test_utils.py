@@ -1,9 +1,21 @@
 """Tests for utility helpers including member extraction, C-extension parsing, and TableGen utilities."""
 
-from typing import Any
+from __future__ import annotations
+
+from pathlib import Path
+import pytest
 
 
-from ml_ecosystem_snapshots.utils import get_all_members, extract_c_extension_signature
+from ml_ecosystem_snapshots.c_extension_sig import (
+    _normalize_c_sig_args,
+    _parse_c_extension_sig_str,
+    extract_c_extension_signature,
+)
+from ml_ecosystem_snapshots.network_env import (
+    get_custom_snapshots_paths,
+    is_offline_mode,
+)
+from ml_ecosystem_snapshots.utils import get_all_members
 
 
 class FaultyModule:
@@ -13,7 +25,7 @@ class FaultyModule:
     good = 1
 
     @property
-    def bad(self) -> Any:
+    def bad(self) -> None:
         """Execute helper bad.
 
         Raises:
@@ -41,28 +53,28 @@ def test_get_all_members_exception() -> None:
 def test_extract_c_extension_signatures() -> None:
     """Test extract_c_extension_signature across diverse docstring patterns and overloads."""
 
-    def empty_doc() -> Any:
+    def empty_doc() -> None:
         """Execute helper empty doc."""
         pass
 
     empty_doc.__doc__ = ""
     assert extract_c_extension_signature(empty_doc, "empty_doc") is None
 
-    def bad_syntax() -> Any:
+    def bad_syntax() -> None:
         """Execute helper bad syntax."""
         pass
 
     bad_syntax.__doc__ = "func(a b c) -> int"
     assert extract_c_extension_signature(bad_syntax, "bad_syntax") is None
 
-    def no_match() -> Any:
+    def no_match() -> None:
         """Execute helper no match."""
         pass
 
     no_match.__doc__ = "This is just a description without signature."
     assert extract_c_extension_signature(no_match, "no_match") is None
 
-    def string_def() -> Any:
+    def string_def() -> None:
         """Execute helper string def."""
         pass
 
@@ -77,7 +89,7 @@ def test_extract_c_extension_signatures() -> None:
     assert sig[0][2] == "'hello'"  # a='hello'
     assert sig[1][2] == "None"  # b=None
 
-    def func_with_self() -> Any:
+    def func_with_self() -> None:
         """Execute helper func with self."""
         pass
 
@@ -87,7 +99,7 @@ def test_extract_c_extension_signatures() -> None:
     assert sig2[0][0] == "x"
     assert sig2[0][2] == "torch.float32"  # value error fallback
 
-    def leading_empty() -> Any:
+    def leading_empty() -> None:
         """Execute helper leading empty."""
         pass
 
@@ -98,7 +110,7 @@ def test_extract_c_extension_signatures() -> None:
     assert sig_leading is not None
     assert len(sig_leading.overloads) == 1
 
-    def numbered_with_empty() -> Any:
+    def numbered_with_empty() -> None:
         """Execute helper numbered with empty."""
         pass
 
@@ -109,7 +121,7 @@ def test_extract_c_extension_signatures() -> None:
     assert sig_num is not None
     assert len(sig_num.overloads) == 2
 
-    def sig_then_overload_header() -> Any:
+    def sig_then_overload_header() -> None:
         """Execute helper sig then overload header."""
         pass
 
@@ -118,7 +130,7 @@ def test_extract_c_extension_signatures() -> None:
     assert sig_so is not None
     assert len(sig_so.overloads) == 2
 
-    def sig_then_doc_text() -> Any:
+    def sig_then_doc_text() -> None:
         """Execute helper sig then doc text."""
         pass
 
@@ -132,9 +144,6 @@ def test_extract_c_extension_signatures() -> None:
 
 def test_utils_branches() -> None:
     """Test extract_c_extension_signature on classes with whitespace docstrings."""
-    from ml_ecosystem_snapshots.utils import (
-        extract_c_extension_signature,
-    )
 
     class Dummy:
         """Mock or helper class Dummy for unit testing."""
@@ -147,11 +156,6 @@ def test_utils_branches() -> None:
 
 def test_normalize_c_sig_args_and_unparse_branches() -> None:
     """Test branches in _normalize_c_sig_args, _parse_c_extension_sig_str, and docstring usage scanning."""
-    from ml_ecosystem_snapshots.utils import (
-        _normalize_c_sig_args,
-        _parse_c_extension_sig_str,
-    )
-
     # Test with trailing comma, keyword-only marker '*', slash '/', varargs, varkwargs, colon, C++ type with default, and plain arg
     raw = "Tensor a, *, /, *args, **kwargs, c: int, const Tensor& d = None, plain_arg, "
     normalized = _normalize_c_sig_args(raw)
@@ -184,7 +188,7 @@ def test_normalize_c_sig_args_and_unparse_branches() -> None:
     assert _normalize_c_sig_args("std::vector<int>") == "std::vector<int>"
 
     # Test fallback scanning lines where candidate parse fails first, then succeeds
-    def usage_func() -> Any:
+    def usage_func() -> None:
         """Function with usage docstring demonstrating signature parsing fallback."""
         pass
 
@@ -273,7 +277,7 @@ def test_tablegen_list_and_traits() -> None:
 
 
 def test_get_custom_snapshots_paths_deduplication(
-    tmp_path: Any, monkeypatch: Any
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Test deduplication and existence check in get_custom_snapshots_paths.
 
@@ -282,7 +286,6 @@ def test_get_custom_snapshots_paths_deduplication(
         monkeypatch: Pytest monkeypatch fixture.
     """
     import os
-    from ml_ecosystem_snapshots.utils import get_custom_snapshots_paths
 
     p1 = str(tmp_path / "snap1")
     os.makedirs(p1, exist_ok=True)
@@ -302,7 +305,7 @@ def test_resolve_griffe_parser_setattr_failure() -> None:
     orig_hasattr = hasattr
     orig_setattr = setattr
 
-    def mock_hasattr(obj: Any, attr: str) -> bool:
+    def mock_hasattr(obj: object, attr: str) -> bool:
         """Mock hasattr to report missing 'rest' on griffe.Parser.
 
         Args:
@@ -316,7 +319,7 @@ def test_resolve_griffe_parser_setattr_failure() -> None:
             return False
         return orig_hasattr(obj, attr)
 
-    def mock_setattr(obj: Any, attr: str, val: Any) -> None:
+    def mock_setattr(obj: object, attr: str, val: object) -> None:
         """Mock setattr to raise an exception when setting _missing_.
 
         Args:
@@ -381,22 +384,18 @@ def test_parse_docstring_with_griffe_parse_exception() -> None:
         assert res == []
 
 
-def test_is_offline_mode_env_vars(monkeypatch: Any) -> None:
+def test_is_offline_mode_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test is_offline_mode across all truthy and falsey environment values.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    from ml_ecosystem_snapshots.utils import is_offline_mode
-
     monkeypatch.delenv("ML_SNAPSHOTS_OFFLINE", raising=False)
-    monkeypatch.delenv("ML_FRAMEWORK_SNAPSHOTS_OFFLINE", raising=False)
     assert is_offline_mode() is False
 
-    for var in ("ML_SNAPSHOTS_OFFLINE", "ML_FRAMEWORK_SNAPSHOTS_OFFLINE"):
-        for val in ("1", "true", "yes", "on", "enable", "enabled"):
-            monkeypatch.setenv(var, val)
-            assert is_offline_mode() is True
-        monkeypatch.setenv(var, "0")
-        assert is_offline_mode() is False
-        monkeypatch.delenv(var, raising=False)
+    for val in ("1", "true", "yes", "on", "enable", "enabled"):
+        monkeypatch.setenv("ML_SNAPSHOTS_OFFLINE", val)
+        assert is_offline_mode() is True
+    monkeypatch.setenv("ML_SNAPSHOTS_OFFLINE", "0")
+    assert is_offline_mode() is False
+    monkeypatch.delenv("ML_SNAPSHOTS_OFFLINE", raising=False)

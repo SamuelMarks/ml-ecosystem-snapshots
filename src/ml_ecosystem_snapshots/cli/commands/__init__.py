@@ -34,10 +34,9 @@ from ml_ecosystem_snapshots.cli.commands.check import (
 from ml_ecosystem_snapshots.cli.commands.diff import cmd_diff
 from ml_ecosystem_snapshots.cli.commands.export import (
     cmd_export,
-    cmd_generate_stubs,
     cmd_stubs,
 )
-from ml_ecosystem_snapshots.cli.commands.index import cmd_index, cmd_index_cache
+from ml_ecosystem_snapshots.cli.commands.index import cmd_index
 from ml_ecosystem_snapshots.cli.commands.mcp import cmd_mcp
 
 __all__ = [
@@ -65,9 +64,7 @@ __all__ = [
     "cmd_diff",
     "cmd_download_all",
     "cmd_export",
-    "cmd_generate_stubs",
     "cmd_index",
-    "cmd_index_cache",
     "cmd_list_snapshots",
     "cmd_mcp",
     "cmd_pull",

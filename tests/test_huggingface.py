@@ -1,6 +1,7 @@
 """Unit tests and verification suite for huggingface."""
 
-from typing import Any
+from __future__ import annotations
+
 from unittest.mock import patch, MagicMock
 
 from ml_switcheroo_ir.schema.ghost import SemanticTier, GhostRef
@@ -163,15 +164,15 @@ def test_parse_pretrained_config_with_empty_annotations() -> None:
     class DummyConfig:
         """Mock or helper class DummyConfig for unit testing."""
 
-        __annotations__ = {}
-
-        def __init__(self, **kwargs: Any) -> None:
+        def __init__(self, **kwargs: object) -> None:
             """Init docstring.
 
             Args:
                 **kwargs: kwargs
             """
             pass
+
+    setattr(DummyConfig, "__annotations__", {})
 
     _parse_pretrained_config(DummyConfig, ref)
     assert len(ref.params) == 0

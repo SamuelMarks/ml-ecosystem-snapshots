@@ -7,7 +7,6 @@ and live/fallback introspection with 100% coverage.
 from __future__ import annotations
 
 import argparse
-from typing import Any
 from unittest.mock import patch
 import pytest
 
@@ -58,7 +57,7 @@ def test_collect_api_live_mode() -> None:
     fake_linalg = types.SimpleNamespace(inv=lambda a: a)
     fake_signal = types.SimpleNamespace(convolve=lambda in1, in2: in1)
 
-    def fake_get_submodule(sub: str) -> Any:
+    def fake_get_submodule(sub: str) -> object:
         """Return fake submodule by name.
 
         Args:
@@ -86,7 +85,7 @@ def test_collect_api_inspection_exception_handled() -> None:
 
     fake_special = types.SimpleNamespace(erf="not_inspectable")
 
-    def fake_get_submodule(sub: str) -> Any:
+    def fake_get_submodule(sub: str) -> object:
         """Return fake special submodule.
 
         Args:
@@ -99,7 +98,7 @@ def test_collect_api_inspection_exception_handled() -> None:
         side_effect=fake_get_submodule,
     ):
         with patch(
-            "ml_ecosystem_snapshots.models.GhostInspector.inspect",
+            "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",
             side_effect=ValueError("boom"),
         ):
             refs = scipy.collect_api(SemanticTier.ARRAY_API)
@@ -111,6 +110,7 @@ def test_extract_snapshot_scipy() -> None:
     snap = extract_snapshot("scipy")
     assert snap.get("target") == "scipy"
     cats = snap.get("categories", {})
+    assert isinstance(cats, dict)
     assert "array" in cats or "util" in cats
 
 
@@ -146,7 +146,7 @@ def test_check_scipy_op_mcp() -> None:
     assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw["errors"][0]
 
 
-def test_cmd_check_scipy_cli_valid(capsys: Any) -> None:
+def test_cmd_check_scipy_cli_valid(capsys: pytest.CaptureFixture[str]) -> None:
     """Verify CLI command execution on valid SciPy operation.
 
     Args:
@@ -163,7 +163,7 @@ def test_cmd_check_scipy_cli_valid(capsys: Any) -> None:
     assert "Inputs:     1" in captured.out
 
 
-def test_cmd_check_scipy_cli_invalid_exits(capsys: Any) -> None:
+def test_cmd_check_scipy_cli_invalid_exits(capsys: pytest.CaptureFixture[str]) -> None:
     """Verify CLI command exits with non-zero code on invalid operator.
 
     Args:

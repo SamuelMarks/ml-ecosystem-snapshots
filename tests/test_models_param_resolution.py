@@ -1,13 +1,14 @@
 """Tests for parameter kind parsing, overload merging, and inheritance resolution in GhostInspector."""
 
-from typing import Any
+from __future__ import annotations
+
 from unittest.mock import patch
 
-from ml_ecosystem_snapshots.models import (
+from ml_ecosystem_snapshots.c_extension_sig import CExtensionSignature
+from ml_ecosystem_snapshots.introspection.inspector import (
     GhostInspector,
     to_parameter_kind,
 )
-from ml_ecosystem_snapshots.utils import CExtensionSignature
 from ml_switcheroo_ir.schema.ghost import ParameterKind
 
 
@@ -58,7 +59,7 @@ def test_ghost_inspector_aten_overload_merge_and_returns() -> None:
 def test_ghost_inspector_opaque_c_extension_none_env_tags() -> None:
     """Test opaque C-extension handling when environment_tags is None."""
 
-    def opaque_fn(*args: Any, **kwargs: Any) -> None:
+    def opaque_fn(*args: object, **kwargs: object) -> None:
         """Opaque function without signature or docstring.
 
         Args:
@@ -102,7 +103,7 @@ class SampleParentForSuper:
 class SampleChildForSuper(SampleParentForSuper):
     """Child class."""
 
-    def __init__(self, a: int, **kwargs: Any) -> None:
+    def __init__(self, a: int, **kwargs: str) -> None:
         """Initialize Child.
 
         Args:

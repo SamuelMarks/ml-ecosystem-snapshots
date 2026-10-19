@@ -12,7 +12,18 @@ import shutil
 import sys
 import urllib.request
 import warnings
-from typing import Any, Dict, List
+
+import pydantic
+
+
+class DiscoveredSnapshot(pydantic.BaseModel):
+    """Typed record for a discovered snapshot file on disk."""
+
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
+
+    file: str
+    path: str
+    size: int
 
 
 def _get_pkg_dir() -> str:
@@ -82,7 +93,7 @@ def cmd_list_snapshots(args: argparse.Namespace) -> None:
         args: Parsed command line arguments.
     """
     from ml_ecosystem_snapshots.index import get_cache_dir
-    from ml_ecosystem_snapshots.utils import get_custom_snapshots_paths
+    from ml_ecosystem_snapshots.network_env import get_custom_snapshots_paths
 
     pkg_dir = _get_pkg_dir()
     snapshots_dirs = get_custom_snapshots_paths() + [
@@ -90,8 +101,8 @@ def cmd_list_snapshots(args: argparse.Namespace) -> None:
         os.path.join(pkg_dir, "snapshots"),
         os.path.join(pkg_dir, "frameworks"),
     ]
-    found_snapshots: List[Dict[str, Any]] = []
-    seen_files = set()
+    found_snapshots: list[DiscoveredSnapshot] = []
+    seen_files: set[str] = set()
     for d in snapshots_dirs:
         if os.path.isdir(d):
             for fname in sorted(os.listdir(d)):
@@ -102,7 +113,7 @@ def cmd_list_snapshots(args: argparse.Namespace) -> None:
                     full_path = os.path.join(d, fname)
                     size = os.path.getsize(full_path)
                     found_snapshots.append(
-                        {"file": fname, "path": full_path, "size": size}
+                        DiscoveredSnapshot(file=fname, path=full_path, size=size)
                     )
 
     if not found_snapshots:
@@ -111,7 +122,7 @@ def cmd_list_snapshots(args: argparse.Namespace) -> None:
 
     print("Available Snapshots:")
     for s in found_snapshots:
-        print(f"  - {s['file']} ({s['size']} bytes)")
+        print(f"  - {s.file} ({s.size} bytes)")
 
 
 def cmd_pull(args: argparse.Namespace) -> None:
@@ -121,7 +132,7 @@ def cmd_pull(args: argparse.Namespace) -> None:
         args: Parsed command line arguments containing target and optional out_dir.
     """
     from ml_ecosystem_snapshots.index import get_cache_dir
-    from ml_ecosystem_snapshots.utils import is_offline_mode
+    from ml_ecosystem_snapshots.network_env import is_offline_mode
 
     if getattr(args, "offline", False) or is_offline_mode():
         print(
@@ -161,7 +172,7 @@ def cmd_download_all(args: argparse.Namespace) -> None:
         args: Parsed command line arguments containing cache_dir and optional offline flag.
     """
     from ml_ecosystem_snapshots.index import get_cache_dir
-    from ml_ecosystem_snapshots.utils import is_offline_mode
+    from ml_ecosystem_snapshots.network_env import is_offline_mode
 
     if getattr(args, "offline", False) or is_offline_mode():
         print(
@@ -228,7 +239,7 @@ def cmd_verify_local_cache(args: argparse.Namespace) -> None:
         os.path.join(pkg_dir, "frameworks"),
     ]
 
-    discovered: List[str] = []
+    discovered: list[str] = []
     seen = set()
     for d in search_dirs:
         if os.path.isdir(d):
@@ -284,6 +295,7 @@ def cmd_verify_local_cache(args: argparse.Namespace) -> None:
 
 
 __all__ = [
+    "DiscoveredSnapshot",
     "cmd_capture",
     "cmd_download_all",
     "cmd_list_snapshots",

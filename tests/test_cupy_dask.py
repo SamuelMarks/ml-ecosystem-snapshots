@@ -1,16 +1,19 @@
 """Tests for cupy and dask framework collectors."""
 
+from __future__ import annotations
+
 import sys
-from typing import Any
+import pytest_mock
 import types
 
 from ml_switcheroo_ir.schema.ghost import SemanticTier
-from ml_ecosystem_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.models import ExtendedGhostRef
 import ml_ecosystem_snapshots.frameworks.cupy as cupy_fw
 import ml_ecosystem_snapshots.frameworks.dask as dask_fw
 
 
-def create_module(name: str, attrs: dict[str, Any]) -> types.ModuleType:
+def create_module(name: str, attrs: dict[str, object]) -> types.ModuleType:
     """Create a mock module with given attributes.
 
     Args:
@@ -26,7 +29,7 @@ def create_module(name: str, attrs: dict[str, Any]) -> types.ModuleType:
     return mod
 
 
-def test_cupy_collect(mocker: Any) -> None:
+def test_cupy_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Test cupy_fw.collect_api function.
 
     Args:
@@ -67,7 +70,7 @@ def test_cupy_collect(mocker: Any) -> None:
     # Test ACTIVATION
     orig_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: Any, fqn: str, is_public: bool) -> Any:
+    def mock_inspect(obj: object, fqn: str, is_public: bool) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -102,7 +105,7 @@ def test_cupy_collect(mocker: Any) -> None:
     assert cupy_fw.collect_api(SemanticTier.OPTIMIZER) == []
 
 
-def test_dask_collect(mocker: Any) -> None:
+def test_dask_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Test dask_fw.collect_api function.
 
     Args:
@@ -132,7 +135,7 @@ def test_dask_collect(mocker: Any) -> None:
 
     orig_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: Any, fqn: str, is_public: bool) -> Any:
+    def mock_inspect(obj: object, fqn: str, is_public: bool) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -180,7 +183,7 @@ def test_dask_collect(mocker: Any) -> None:
     assert len(res_util_nonpublic) >= len(res_util)
 
     # Test UTIL tier when dask import raises
-    def mock_import_raise(*args: Any, **kwargs: Any) -> Any:
+    def mock_import_raise(*args: object, **kwargs: object) -> object:
         """Mock import raising error when importing dask.
 
         Args:
@@ -205,7 +208,7 @@ def test_dask_collect(mocker: Any) -> None:
     assert dask_fw.collect_api(SemanticTier.UTIL) == []
 
 
-def test_cupy_import_success(mocker: Any) -> None:
+def test_cupy_import_success(mocker: pytest_mock.MockerFixture) -> None:
     """Test cupy import logic when module is available.
 
     Args:
@@ -226,7 +229,7 @@ def test_cupy_import_success(mocker: Any) -> None:
     assert c_fw.cp is fake_cupy
 
 
-def test_cupy_import_error(mocker: Any) -> None:
+def test_cupy_import_error(mocker: pytest_mock.MockerFixture) -> None:
     """Test cupy import logic when module is not available.
 
     Args:
@@ -243,7 +246,7 @@ def test_cupy_import_error(mocker: Any) -> None:
     assert c_fw.cp is None
 
 
-def test_dask_import_error(mocker: Any) -> None:
+def test_dask_import_error(mocker: pytest_mock.MockerFixture) -> None:
     """Test dask import logic when module is available and unavailable.
 
     Args:
@@ -259,12 +262,12 @@ def test_dask_import_error(mocker: Any) -> None:
     fake_da = types.ModuleType("dask.array")
     mocker.patch.dict(sys.modules, {"dask": fake_dask, "dask.array": fake_da})
     importlib.reload(d_fw)
-    assert d_fw.da is fake_da
+    assert getattr(d_fw, "da") is fake_da
 
     # 2. Unavailable
     mocker.patch.dict(sys.modules, {"dask": None, "dask.array": None})
     importlib.reload(d_fw)
-    assert d_fw.da is None
+    assert getattr(d_fw, "da") is None
     assert d_fw.collect_api(SemanticTier.UTIL) == []
 
     # Restore

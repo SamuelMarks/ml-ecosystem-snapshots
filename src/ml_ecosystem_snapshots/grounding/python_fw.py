@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+import typing
 
 from ml_ecosystem_snapshots.grounding.engine import GroundingEngine
 from ml_ecosystem_snapshots.grounding.models import (
     DiagnosticSeverity,
     GroundingReport,
 )
+from ml_ecosystem_snapshots.models import ExtendedGhostRef, GhostRef, JsonValue
 
 
-def _normalize_candidate_dict(ref_or_dict: Any) -> Dict[str, Any]:
+def _normalize_candidate_dict(
+    ref_or_dict: GhostRef | ExtendedGhostRef | typing.Mapping[str, JsonValue],
+) -> dict[str, JsonValue]:
     """Convert an ExtendedGhostRef or dictionary into a normalized candidate dictionary.
 
     Args:
@@ -21,16 +24,17 @@ def _normalize_candidate_dict(ref_or_dict: Any) -> Dict[str, Any]:
         Normalized dictionary with 'params', 'has_varargs', 'accepted_kwargs', etc.
     """
     if isinstance(ref_or_dict, dict):
-        return ref_or_dict
-    dumped: Dict[str, Any] = ref_or_dict.model_dump()
+        return dict(ref_or_dict)
+    assert isinstance(ref_or_dict, GhostRef)
+    dumped: dict[str, JsonValue] = ref_or_dict.model_dump()
     return dumped
 
 
 def _check_candidate_overload(
-    cand: Dict[str, Any],
-    args_count: Optional[int],
-    kwargs: Sequence[str],
-) -> Tuple[List[str], Optional[str]]:
+    cand: dict[str, JsonValue],
+    args_count: int | None,
+    kwargs: typing.Sequence[str],
+) -> tuple[list[str], str | None]:
     """Validate positional arity and keyword arguments against a single candidate overload.
 
     Args:
@@ -61,17 +65,15 @@ def _check_candidate_overload(
 def validate_python_call(
     framework: str,
     api_path: str,
-    args: List[Any],
-    kwargs: Dict[str, Any],
-    engine: Optional[GroundingEngine] = None,
-    arg_dtypes: Optional[Union[List[str], Dict[str, str]]] = None,
-    kwarg_dtypes: Optional[Dict[str, str]] = None,
-    arg_ranks: Optional[
-        Union[List[Union[int, str]], Dict[str, Union[int, str]]]
-    ] = None,
-    kwarg_ranks: Optional[Dict[str, Union[int, str]]] = None,
-    arg_shapes: Optional[List[Sequence[Union[int, str]]]] = None,
-    kwarg_shapes: Optional[Dict[str, Sequence[Union[int, str]]]] = None,
+    args: typing.Sequence[JsonValue],
+    kwargs: typing.Mapping[str, JsonValue],
+    engine: GroundingEngine | None = None,
+    arg_dtypes: list[str] | dict[str, str] | None = None,
+    kwarg_dtypes: dict[str, str] | None = None,
+    arg_ranks: list[int | str] | dict[str, int | str] | None = None,
+    kwarg_ranks: dict[str, int | str] | None = None,
+    arg_shapes: list[typing.Sequence[int | str]] | None = None,
+    kwarg_shapes: dict[str, typing.Sequence[int | str]] | None = None,
 ) -> GroundingReport:
     """Verify a Python framework API call against the ground-truth offline snapshot.
 
@@ -123,36 +125,25 @@ def validate_python_call(
     report.matched_ref = ref
 
     primary_cand = _normalize_candidate_dict(ref)
-    candidates: List[Dict[str, Any]] = [primary_cand]
+    candidates: list[dict[str, JsonValue]] = [primary_cand]
     for ov in getattr(ref, "overloads", []):
         candidates.append(_normalize_candidate_dict(ov))
 
-    all_param_names = {
-        str(p.get("name"))
-        for cand in candidates
-        for p in cand.get("params", [])
-        if isinstance(p, dict) and p.get("name")
-    }
+    all_param_names: set[str] = set()
+    for cand in candidates:
+        cand_params = cand.get("params")
+        assert isinstance(cand_params, list)
+        for p in cand_params:
+            if isinstance(p, dict) and p.get("name"):
+                all_param_names.add(str(p["name"]))
     if ref.accepted_kwargs:
         all_param_names.update(ref.accepted_kwargs)
-
-    any_has_var_kwargs = any(
-        any(
-            "VAR_KEYWORD" in str(p.get("kind", ""))
-            for p in cand.get("params", [])
-            if isinstance(p, dict)
-        )
-        and not (
-            cand.get("accepted_kwargs")
-            or (cand.get("domain_metadata") or {}).get("accepted_kwargs")
-        )
-        for cand in candidates
-    )
 
     kw_names = list(kwargs.keys())
     clean_api = api_path.split(".")[-1].lower()
 
-    best_extra_errors: List[str] = []
+    best_invalid_kws: list[str] = []
+    best_extra_errors: list[str] = []
     fewest_errors = 999999
 
     for cand in candidates:
@@ -161,12 +152,12 @@ def validate_python_call(
             args_count=len(args) if args else None,
             kwargs=kw_names,
         )
-        enum_errs = _validate_candidate_enums_and_literals(cand, kwargs)
+        enum_errs = _validate_candidate_enums_and_literals(cand, dict(kwargs))
         dtype_errs, rank_errs = _validate_candidate_dtypes_and_ranks(
             cand=cand,
             api_path=api_path,
             framework=clean_fw,
-            kwarg_values=kwargs,
+            kwarg_values=dict(kwargs),
             arg_dtypes=arg_dtypes,
             kwarg_dtypes=kwarg_dtypes,
             arg_ranks=arg_ranks,
@@ -185,12 +176,12 @@ def validate_python_call(
             return report
         if total_err_count < fewest_errors:
             fewest_errors = total_err_count
+            best_invalid_kws = invalid_kws
             best_extra_errors = extra_errs
 
-    # Check for hallucinated kwargs across all overloads
-    for kw in kwargs:
-        if kw not in all_param_names and not any_has_var_kwargs:
-            suggested_kw: Optional[str] = None
+    for kw in best_invalid_kws:
+        if kw not in all_param_names:
+            suggested_kw: str | None = None
             if clean_fw == "torch" and kw == "axis" and "dim" in all_param_names:
                 suggested_kw = "dim"
             elif (
@@ -219,7 +210,6 @@ def validate_python_call(
                 suggested_fix=suggested_kw,
             )
 
-    # Check positional argument count across all overloads
     pos_params = [
         p
         for p in ref.params

@@ -32,7 +32,7 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies: ["pydantic", "griffe", "cdd-python", "pytest"]
-        args: ["--ignore-missing-imports", "--strict"]
+        args: ["--config-file", "pyproject.toml"]
 
   - repo: local
     hooks:

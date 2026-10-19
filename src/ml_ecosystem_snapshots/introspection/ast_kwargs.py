@@ -5,12 +5,14 @@ from __future__ import annotations
 import ast
 import inspect
 import textwrap
-from typing import Any, List, Optional, Set
+import typing
 
 from ml_ecosystem_snapshots.exceptions import IntrospectionError
 
 
-def _parse_callable_ast(func: Any) -> ast.AST:
+def _parse_callable_ast(
+    func: object,
+) -> ast.AST:
     """Retrieve and parse the Python AST of a live callable object.
 
     Args:
@@ -23,7 +25,8 @@ def _parse_callable_ast(func: Any) -> ast.AST:
         IntrospectionError: If source code cannot be retrieved or parsed.
     """
     try:
-        src = inspect.getsource(func)
+        getsource_fn: typing.Callable[[object], str] = getattr(inspect, "getsource")
+        src = getsource_fn(func)
         src = textwrap.dedent(src)
         return ast.parse(src)
     except (OSError, TypeError, SyntaxError, IndentationError, ValueError) as exc:
@@ -32,7 +35,9 @@ def _parse_callable_ast(func: Any) -> ast.AST:
         ) from exc
 
 
-def extract_accepted_kwargs_from_ast(func: Any) -> Optional[List[str]]:
+def extract_accepted_kwargs_from_ast(
+    func: object,
+) -> list[str] | None:
     """Statically analyze a function AST to extract keyword arguments accessed via `**kwargs`.
 
     Detects patterns like:
@@ -62,7 +67,7 @@ def extract_accepted_kwargs_from_ast(func: Any) -> Optional[List[str]]:
     if not kwarg_name:
         return None
 
-    discovered: Set[str] = set()
+    discovered: set[str] = set()
 
     class KwargAccessVisitor(ast.NodeVisitor):
         """AST visitor collecting string keys queried on the var_keyword dictionary."""

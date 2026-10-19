@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import sys
 import types
-from typing import Any
 from unittest.mock import patch
 import pytest
 
@@ -67,7 +66,7 @@ def test_collect_api_live_mode() -> None:
     )
     fake_trans = types.SimpleNamespace(MFCC=lambda: None)
 
-    def fake_get_submodule(sub: str) -> Any:
+    def fake_get_submodule(sub: str) -> object:
         """Return fake submodule by name.
 
         Args:
@@ -93,7 +92,7 @@ def test_collect_api_inspection_exception_handled() -> None:
 
     fake_func = types.SimpleNamespace(melscale_fbanks="not_inspectable")
 
-    def fake_get_submodule(sub: str) -> Any:
+    def fake_get_submodule(sub: str) -> object:
         """Return fake functional submodule.
 
         Args:
@@ -106,7 +105,7 @@ def test_collect_api_inspection_exception_handled() -> None:
         side_effect=fake_get_submodule,
     ):
         with patch(
-            "ml_ecosystem_snapshots.models.GhostInspector.inspect",
+            "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",
             side_effect=ValueError("boom"),
         ):
             refs = torchaudio.collect_api(SemanticTier.NEURAL_OPS)
@@ -118,6 +117,7 @@ def test_extract_snapshot_torchaudio() -> None:
     snap = extract_snapshot("torchaudio")
     assert snap.get("target") == "torchaudio"
     cats = snap.get("categories", {})
+    assert isinstance(cats, dict)
     assert "neural_ops" in cats or "util" in cats
 
 
@@ -155,7 +155,7 @@ def test_check_torchaudio_op_mcp() -> None:
     assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw["errors"][0]
 
 
-def test_cmd_check_torchaudio_cli_valid(capsys: Any) -> None:
+def test_cmd_check_torchaudio_cli_valid(capsys: pytest.CaptureFixture[str]) -> None:
     """Verify CLI command execution on valid TorchAudio operation.
 
     Args:
@@ -172,7 +172,9 @@ def test_cmd_check_torchaudio_cli_valid(capsys: Any) -> None:
     assert "Inputs:     8" in captured.out
 
 
-def test_cmd_check_torchaudio_cli_invalid_exits(capsys: Any) -> None:
+def test_cmd_check_torchaudio_cli_invalid_exits(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Verify CLI command exits with non-zero code on invalid operator.
 
     Args:

@@ -1,12 +1,14 @@
 """Tests for multi-framework collectors: IR, ONNX Runtime, NumPy, MLX, HuggingFace, TensorFlow, and JAX."""
 
+from __future__ import annotations
+
 import builtins
+import pytest_mock
 import importlib
 import inspect
 import sys
 import types
 import typing
-from typing import Any
 from unittest.mock import patch
 
 from ml_switcheroo_ir.schema.ghost import (
@@ -24,7 +26,7 @@ from ml_ecosystem_snapshots.frameworks import (
     onnxruntime as ort_mod,
     tensorflow as tf_fw,
 )
-from ml_ecosystem_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
 
 def test_ir_collect_api_all_categories() -> None:
@@ -50,7 +52,9 @@ def test_ir_collect_api_all_categories() -> None:
     assert refs_loss == []
 
 
-def test_onnxruntime_collect_api_edge_branches(mocker: Any) -> None:
+def test_onnxruntime_collect_api_edge_branches(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test onnxruntime.collect_api for full line and branch coverage.
 
     Args:
@@ -62,13 +66,12 @@ def test_onnxruntime_collect_api_edge_branches(mocker: Any) -> None:
     # 2. ImportError
     real_import = importlib.import_module
 
-    def mock_import_err(name: str, *args: Any, **kwargs: Any) -> Any:
+    def mock_import_err(name: str, package: str | None = None) -> types.ModuleType:
         """Mock import raising on onnxruntime.
 
         Args:
             name: Module name.
-            *args: Positional args.
-            **kwargs: Keyword args.
+            package: Optional package anchor.
 
         Raises:
             ImportError: Simulated import error.
@@ -78,7 +81,7 @@ def test_onnxruntime_collect_api_edge_branches(mocker: Any) -> None:
         """
         if name == "onnxruntime":
             raise ImportError("simulated onnxruntime error")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, package)
 
     with patch("importlib.import_module", side_effect=mock_import_err):
         assert ort_mod.collect_api(SemanticTier.MODEL) == []
@@ -112,24 +115,23 @@ def test_onnxruntime_collect_api_edge_branches(mocker: Any) -> None:
     setattr(fake_mod, "raise_exc", lambda: None)
     setattr(fake_mod, "return_none_ref", lambda: None)
 
-    def mock_import_fake(name: str, *args: Any, **kwargs: Any) -> Any:
+    def mock_import_fake(name: str, package: str | None = None) -> types.ModuleType:
         """Mock import returning fake onnxruntime.
 
         Args:
             name: Module name.
-            *args: Positional args.
-            **kwargs: Keyword args.
+            package: Optional package anchor.
 
         Returns:
             Imported module.
         """
         if name == "onnxruntime":
             return fake_mod
-        return real_import(name, *args, **kwargs)
+        return real_import(name, package)
 
     providers_present = [False]
 
-    def mock_inspect(obj: Any, path: str) -> Any:
+    def mock_inspect(obj: object, path: str) -> GhostRef | None:
         """Mock inspect function.
 
         Args:
@@ -189,7 +191,7 @@ def test_onnxruntime_collect_api_edge_branches(mocker: Any) -> None:
         assert "_private_func" in names_util
 
 
-def test_numpy_collect_api_all_branches(mocker: Any) -> None:
+def test_numpy_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None:
     """Test numpy.collect_api for full line and branch coverage.
 
     Args:
@@ -225,7 +227,7 @@ def test_numpy_collect_api_all_branches(mocker: Any) -> None:
 
     original_inspect = GhostInspector.inspect
 
-    def mock_inspect_act(obj: Any, name: str, is_public: bool = True) -> Any:
+    def mock_inspect_act(obj: object, name: str, is_public: bool = True) -> GhostRef:
         """Mock inspect for activation.
 
         Args:
@@ -316,7 +318,7 @@ def test_numpy_collect_api_all_branches(mocker: Any) -> None:
     setattr(fake_fft_mod, "ifft", ifft)
     setattr(fake_np_array, "fft", fake_fft_mod)
 
-    def mock_inspect_arr(obj: Any, name: str, is_public: bool = True) -> Any:
+    def mock_inspect_arr(obj: object, name: str, is_public: bool = True) -> GhostRef:
         """Mock inspect for array api.
 
         Args:
@@ -355,23 +357,21 @@ def test_numpy_import_error_handling() -> None:
 
     real_import = builtins.__import__
 
-    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        """Mock import function.
-
-        Args:
-            name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            The imported module or raises.
-        """
+    def mock_import(
+        name: str,
+        globals: typing.Mapping[str, object] | None = None,
+        locals: typing.Mapping[str, object] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         """Mock import raising ImportError on numpy.
 
         Args:
             name: Module name.
-            *args: Positional arguments.
-            **kwargs: Keyword arguments.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Raises:
             ImportError: Simulated import error.
@@ -381,7 +381,7 @@ def test_numpy_import_error_handling() -> None:
         """
         if name == "numpy":
             raise ImportError("simulated numpy import error")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     with patch("builtins.__import__", side_effect=mock_import):
         importlib.reload(numpy_mod)
@@ -394,7 +394,7 @@ def test_numpy_import_error_handling() -> None:
     assert numpy_mod.np is not None
 
 
-def test_mlx_collect_api_all_branches(mocker: Any) -> None:
+def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None:
     """Test mlx.collect_api for all categories, lines, and branches.
 
     Args:
@@ -538,7 +538,7 @@ def test_mlx_collect_api_all_branches(mocker: Any) -> None:
 
     mocker.patch.object(mlx_mod, "mlx", fake_mlx)
 
-    def mock_inspect(obj: Any, path: str) -> Any:
+    def mock_inspect(obj: object, path: str) -> GhostRef:
         """Mock inspect function.
 
         Args:
@@ -647,18 +647,26 @@ def test_mlx_import_error_handling() -> None:
         },
     ):
         importlib.reload(mlx_mod)
-        assert mlx_mod.mlx is mock_mlx_root
+        assert getattr(mlx_mod, "mlx") is mock_mlx_root
 
     # 2. Test simulated import failure of mlx
     real_import = builtins.__import__
 
-    def mock_import_fail(name: str, *args: Any, **kwargs: Any) -> Any:
+    def mock_import_fail(
+        name: str,
+        globals: typing.Mapping[str, object] | None = None,
+        locals: typing.Mapping[str, object] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         """Mock import raising on mlx.
 
         Args:
             name: Module name.
-            *args: Positional arguments.
-            **kwargs: Keyword arguments.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Raises:
             ImportError: Simulated import error.
@@ -668,17 +676,19 @@ def test_mlx_import_error_handling() -> None:
         """
         if name.startswith("mlx"):
             raise ImportError("simulated mlx import error")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     with patch("builtins.__import__", side_effect=mock_import_fail):
         importlib.reload(mlx_mod)
-        assert mlx_mod.mlx is None
+        assert getattr(mlx_mod, "mlx") is None
 
     # Restore clean reload
     importlib.reload(mlx_mod)
 
 
-def test_huggingface_collect_api_all_branches(mocker: Any) -> None:
+def test_huggingface_collect_api_all_branches(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test huggingface.collect_huggingface for full line and branch coverage.
 
     Args:
@@ -694,13 +704,12 @@ def test_huggingface_collect_api_all_branches(mocker: Any) -> None:
     # 2. ImportError
     real_import = importlib.import_module
 
-    def mock_import_err(name: str, *args: Any, **kwargs: Any) -> Any:
+    def mock_import_err(name: str, package: str | None = None) -> types.ModuleType:
         """Mock import raising on transformers.
 
         Args:
             name: Module name.
-            *args: Positional args.
-            **kwargs: Keyword args.
+            package: Optional package anchor.
 
         Raises:
             ImportError: Simulated import error.
@@ -710,7 +719,7 @@ def test_huggingface_collect_api_all_branches(mocker: Any) -> None:
         """
         if name == "transformers":
             raise ImportError("simulated transformers error")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, package)
 
     with patch("importlib.import_module", side_effect=mock_import_err):
         assert (
@@ -746,8 +755,8 @@ def test_huggingface_collect_api_all_branches(mocker: Any) -> None:
             default_val: int = 10,
             no_default: float = 0.0,
             no_anno=None,
-            *args: Any,
-            **kwargs: Any,
+            *args: object,
+            **kwargs: object,
         ) -> None:
             """Generate method.
 
@@ -843,7 +852,7 @@ def test_huggingface_collect_api_all_branches(mocker: Any) -> None:
     class LargeMod:
         """Large mock module simulating transformers."""
 
-        def __dir__(self) -> Any:
+        def __dir__(self) -> list[str]:
             """Return >100 attribute names.
 
             Returns:
@@ -871,7 +880,7 @@ def test_huggingface_collect_api_all_branches(mocker: Any) -> None:
             )
             return names
 
-        def __getattr__(self, name: str) -> Any:
+        def __getattr__(self, name: str) -> object:
             """Simulate getattr results.
 
             Args:
@@ -897,22 +906,21 @@ def test_huggingface_collect_api_all_branches(mocker: Any) -> None:
                 return SampleGenModel()
             return lambda: None
 
-    def mock_import_large(name: str, *args: Any, **kwargs: Any) -> Any:
+    def mock_import_large(name: str, package: str | None = None) -> object:
         """Mock import returning LargeMod.
 
         Args:
             name: Module name.
-            *args: Positional args.
-            **kwargs: Keyword args.
+            package: Optional package anchor.
 
         Returns:
             Imported module.
         """
         if name == "transformers":
             return LargeMod()
-        return real_import(name, *args, **kwargs)
+        return real_import(name, package)
 
-    def mock_inspect_large(obj: Any, path: str) -> Any:
+    def mock_inspect_large(obj: object, path: str) -> GhostRef | None:
         """Mock inspect for large transformers module.
 
         Args:
@@ -995,13 +1003,12 @@ def test_huggingface_collect_api_all_branches(mocker: Any) -> None:
     fake_tok_lib = types.ModuleType("tokenizers")
     setattr(fake_tok_lib, "TokenizerModel", lambda: None)
 
-    def mock_import_helpers(name: str, *args: Any, **kwargs: Any) -> Any:
+    def mock_import_helpers(name: str, package: str | None = None) -> types.ModuleType:
         """Mock import for helper functions.
 
         Args:
             name: Module name.
-            *args: Positional args.
-            **kwargs: Keyword args.
+            package: Optional package anchor.
 
         Returns:
             Fake module.
@@ -1010,7 +1017,7 @@ def test_huggingface_collect_api_all_branches(mocker: Any) -> None:
             return fake_diff_lib
         if name == "tokenizers":
             return fake_tok_lib
-        return real_import(name, *args, **kwargs)
+        return real_import(name, package)
 
     with patch("importlib.import_module", side_effect=mock_import_helpers):
         res_diff = hf_mod.collect_diffusers(SemanticTier.MODEL)
@@ -1019,7 +1026,9 @@ def test_huggingface_collect_api_all_branches(mocker: Any) -> None:
         assert len(res_tok) >= 1
 
 
-def test_tensorflow_collect_api_inspection_failures(mocker: Any) -> None:
+def test_tensorflow_collect_api_inspection_failures(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test tensorflow collect_api when GhostInspector.inspect raises exceptions across all branches.
 
     Args:
@@ -1062,7 +1071,7 @@ def test_tensorflow_collect_api_inspection_failures(mocker: Any) -> None:
 
     mocker.patch.object(tf_fw, "tf", fake_tf)
     mocker.patch(
-        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",
         side_effect=Exception("inspection failure"),
     )
 
@@ -1086,7 +1095,7 @@ def test_jax_import_reload_branches() -> None:
         assert jax_fw.jax is None
 
 
-def test_jax_sharding_and_pallas_collection(mocker: Any) -> None:
+def test_jax_sharding_and_pallas_collection(mocker: pytest_mock.MockerFixture) -> None:
     """Test collection of jax.sharding and jax.experimental.pallas symbols.
 
     Args:
@@ -1171,7 +1180,7 @@ def test_jax_sharding_and_pallas_collection(mocker: Any) -> None:
     assert "jax.experimental.pallas._priv_pallas" in paths_all
 
 
-def test_jax_array_ops_inspect_exceptions(mocker: Any) -> None:
+def test_jax_array_ops_inspect_exceptions(mocker: pytest_mock.MockerFixture) -> None:
     """Test jax array ops collection when GhostInspector.inspect raises exceptions across all branches.
 
     Args:
@@ -1234,7 +1243,7 @@ def test_jax_array_ops_inspect_exceptions(mocker: Any) -> None:
         },
     )
 
-    def mock_inspect(obj: Any, name: str, **kwargs: Any) -> Any:
+    def mock_inspect(obj: object, name: str, **kwargs: object) -> GhostRef:
         """Mock inspect function.
 
         Args:
@@ -1250,7 +1259,7 @@ def test_jax_array_ops_inspect_exceptions(mocker: Any) -> None:
         raise Exception("inspection failure")
 
     mocker.patch(
-        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",
         side_effect=mock_inspect,
     )
 
@@ -1259,7 +1268,7 @@ def test_jax_array_ops_inspect_exceptions(mocker: Any) -> None:
     assert refs[0].api_path == "jax.numpy.float32"
 
 
-def test_jax_pallas_import_failure(mocker: Any) -> None:
+def test_jax_pallas_import_failure(mocker: pytest_mock.MockerFixture) -> None:
     """Test jax array ops collection when importing jax.experimental.pallas raises an exception.
 
     Args:
@@ -1289,30 +1298,28 @@ def test_jax_pallas_import_failure(mocker: Any) -> None:
 
     real_import = builtins.__import__
 
-    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        """Mock import function.
-
-        Args:
-            name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            The imported module or raises.
-        """
+    def mock_import(
+        name: str,
+        globals: typing.Mapping[str, object] | None = None,
+        locals: typing.Mapping[str, object] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         """Mock import raising on pallas.
 
         Args:
             name: Module name.
-            *args: Positional arguments.
-            **kwargs: Keyword arguments.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             Imported module or raises RuntimeError.
         """
         if "pallas" in name:
             raise RuntimeError("pallas not supported")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     mocker.patch("builtins.__import__", side_effect=mock_import)
     refs = jax_fw.collect_api(SemanticTier.ARRAY_API)
@@ -1320,7 +1327,7 @@ def test_jax_pallas_import_failure(mocker: Any) -> None:
     assert any(ref.api_path == "jax.numpy.float32" for ref in refs)
 
 
-def test_jax_array_ops_import_error(mocker: Any) -> None:
+def test_jax_array_ops_import_error(mocker: pytest_mock.MockerFixture) -> None:
     """Test jax array ops collection when import jax raises ImportError.
 
     Args:
@@ -1331,30 +1338,28 @@ def test_jax_array_ops_import_error(mocker: Any) -> None:
     """
     real_import = builtins.__import__
 
-    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        """Mock import function.
-
-        Args:
-            name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            The imported module or raises.
-        """
+    def mock_import(
+        name: str,
+        globals: typing.Mapping[str, object] | None = None,
+        locals: typing.Mapping[str, object] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         """Mock import raising on jax.
 
         Args:
             name: Module name.
-            *args: Positional arguments.
-            **kwargs: Keyword arguments.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             Imported module or raises ImportError.
         """
         if name == "jax":
             raise ImportError("no jax")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     mocker.patch("builtins.__import__", side_effect=mock_import)
     assert jax_fw.collect_api(SemanticTier.ARRAY_API) == []

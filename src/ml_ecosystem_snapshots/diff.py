@@ -4,54 +4,62 @@ Provides functions to diff two snapshots and detect additions, removals,
 and signature changes.
 """
 
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
-from pydantic import BaseModel, Field
+from __future__ import annotations
+
+import typing
+
 from ml_switcheroo_ir.schema.ghost import SnapshotEnvelope
+import pydantic
+
+from ml_ecosystem_snapshots.compliance import ParamSignatureTuple
+from ml_ecosystem_snapshots.models import JsonValue
 
 
-class DiffResult(BaseModel):
+class DiffResult(pydantic.BaseModel):
     """Result of diffing two snapshots."""
 
-    added: List[str] = Field(
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    added: list[str] = pydantic.Field(
         default_factory=list, description="List of added api_paths."
     )
-    removed: List[str] = Field(
+    removed: list[str] = pydantic.Field(
         default_factory=list, description="List of removed api_paths."
     )
-    signature_changed: List[str] = Field(
+    signature_changed: list[str] = pydantic.Field(
         default_factory=list, description="List of api_paths with changed signatures."
     )
-    breaking_signature_changed: List[str] = Field(
+    breaking_signature_changed: list[str] = pydantic.Field(
         default_factory=list,
         description="List of api_paths with breaking signature changes.",
     )
-    non_breaking_signature_changed: List[str] = Field(
+    non_breaking_signature_changed: list[str] = pydantic.Field(
         default_factory=list,
         description="List of api_paths with non-breaking signature changes.",
     )
-    metadata_changed: Dict[str, Tuple[Optional[str], Optional[str]]] = Field(
+    metadata_changed: dict[str, tuple[str | None, str | None]] = pydantic.Field(
         default_factory=dict,
         description="List of top-level metadata differences: (old_value, new_value).",
     )
-    deprecated_capabilities: List[str] = Field(
+    deprecated_capabilities: list[str] = pydantic.Field(
         default_factory=list,
         description="List of deprecated or removed microarchitecture capabilities.",
     )
-    overloads_changed: List[str] = Field(
+    overloads_changed: list[str] = pydantic.Field(
         default_factory=list,
         description="List of api_paths with modified, added, or removed overloads.",
     )
 
 
 def _is_breaking_change(
-    p1_list: List[Dict[str, Any]],
-    p2_list: List[Dict[str, Any]],
-    meta1: Optional[Dict[str, Any]] = None,
-    meta2: Optional[Dict[str, Any]] = None,
-    ret1: Optional[str] = None,
-    ret2: Optional[str] = None,
-    ov1: Optional[List[Dict[str, Any]]] = None,
-    ov2: Optional[List[Dict[str, Any]]] = None,
+    p1_list: list[dict[str, JsonValue]],
+    p2_list: list[dict[str, JsonValue]],
+    meta1: dict[str, JsonValue] | None = None,
+    meta2: dict[str, JsonValue] | None = None,
+    ret1: JsonValue = None,
+    ret2: JsonValue = None,
+    ov1: list[dict[str, JsonValue]] | None = None,
+    ov2: list[dict[str, JsonValue]] | None = None,
 ) -> bool:
     """Determine if a signature change is backwards-incompatible.
 
@@ -67,40 +75,41 @@ def _is_breaking_change(
 
     Returns:
         True if breaking, False otherwise.
-
     """
     if meta1 and meta2:
-        # Check removed modifiers (breaking in assembly)
-        m1_mods = set(meta1.get("modifiers", []))
-        m2_mods = set(meta2.get("modifiers", []))
+        raw_mods1 = meta1.get("modifiers")
+        raw_mods2 = meta2.get("modifiers")
+        m1_mods = {str(x) for x in raw_mods1} if isinstance(raw_mods1, list) else set()
+        m2_mods = {str(x) for x in raw_mods2} if isinstance(raw_mods2, list) else set()
         if m1_mods - m2_mods:
             return True
 
-        # Check removed architectures (breaking)
-        m1_archs = set(meta1.get("valid_architectures", []))
-        m2_archs = set(meta2.get("valid_architectures", []))
+        raw_archs1 = meta1.get("valid_architectures")
+        raw_archs2 = meta2.get("valid_architectures")
+        m1_archs = (
+            {str(x) for x in raw_archs1} if isinstance(raw_archs1, list) else set()
+        )
+        m2_archs = (
+            {str(x) for x in raw_archs2} if isinstance(raw_archs2, list) else set()
+        )
         if m1_archs - m2_archs:
             return True
 
-    # Check return type changes
     if ret1 is not None and ret2 is not None and ret1 != ret2:
         clean_ret1 = str(ret1).strip()
         if clean_ret1 not in ("", "Any", "None"):
             return True
 
-    # Check overload removal
     if ov1 is not None and ov2 is not None and len(ov1) > len(ov2):
         return True
 
-    p1_map = {p.get("name"): p for p in p1_list}
-    p2_map = {p.get("name"): p for p in p2_list}
+    p1_map = {str(p.get("name")): p for p in p1_list}
+    p2_map = {str(p.get("name")): p for p in p2_list}
 
-    # Parameter removed?
     for name in p1_map:
         if name not in p2_map:
             return True
 
-    # Check positional parameter order preservation
     pos1_names = [
         str(p.get("name"))
         for p in p1_list
@@ -122,7 +131,6 @@ def _is_breaking_change(
 
     for name, p2 in p2_map.items():
         if name not in p1_map:
-            # Added parameter without a default is breaking
             if p2.get("default") is None and p2.get("kind") not in (
                 "VAR_POSITIONAL",
                 "VAR_KEYWORD",
@@ -133,25 +141,20 @@ def _is_breaking_change(
             k1 = p1.get("kind")
             k2 = p2.get("kind")
 
-            # Kind changed?
             if k1 != k2:
-                # If k2 is more restrictive, it's breaking.
                 if (
                     k2 in ("POSITIONAL_ONLY", "KEYWORD_ONLY")
                     and k1 == "POSITIONAL_OR_KEYWORD"
                 ):
                     return True
-                # Changing to/from VAR_*
                 if ("VAR" in str(k1) and "VAR" not in str(k2)) or (
                     "VAR" not in str(k1) and "VAR" in str(k2)
                 ):
                     return True
 
-            # Default removed?
             if p1.get("default") is not None and p2.get("default") is None:
                 return True
 
-            # Default changed? Subtle breakage.
             if p1.get("default") != p2.get("default"):
                 return True
 
@@ -159,10 +162,20 @@ def _is_breaking_change(
 
 
 def diff_snapshots(
-    snap1: Union[SnapshotEnvelope, Mapping[str, Any], Sequence[Mapping[str, Any]]],
-    snap2: Union[SnapshotEnvelope, Mapping[str, Any], Sequence[Mapping[str, Any]]],
+    snap1: (
+        SnapshotEnvelope
+        | typing.Mapping[str, JsonValue]
+        | typing.Sequence[typing.Mapping[str, JsonValue]]
+        | object
+    ),
+    snap2: (
+        SnapshotEnvelope
+        | typing.Mapping[str, JsonValue]
+        | typing.Sequence[typing.Mapping[str, JsonValue]]
+        | object
+    ),
 ) -> DiffResult:
-    """Diffs two snapshots to find changes.
+    """Diff two snapshots to find changes.
 
     Args:
         snap1: The older snapshot data.
@@ -172,7 +185,7 @@ def diff_snapshots(
         A DiffResult containing the differences.
     """
 
-    def _flatten(snap: Any) -> Dict[str, Dict[str, Any]]:
+    def _flatten(snap: object) -> dict[str, dict[str, JsonValue]]:
         """Flatten a snapshot dictionary or list into a mapping of API paths to items.
 
         Args:
@@ -181,30 +194,35 @@ def diff_snapshots(
         Returns:
             The flattened dict.
         """
-        flattened = {}
+        flattened: dict[str, dict[str, JsonValue]] = {}
+        categories_dict: dict[str, list[dict[str, JsonValue]]] = {}
         if isinstance(snap, list):
-            categories_dict = {"all": snap}
+            categories_dict = {"all": [dict(x) for x in snap if isinstance(x, dict)]}
         elif isinstance(snap, dict):
-            categories_dict = snap.get("categories", {})
-        else:
-            categories_dict = {}
+            raw_cats = snap.get("categories", {})
+            assert isinstance(raw_cats, dict)
+            for cat_k, cat_v in raw_cats.items():
+                assert isinstance(cat_v, list)
+                categories_dict[str(cat_k)] = [
+                    dict(x) for x in cat_v if isinstance(x, dict)
+                ]
 
         for _cat, items in categories_dict.items():
             for item in items:
                 key = item.get("api_path") or item.get("name") or item.get("mnemonic")
                 if key:
-                    flattened[key] = item
+                    flattened[str(key)] = item
         return flattened
 
     flat1 = _flatten(snap1)
     flat2 = _flatten(snap2)
 
-    added = []
-    removed = []
-    signature_changed = []
-    breaking_signature_changed = []
-    non_breaking_signature_changed = []
-    overloads_changed = []
+    added: list[str] = []
+    removed: list[str] = []
+    signature_changed: list[str] = []
+    breaking_signature_changed: list[str] = []
+    non_breaking_signature_changed: list[str] = []
+    overloads_changed: list[str] = []
 
     for path, item2 in flat2.items():
         is_public = item2.get("is_public", True)
@@ -213,34 +231,57 @@ def diff_snapshots(
             added.append(display_path)
         else:
             item1 = flat1[path]
-            # check if signature changed by comparing parameters
-            p1 = item1.get("params", [])
-            p2 = item2.get("params", [])
+            raw_p1 = item1.get("params")
+            raw_p2 = item2.get("params")
+            p1: list[dict[str, JsonValue]] = (
+                [dict(x) for x in raw_p1 if isinstance(x, dict)]
+                if isinstance(raw_p1, list)
+                else []
+            )
+            p2: list[dict[str, JsonValue]] = (
+                [dict(x) for x in raw_p2 if isinstance(x, dict)]
+                if isinstance(raw_p2, list)
+                else []
+            )
 
-            def sig_tuple(p: Dict[str, Any]) -> Tuple[Any, ...]:
+            def sig_tuple(p: dict[str, JsonValue]) -> ParamSignatureTuple:
                 """Convert a parameter dictionary to a tuple for easy comparison.
 
                 Args:
                     p: The parameter dictionary.
 
                 Returns:
-                    A tuple representation.
+                    A 4-tuple representation `(name, kind, default, annotation)`.
                 """
+                raw_def = p.get("default")
+                raw_ann = p.get("annotation")
                 return (
-                    p.get("name"),
-                    p.get("kind"),
-                    p.get("default"),
-                    p.get("annotation"),
+                    str(p.get("name") or ""),
+                    str(p.get("kind") or ""),
+                    str(raw_def) if raw_def is not None else None,
+                    str(raw_ann) if raw_ann is not None else None,
                 )
 
             sig1 = [sig_tuple(p) for p in p1]
             sig2 = [sig_tuple(p) for p in p2]
-            meta1 = item1.get("domain_metadata")
-            meta2 = item2.get("domain_metadata")
+            raw_m1 = item1.get("domain_metadata")
+            raw_m2 = item2.get("domain_metadata")
+            meta1 = dict(raw_m1) if isinstance(raw_m1, dict) else None
+            meta2 = dict(raw_m2) if isinstance(raw_m2, dict) else None
             ret1 = item1.get("returns_type") or item1.get("returns")
             ret2 = item2.get("returns_type") or item2.get("returns")
-            ov1 = item1.get("overloads", [])
-            ov2 = item2.get("overloads", [])
+            raw_ov1 = item1.get("overloads")
+            raw_ov2 = item2.get("overloads")
+            ov1: list[dict[str, JsonValue]] = (
+                [dict(x) for x in raw_ov1 if isinstance(x, dict)]
+                if isinstance(raw_ov1, list)
+                else []
+            )
+            ov2: list[dict[str, JsonValue]] = (
+                [dict(x) for x in raw_ov2 if isinstance(x, dict)]
+                if isinstance(raw_ov2, list)
+                else []
+            )
 
             is_sig_diff = sig1 != sig2
             is_meta_diff = bool(meta1 and meta2 and meta1 != meta2)
@@ -250,7 +291,6 @@ def diff_snapshots(
             if is_ov_diff:
                 overloads_changed.append(display_path)
 
-            # evaluate if changes are breaking
             if is_sig_diff or is_meta_diff or is_ret_diff or is_ov_diff:
                 signature_changed.append(display_path)
                 if _is_breaking_change(p1, p2, meta1, meta2, ret1, ret2, ov1, ov2):
@@ -264,8 +304,8 @@ def diff_snapshots(
             display_path = path if is_public else f"{path} (non-public)"
             removed.append(display_path)
 
-    metadata_changed: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
-    deprecated_capabilities: List[str] = []
+    metadata_changed: dict[str, tuple[str | None, str | None]] = {}
+    deprecated_capabilities: list[str] = []
 
     if isinstance(snap1, dict) and isinstance(snap2, dict):
         for meta_k in (
@@ -283,9 +323,10 @@ def diff_snapshots(
                     str(v2) if v2 is not None else None,
                 )
 
-        # Check for deprecated microarchitectures or environment capabilities
-        env1 = set(snap1.get("environment_tags", []))
-        env2 = set(snap2.get("environment_tags", []))
+        raw_env1 = snap1.get("environment_tags")
+        raw_env2 = snap2.get("environment_tags")
+        env1 = {str(x) for x in raw_env1} if isinstance(raw_env1, list) else set()
+        env2 = {str(x) for x in raw_env2} if isinstance(raw_env2, list) else set()
         dep_envs = env1 - env2
         if dep_envs:
             deprecated_capabilities.extend(sorted(dep_envs))
@@ -310,7 +351,6 @@ def generate_changelog(diff: DiffResult) -> str:
 
     Returns:
         A markdown formatted changelog string.
-
     """
     lines = ["# Changelog Report", ""]
 

@@ -5,9 +5,11 @@ ATen namespaces, JIT operator schemas, overloads, and C-extension functions
 when the heavy binary dependency is unavailable.
 """
 
+from __future__ import annotations
+
+import inspect
 import sys
 import types
-from typing import Any, Dict, List
 
 
 class MockArgument:
@@ -18,7 +20,7 @@ class MockArgument:
         name: str,
         type_str: str,
         kwarg_only: bool = False,
-        default_value: Any = None,
+        default_value: str | int | float | bool | None = None,
         is_out: bool = False,
     ) -> None:
         """Initialize mock argument.
@@ -63,8 +65,8 @@ class MockSchema:
     def __init__(
         self,
         name: str,
-        arguments: List[MockArgument],
-        returns: List[MockReturn],
+        arguments: list[MockArgument],
+        returns: list[MockReturn],
         overload_name: str = "",
     ) -> None:
         """Initialize mock schema.
@@ -96,7 +98,7 @@ class MockOverload:
 class MockAtenOp:
     """Mock ATen operator container with overload dispatch."""
 
-    def __init__(self, overloads_dict: Dict[str, MockOverload]) -> None:
+    def __init__(self, overloads_dict: dict[str, MockOverload]) -> None:
         """Initialize mock ATen operator.
 
         Args:
@@ -106,7 +108,7 @@ class MockAtenOp:
         for k, v in overloads_dict.items():
             setattr(self, k, v)
 
-    def overloads(self) -> List[str]:
+    def overloads(self) -> list[str]:
         """List registered overload variants.
 
         Returns:
@@ -129,7 +131,7 @@ class MockTorchOp:
         self.__doc__ = doc
         self.__module__ = "torch"
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+    def __call__(self, *args: object, **kwargs: object) -> None:
         """Execute mock operator.
 
         Args:
@@ -142,7 +144,7 @@ class MockTorchOp:
         return None
 
     @property
-    def __signature__(self) -> Any:
+    def __signature__(self) -> inspect.Signature:
         """Simulate C-extension lacking inspectable Python signature.
 
         Raises:
@@ -158,7 +160,7 @@ class MockTensor:
         """Initialize mock tensor."""
         pass
 
-    def add(self, other: Any, *, alpha: int = 1) -> "MockTensor":
+    def add(self, other: object, *, alpha: int = 1) -> "MockTensor":
         """Add tensor.
 
         Args:
@@ -170,7 +172,7 @@ class MockTensor:
         """
         return self
 
-    def add_(self, other: Any, *, alpha: int = 1) -> "MockTensor":
+    def add_(self, other: object, *, alpha: int = 1) -> "MockTensor":
         """In-place add tensor.
 
         Args:
@@ -190,7 +192,7 @@ class MockTensor:
         """
         return self
 
-    def matmul(self, other: Any) -> "MockTensor":
+    def matmul(self, other: object) -> "MockTensor":
         """Matrix multiplication.
 
         Args:
@@ -209,7 +211,7 @@ class MockTensor:
         """
         return self
 
-    def cat(self, tensors: Any, dim: int = 0) -> "MockTensor":
+    def cat(self, tensors: object, dim: int = 0) -> "MockTensor":
         """Concatenate tensors.
 
         Args:
@@ -221,7 +223,7 @@ class MockTensor:
         """
         return self
 
-    def mm(self, mat2: Any) -> "MockTensor":
+    def mm(self, mat2: object) -> "MockTensor":
         """Matrix multiply.
 
         Args:
@@ -232,7 +234,7 @@ class MockTensor:
         """
         return self
 
-    def bmm(self, mat2: Any) -> "MockTensor":
+    def bmm(self, mat2: object) -> "MockTensor":
         """Batch matrix multiply.
 
         Args:
@@ -513,17 +515,18 @@ def install_mock_torch() -> types.ModuleType:
     return torch_mod
 
 
-def ensure_torch() -> Any:
+def ensure_torch() -> types.ModuleType:
     """Ensure PyTorch is available, falling back to an in-memory mock if uninstalled.
 
     Returns:
         The real torch module if available, or a mock torch module.
     """
     try:
-        import torch
+        import importlib
 
-        if hasattr(torch, "ops") and hasattr(torch.ops, "aten"):
-            return torch
+        torch_mod: types.ModuleType = importlib.import_module("torch")
+        if hasattr(torch_mod, "ops") and hasattr(torch_mod.ops, "aten"):
+            return torch_mod
     except (ImportError, Exception):
         pass
 

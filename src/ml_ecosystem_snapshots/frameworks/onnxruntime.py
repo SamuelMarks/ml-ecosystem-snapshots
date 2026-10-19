@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib
 import logging
-from typing import List
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -13,14 +12,14 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
 )
 
-from ml_ecosystem_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect ONNX Runtime API symbols for the requested semantic tier.
 
     Args:
@@ -30,7 +29,7 @@ def collect_api(
     Returns:
         List of extracted `GhostRef` definitions.
     """
-    results: List[GhostRef] = []
+    results: list[GhostRef] = []
 
     target_cats = {SemanticTier.MODEL, SemanticTier.UTIL}
     if category not in target_cats:
@@ -56,7 +55,7 @@ def collect_api(
         if obj_cat == category:
             try:
                 ref = inspector.inspect(obj, f"onnxruntime.{name}")
-                if ref:
+                if ref is not None:
                     if name == "InferenceSession":
                         has_providers = any(p.name == "providers" for p in ref.params)
                         if not has_providers:

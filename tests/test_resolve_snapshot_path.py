@@ -1,14 +1,15 @@
 """Unit tests and verification suite for resolve snapshot path."""
 
+from __future__ import annotations
+
 from pathlib import Path
 import os
 
-from typing import Any
 from unittest.mock import patch
 from ml_ecosystem_snapshots.cli import resolve_snapshot_path
 
 
-def test_resolve_snapshot_path_existing_file(tmp_path: Any) -> None:
+def test_resolve_snapshot_path_existing_file(tmp_path: Path) -> None:
     """Verify resolve snapshot path existing file behavior.
 
     Args:
@@ -21,7 +22,7 @@ def test_resolve_snapshot_path_existing_file(tmp_path: Any) -> None:
     assert resolved == str(file_path)
 
 
-def test_resolve_snapshot_path_append_json(tmp_path: Any) -> None:
+def test_resolve_snapshot_path_append_json(tmp_path: Path) -> None:
     """Verify resolve snapshot path append json behavior.
 
     Args:
@@ -36,7 +37,7 @@ def test_resolve_snapshot_path_append_json(tmp_path: Any) -> None:
     assert resolved == str(file_path)
 
 
-def test_resolve_snapshot_path_fallback_to_repo(tmp_path: Any) -> None:
+def test_resolve_snapshot_path_fallback_to_repo(tmp_path: Path) -> None:
     """Verify resolve snapshot path fallback to repo behavior.
 
     Args:
@@ -75,7 +76,7 @@ def test_resolve_snapshot_path_fallback_to_repo(tmp_path: Any) -> None:
         assert resolved == str(target_file)
 
 
-def test_resolve_snapshot_path_not_found(tmp_path: Any) -> None:
+def test_resolve_snapshot_path_not_found(tmp_path: Path) -> None:
     """Verify resolve snapshot path not found behavior.
 
     Args:
@@ -87,7 +88,7 @@ def test_resolve_snapshot_path_not_found(tmp_path: Any) -> None:
         assert resolved == "missing_framework"
 
 
-def test_resolve_multiple_matches(tmp_path: Any) -> None:
+def test_resolve_multiple_matches(tmp_path: Path) -> None:
     """Verify resolve multiple matches behavior.
 
     Args:
@@ -112,7 +113,7 @@ def test_resolve_multiple_matches(tmp_path: Any) -> None:
         assert res == str(Path(os.path.join(snapshots_dir, "torch-2.0.json")))
 
 
-def test_resolve_no_matches_in_existing_dir(tmp_path: Any) -> None:
+def test_resolve_no_matches_in_existing_dir(tmp_path: Path) -> None:
     """Test when snapshots_dir exists but no glob matches are found.
 
     Args:
@@ -134,7 +135,7 @@ def test_resolve_no_matches_in_existing_dir(tmp_path: Any) -> None:
         assert res == "nonexistent_framework"
 
 
-def test_resolve_snapshot_path_from_pkg_snapshots(tmp_path: Any) -> None:
+def test_resolve_snapshot_path_from_pkg_snapshots(tmp_path: Path) -> None:
     """Test resolving a snapshot bundled directly inside the package snapshots folder.
 
     Args:
@@ -168,7 +169,7 @@ def test_resolve_snapshot_path_from_pkg_snapshots(tmp_path: Any) -> None:
         assert resolved == str(target_file)
 
 
-def test_resolve_snapshot_path_from_pkg_frameworks(tmp_path: Any) -> None:
+def test_resolve_snapshot_path_from_pkg_frameworks(tmp_path: Path) -> None:
     """Test resolving a snapshot from the package frameworks folder.
 
     Args:
@@ -193,7 +194,7 @@ def test_resolve_snapshot_path_from_pkg_frameworks(tmp_path: Any) -> None:
         assert resolved == str(target_file)
 
 
-def test_resolve_snapshot_path_from_cwd_snapshots(tmp_path: Any) -> None:
+def test_resolve_snapshot_path_from_cwd_snapshots(tmp_path: Path) -> None:
     """Test resolving a snapshot from the current working directory snapshots folder.
 
     Args:

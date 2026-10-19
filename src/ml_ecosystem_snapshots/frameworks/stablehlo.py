@@ -4,9 +4,11 @@ Extracts StableHLO dialect operations by parsing an exhaustive JSON dump
 representing the formal StableHLO TableGen ODS and spec definitions.
 """
 
+from __future__ import annotations
+
 import json
 import os
-from typing import Any, Dict, List, Optional, Tuple
+import typing
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -20,10 +22,11 @@ from ..models import (
     GhostMlirRef,
     GhostResult,
     IRParameterRole,
+    JsonValue,
     OperandDirection,
 )
 
-STRUCTURED_STABLEHLO_SCHEMAS = {
+STRUCTURED_STABLEHLO_SCHEMAS: dict[str, dict[str, JsonValue]] = {
     "DotDimensionNumbersAttr": {
         "type": "object",
         "properties": {
@@ -132,7 +135,7 @@ STRUCTURED_STABLEHLO_SCHEMAS = {
     },
 }
 
-STRUCTURED_REGION_SIGNATURES = {
+STRUCTURED_REGION_SIGNATURES: dict[str, dict[str, JsonValue]] = {
     "stablehlo.reduce": {
         "body": {
             "description": "Reduction region",
@@ -162,11 +165,23 @@ STRUCTURED_REGION_SIGNATURES = {
 }
 
 
+def _to_int_list(val: object) -> list[int]:
+    """Extract a list of integers from a JSON value list.
+
+    Args:
+        val: Raw JSON value.
+
+    Returns:
+        List of integers.
+    """
+    return [x for x in val if isinstance(x, int)] if isinstance(val, list) else []
+
+
 def validate_dot_dimension_numbers(
-    dim_numbers: Dict[str, Any],
-    lhs_rank: Optional[int] = None,
-    rhs_rank: Optional[int] = None,
-) -> List[str]:
+    dim_numbers: typing.Mapping[str, object],
+    lhs_rank: int | None = None,
+    rhs_rank: int | None = None,
+) -> list[str]:
     """Validate DotDimensionNumbersAttr constraints against input operand ranks.
 
     Checks:
@@ -183,11 +198,16 @@ def validate_dot_dimension_numbers(
     Returns:
         List of validation error strings.
     """
-    errors: List[str] = []
-    lhs_b = dim_numbers.get("lhs_batch_dimensions", [])
-    rhs_b = dim_numbers.get("rhs_batch_dimensions", [])
-    lhs_c = dim_numbers.get("lhs_contracting_dimensions", [])
-    rhs_c = dim_numbers.get("rhs_contracting_dimensions", [])
+    errors: list[str] = []
+    raw_lhs_b = dim_numbers.get("lhs_batch_dimensions", [])
+    raw_rhs_b = dim_numbers.get("rhs_batch_dimensions", [])
+    raw_lhs_c = dim_numbers.get("lhs_contracting_dimensions", [])
+    raw_rhs_c = dim_numbers.get("rhs_contracting_dimensions", [])
+
+    lhs_b = raw_lhs_b if isinstance(raw_lhs_b, list) else []
+    rhs_b = raw_rhs_b if isinstance(raw_rhs_b, list) else []
+    lhs_c = raw_lhs_c if isinstance(raw_lhs_c, list) else []
+    rhs_c = raw_rhs_c if isinstance(raw_rhs_c, list) else []
 
     if len(lhs_b) != len(rhs_b):
         errors.append(
@@ -198,14 +218,19 @@ def validate_dot_dimension_numbers(
             f"Contracting dimension count mismatch in DotDimensionNumbersAttr: lhs has {len(lhs_c)}, rhs has {len(rhs_c)}."
         )
 
+    lhs_b_ints = _to_int_list(lhs_b)
+    rhs_b_ints = _to_int_list(rhs_b)
+    lhs_c_ints = _to_int_list(lhs_c)
+    rhs_c_ints = _to_int_list(rhs_c)
+
     # Disjointness checks
-    if set(lhs_b) & set(lhs_c):
+    if set(lhs_b_ints) & set(lhs_c_ints):
         errors.append(
-            f"LHS batch and contracting dimensions must be disjoint (overlap: {set(lhs_b) & set(lhs_c)})."
+            f"LHS batch and contracting dimensions must be disjoint (overlap: {set(lhs_b_ints) & set(lhs_c_ints)})."
         )
-    if set(rhs_b) & set(rhs_c):
+    if set(rhs_b_ints) & set(rhs_c_ints):
         errors.append(
-            f"RHS batch and contracting dimensions must be disjoint (overlap: {set(rhs_b) & set(rhs_c)})."
+            f"RHS batch and contracting dimensions must be disjoint (overlap: {set(rhs_b_ints) & set(rhs_c_ints)})."
         )
 
     # Rank bounds check
@@ -226,11 +251,11 @@ def validate_dot_dimension_numbers(
 
 
 def validate_conv_dimension_numbers(
-    dim_numbers: Dict[str, Any],
-    input_rank: Optional[int] = None,
-    kernel_rank: Optional[int] = None,
-    output_rank: Optional[int] = None,
-) -> List[str]:
+    dim_numbers: typing.Mapping[str, object],
+    input_rank: int | None = None,
+    kernel_rank: int | None = None,
+    output_rank: int | None = None,
+) -> list[str]:
     """Validate ConvDimensionNumbersAttr spatial counts, completeness, and disjointness.
 
     Args:
@@ -242,19 +267,19 @@ def validate_conv_dimension_numbers(
     Returns:
         List of validation error strings.
     """
-    errors: List[str] = []
+    errors: list[str] = []
 
     in_b = dim_numbers.get("input_batch_dimension")
     in_f = dim_numbers.get("input_feature_dimension")
-    in_spatial = dim_numbers.get("input_spatial_dimensions", [])
+    in_spatial = _to_int_list(dim_numbers.get("input_spatial_dimensions", []))
 
     k_in_f = dim_numbers.get("kernel_input_feature_dimension")
     k_out_f = dim_numbers.get("kernel_output_feature_dimension")
-    k_spatial = dim_numbers.get("kernel_spatial_dimensions", [])
+    k_spatial = _to_int_list(dim_numbers.get("kernel_spatial_dimensions", []))
 
     out_b = dim_numbers.get("output_batch_dimension")
     out_f = dim_numbers.get("output_feature_dimension")
-    out_spatial = dim_numbers.get("output_spatial_dimensions", [])
+    out_spatial = _to_int_list(dim_numbers.get("output_spatial_dimensions", []))
 
     # Spatial counts must match
     if not (len(in_spatial) == len(k_spatial) == len(out_spatial)):
@@ -263,7 +288,7 @@ def validate_conv_dimension_numbers(
         )
 
     # Input disjointness
-    if in_b is not None and in_f is not None:
+    if isinstance(in_b, int) and isinstance(in_f, int):
         in_dims = [in_b, in_f] + in_spatial
         if len(set(in_dims)) != len(in_dims):
             errors.append(
@@ -275,7 +300,7 @@ def validate_conv_dimension_numbers(
             )
 
     # Kernel disjointness
-    if k_in_f is not None and k_out_f is not None:
+    if isinstance(k_in_f, int) and isinstance(k_out_f, int):
         k_dims = [k_in_f, k_out_f] + k_spatial
         if len(set(k_dims)) != len(k_dims):
             errors.append(
@@ -287,7 +312,7 @@ def validate_conv_dimension_numbers(
             )
 
     # Output disjointness
-    if out_b is not None and out_f is not None:
+    if isinstance(out_b, int) and isinstance(out_f, int):
         out_dims = [out_b, out_f] + out_spatial
         if len(set(out_dims)) != len(out_dims):
             errors.append(
@@ -301,7 +326,9 @@ def validate_conv_dimension_numbers(
     return errors
 
 
-def validate_scatter_dimension_numbers(dim_numbers: Dict[str, Any]) -> List[str]:
+def validate_scatter_dimension_numbers(
+    dim_numbers: typing.Mapping[str, object],
+) -> list[str]:
     """Validate ScatterDimensionNumbersAttr disjointness and mappings.
 
     Args:
@@ -310,9 +337,9 @@ def validate_scatter_dimension_numbers(dim_numbers: Dict[str, Any]) -> List[str]
     Returns:
         List of validation error strings.
     """
-    errors: List[str] = []
-    upd_w = dim_numbers.get("update_window_dims", [])
-    ins_w = dim_numbers.get("inserted_window_dims", [])
+    errors: list[str] = []
+    upd_w = _to_int_list(dim_numbers.get("update_window_dims", []))
+    ins_w = _to_int_list(dim_numbers.get("inserted_window_dims", []))
 
     if set(upd_w) & set(ins_w):
         errors.append(
@@ -322,7 +349,9 @@ def validate_scatter_dimension_numbers(dim_numbers: Dict[str, Any]) -> List[str]
     return errors
 
 
-def validate_gather_dimension_numbers(dim_numbers: Dict[str, Any]) -> List[str]:
+def validate_gather_dimension_numbers(
+    dim_numbers: typing.Mapping[str, object],
+) -> list[str]:
     """Validate GatherDimensionNumbersAttr disjointness and mappings.
 
     Args:
@@ -331,9 +360,9 @@ def validate_gather_dimension_numbers(dim_numbers: Dict[str, Any]) -> List[str]:
     Returns:
         List of validation error strings.
     """
-    errors: List[str] = []
-    off_d = dim_numbers.get("offset_dims", [])
-    col_d = dim_numbers.get("collapsed_slice_dims", [])
+    errors: list[str] = []
+    off_d = _to_int_list(dim_numbers.get("offset_dims", []))
+    col_d = _to_int_list(dim_numbers.get("collapsed_slice_dims", []))
 
     if set(off_d) & set(col_d):
         errors.append(
@@ -346,9 +375,9 @@ def validate_gather_dimension_numbers(dim_numbers: Dict[str, Any]) -> List[str]:
 def validate_stablehlo_region(
     op_name: str,
     region_name: str,
-    block_args: List[str],
-    yield_types: List[str],
-) -> List[str]:
+    block_args: list[str],
+    yield_types: list[str],
+) -> list[str]:
     """Validate StableHLO region body arguments and terminator return types.
 
     Args:
@@ -360,7 +389,7 @@ def validate_stablehlo_region(
     Returns:
         List of region verification error strings.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     clean_op = op_name.lower().strip()
 
     if clean_op == "stablehlo.reduce":
@@ -413,10 +442,10 @@ def validate_stablehlo_region(
 
 
 def validate_broadcast_in_dim(
-    operand_shape: List[Any],
-    result_shape: List[Any],
-    broadcast_dimensions: List[int],
-) -> List[str]:
+    operand_shape: typing.Sequence[int | str | None],
+    result_shape: typing.Sequence[int | str | None],
+    broadcast_dimensions: typing.Sequence[int],
+) -> list[str]:
     """Validate broadcast_in_dim mapping length and dimension expansion.
 
     Args:
@@ -427,7 +456,7 @@ def validate_broadcast_in_dim(
     Returns:
         List of broadcast validation errors.
     """
-    errors: List[str] = []
+    errors: list[str] = []
 
     if len(broadcast_dimensions) != len(operand_shape):
         errors.append(
@@ -436,7 +465,7 @@ def validate_broadcast_in_dim(
         return errors
 
     for i, b_dim in enumerate(broadcast_dimensions):
-        if not isinstance(b_dim, int) or b_dim < 0 or b_dim >= len(result_shape):
+        if b_dim < 0 or b_dim >= len(result_shape):
             errors.append(
                 f"broadcast_dimensions index {b_dim} out of bounds for result rank {len(result_shape)}."
             )
@@ -455,8 +484,9 @@ def validate_broadcast_in_dim(
 
 
 def validate_binary_broadcast(
-    lhs_shape: List[Any], rhs_shape: List[Any]
-) -> Tuple[bool, List[Any], List[str]]:
+    lhs_shape: typing.Sequence[int | str | None],
+    rhs_shape: typing.Sequence[int | str | None],
+) -> tuple[bool, list[int | str | None], list[str]]:
     """Validate standard elementwise binary broadcasting between two shapes.
 
     Args:
@@ -466,12 +496,14 @@ def validate_binary_broadcast(
     Returns:
         Tuple of (is_valid, broadcasted_result_shape, errors).
     """
-    errors: List[str] = []
-    res_shape: List[Any] = []
+    errors: list[str] = []
+    res_shape: list[int | str | None] = []
 
     max_rank = max(len(lhs_shape), len(rhs_shape))
-    pad_lhs = [1] * (max_rank - len(lhs_shape)) + list(lhs_shape)
-    pad_rhs = [1] * (max_rank - len(rhs_shape)) + list(rhs_shape)
+    lhs_pad_prefix: list[int | str | None] = [1] * (max_rank - len(lhs_shape))
+    rhs_pad_prefix: list[int | str | None] = [1] * (max_rank - len(rhs_shape))
+    pad_lhs: list[int | str | None] = lhs_pad_prefix + [x for x in lhs_shape]
+    pad_rhs: list[int | str | None] = rhs_pad_prefix + [x for x in rhs_shape]
 
     for i in range(max_rank):
         lhs_dim = pad_lhs[i]
@@ -495,11 +527,11 @@ def validate_binary_broadcast(
 
 def validate_stablehlo_op(
     op_name: str,
-    operands: Optional[List[Dict[str, Any]]] = None,
-    attributes: Optional[Dict[str, Any]] = None,
-    regions: Optional[Dict[str, Any]] = None,
-    operand_ranks: Optional[List[int]] = None,
-) -> List[str]:
+    operands: typing.Sequence[typing.Mapping[str, object]] | None = None,
+    attributes: typing.Mapping[str, object] | None = None,
+    regions: typing.Mapping[str, object] | None = None,
+    operand_ranks: list[int] | None = None,
+) -> list[str]:
     """Validate a StableHLO operation against dimension numbers, regions, and operand ranks.
 
     Checks:
@@ -519,7 +551,7 @@ def validate_stablehlo_op(
     Returns:
         List of validation error messages.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     clean_op = op_name.strip().lower()
 
     # 1. Validate structured dimension number attributes
@@ -572,11 +604,17 @@ def validate_stablehlo_op(
     # 2. Validate regions if present
     if regions and isinstance(regions, dict):
         for reg_name, reg_val in regions.items():
-            block_args: List[str] = []
-            yield_types: List[str] = []
+            block_args: list[str] = []
+            yield_types: list[str] = []
             if isinstance(reg_val, dict):
-                block_args = reg_val.get("block_arguments", [])
-                yield_types = reg_val.get("yield_types", [])
+                raw_ba = reg_val.get("block_arguments", [])
+                raw_yt = reg_val.get("yield_types", [])
+                block_args = [
+                    str(x) for x in (raw_ba if isinstance(raw_ba, list) else [])
+                ]
+                yield_types = [
+                    str(x) for x in (raw_yt if isinstance(raw_yt, list) else [])
+                ]
             errors.extend(
                 validate_stablehlo_region(
                     op_name=clean_op,
@@ -589,7 +627,7 @@ def validate_stablehlo_op(
     return errors
 
 
-def _get_canonical_stablehlo_records() -> List[Dict[str, Any]]:
+def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
     """Return canonical baseline StableHLO operations for offline operation when unbuilt.
 
     Returns:
@@ -767,33 +805,45 @@ def _get_canonical_stablehlo_records() -> List[Dict[str, Any]]:
     ]
 
 
-def _load_stablehlo_exhaustive() -> List[GhostRef]:
+def _load_stablehlo_exhaustive() -> list[GhostRef]:
     """Load the StableHLO exhaustive JSON dump or canonical fallback and map it to GhostRefs.
 
     Returns:
         A list of GhostRef items representing StableHLO operations.
     """
     json_path = os.path.join(os.path.dirname(__file__), "stablehlo_exhaustive.json")
+    ops_list: list[dict[str, JsonValue]]
     if os.path.exists(json_path):
         try:
             with open(json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                data: JsonValue = json.load(f)
             if isinstance(data, dict):
-                if "categories" in data:
-                    all_ops: List[Dict[str, Any]] = []
+                if "categories" in data and isinstance(data["categories"], dict):
+                    all_ops: list[dict[str, JsonValue]] = []
                     for cat_ops in data["categories"].values():
                         if isinstance(cat_ops, list):
-                            all_ops.extend(cat_ops)
+                            all_ops.extend(
+                                item for item in cat_ops if isinstance(item, dict)
+                            )
                     ops_list = all_ops
                 else:
-                    ops_list = (
+                    raw_cand = (
                         data.get("operations")
                         or data.get("instructions")
                         or data.get("items")
                         or []
                     )
+                    ops_list = [
+                        item
+                        for item in (raw_cand if isinstance(raw_cand, list) else [])
+                        if isinstance(item, dict)
+                    ]
             else:
-                ops_list = data
+                ops_list = [
+                    item
+                    for item in (data if isinstance(data, list) else [])
+                    if isinstance(item, dict)
+                ]
         except (json.JSONDecodeError, OSError):
             return []
     elif os.environ.get("STABLEHLO_DISABLE_FALLBACK") == "1":
@@ -801,15 +851,20 @@ def _load_stablehlo_exhaustive() -> List[GhostRef]:
     else:
         ops_list = _get_canonical_stablehlo_records()
 
-    refs: List[GhostRef] = []
+    refs: list[GhostRef] = []
     for op in ops_list:
-        params: List[GhostParam] = []
+        params: list[GhostParam] = []
 
         # 1. SSA Operands
-        for operand in op.get("operands", []):
-            op_name = operand["name"] if isinstance(operand, dict) else str(operand)
+        raw_operands = op.get("operands", [])
+        for operand in raw_operands if isinstance(raw_operands, list) else []:
+            op_name = (
+                str(operand["name"]) if isinstance(operand, dict) else str(operand)
+            )
             op_type = (
-                operand.get("type", "tensor") if isinstance(operand, dict) else "tensor"
+                str(operand.get("type", "tensor"))
+                if isinstance(operand, dict)
+                else "tensor"
             )
             params.append(
                 ExtendedGhostParam(
@@ -824,13 +879,16 @@ def _load_stablehlo_exhaustive() -> List[GhostRef]:
             )
 
         # 2. Attributes
-        op_attributes: Dict[str, Any] = {}
-        for attribute in op.get("attributes", []):
+        op_attributes: dict[str, JsonValue] = {}
+        raw_attributes = op.get("attributes", [])
+        for attribute in raw_attributes if isinstance(raw_attributes, list) else []:
             attr_name = (
-                attribute["name"] if isinstance(attribute, dict) else str(attribute)
+                str(attribute["name"])
+                if isinstance(attribute, dict)
+                else str(attribute)
             )
             attr_type = (
-                attribute.get("type", "attribute")
+                str(attribute.get("type", "attribute"))
                 if isinstance(attribute, dict)
                 else "attribute"
             )
@@ -844,7 +902,7 @@ def _load_stablehlo_exhaustive() -> List[GhostRef]:
                     role=IRParameterRole.ATTRIBUTE,
                 )
             )
-            matched_schema = None
+            matched_schema: dict[str, JsonValue] | None = None
             for schema_key, schema_val in STRUCTURED_STABLEHLO_SCHEMAS.items():
                 clean_key = schema_key.lower().replace("attr", "")
                 if clean_key in attr_name.lower().replace(
@@ -858,8 +916,9 @@ def _load_stablehlo_exhaustive() -> List[GhostRef]:
                 op_attributes[attr_name] = {"type": attr_type}
 
         # 3. Op Regions
-        for region in op.get("regions", []):
-            reg_name = region["name"] if isinstance(region, dict) else str(region)
+        raw_regions = op.get("regions", [])
+        for region in raw_regions if isinstance(raw_regions, list) else []:
+            reg_name = str(region["name"]) if isinstance(region, dict) else str(region)
             params.append(
                 ExtendedGhostParam(
                     name=reg_name,
@@ -871,8 +930,11 @@ def _load_stablehlo_exhaustive() -> List[GhostRef]:
                 )
             )
 
-        traits = op.get("traits", [])
-        base_desc = (
+        raw_traits = op.get("traits", [])
+        traits: list[str] = [
+            str(t) for t in (raw_traits if isinstance(raw_traits, list) else [])
+        ]
+        base_desc = str(
             op.get("description")
             or f"StableHLO {op.get('class_name', 'Op')} operation."
         )
@@ -880,17 +942,19 @@ def _load_stablehlo_exhaustive() -> List[GhostRef]:
         if traits:
             docstring_parts.append(f"Traits: {', '.join(traits)}")
         regions = op.get("regions", [])
-        if regions:
+        if isinstance(regions, list) and regions:
             docstring_parts.append(f"Regions: {', '.join(str(r) for r in regions)}")
 
-        returns_type: Optional[str] = None
-        ghost_results: List[GhostResult] = []
+        returns_type: str | None = None
+        ghost_results: list[GhostResult] = []
         results = op.get("results", [])
-        if results:
-            res_types: List[str] = []
+        if isinstance(results, list) and results:
+            res_types: list[str] = []
             for r in results:
-                r_name = r.get("name", "result") if isinstance(r, dict) else "result"
-                r_type = r.get("type", "tensor") if isinstance(r, dict) else str(r)
+                r_name = (
+                    str(r.get("name", "result")) if isinstance(r, dict) else "result"
+                )
+                r_type = str(r.get("type", "tensor")) if isinstance(r, dict) else str(r)
                 res_types.append(r_type)
                 ghost_results.append(GhostResult(name=r_name, type=r_type))
             returns_type = (
@@ -899,21 +963,22 @@ def _load_stablehlo_exhaustive() -> List[GhostRef]:
                 else f"tuple[{', '.join(res_types)}]"
             )
 
-        api_path = op.get("api_path", "")
-        domain_metadata = {
-            "traits": traits,
-            "regions": STRUCTURED_REGION_SIGNATURES.get(api_path, regions),
-            "structured_attribute_schemas": STRUCTURED_STABLEHLO_SCHEMAS,
+        api_path = str(op.get("api_path", ""))
+        struct_regs = STRUCTURED_REGION_SIGNATURES.get(api_path)
+        domain_metadata: dict[str, JsonValue] = {
+            "traits": list(traits),
+            "regions": struct_regs if struct_regs is not None else regions,
+            "structured_attribute_schemas": dict(STRUCTURED_STABLEHLO_SCHEMAS),
         }
 
-        ssa_operands: List[GhostParam] = [
+        ssa_operands: list[GhostParam] = [
             p for p in params if getattr(p, "role", None) == IRParameterRole.OPERAND
         ]
 
         refs.append(
             GhostMlirRef(
-                name=op.get("class_name", "UnknownOp"),
-                api_path=op.get("api_path", ""),
+                name=str(op.get("class_name", "UnknownOp")),
+                api_path=api_path,
                 kind="function",
                 params=params,
                 operands=ssa_operands,
@@ -924,9 +989,7 @@ def _load_stablehlo_exhaustive() -> List[GhostRef]:
                 domain_metadata=domain_metadata,
                 traits=traits,
                 attributes=op_attributes if op_attributes else None,
-                regions=STRUCTURED_REGION_SIGNATURES.get(api_path)
-                if isinstance(STRUCTURED_REGION_SIGNATURES.get(api_path), dict)
-                else None,
+                regions=struct_regs if isinstance(struct_regs, dict) else None,
             )
         )
 
@@ -935,7 +998,7 @@ def _load_stablehlo_exhaustive() -> List[GhostRef]:
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Entrypoint to collect the StableHLO API signature for a given category.
 
     Args:

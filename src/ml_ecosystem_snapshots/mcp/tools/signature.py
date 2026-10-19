@@ -2,47 +2,54 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
-
 from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository, resolve_snapshot
+from ml_ecosystem_snapshots.models import JsonValue
 
 
 def get_api_signature(
     framework: str,
     api_path: str,
-    version: Optional[str] = None,
-    repository: Optional[SnapshotRepository] = None,
-) -> Optional[Dict[str, Any]]:
-    """Retrieve the exact ground-truth GhostRef signature for an API.
+    version: str | None = None,
+    repository: SnapshotRepository | None = None,
+) -> dict[str, JsonValue] | None:
+    """Look up the exact ground-truth API signature for a given framework and path.
 
     Args:
-        framework: The framework name.
-        api_path: The canonical API path (e.g. 'torch.sum').
-        version: Optional framework version string.
+        framework: Target framework name (e.g. 'torch', 'jax').
+        api_path: Canonical API path or mnemonic (e.g. 'torch.nn.Linear', 'FADD').
+        version: Optional framework version string (e.g. '2.4.0').
         repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
-        The serialized GhostRef dictionary or None if not found.
+        Dictionary of the matched GhostRef, or None if not found.
     """
     try:
-        from ml_ecosystem_snapshots.index import lookup_symbol
+        from ml_ecosystem_snapshots.index import IndexedSymbolRecord, lookup_symbol
 
-        cached_sym = lookup_symbol(framework, api_path, version=version)
-        if cached_sym:
-            return cached_sym
+        cached_sym: object = lookup_symbol(framework, api_path, version=version)
+        if cached_sym is not None:
+            if isinstance(cached_sym, IndexedSymbolRecord):
+                return dict(cached_sym.data)
+            assert isinstance(cached_sym, dict)
+            return dict(cached_sym)
     except Exception:
         pass
 
     snap = resolve_snapshot(framework, version=version, repository=repository)
-    for _cat, items in snap.get("categories", {}).items():
+    raw_cats = snap.get("categories") or {}
+    assert isinstance(raw_cats, dict)
+    for _cat, items in raw_cats.items():
+        assert isinstance(items, list)
         for item in items:
+            assert isinstance(item, dict)
             if (
                 item.get("api_path") == api_path
                 or item.get("name") == api_path
                 or item.get("mnemonic") == api_path
             ):
                 return dict(item)
-            if api_path in item.get("aliases", []):
+            raw_aliases = item.get("aliases")
+            if isinstance(raw_aliases, list) and api_path in raw_aliases:
                 return dict(item)
     return None
 

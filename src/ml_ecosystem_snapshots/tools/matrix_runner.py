@@ -1,5 +1,7 @@
 """Runner for multi-version ML framework snapshot generation."""
 
+from __future__ import annotations
+
 import argparse
 import subprocess
 import json

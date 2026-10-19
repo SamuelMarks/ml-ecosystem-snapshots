@@ -3,12 +3,16 @@
 Generate .pyi stub files from snapshot JSON data.
 """
 
-import os
+from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Sequence, Tuple, Union
-from pathlib import Path
 import ast
+import os
+from pathlib import Path
+import typing
+
 from ml_switcheroo_ir.schema.ghost import SnapshotEnvelope
+
+from ml_ecosystem_snapshots.models import JsonValue
 
 
 def _sanitize_default(default_str: str) -> str:
@@ -23,9 +27,7 @@ def _sanitize_default(default_str: str) -> str:
     if default_str == "<unrepresentable>":
         return "..."
     try:
-        # Check if the default string parses as valid Python
         node = ast.parse(default_str, mode="eval").body
-        # We can selectively let things through
         if isinstance(node, ast.Constant):
             return repr(node.value)
         elif isinstance(node, (ast.List, ast.Dict, ast.Tuple, ast.Set)):
@@ -43,30 +45,46 @@ def _sanitize_default(default_str: str) -> str:
         return "..."
 
 
+def _param_field(p: typing.Mapping[str, JsonValue], key: str) -> str | None:
+    """Extract a string field from a parameter dictionary.
+
+    Args:
+        p: Parameter mapping.
+        key: Field name ('name', 'annotation', 'default', or 'kind').
+
+    Returns:
+        String value or None.
+    """
+    val = p.get(key)
+    return str(val) if val is not None else None
+
+
 def _format_param_list(
-    params: List[Dict[str, Any]],
+    params: typing.Sequence[typing.Mapping[str, JsonValue]],
     has_varargs: bool = False,
     is_method: bool = False,
 ) -> str:
-    """Format a list of parameter dictionaries into a Python signature string.
+    """Format a list of parameter definitions into a Python signature string.
 
     Args:
-        params: List of parameter dictionary definitions.
+        params: Sequence of parameter dictionary definitions.
         has_varargs: Whether to append generic varargs if none are present.
         is_method: Whether this signature belongs to a method requiring 'self'.
 
     Returns:
         A comma-separated parameter string for def statements.
     """
-    param_strs: List[str] = []
-    if is_method and not any(p.get("name") in ("self", "cls") for p in params):
+    param_strs: list[str] = []
+    if is_method and not any(
+        _param_field(p, "name") in ("self", "cls") for p in params
+    ):
         param_strs.append("self")
 
     for p in params:
-        p_name = p.get("name")
-        p_anno = p.get("annotation")
-        p_default = p.get("default")
-        p_kind = p.get("kind")
+        p_name = _param_field(p, "name")
+        p_anno = _param_field(p, "annotation")
+        p_default = _param_field(p, "default")
+        p_kind = _param_field(p, "kind")
 
         if p_kind == "VAR_POSITIONAL":
             p_str = f"*{p_name}"
@@ -85,58 +103,104 @@ def _format_param_list(
 
         param_strs.append(p_str)
 
-    if has_varargs and not any(p.get("kind") == "VAR_POSITIONAL" for p in params):
+    if has_varargs and not any(
+        _param_field(p, "kind") == "VAR_POSITIONAL" for p in params
+    ):
         param_strs.append("*args: Any")
 
     return ", ".join(param_strs)
 
 
+def _extract_param_dicts(raw_params: JsonValue) -> list[dict[str, JsonValue]]:
+    """Extract a typed list of parameter dictionaries from a JSON value.
+
+    Args:
+        raw_params: Raw `params` field from a snapshot item or overload.
+
+    Returns:
+        List of parameter dictionaries.
+    """
+    raw = raw_params or []
+    assert isinstance(raw, list)
+    return [dict(p) for p in raw if isinstance(p, dict)]
+
+
+def _extract_overload_dicts(raw_overloads: JsonValue) -> list[dict[str, JsonValue]]:
+    """Extract a typed list of overload dictionaries from a JSON value.
+
+    Args:
+        raw_overloads: Raw `overloads` field from a snapshot item.
+
+    Returns:
+        List of overload dictionaries.
+    """
+    if not isinstance(raw_overloads, list):
+        return []
+    return [dict(ov) for ov in raw_overloads if isinstance(ov, dict)]
+
+
 def generate_stubs(
-    snapshot_data: Union[
-        SnapshotEnvelope, Mapping[str, Any], Sequence[Mapping[str, Any]]
-    ],
+    snapshot_data: (
+        SnapshotEnvelope
+        | typing.Mapping[str, object]
+        | typing.Sequence[typing.Mapping[str, object]]
+    ),
     output_dir: str,
     include_nonpublic: bool = False,
 ) -> None:
     """Generate .pyi stub files from a snapshot dictionary.
 
     Args:
-        snapshot_data: The snapshot dictionary or list.
+        snapshot_data: The snapshot dictionary, envelope, or list.
         output_dir: The base directory where stubs should be written.
         include_nonpublic: Whether to generate stubs for non-public components.
     """
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    modules: Dict[str, List[Tuple[str, Dict[str, Any]]]] = {}
-    class_methods: Dict[str, Dict[str, List[Tuple[str, Dict[str, Any]]]]] = {}
+    modules: dict[str, list[tuple[str, dict[str, JsonValue]]]] = {}
+    class_methods: dict[str, dict[str, list[tuple[str, dict[str, JsonValue]]]]] = {}
 
+    categories_dict: dict[str, list[dict[str, JsonValue]]] = {}
     if isinstance(snapshot_data, list):
-        categories_dict = {"all": snapshot_data}
-    elif isinstance(snapshot_data, dict):
-        categories_dict = snapshot_data.get("categories", {})
-    else:
-        categories_dict = {}
+        categories_dict = {
+            "all": [dict(x) for x in snapshot_data if isinstance(x, dict)]
+        }
+    elif isinstance(snapshot_data, (dict, SnapshotEnvelope)):
+        raw_snap = (
+            snapshot_data.model_dump()
+            if isinstance(snapshot_data, SnapshotEnvelope)
+            else snapshot_data
+        )
+        raw_cats = raw_snap.get("categories", {})
+        assert isinstance(raw_cats, dict)
+        for cat_k, cat_v in raw_cats.items():
+            assert isinstance(cat_v, list)
+            categories_dict[str(cat_k)] = [
+                dict(x) for x in cat_v if isinstance(x, dict)
+            ]
 
     for _cat, items in categories_dict.items():
         for item in items:
             if not include_nonpublic and not item.get("is_public", True):
                 continue
 
-            api_path = (
+            api_path = str(
                 item.get("api_path") or item.get("name") or item.get("mnemonic") or ""
             )
             if not api_path:
                 continue
 
             parts = api_path.split(".")
-            kind = item.get("kind", "function")
+            kind = str(item.get("kind") or "function")
 
             if kind in ("method", "property") and len(parts) >= 2:
                 class_name = parts[-2]
                 method_name = parts[-1]
                 if len(parts) == 2:
-                    module_name = item.get("framework") or item.get("dialect") or ""
+                    module_name = str(
+                        item.get("framework") or item.get("dialect") or ""
+                    )
                 else:
                     module_name = ".".join(parts[:-2])
 
@@ -147,7 +211,9 @@ def generate_stubs(
                 class_methods[module_name][class_name].append((method_name, item))
             else:
                 if len(parts) == 1:
-                    module_name = item.get("framework") or item.get("dialect") or ""
+                    module_name = str(
+                        item.get("framework") or item.get("dialect") or ""
+                    )
                     obj_name = parts[0]
                 else:
                     module_name = ".".join(parts[:-1])
@@ -173,18 +239,19 @@ def generate_stubs(
         ]
 
         handled_classes = set()
-        items = modules.get(module_name, [])
+        mod_items = modules.get(module_name, [])
 
-        for obj_name, item in items:
-            kind = item.get("kind", "function")
+        for obj_name, item in mod_items:
+            kind = str(item.get("kind") or "function")
 
             if kind == "class":
                 handled_classes.add(obj_name)
                 lines.append(f"class {obj_name}:")
 
-                # Generate @overload signatures for __init__
-                for ov in item.get("overloads", []):
-                    ov_sig = _format_param_list(ov.get("params", []), is_method=True)
+                for ov in _extract_overload_dicts(item.get("overloads")):
+                    ov_sig = _format_param_list(
+                        _extract_param_dicts(ov.get("params")), is_method=True
+                    )
                     ov_ret = (
                         f" -> {ov.get('returns_type')}"
                         if ov.get("returns_type")
@@ -194,20 +261,19 @@ def generate_stubs(
                     lines.append(f"    def __init__({ov_sig}){ov_ret}: ...")
 
                 init_sig = _format_param_list(
-                    item.get("params", []),
-                    has_varargs=item.get("has_varargs", False),
+                    _extract_param_dicts(item.get("params")),
+                    has_varargs=bool(item.get("has_varargs", False)),
                     is_method=True,
                 )
                 ret_type = item.get("returns_type")
                 ret_str = f" -> {ret_type}" if ret_type else " -> Any"
                 lines.append(f"    def __init__({init_sig}){ret_str}: ...")
 
-                # Emit associated methods
                 methods = class_methods.get(module_name, {}).get(obj_name, [])
                 for m_name, m_item in methods:
-                    for ov in m_item.get("overloads", []):
+                    for ov in _extract_overload_dicts(m_item.get("overloads")):
                         ov_sig = _format_param_list(
-                            ov.get("params", []), is_method=True
+                            _extract_param_dicts(ov.get("params")), is_method=True
                         )
                         ov_ret = (
                             f" -> {ov.get('returns_type')}"
@@ -218,8 +284,8 @@ def generate_stubs(
                         lines.append(f"    def {m_name}({ov_sig}){ov_ret}: ...")
 
                     m_sig = _format_param_list(
-                        m_item.get("params", []),
-                        has_varargs=m_item.get("has_varargs", False),
+                        _extract_param_dicts(m_item.get("params")),
+                        has_varargs=bool(m_item.get("has_varargs", False)),
                         is_method=True,
                     )
                     m_ret = (
@@ -231,9 +297,8 @@ def generate_stubs(
 
                 lines.append("")
             else:
-                # Generate @overload signatures for function
-                for ov in item.get("overloads", []):
-                    ov_sig = _format_param_list(ov.get("params", []))
+                for ov in _extract_overload_dicts(item.get("overloads")):
+                    ov_sig = _format_param_list(_extract_param_dicts(ov.get("params")))
                     ov_ret = (
                         f" -> {ov.get('returns_type')}"
                         if ov.get("returns_type")
@@ -243,22 +308,21 @@ def generate_stubs(
                     lines.append(f"def {obj_name}({ov_sig}){ov_ret}: ...")
 
                 sig = _format_param_list(
-                    item.get("params", []),
-                    has_varargs=item.get("has_varargs", False),
+                    _extract_param_dicts(item.get("params")),
+                    has_varargs=bool(item.get("has_varargs", False)),
                 )
                 ret_type = item.get("returns_type")
                 ret_str = f" -> {ret_type}" if ret_type else " -> Any"
                 lines.append(f"def {obj_name}({sig}){ret_str}: ...")
                 lines.append("")
 
-        # Emit classes that only had methods
         for cls_name, methods in class_methods.get(module_name, {}).items():
             if cls_name not in handled_classes:
                 lines.append(f"class {cls_name}:")
                 for m_name, m_item in methods:
-                    for ov in m_item.get("overloads", []):
+                    for ov in _extract_overload_dicts(m_item.get("overloads")):
                         ov_sig = _format_param_list(
-                            ov.get("params", []), is_method=True
+                            _extract_param_dicts(ov.get("params")), is_method=True
                         )
                         ov_ret = (
                             f" -> {ov.get('returns_type')}"
@@ -269,8 +333,8 @@ def generate_stubs(
                         lines.append(f"    def {m_name}({ov_sig}){ov_ret}: ...")
 
                     m_sig = _format_param_list(
-                        m_item.get("params", []),
-                        has_varargs=m_item.get("has_varargs", False),
+                        _extract_param_dicts(m_item.get("params")),
+                        has_varargs=bool(m_item.get("has_varargs", False)),
                         is_method=True,
                     )
                     m_ret = (

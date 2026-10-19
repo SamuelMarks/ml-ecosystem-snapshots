@@ -1,13 +1,16 @@
 """Unit tests for CDD-based docstring and AST parameter parsing in GhostInspector."""
 
+from __future__ import annotations
+
 import builtins
-from typing import Any
+import types
+from collections.abc import Mapping, Sequence
 from unittest.mock import patch
 
-from ml_ecosystem_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
 
-def some_function(a: int = 1, b: str = "test", *args: Any, **kwargs: Any) -> None:
+def some_function(a: int = 1, b: str = "test", *args: object, **kwargs: object) -> None:
     """Execute a sample function with typed parameters and variadic arguments.
 
     Args:
@@ -22,7 +25,7 @@ def some_function(a: int = 1, b: str = "test", *args: Any, **kwargs: Any) -> Non
 class SomeClass:
     """Sample class with Sphinx-style docstring for CDD class inspection."""
 
-    def __init__(self, x: float, y: list[Any] = []) -> None:
+    def __init__(self, x: float, y: list[object] = []) -> None:
         """:param x: The x coordinate.
 
         :type x: float
@@ -70,13 +73,21 @@ def test_ghost_inspector_cdd_docstring_import_error() -> None:
     """Verify GhostInspector.inspect falls back cleanly when cdd.docstring.parse raises ImportError."""
     real_import = builtins.__import__
 
-    def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
+    def fake_import(
+        name: str,
+        globals: Mapping[str, object] | None = None,
+        locals: Mapping[str, object] | None = None,
+        fromlist: Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         """Raise ImportError when importing cdd.docstring.parse.
 
         Args:
             name: Target module name to import.
-            args: Positional arguments forwarded to __import__.
-            kwargs: Keyword arguments forwarded to __import__.
+            globals: Globals mapping forwarded to __import__.
+            locals: Locals mapping forwarded to __import__.
+            fromlist: Fromlist sequence forwarded to __import__.
+            level: Relative import level forwarded to __import__.
 
         Returns:
             Imported module object when not blocked.
@@ -86,7 +97,7 @@ def test_ghost_inspector_cdd_docstring_import_error() -> None:
         """
         if name.startswith("cdd.docstring"):
             raise ImportError("Simulated missing cdd.docstring.parse")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     with patch("builtins.__import__", side_effect=fake_import):
         ref = GhostInspector.inspect(some_function, "some_function")

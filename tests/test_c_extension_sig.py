@@ -1,13 +1,13 @@
 """Unit tests and verification suite for c extension sig."""
 
+from __future__ import annotations
+
 # ruff: noqa: D205, D415, D207, D212
-
-from typing import Any
-
 
 import inspect
 from unittest.mock import patch
-from ml_ecosystem_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
 
 def dummy_c_ext() -> None:
@@ -18,7 +18,7 @@ def dummy_c_ext() -> None:
 original_sig = inspect.signature
 
 
-def patched_sig(target: Any, *args: Any, **kwargs: Any) -> Any:
+def patched_sig(target: object, *args: object, **kwargs: object) -> inspect.Signature:
     """Raise ValueError for `dummy_c_ext` and delegate other targets to `inspect.signature`.
 
     Args:
@@ -34,8 +34,8 @@ def patched_sig(target: Any, *args: Any, **kwargs: Any) -> Any:
     """
     if target is dummy_c_ext:
         raise ValueError("no signature found")
-    sig_fn: Any = original_sig
-    return sig_fn(target, *args, **kwargs)
+    assert callable(target)
+    return original_sig(target)
 
 
 def test_c_extension_signature_fallback() -> None:
@@ -52,7 +52,7 @@ def test_c_extension_signature_fallback() -> None:
         assert ref.params[1].annotation == "Tensor | None"
 
 
-def dummy_posonly(*args: Any, **kwargs: Any) -> None:  # noqa: D402
+def dummy_posonly(*args: object, **kwargs: object) -> None:  # noqa: D402
     """dummy_posonly(a: int, /, b: str = 'x') -> None
 
     Parameters:
@@ -140,6 +140,7 @@ def test_c_extension_multi_signature_torch_add() -> None:
         assert ref.overloads is not None
         assert len(ref.overloads) == 1
         ov = ref.overloads[0]
+        assert isinstance(ov, ExtendedGhostRef)
         assert ov.name == ref.name
         assert ov.returns_type == "Tensor"
         assert [p.name for p in ov.params] == ["input", "other", "alpha", "out"]
@@ -163,12 +164,14 @@ def test_c_extension_multi_signature_torch_clamp() -> None:
         assert ref.overloads is not None
         assert len(ref.overloads) == 2
         ov1 = ref.overloads[0]
+        assert isinstance(ov1, ExtendedGhostRef)
         assert [p.name for p in ov1.params] == ["input", "min", "max", "out"]
         assert ov1.params[1].kind == "KEYWORD_ONLY"
         assert ov1.params[2].kind == "KEYWORD_ONLY"
         assert ov1.params[3].kind == "KEYWORD_ONLY"
 
         ov2 = ref.overloads[1]
+        assert isinstance(ov2, ExtendedGhostRef)
         assert [p.name for p in ov2.params] == ["input", "min", "max", "out"]
         assert ov2.params[1].annotation == "Tensor"
         assert ov2.params[2].annotation == "Tensor"
@@ -188,6 +191,7 @@ def test_c_extension_multi_signature_pybind11() -> None:
         assert ref.overloads is not None
         assert len(ref.overloads) == 1
         ov = ref.overloads[0]
+        assert isinstance(ov, ExtendedGhostRef)
         assert [p.name for p in ov.params] == ["input", "matrix"]
         assert ov.params[1].annotation == "Tensor"
 
@@ -209,7 +213,9 @@ def test_c_extension_overloaded_header_branch() -> None:
         assert ref.params[0].name == "a"
         assert ref.overloads is not None
         assert len(ref.overloads) == 1
-        assert ref.overloads[0].params[0].name == "b"
+        ov0 = ref.overloads[0]
+        assert isinstance(ov0, ExtendedGhostRef)
+        assert ov0.params[0].name == "b"
 
 
 def dummy_leading_overload_header() -> None:
@@ -243,12 +249,16 @@ def test_c_extension_leading_header_and_vararg_overloads() -> None:
         assert ref.params[0].name == "x"
         assert ref.overloads is not None
         assert len(ref.overloads) == 1
-        assert ref.overloads[0].params[0].name == "y"
+        ov_bar = ref.overloads[0]
+        assert isinstance(ov_bar, ExtendedGhostRef)
+        assert ov_bar.params[0].name == "y"
 
         ref_var = inspector.inspect(dummy_overload_vararg, "baz")
         assert ref_var.overloads is not None
         assert len(ref_var.overloads) == 1
-        assert ref_var.overloads[0].has_varargs is True
+        ov_baz = ref_var.overloads[0]
+        assert isinstance(ov_baz, ExtendedGhostRef)
+        assert ov_baz.has_varargs is True
 
         ref_no_ret = inspector.inspect(dummy_no_ret_type, "qux")
         assert ref_no_ret.returns_type in (None, "NoneType")
@@ -319,8 +329,8 @@ def test_c_extension_signature_sequence_operations() -> None:
     assert len(sig) == 4
 
     # Equality and repr
-    sig_copy = CExtensionSignature(params=list(sig))
+    sig_copy = CExtensionSignature(params=list(sig.iter_params()))
     assert sig == sig_copy
-    assert sig == list(sig)
+    assert sig == list(sig.iter_params())
     assert sig != "not_a_sig"
     assert "ParsedParamTuple" in repr(sig) or "('b'" in repr(sig)

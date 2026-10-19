@@ -4,30 +4,37 @@ Provides functions to dynamically introspect the Scikit-Learn library and genera
 GhostRefs for estimators, transformers, metrics, and other components.
 """
 
+from __future__ import annotations
+
 import inspect
+import types
+
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.utils import get_all_members
-from typing import List, Any, Optional, Set
 
-from ml_ecosystem_snapshots.models import GhostInspector
-from ml_switcheroo_ir.schema.ghost import GhostRef
-from ml_switcheroo_ir.schema.ghost import SemanticTier
-
+sklearn: types.ModuleType | None = None
+BaseEstimator: type | None = None
 try:
-    import sklearn
-    from sklearn.base import BaseEstimator
+    import sklearn as _sklearn_mod
+    from sklearn.base import BaseEstimator as _BaseEstimator
+
+    sklearn = _sklearn_mod
+    BaseEstimator = _BaseEstimator
 except ImportError:
     sklearn = None
     BaseEstimator = None
 
 
 def _scan_module(
-    module: Any,
+    module: types.ModuleType | object | None,
     prefix: str,
     kind: str = "class",
-    block_list: Optional[Set[str]] = None,
+    block_list: set[str] | None = None,
     include_nonpublic: bool = False,
     is_estimator: bool = False,
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Reflectively scans a Scikit-Learn module.
 
     Args:
@@ -45,7 +52,7 @@ def _scan_module(
     if not module:
         return []
     block_list = block_list or set()
-    found: List[GhostRef] = []
+    found: list[GhostRef] = []
 
     try:
         # Some sklearn modules can be missing attributes or lazy loaded
@@ -78,7 +85,7 @@ def _scan_module(
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect all API signatures for a given category from Scikit-Learn.
 
     Args:

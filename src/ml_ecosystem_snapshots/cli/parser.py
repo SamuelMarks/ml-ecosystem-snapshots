@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
-from typing import Any, Callable, List, Optional, Tuple
+import typing
+
+import pydantic
 
 from ml_ecosystem_snapshots.cli.commands import (
     cmd_capture,
@@ -40,22 +41,23 @@ from ml_ecosystem_snapshots.cli.commands import (
 )
 
 
-@dataclass(frozen=True)
-class SubparserCheckSpec:
+class SubparserCheckSpec(pydantic.BaseModel):
     """Declarative specification for a `check-*` domain CLI subcommand."""
+
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
     command: str
     help_text: str
-    handler: Callable[[argparse.Namespace], None]
+    handler: typing.Callable[[argparse.Namespace], None]
     pos_arg: str = "op_name"
     pos_help: str = "Operation name"
     count_flag: str = "--inputs-count"
     count_help: str = "Expected number of input operands"
     attr_help: str = "Comma-separated list of expected keyword argument names"
-    extra_flag: Optional[Tuple[str, Any, str]] = None
+    extra_flag: tuple[str, str | None, str] | None = None
 
 
-DOMAIN_CHECK_SUBPARSERS: List[SubparserCheckSpec] = [
+DOMAIN_CHECK_SUBPARSERS: list[SubparserCheckSpec] = [
     SubparserCheckSpec(
         command="check-onnx",
         help_text="Validate ONNX operation against official specification",
@@ -325,28 +327,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser_verify_cache.set_defaults(func=cmd_verify_local_cache)
 
-    # index / index-cache
-    for idx_cmd, idx_help in (
-        ("index", "Manage ephemeral local SQLite search index"),
-        ("index-cache", "Manage and clean ephemeral local SQLite search index"),
-    ):
-        p_idx = subparsers.add_parser(idx_cmd, help=idx_help)
-        p_idx.add_argument(
-            "--rebuild",
-            action="store_true",
-            help="Rebuild index from all available snapshots",
-        )
-        p_idx.add_argument(
-            "--clean",
-            "--clear",
-            dest="clean",
-            action="store_true",
-            help="Clear the local index database",
-        )
-        p_idx.add_argument(
-            "--status", action="store_true", help="Display index statistics"
-        )
-        p_idx.set_defaults(func=cmd_index)
+    # index
+    p_idx = subparsers.add_parser(
+        "index", help="Manage ephemeral local SQLite search index"
+    )
+    p_idx.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Rebuild index from all available snapshots",
+    )
+    p_idx.add_argument(
+        "--clear",
+        dest="clear",
+        action="store_true",
+        help="Clear the local index database",
+    )
+    p_idx.add_argument("--status", action="store_true", help="Display index statistics")
+    p_idx.set_defaults(func=cmd_index)
 
     # check-sass
     parser_check_sass = subparsers.add_parser(
@@ -447,13 +444,6 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         default=None,
         help="PTX mnemonic to validate (e.g. add, wgmma.mma_async)",
-    )
-    parser_check_ptx.add_argument(
-        "--mnemonic",
-        dest="opt_mnemonic",
-        type=str,
-        default=None,
-        help="PTX mnemonic to validate (alternative to positional argument)",
     )
     parser_check_ptx.add_argument(
         "--types",

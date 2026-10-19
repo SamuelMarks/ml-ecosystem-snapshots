@@ -1,14 +1,20 @@
 """Unit tests and verification suite for cli."""
 
-import os
-from typing import Any
+from __future__ import annotations
 
+import os
+from pathlib import Path
+import sqlite3
+import pytest
+import pytest_mock
 
 from ml_ecosystem_snapshots.cli import main
 from unittest.mock import mock_open
 
 
-def test_cli_capture(mocker: Any, capsys: Any) -> None:
+def test_cli_capture(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Verify cli capture behavior.
 
     Args:
@@ -18,7 +24,7 @@ def test_cli_capture(mocker: Any, capsys: Any) -> None:
     mocker.patch("sys.argv", ["ml-snapshots", "capture", "--out-dir", "test_out"])
 
     # Mock extract_snapshot and write_snapshot
-    def mock_extract(fw: Any, include_nonpublic: bool = False) -> Any:
+    def mock_extract(fw: str, include_nonpublic: bool = False) -> dict[str, str]:
         """Execute helper mock extract.
 
         Args:
@@ -50,7 +56,9 @@ def test_cli_capture(mocker: Any, capsys: Any) -> None:
     assert "Skipping jax, not installed" in captured.out
 
 
-def test_cli_diff(mocker: Any, capsys: Any) -> None:
+def test_cli_diff(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Verify cli diff behavior.
 
     Args:
@@ -77,7 +85,9 @@ def test_cli_diff(mocker: Any, capsys: Any) -> None:
     assert "~ c" in captured.out
 
 
-def test_cli_diff_changelog(mocker: Any, capsys: Any) -> None:
+def test_cli_diff_changelog(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Verify cli diff changelog behavior.
 
     Args:
@@ -108,7 +118,9 @@ def test_cli_diff_changelog(mocker: Any, capsys: Any) -> None:
     assert "## Changelog Mock" in captured.out
 
 
-def test_cli_stubs(mocker: Any, capsys: Any) -> None:
+def test_cli_stubs(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Verify cli stubs behavior.
 
     Args:
@@ -130,7 +142,9 @@ def test_cli_stubs(mocker: Any, capsys: Any) -> None:
     assert "Stubs generated in out" in captured.out
 
 
-def test_cli_export_openapi(mocker: Any, capsys: Any) -> None:
+def test_cli_export_openapi(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Verify cli export openapi behavior.
 
     Args:
@@ -178,7 +192,9 @@ def test_cli_export_openapi(mocker: Any, capsys: Any) -> None:
     assert "Exported OpenAPI spec to out/openapi.json" in captured.out
 
 
-def test_cli_export_json_schema(mocker: Any, capsys: Any) -> None:
+def test_cli_export_json_schema(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Verify cli export json schema behavior.
 
     Args:
@@ -226,7 +242,9 @@ def test_cli_export_json_schema(mocker: Any, capsys: Any) -> None:
     assert "Exported 1 JSON schemas to out" in captured.out
 
 
-def test_cli_export_pydantic(mocker: Any, capsys: Any) -> None:
+def test_cli_export_pydantic(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Verify cli export pydantic behavior.
 
     Args:
@@ -274,7 +292,9 @@ def test_cli_export_pydantic(mocker: Any, capsys: Any) -> None:
     assert "Exported 1 Pydantic models to out" in captured.out
 
 
-def test_cli_export_protobuf(mocker: Any, capsys: Any) -> None:
+def test_cli_export_protobuf(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Verify cli export protobuf behavior.
 
     Args:
@@ -322,7 +342,9 @@ def test_cli_export_protobuf(mocker: Any, capsys: Any) -> None:
     assert "Exported 1 Protobuf definitions to out" in captured.out
 
 
-def test_cli_export_llm_prompt(mocker: Any, capsys: Any) -> None:
+def test_cli_export_llm_prompt(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test the export command with llm_prompt format.
 
     Args:
@@ -371,7 +393,7 @@ def test_cli_export_llm_prompt(mocker: Any, capsys: Any) -> None:
     assert "Exported LLM prompt context" in captured.out
 
 
-def test_cli_mcp(mocker: Any) -> None:
+def test_cli_mcp(mocker: pytest_mock.MockerFixture) -> None:
     """Test the mcp command invoker.
 
     Args:
@@ -383,7 +405,9 @@ def test_cli_mcp(mocker: Any) -> None:
     mock_run.assert_called_once()
 
 
-def test_cli_offline_flag(mocker: Any, monkeypatch: Any) -> None:
+def test_cli_offline_flag(
+    mocker: pytest_mock.MockerFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test passing --offline flag sets ML_SNAPSHOTS_OFFLINE environment variable.
 
     Args:
@@ -400,7 +424,9 @@ def test_cli_offline_flag(mocker: Any, monkeypatch: Any) -> None:
         os.environ.pop("ML_SNAPSHOTS_OFFLINE", None)
 
 
-def test_cli_export_unknown_format(mocker: Any, capsys: Any) -> None:
+def test_cli_export_unknown_format(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Verify cli export unknown format behavior.
 
     Args:
@@ -440,7 +466,9 @@ def test_cli_export_unknown_format(mocker: Any, capsys: Any) -> None:
         main()
 
 
-def test_cli_export_non_container(mocker: Any, capsys: Any) -> None:
+def test_cli_export_non_container(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test cmd_export when snapshot is neither a list nor a dict.
 
     Args:
@@ -466,7 +494,7 @@ def test_cli_export_non_container(mocker: Any, capsys: Any) -> None:
     mock_to_openapi.assert_called_once_with([])
 
 
-def test_cli_export_list_snapshot(mocker: Any) -> None:
+def test_cli_export_list_snapshot(mocker: pytest_mock.MockerFixture) -> None:
     """Test cmd_export when snapshot is a raw list of symbols.
 
     Args:
@@ -501,7 +529,7 @@ def test_cli_export_list_snapshot(mocker: Any) -> None:
     assert mock_to_openapi.call_args[0][0][0].name == "test_op"
 
 
-def test_cmd_capture_wildcard(capsys: Any) -> None:
+def test_cmd_capture_wildcard(capsys: pytest.CaptureFixture[str]) -> None:
     """Verify cmd_capture wildcard '*' framework capture behavior.
 
     Args:
@@ -525,7 +553,7 @@ def test_cmd_capture_wildcard(capsys: Any) -> None:
     assert "Saved snapshot to out.json" in captured.out
 
 
-def test_cmd_capture_unsupported(capsys: Any) -> None:
+def test_cmd_capture_unsupported(capsys: pytest.CaptureFixture[str]) -> None:
     """Verify cmd_capture skips unsupported frameworks with a warning.
 
     Args:
@@ -550,7 +578,7 @@ def test_cmd_capture_unsupported(capsys: Any) -> None:
     assert "Skipping torch" in captured.out
 
 
-def test_cmd_capture_all(capsys: Any) -> None:
+def test_cmd_capture_all(capsys: pytest.CaptureFixture[str]) -> None:
     """Verify cmd_capture captures all available frameworks when list is empty.
 
     Args:
@@ -578,7 +606,7 @@ def test_cmd_capture_all(capsys: Any) -> None:
     assert "Saved snapshot to out.json" in captured.out
 
 
-def test_cmd_capture_missing(capsys: Any) -> None:
+def test_cmd_capture_missing(capsys: pytest.CaptureFixture[str]) -> None:
     """Verify cmd_capture skips framework when extract_snapshot returns empty dict.
 
     Args:
@@ -603,7 +631,9 @@ def test_cmd_capture_missing(capsys: Any) -> None:
     assert "Skipping mock_fw" in captured.out
 
 
-def test_cmd_list_snapshots(capsys: Any, monkeypatch: Any, tmp_path: Any) -> None:
+def test_cmd_list_snapshots(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """Test cmd_list_snapshots prints available snapshots.
 
     Args:
@@ -616,7 +646,7 @@ def test_cmd_list_snapshots(capsys: Any, monkeypatch: Any, tmp_path: Any) -> Non
 
     snap_file = tmp_path / "test_framework_v1.0.0.json"
     snap_file.write_text("{}", encoding="utf-8")
-    monkeypatch.setenv("ML_FRAMEWORK_SNAPSHOTS_PATH", str(tmp_path))
+    monkeypatch.setenv("ML_SNAPSHOTS_PATH", str(tmp_path))
 
     args = argparse.Namespace()
     cmd_list_snapshots(args)
@@ -625,7 +655,9 @@ def test_cmd_list_snapshots(capsys: Any, monkeypatch: Any, tmp_path: Any) -> Non
     assert "test_framework_v1.0.0.json" in captured.out
 
 
-def test_cmd_list_snapshots_empty(capsys: Any, mocker: Any) -> None:
+def test_cmd_list_snapshots_empty(
+    capsys: pytest.CaptureFixture[str], mocker: pytest_mock.MockerFixture
+) -> None:
     """Test cmd_list_snapshots when no snapshots exist.
 
     Args:
@@ -642,7 +674,11 @@ def test_cmd_list_snapshots_empty(capsys: Any, mocker: Any) -> None:
     assert "No snapshot files found." in captured.out
 
 
-def test_cmd_list_snapshots_duplicates(capsys: Any, mocker: Any, tmp_path: Any) -> None:
+def test_cmd_list_snapshots_duplicates(
+    capsys: pytest.CaptureFixture[str],
+    mocker: pytest_mock.MockerFixture,
+    tmp_path: Path,
+) -> None:
     """Test cmd_list_snapshots suppresses duplicate entries from identical paths.
 
     Args:
@@ -677,7 +713,11 @@ def test_cmd_list_snapshots_duplicates(capsys: Any, mocker: Any, tmp_path: Any) 
     assert "test.json" in captured.out
 
 
-def test_cmd_pull_version(capsys: Any, mocker: Any, tmp_path: Any) -> None:
+def test_cmd_pull_version(
+    capsys: pytest.CaptureFixture[str],
+    mocker: pytest_mock.MockerFixture,
+    tmp_path: Path,
+) -> None:
     """Test cmd_pull with explicit version and out-dir.
 
     Args:
@@ -699,7 +739,11 @@ def test_cmd_pull_version(capsys: Any, mocker: Any, tmp_path: Any) -> None:
     mock_retrieve.assert_called_once()
 
 
-def test_cmd_pull_latest_and_failure(capsys: Any, mocker: Any, tmp_path: Any) -> None:
+def test_cmd_pull_latest_and_failure(
+    capsys: pytest.CaptureFixture[str],
+    mocker: pytest_mock.MockerFixture,
+    tmp_path: Path,
+) -> None:
     """Test cmd_pull with latest default version and failure handling.
 
     Args:
@@ -723,7 +767,7 @@ def test_cmd_pull_latest_and_failure(capsys: Any, mocker: Any, tmp_path: Any) ->
     assert "Failed to download snapshot: Network error" in captured.out
 
 
-def test_cmd_pull_offline(capsys: Any) -> None:
+def test_cmd_pull_offline(capsys: pytest.CaptureFixture[str]) -> None:
     """Test cmd_pull exits with error when offline flag is enabled.
 
     Args:
@@ -744,7 +788,9 @@ def test_cmd_pull_offline(capsys: Any) -> None:
     )
 
 
-def test_cmd_index_clear(capsys: Any, mocker: Any) -> None:
+def test_cmd_index_clear(
+    capsys: pytest.CaptureFixture[str], mocker: pytest_mock.MockerFixture
+) -> None:
     """Test cmd_index with --clear flag.
 
     Args:
@@ -769,7 +815,11 @@ def test_cmd_index_clear(capsys: Any, mocker: Any) -> None:
     assert "Failed to clear index database at /tmp/test.db" in captured2.out
 
 
-def test_cmd_index_rebuild_and_status(capsys: Any, mocker: Any, tmp_path: Any) -> None:
+def test_cmd_index_rebuild_and_status(
+    capsys: pytest.CaptureFixture[str],
+    mocker: pytest_mock.MockerFixture,
+    tmp_path: Path,
+) -> None:
     """Test cmd_index with --rebuild and --status.
 
     Args:
@@ -791,7 +841,7 @@ def test_cmd_index_rebuild_and_status(capsys: Any, mocker: Any, tmp_path: Any) -
     assert "Index database does not exist yet" in captured1.out
 
     # 2. Rebuild
-    def mock_ensure_index(*args: Any, **kwargs: Any) -> Any:
+    def mock_ensure_index(*args: object, **kwargs: object) -> sqlite3.Connection:
         """Mock ensure_index initializing the test database.
 
         Args:
@@ -828,8 +878,10 @@ def test_cmd_index_rebuild_and_status(capsys: Any, mocker: Any, tmp_path: Any) -
     assert "Pulling snapshot for torch (2.2.0)" in captured_main.out
 
 
-def test_cmd_index_cache_clean(capsys: Any, mocker: Any) -> None:
-    """Test index-cache --clean CLI subcommand.
+def test_cmd_index_clear_subcommand(
+    capsys: pytest.CaptureFixture[str], mocker: pytest_mock.MockerFixture
+) -> None:
+    """Test index --clear CLI subcommand.
 
     Args:
         capsys: Pytest capsys fixture.
@@ -843,13 +895,17 @@ def test_cmd_index_cache_clean(capsys: Any, mocker: Any) -> None:
     )
     mocker.patch("ml_ecosystem_snapshots.index.clear_index", return_value=True)
 
-    mocker.patch("sys.argv", ["ml_ecosystem_snapshots", "index-cache", "--clean"])
+    mocker.patch("sys.argv", ["ml_ecosystem_snapshots", "index", "--clear"])
     main()
     captured = capsys.readouterr()
     assert "Cleared index database at /tmp/test_cache.db" in captured.out
 
 
-def test_cmd_download_all(capsys: Any, mocker: Any, tmp_path: Any) -> None:
+def test_cmd_download_all(
+    capsys: pytest.CaptureFixture[str],
+    mocker: pytest_mock.MockerFixture,
+    tmp_path: Path,
+) -> None:
     """Test download-all CLI subcommand under online and offline modes.
 
     Args:
@@ -903,7 +959,11 @@ def test_cmd_download_all(capsys: Any, mocker: Any, tmp_path: Any) -> None:
     assert "Download complete" in captured_dispatch.out
 
 
-def test_cmd_verify_local_cache(capsys: Any, mocker: Any, tmp_path: Any) -> None:
+def test_cmd_verify_local_cache(
+    capsys: pytest.CaptureFixture[str],
+    mocker: pytest_mock.MockerFixture,
+    tmp_path: Path,
+) -> None:
     """Test verify-local-cache CLI subcommand.
 
     Args:
@@ -1000,7 +1060,9 @@ def test_cmd_verify_local_cache(capsys: Any, mocker: Any, tmp_path: Any) -> None
     assert "Cache verification passed" in captured_main.out
 
 
-def test_cli_main_entrypoint(mocker: Any, capsys: Any) -> None:
+def test_cli_main_entrypoint(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test running cli as __main__ executes list-snapshots and prints output.
 
     Args:
@@ -1018,7 +1080,9 @@ def test_cli_main_entrypoint(mocker: Any, capsys: Any) -> None:
 
 
 def test_cli_check_ptx_and_new_export_formats(
-    tmp_path: Any, mocker: Any, capsys: Any
+    tmp_path: Path,
+    mocker: pytest_mock.MockerFixture,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test check-ptx command and extended export formats in CLI.
 
@@ -1124,8 +1188,16 @@ def test_cli_check_ptx_and_new_export_formats(
                     "api_path": "custom.AddOp",
                     "kind": "function",
                     "params": [
-                        {"name": "lhs", "annotation": "int"},
-                        {"name": "rhs", "annotation": "int"},
+                        {
+                            "name": "lhs",
+                            "kind": "POSITIONAL_OR_KEYWORD",
+                            "annotation": "int",
+                        },
+                        {
+                            "name": "rhs",
+                            "kind": "POSITIONAL_OR_KEYWORD",
+                            "annotation": "int",
+                        },
                     ],
                     "docstring": "Add two integers together.",
                 }

@@ -1,5 +1,7 @@
 """Script to extract and save API snapshots for all supported frameworks."""
 
+from __future__ import annotations
+
 import os
 import sys
 import warnings
@@ -31,7 +33,7 @@ all_frameworks = [
     "dask",
     "flax_nnx",
     "deepspeed",
-    "optax_shim",
+    "optax",
     "orbax_checkpoint",
     "huggingface",
     "diffusers",

@@ -4,10 +4,12 @@ Extracts layer and model configurations from MaxText via AST parsing
 to avoid complex dependency chains.
 """
 
+from __future__ import annotations
+
 import ast
 import glob
 import os
-from typing import List
+import types
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -16,17 +18,16 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
 )
 
-import typing
-
+maxtext: types.ModuleType | None = None
 try:
     import maxtext as _maxtext
 
-    maxtext: typing.Any = _maxtext
+    maxtext = _maxtext
 except ImportError:
     maxtext = None
 
 
-def _parse_maxtext_classes(dir_path: str, module_prefix: str) -> List[GhostRef]:
+def _parse_maxtext_classes(dir_path: str, module_prefix: str) -> list[GhostRef]:
     """Parse MaxText model classes from source files.
 
     Args:
@@ -95,7 +96,7 @@ def _parse_maxtext_classes(dir_path: str, module_prefix: str) -> List[GhostRef]:
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Entrypoint to collect the MaxText API signature for a given category.
 
     Args:

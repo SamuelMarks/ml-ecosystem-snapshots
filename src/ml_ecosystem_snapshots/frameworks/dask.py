@@ -1,21 +1,26 @@
 """Dask API Snapshot Extractor."""
 
-from typing import Any, List
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
-from ml_ecosystem_snapshots.frameworks._base import collect_dir_callables
-from ..models import GhostInspector
+from __future__ import annotations
 
+import types
+
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
+from ml_ecosystem_snapshots.frameworks._base import collect_dir_callables
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+
+da: types.ModuleType | None = None
 try:
     import dask.array as _da
 
-    da: Any = _da
+    da = _da
 except Exception:
     da = None
 
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect dask API.
 
     Args:
@@ -25,7 +30,7 @@ def collect_api(
     Returns:
         List of gathered API references.
     """
-    results: List[GhostRef] = []
+    results: list[GhostRef] = []
 
     if category == SemanticTier.ARRAY_API:
         if not da:

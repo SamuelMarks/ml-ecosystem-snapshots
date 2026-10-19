@@ -1,5 +1,7 @@
 """Tests for the NVIDIA PTX ISA framework extractor and validator."""
 
+from __future__ import annotations
+
 import json
 import os
 from unittest import mock

@@ -1,13 +1,14 @@
 """Tests for the NVIDIA SASS scraper script."""
 
+from __future__ import annotations
+
 import json
 import os
 import tempfile
 from unittest import mock
 
+from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.tools import scrape_nvidia_sass
-
-import typing
 
 
 def test_scrape_nvidia_sass() -> None:
@@ -81,23 +82,31 @@ def test_scrape_nvidia_sass() -> None:
             original_open = open
 
             def side_effect(
-                path: str, *args: typing.Any, **kwargs: typing.Any
-            ) -> typing.Any:
+                path: str,
+                mode: str = "r",
+                encoding: str | None = None,
+                newline: str | None = None,
+            ) -> object:
                 """Mock open side effect.
 
                 Args:
                     path: The file path.
-                    *args: Additional args.
-                    **kwargs: Additional kwargs.
+                    mode: File open mode.
+                    encoding: File encoding.
+                    newline: Newline mode.
 
                 Returns:
                     The mocked file object.
                 """
                 if "/tmp/isa.json" in path:
-                    return original_open(input_path, *args, **kwargs)
+                    return original_open(
+                        input_path, mode, encoding=encoding, newline=newline
+                    )
                 if "nvidia_sass_exhaustive.json" in path:
-                    return original_open(output_path, *args, **kwargs)
-                return original_open(path, *args, **kwargs)
+                    return original_open(
+                        output_path, mode, encoding=encoding, newline=newline
+                    )
+                return original_open(path, mode, encoding=encoding, newline=newline)
 
             mock_open.side_effect = side_effect
 
@@ -305,7 +314,7 @@ def test_resolve_instruction_architectures_and_expanded_catalog() -> None:
     assert len(catalog) > 800
 
     # 7. Test build_expanded_sass_catalog with duplicates and pre-existing entries
-    base_with_all: typing.List[typing.Dict[str, typing.Any]] = [
+    base_with_all: list[dict[str, JsonValue]] = [
         {"mnemonic": "DUPLICATE", "operands": [["R", "R"]]},
         {"mnemonic": "DUPLICATE", "operands": [["R", "R"]]},
         {"mnemonic": "YIELD", "operands": []},

@@ -4,19 +4,20 @@ Provides functions to dynamically introspect the TensorFlow library and generate
 GhostRefs for layers, losses, optimizers, and activations.
 """
 
-import inspect
-from typing import Any, List
+from __future__ import annotations
 
+import inspect
+import types
+
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.utils import get_all_members
 
-from ml_ecosystem_snapshots.models import GhostInspector
-from ml_switcheroo_ir.schema.ghost import GhostRef
-from ml_switcheroo_ir.schema.ghost import SemanticTier
-
-tf: Any = None
+tf: types.ModuleType | None = None
 
 
-def _get_tf() -> Any:
+def _get_tf() -> types.ModuleType | None:
     """Lazily import TensorFlow to prevent static C++ registry conflict on worker fork.
 
     Returns:
@@ -35,11 +36,11 @@ def _get_tf() -> Any:
 
 
 def _collect_tf_submodules(
-    tf_mod: Any,
-    submodule_names: List[str],
+    tf_mod: types.ModuleType | object,
+    submodule_names: list[str],
     include_nonpublic: bool,
     allow_classes: bool = False,
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect callable or class members across a list of TensorFlow submodules.
 
     Args:
@@ -51,7 +52,7 @@ def _collect_tf_submodules(
     Returns:
         List of inspected `GhostRef` objects.
     """
-    collected: List[GhostRef] = []
+    collected: list[GhostRef] = []
     for sub_name in submodule_names:
         if hasattr(tf_mod, sub_name):
             sub_mod = getattr(tf_mod, sub_name)
@@ -63,18 +64,12 @@ def _collect_tf_submodules(
                         collected.append(
                             GhostInspector.inspect(obj, f"tf.{sub_name}.{name}")
                         )
-                    except (
-                        AttributeError,
-                        TypeError,
-                        ValueError,
-                        RuntimeError,
-                        Exception,
-                    ):
+                    except Exception:
                         pass
     return collected
 
 
-def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[GhostRef]:
+def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[GhostRef]:
     """Scan the live TensorFlow library for a specific API category.
 
     Args:
@@ -86,8 +81,8 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
 
     """
     results: list[GhostRef] = []
-    tf = _get_tf()
-    if not tf:
+    tf_mod = _get_tf()
+    if not tf_mod:
         return results
 
     try:
@@ -101,19 +96,21 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                 "elu",
                 "selu",
             }
-            if hasattr(tf, "nn"):
+            if hasattr(tf_mod, "nn"):
                 for name in target_names:
-                    if hasattr(tf.nn, name):
+                    if hasattr(tf_mod.nn, name):
                         results.append(
                             GhostInspector.inspect(
-                                getattr(tf.nn, name), f"tf.nn.{name}"
+                                getattr(tf_mod.nn, name), f"tf.nn.{name}"
                             )
                         )
 
         elif category == SemanticTier.LAYER:
-            is_keras_available = hasattr(tf, "keras") and hasattr(tf.keras, "layers")
+            is_keras_available = hasattr(tf_mod, "keras") and hasattr(
+                tf_mod.keras, "layers"
+            )
             if is_keras_available:
-                for name, obj in get_all_members(tf.keras.layers):
+                for name, obj in get_all_members(tf_mod.keras.layers):
                     if inspect.isclass(obj) and (
                         include_nonpublic or not name.startswith("_")
                     ):
@@ -122,9 +119,11 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                         )
 
         elif category == SemanticTier.LOSS:
-            is_keras_available = hasattr(tf, "keras") and hasattr(tf.keras, "losses")
+            is_keras_available = hasattr(tf_mod, "keras") and hasattr(
+                tf_mod.keras, "losses"
+            )
             if is_keras_available:
-                for name, obj in get_all_members(tf.keras.losses):
+                for name, obj in get_all_members(tf_mod.keras.losses):
                     if inspect.isclass(obj) and (
                         include_nonpublic or not name.startswith("_")
                     ):
@@ -133,11 +132,11 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                         )
 
         elif category == SemanticTier.OPTIMIZER:
-            is_keras_available = hasattr(tf, "keras") and hasattr(
-                tf.keras, "optimizers"
+            is_keras_available = hasattr(tf_mod, "keras") and hasattr(
+                tf_mod.keras, "optimizers"
             )
             if is_keras_available:
-                for name, obj in get_all_members(tf.keras.optimizers):
+                for name, obj in get_all_members(tf_mod.keras.optimizers):
                     if inspect.isclass(obj) and (
                         include_nonpublic or not name.startswith("_")
                     ):
@@ -147,12 +146,12 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
 
         elif category == SemanticTier.SCHEDULER:
             is_keras_available = (
-                hasattr(tf, "keras")
-                and hasattr(tf.keras, "optimizers")
-                and hasattr(tf.keras.optimizers, "schedules")
+                hasattr(tf_mod, "keras")
+                and hasattr(tf_mod.keras, "optimizers")
+                and hasattr(tf_mod.keras.optimizers, "schedules")
             )
             if is_keras_available:
-                for name, obj in get_all_members(tf.keras.optimizers.schedules):
+                for name, obj in get_all_members(tf_mod.keras.optimizers.schedules):
                     if inspect.isclass(obj) and (
                         include_nonpublic or not name.startswith("_")
                     ):
@@ -163,11 +162,11 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                         )
 
         elif category == SemanticTier.INITIALIZER:
-            is_keras_available = hasattr(tf, "keras") and hasattr(
-                tf.keras, "initializers"
+            is_keras_available = hasattr(tf_mod, "keras") and hasattr(
+                tf_mod.keras, "initializers"
             )
             if is_keras_available:
-                for name, obj in get_all_members(tf.keras.initializers):
+                for name, obj in get_all_members(tf_mod.keras.initializers):
                     if inspect.isclass(obj) and (
                         include_nonpublic or not name.startswith("_")
                     ):
@@ -176,9 +175,11 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                         )
 
         elif category == SemanticTier.METRIC:
-            is_keras_available = hasattr(tf, "keras") and hasattr(tf.keras, "metrics")
+            is_keras_available = hasattr(tf_mod, "keras") and hasattr(
+                tf_mod.keras, "metrics"
+            )
             if is_keras_available:
-                for name, obj in get_all_members(tf.keras.metrics):
+                for name, obj in get_all_members(tf_mod.keras.metrics):
                     if inspect.isclass(obj) and (
                         include_nonpublic or not name.startswith("_")
                     ):
@@ -187,8 +188,8 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                         )
 
         elif category == SemanticTier.DATALOADER:
-            if hasattr(tf, "data"):
-                for name, obj in get_all_members(tf.data):
+            if hasattr(tf_mod, "data"):
+                for name, obj in get_all_members(tf_mod.data):
                     if inspect.isclass(obj) and (
                         include_nonpublic or not name.startswith("_")
                     ):
@@ -197,7 +198,7 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
         elif category == SemanticTier.ARRAY_API:
             results.extend(
                 _collect_tf_submodules(
-                    tf,
+                    tf_mod,
                     ["math", "linalg", "nn", "image"],
                     include_nonpublic=include_nonpublic,
                     allow_classes=False,
@@ -205,7 +206,7 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
             )
             results.extend(
                 _collect_tf_submodules(
-                    tf,
+                    tf_mod,
                     ["lookup"],
                     include_nonpublic=include_nonpublic,
                     allow_classes=True,
@@ -231,75 +232,37 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
             ]
             seen_ops = set(top_level_tensor_ops)
             for name in top_level_tensor_ops:
-                if hasattr(tf, name):
-                    obj = getattr(tf, name)
+                if hasattr(tf_mod, name):
+                    obj = getattr(tf_mod, name)
                     if callable(obj):
                         try:
                             results.append(GhostInspector.inspect(obj, f"tf.{name}"))
-                        except (
-                            AttributeError,
-                            TypeError,
-                            ValueError,
-                            KeyError,
-                            IndexError,
-                            SyntaxError,
-                            OSError,
-                            ImportError,
-                            RuntimeError,
-                            Exception,
-                        ):
+                        except Exception:
                             pass
 
-            for name, obj in get_all_members(tf):
+            for name, obj in get_all_members(tf_mod):
                 if (
                     not name.startswith("_") or include_nonpublic
                 ) and name not in seen_ops:
-                    if (
-                        callable(obj)
-                        and not inspect.isclass(obj)
-                        and not inspect.ismodule(obj)
-                    ):
+                    if callable(obj) and not inspect.isclass(obj):
                         try:
                             results.append(GhostInspector.inspect(obj, f"tf.{name}"))
-                        except (
-                            AttributeError,
-                            TypeError,
-                            ValueError,
-                            KeyError,
-                            IndexError,
-                            SyntaxError,
-                            OSError,
-                            ImportError,
-                            RuntimeError,
-                            Exception,
-                        ):
+                        except Exception:
                             pass
 
-            if hasattr(tf, "raw_ops"):
-                for name, obj in get_all_members(tf.raw_ops):
+            if hasattr(tf_mod, "raw_ops"):
+                for name, obj in get_all_members(tf_mod.raw_ops):
                     if not name.startswith("_") or include_nonpublic:
                         if callable(obj) and not inspect.isclass(obj):
                             try:
                                 results.append(
                                     GhostInspector.inspect(obj, f"tf.raw_ops.{name}")
                                 )
-                            except (
-                                AttributeError,
-                                TypeError,
-                                ValueError,
-                                KeyError,
-                                IndexError,
-                                SyntaxError,
-                                OSError,
-                                ImportError,
-                                RuntimeError,
-                                Exception,
-                            ):
+                            except Exception:
                                 pass
 
-            # tf.Tensor and tf.Variable member methods
-            if hasattr(tf, "Tensor"):
-                for name, obj in inspect.getmembers(tf.Tensor):
+            if hasattr(tf_mod, "Tensor"):
+                for name, obj in inspect.getmembers(tf_mod.Tensor):
                     if (
                         (include_nonpublic or not name.startswith("_"))
                         and callable(obj)
@@ -311,22 +274,11 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                                     obj, f"tf.Tensor.{name}", kind="method"
                                 )
                             )
-                        except (
-                            AttributeError,
-                            TypeError,
-                            ValueError,
-                            KeyError,
-                            IndexError,
-                            SyntaxError,
-                            OSError,
-                            ImportError,
-                            RuntimeError,
-                            Exception,
-                        ):
+                        except Exception:
                             pass
 
-            if hasattr(tf, "Variable"):
-                for name, obj in inspect.getmembers(tf.Variable):
+            if hasattr(tf_mod, "Variable"):
+                for name, obj in inspect.getmembers(tf_mod.Variable):
                     if (
                         (include_nonpublic or not name.startswith("_"))
                         and callable(obj)
@@ -338,24 +290,13 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                                     obj, f"tf.Variable.{name}", kind="method"
                                 )
                             )
-                        except (
-                            AttributeError,
-                            TypeError,
-                            ValueError,
-                            KeyError,
-                            IndexError,
-                            SyntaxError,
-                            OSError,
-                            ImportError,
-                            RuntimeError,
-                            Exception,
-                        ):
+                        except Exception:
                             pass
 
         if category in (SemanticTier.ARRAY_API, SemanticTier.UTIL) and hasattr(
-            tf, "raw_ops"
+            tf_mod, "raw_ops"
         ):
-            for name, obj in get_all_members(tf.raw_ops):
+            for name, obj in get_all_members(tf_mod.raw_ops):
                 if not include_nonpublic and name.startswith("_"):
                     continue
                 if callable(obj) and not inspect.isclass(obj):
@@ -365,32 +306,10 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
                             ref.environment_tags = []
                         ref.environment_tags.append("tf.raw_op")
                         results.append(ref)
-                    except (
-                        AttributeError,
-                        TypeError,
-                        ValueError,
-                        KeyError,
-                        IndexError,
-                        SyntaxError,
-                        OSError,
-                        ImportError,
-                        RuntimeError,
-                        Exception,
-                    ):
+                    except Exception:
                         pass
 
-    except (
-        AttributeError,
-        TypeError,
-        ValueError,
-        KeyError,
-        IndexError,
-        SyntaxError,
-        OSError,
-        ImportError,
-        RuntimeError,
-        Exception,
-    ):
+    except Exception:
         pass
 
     return results
@@ -398,7 +317,7 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Entrypoint to collect the TensorFlow API signature for a given category.
 
     Args:

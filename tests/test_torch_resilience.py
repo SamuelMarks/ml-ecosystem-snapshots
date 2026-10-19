@@ -1,8 +1,10 @@
 """Tests for fault tolerance, fallback handling, and inspection resilience in the PyTorch framework collector."""
 
+from __future__ import annotations
+
 import importlib
+import pytest_mock
 import types
-from typing import Any
 from unittest.mock import patch
 
 from ml_ecosystem_snapshots.frameworks.torch import (
@@ -11,7 +13,8 @@ from ml_ecosystem_snapshots.frameworks.torch import (
     get_aten_op_schema,
     get_jit_schemas_for_op,
 )
-from ml_ecosystem_snapshots.models import GhostInspector, GhostPythonRef
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.models import GhostPythonRef
 
 
 def test_torch_module_import_reload() -> None:
@@ -26,23 +29,15 @@ def test_torch_module_import_reload() -> None:
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     importlib.reload(torch_fw)
-    assert torch_fw.nn is not None
-    assert torch_fw.optim is not None
-    assert torch_fw.data is not None
+    assert getattr(torch_fw, "nn") is not None
+    assert getattr(torch_fw, "optim") is not None
+    assert getattr(torch_fw, "data") is not None
 
-    real_import = __import__
+    import builtins
 
-    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        """Mock import function.
+    real_import: object = getattr(builtins, "__import__")
 
-        Args:
-            name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            The imported module or raises.
-        """
+    def mock_import(name: str, *args: object, **kwargs: object) -> object:
         """Mock import raising ImportError on torch submodules.
 
         Args:
@@ -58,20 +53,23 @@ def test_torch_module_import_reload() -> None:
         """
         if name in ("torch.nn", "torch.optim", "torch.utils.data"):
             raise ImportError(f"simulated {name} import failure")
+        assert callable(real_import)
         return real_import(name, *args, **kwargs)
 
     with patch("builtins.__import__", side_effect=mock_import):
         importlib.reload(torch_fw)
-        assert torch_fw.nn is None
-        assert torch_fw.optim is None
-        assert torch_fw.data is None
+        assert getattr(torch_fw, "nn") is None
+        assert getattr(torch_fw, "optim") is None
+        assert getattr(torch_fw, "data") is None
 
     # Restore clean reload
     importlib.reload(torch_fw)
-    assert torch_fw.nn is not None
+    assert getattr(torch_fw, "nn") is not None
 
 
-def test_torch_scan_metrics_inspect_exception(mocker: Any) -> None:
+def test_torch_scan_metrics_inspect_exception(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test _scan_metrics catches exceptions during GhostInspector.inspect.
 
     Args:
@@ -99,7 +97,9 @@ def test_torch_scan_metrics_inspect_exception(mocker: Any) -> None:
         assert refs == []
 
 
-def test_torch_scan_array_api_inspect_exceptions(mocker: Any) -> None:
+def test_torch_scan_array_api_inspect_exceptions(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test _scan_array_api catches exceptions across all submodules and ops.
 
     Args:
@@ -149,7 +149,7 @@ def test_torch_scan_array_api_inspect_exceptions(mocker: Any) -> None:
     class MockTensor:
         """Mock Tensor class."""
 
-        def add_(self, other: Any) -> Any:
+        def add_(self, other: object) -> object:
             """In-place add.
 
             Args:
@@ -186,7 +186,9 @@ def test_torch_scan_array_api_inspect_exceptions(mocker: Any) -> None:
         assert refs == []
 
 
-def test_torch_scan_array_api_tensor_inplace_tags_none(mocker: Any) -> None:
+def test_torch_scan_array_api_tensor_inplace_tags_none(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test _scan_array_api populates environment_tags when initial tags are None.
 
     Args:
@@ -200,7 +202,7 @@ def test_torch_scan_array_api_tensor_inplace_tags_none(mocker: Any) -> None:
     class MockTensor:
         """Mock Tensor class."""
 
-        def add_(self, other: Any) -> Any:
+        def add_(self, other: object) -> object:
             """In-place add.
 
             Args:

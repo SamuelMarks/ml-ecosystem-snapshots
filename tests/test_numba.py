@@ -1,8 +1,9 @@
 """Tests for Numba JIT and array primitives snapshot extractor."""
 
+from __future__ import annotations
+
 import sys
 import types
-from typing import Any
 import pytest
 
 from ml_ecosystem_snapshots.frameworks.numba import (
@@ -10,7 +11,7 @@ from ml_ecosystem_snapshots.frameworks.numba import (
     _get_numba,
     collect_api,
 )
-from ml_ecosystem_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_switcheroo_ir.schema.ghost import (
     GhostPythonRef,
     SemanticTier,
@@ -28,7 +29,7 @@ def test_collect_api_numba_live(monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock Numba module."""
 
         @staticmethod
-        def njit(func: Any) -> Any:
+        def njit(func: object) -> object:
             """Mock njit decorator.
 
             Args:
@@ -40,7 +41,7 @@ def test_collect_api_numba_live(monkeypatch: pytest.MonkeyPatch) -> None:
             return func
 
         @staticmethod
-        def vectorize(func: Any) -> Any:
+        def vectorize(func: object) -> object:
             """Mock vectorize decorator.
 
             Args:
@@ -69,7 +70,7 @@ def test_collect_api_numba_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
     real_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: Any, name: str, is_public: bool = True) -> Any:
+    def mock_inspect(obj: object, name: str, is_public: bool = True) -> object:
         """Mock inspect function.
 
         Args:
@@ -137,19 +138,9 @@ def test_get_numba_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     import builtins
 
-    real_import = builtins.__import__
+    real_import = getattr(builtins, "__import__")
 
-    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        """Mock import function.
-
-        Args:
-            name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            The imported module or raises.
-        """
+    def mock_import(name: str, *args: object, **kwargs: object) -> object:
         """Mock import raising ImportError on numba.
 
         Args:
@@ -189,25 +180,7 @@ def test_collect_api_numba_inspection_exception(
         "ml_ecosystem_snapshots.frameworks.numba._get_numba", lambda: FlakyNumba()
     )
 
-    def mock_inspect(*args: Any, **kwargs: Any) -> Any:
-        """Mock inspect function.
-
-        Args:
-            *args: Variable arguments.
-            **kwargs: Variable arguments.
-
-        Returns:
-            A mocked GhostRef.
-        """
-        """Mock inspect function.
-
-        Args:
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            A mocked GhostRef.
-        """
+    def mock_inspect(*args: object, **kwargs: object) -> None:
         """Mock inspect raising RuntimeError.
 
         Args:

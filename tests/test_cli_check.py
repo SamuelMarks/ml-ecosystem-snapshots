@@ -1,13 +1,13 @@
 """Test CLI check command."""
 
+from __future__ import annotations
+
 from pathlib import Path
+import pytest
+import pytest_mock
 import os
-
-from typing import Any
-
-
 import argparse
-from unittest.mock import patch, mock_open
+from unittest.mock import MagicMock, patch, mock_open
 from ml_ecosystem_snapshots.cli import cmd_check
 
 MOCK_JSON = """
@@ -48,7 +48,10 @@ MOCK_JSON = """
 @patch("ml_ecosystem_snapshots.compliance.extract_target_refs")
 @patch("builtins.open", new_callable=mock_open, read_data=MOCK_JSON)
 def test_cmd_check(
-    mock_file: Any, mock_extract: Any, mock_score: Any, capsys: Any
+    mock_file: MagicMock,
+    mock_extract: MagicMock,
+    mock_score: MagicMock,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test basic check command reporting.
 
@@ -95,7 +98,10 @@ def test_cmd_check(
 @patch("ml_ecosystem_snapshots.compliance.extract_target_refs")
 @patch("builtins.open", new_callable=mock_open, read_data='{"categories": {}}')
 def test_cmd_check_pagination(
-    mock_file: Any, mock_extract: Any, mock_score: Any, capsys: Any
+    mock_file: MagicMock,
+    mock_extract: MagicMock,
+    mock_score: MagicMock,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test pagination in check command reporting.
 
@@ -138,7 +144,10 @@ def test_cmd_check_pagination(
 @patch("ml_ecosystem_snapshots.compliance.extract_target_refs")
 @patch("builtins.open", new_callable=mock_open, read_data='{"categories": {}}')
 def test_cmd_check_no_missing_mismatched(
-    mock_file: Any, mock_extract: Any, mock_score: Any, capsys: Any
+    mock_file: MagicMock,
+    mock_extract: MagicMock,
+    mock_score: MagicMock,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test check command with complete compliance.
 
@@ -169,7 +178,11 @@ def test_cmd_check_no_missing_mismatched(
     assert "Mismatched APIs" not in captured.out
 
 
-def test_cmd_check_output_formatting(mocker: Any, capsys: Any, tmp_path: Any) -> None:
+def test_cmd_check_output_formatting(
+    mocker: pytest_mock.MockerFixture,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
     """Verify cmd check output formatting behavior.
 
     Args:
@@ -245,7 +258,9 @@ def test_cmd_check_output_formatting(mocker: Any, capsys: Any, tmp_path: Any) ->
     assert "module" in out
 
 
-def test_cmd_check_sass_no_modifiers(mocker: Any, capsys: Any) -> None:
+def test_cmd_check_sass_no_modifiers(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test cmd_check_sass when valid instruction has no valid modifiers.
 
     Args:
@@ -275,7 +290,9 @@ def test_cmd_check_sass_no_modifiers(mocker: Any, capsys: Any) -> None:
     assert "Recognized Modifiers" not in out
 
 
-def test_cmd_check_rdna_no_encoding(mocker: Any, capsys: Any) -> None:
+def test_cmd_check_rdna_no_encoding(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test cmd_check_rdna when valid instruction has no encoding returned.
 
     Args:
@@ -307,7 +324,9 @@ def test_cmd_check_rdna_no_encoding(mocker: Any, capsys: Any) -> None:
     assert "Encoding:" not in out
 
 
-def test_cmd_check_non_python_auto_detect(mocker: Any, capsys: Any) -> None:
+def test_cmd_check_non_python_auto_detect(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test cmd_check auto-detecting .sass, .s, and .mlir file extensions.
 
     Args:

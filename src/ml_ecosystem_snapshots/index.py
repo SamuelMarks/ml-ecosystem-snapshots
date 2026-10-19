@@ -5,16 +5,83 @@ snapshot JSON files, enabling sub-millisecond lookups and fuzzy searches
 without loading multi-megabyte JSON trees into memory.
 """
 
+from __future__ import annotations
+
+import contextlib
 import gzip
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import tempfile
-from typing import Any, Dict, List, Optional, Tuple
+
+import pydantic
 
 from .exceptions import SnapshotSchemaError
-from .utils import get_custom_snapshots_paths
+from .models import JsonValue
+from .network_env import get_custom_snapshots_paths
+
+
+class IndexedSymbolRecord(pydantic.BaseModel):
+    """Typed record for an indexed symbol returned by `search_index` or `lookup_symbol`."""
+
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    api_path: str = ""
+    framework: str = ""
+    kind: str = "function"
+    category: str = ""
+    data: dict[str, JsonValue] = pydantic.Field(default_factory=dict)
+
+    @classmethod
+    def from_raw_dict(
+        cls, raw: dict[str, JsonValue], framework: str = ""
+    ) -> IndexedSymbolRecord:
+        """Construct an `IndexedSymbolRecord` from a raw JSON symbol dictionary.
+
+        Args:
+            raw: Deserialized JSON symbol dictionary.
+            framework: Optional framework identifier.
+
+        Returns:
+            Populated `IndexedSymbolRecord` instance.
+        """
+        api_path = str(
+            raw.get("api_path") or raw.get("name") or raw.get("mnemonic") or ""
+        )
+        kind = str(raw.get("kind") or "function")
+        category = str(raw.get("category") or "")
+        return cls(
+            api_path=api_path,
+            framework=framework,
+            kind=kind,
+            category=category,
+            data=raw,
+        )
+
+    def __getitem__(self, key: str) -> JsonValue:
+        """Retrieve a symbol data field by dictionary key.
+
+        Args:
+            key: Field name inside `self.data`.
+
+        Returns:
+            Field value.
+        """
+        return self.data[key]
+
+    def get(self, key: str, default: JsonValue = None) -> JsonValue:
+        """Retrieve a symbol data field by key with an optional default.
+
+        Args:
+            key: Field name inside `self.data`.
+            default: Default value when absent.
+
+        Returns:
+            Field value or `default`.
+        """
+        return self.data.get(key, default)
 
 
 def get_cache_dir() -> str:
@@ -23,9 +90,7 @@ def get_cache_dir() -> str:
     Returns:
         Absolute path to the user's local cache directory.
     """
-    base = os.environ.get("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR") or os.environ.get(
-        "ML_FRAMEWORK_SNAPSHOTS_CACHE_DIR"
-    )
+    base = os.environ.get("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR")
     if not base:
         xdg = os.environ.get("XDG_CACHE_HOME")
         if xdg:
@@ -72,7 +137,7 @@ def compute_file_sha256(file_path: str) -> str:
     return hasher.hexdigest()
 
 
-def init_db(db_path: Optional[str] = None) -> sqlite3.Connection:
+def init_db(db_path: str | None = None) -> sqlite3.Connection:
     """Initialize the SQLite index database connection and schema.
 
     Args:
@@ -150,7 +215,7 @@ def init_db(db_path: Optional[str] = None) -> sqlite3.Connection:
     return conn
 
 
-def get_readonly_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
+def get_readonly_connection(db_path: str | None = None) -> sqlite3.Connection:
     """Open a read-only SQLite connection to the index database with concurrency timeout.
 
     Args:
@@ -172,7 +237,7 @@ def get_readonly_connection(db_path: Optional[str] = None) -> sqlite3.Connection
         return init_db(path)
 
 
-def clean_index_cache(db_path: Optional[str] = None) -> int:
+def clean_index_cache(db_path: str | None = None) -> int:
     """Remove local ephemeral index database and auxiliary journal/WAL files.
 
     Args:
@@ -194,7 +259,7 @@ def clean_index_cache(db_path: Optional[str] = None) -> int:
     return count
 
 
-def extract_framework_and_version(file_name: str) -> Tuple[str, str]:
+def extract_framework_and_version(file_name: str) -> tuple[str, str]:
     """Extract framework identifier and version string from snapshot filename.
 
     Args:
@@ -223,7 +288,7 @@ def extract_framework_and_version(file_name: str) -> Tuple[str, str]:
         "html_dsl",
         "latex_dsl",
         "flax_nnx",
-        "optax_shim",
+        "optax",
         "orbax_checkpoint",
     ]
     for mw in multiword_frameworks:
@@ -266,7 +331,7 @@ def index_snapshot_file(json_path: str, conn: sqlite3.Connection) -> int:
     try:
         if json_path.endswith(".gz"):
             with gzip.open(json_path, "rt", encoding="utf-8") as gf:
-                data = json.load(gf)
+                data: object = json.load(gf)
         else:
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -288,23 +353,28 @@ def index_snapshot_file(json_path: str, conn: sqlite3.Connection) -> int:
         if data.get("version"):
             version = str(data["version"])
 
-    items: List[Dict[str, Any]] = []
+    items: list[dict[str, JsonValue]] = []
     if isinstance(data, dict):
-        if "categories" in data:
-            for _cat, cat_items in data["categories"].items():
+        raw_cats = data.get("categories")
+        raw_ops = data.get("operations")
+        raw_insts = data.get("instructions")
+        raw_items = data.get("items")
+        if isinstance(raw_cats, dict):
+            for _cat, cat_items in raw_cats.items():
                 if isinstance(cat_items, list):
-                    items.extend(cat_items)
-        elif "operations" in data and isinstance(data["operations"], list):
-            items.extend(data["operations"])
-        elif "instructions" in data and isinstance(data["instructions"], list):
-            items.extend(data["instructions"])
-        elif "items" in data and isinstance(data["items"], list):
-            items.extend(data["items"])
+                    items.extend([dict(x) for x in cat_items if isinstance(x, dict)])
+        elif isinstance(raw_ops, list):
+            items.extend([dict(x) for x in raw_ops if isinstance(x, dict)])
+        elif isinstance(raw_insts, list):
+            items.extend([dict(x) for x in raw_insts if isinstance(x, dict)])
+        elif isinstance(raw_items, list):
+            items.extend([dict(x) for x in raw_items if isinstance(x, dict)])
     else:
-        items.extend(data)
+        for raw_elem in data:
+            assert isinstance(raw_elem, dict)
+            items.append(dict(raw_elem))
 
     with conn:
-        # Clear previous records for this file
         cur.execute(
             "SELECT id, api_path, name, docstring FROM symbols WHERE file_path = ?",
             (json_path,),
@@ -320,14 +390,14 @@ def index_snapshot_file(json_path: str, conn: sqlite3.Connection) -> int:
 
         inserted = 0
         for item in items:
-            if not isinstance(item, dict):
-                continue
-            api_path = (
+            api_path = str(
                 item.get("api_path") or item.get("name") or item.get("mnemonic") or ""
             )
-            name = item.get("name") or item.get("mnemonic") or api_path.split(".")[-1]
-            kind = item.get("kind", "function")
-            doc = item.get("docstring", "")
+            name = str(
+                item.get("name") or item.get("mnemonic") or api_path.split(".")[-1]
+            )
+            kind = str(item.get("kind", "function"))
+            doc = str(item.get("docstring") or "")
             raw_json = json.dumps(item)
 
             cur.execute(
@@ -358,13 +428,13 @@ def index_snapshot_file(json_path: str, conn: sqlite3.Connection) -> int:
     return inserted
 
 
-def get_available_snapshot_files() -> List[str]:
+def get_available_snapshot_files() -> list[str]:
     """Discover all bundled and locally cached snapshot JSON files.
 
     Returns:
         List of absolute file paths to discovered JSON files.
     """
-    found: List[str] = []
+    found: list[str] = []
     base_dir = os.path.dirname(__file__)
     search_dirs = get_custom_snapshots_paths() + [
         os.path.join(base_dir, "snapshots"),
@@ -379,7 +449,7 @@ def get_available_snapshot_files() -> List[str]:
     return found
 
 
-def ensure_index(db_path: Optional[str] = None) -> sqlite3.Connection:
+def ensure_index(db_path: str | None = None) -> sqlite3.Connection:
     """Ensure the local SQLite index is initialized and up to date.
 
     Args:
@@ -400,11 +470,11 @@ def ensure_index(db_path: Optional[str] = None) -> sqlite3.Connection:
 
 def search_index(
     query: str,
-    framework: Optional[str] = None,
-    version: Optional[str] = None,
+    framework: str | None = None,
+    version: str | None = None,
     limit: int = 10,
-    db_path: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    db_path: str | None = None,
+) -> list[IndexedSymbolRecord]:
     """Search for operations using the SQLite FTS5 index.
 
     Args:
@@ -415,11 +485,8 @@ def search_index(
         db_path: Optional custom database path.
 
     Returns:
-        List of serialized symbol dictionaries.
+        List of `IndexedSymbolRecord` instances.
     """
-    import contextlib
-    import re
-
     clean_q = re.sub(r"[^\w\.]+", " ", query).strip()
     if not clean_q:
         return []
@@ -433,11 +500,10 @@ def search_index(
     with contextlib.closing(ensure_index(db_path)) as conn:
         cur = conn.cursor()
 
-        # FTS query with quoted tokens and prefix wildcard on final token
         fts_term = " ".join(f'"{t}"' for t in tokens[:-1] + [tokens[-1]]) + "*"
 
         conditions = ["symbols_fts MATCH ?"]
-        params: List[Any] = [fts_term]
+        params: list[str | int] = [fts_term]
 
         if framework:
             conditions.append("s.framework = ?")
@@ -448,7 +514,7 @@ def search_index(
 
         where_clause = " AND ".join(conditions)
         sql = f"""
-            SELECT s.json_data
+            SELECT s.framework, s.json_data
             FROM symbols_fts f
             JOIN symbols s ON f.rowid = s.id
             WHERE {where_clause}
@@ -459,10 +525,16 @@ def search_index(
 
         cur.execute(sql, params)
         rows = cur.fetchall()
-        results = []
+        results: list[IndexedSymbolRecord] = []
         for r in rows:
             try:
-                results.append(json.loads(r["json_data"]))
+                parsed: object = json.loads(r["json_data"])
+                assert isinstance(parsed, dict)
+                results.append(
+                    IndexedSymbolRecord.from_raw_dict(
+                        parsed, framework=str(r["framework"] or "")
+                    )
+                )
             except Exception:
                 pass
         return results
@@ -471,9 +543,9 @@ def search_index(
 def lookup_symbol(
     framework: str,
     api_path: str,
-    version: Optional[str] = None,
-    db_path: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
+    version: str | None = None,
+    db_path: str | None = None,
+) -> IndexedSymbolRecord | None:
     """Look up exact symbol definition by framework and API path.
 
     Args:
@@ -483,16 +555,14 @@ def lookup_symbol(
         db_path: Optional database path.
 
     Returns:
-        Deserialized GhostRef dict, or None if not found.
+        `IndexedSymbolRecord` instance, or None if not found.
     """
-    import contextlib
-
     with contextlib.closing(ensure_index(db_path)) as conn:
         cur = conn.cursor()
 
         clean_fw = framework.lower().strip()
         conditions = ["framework = ?", "(api_path = ? OR name = ?)"]
-        params: List[Any] = [clean_fw, api_path, api_path]
+        params: list[str | int] = [clean_fw, api_path, api_path]
 
         if version:
             conditions.append("version = ?")
@@ -500,7 +570,7 @@ def lookup_symbol(
 
         where_clause = " AND ".join(conditions)
         sql = f"""
-            SELECT json_data
+            SELECT framework, json_data
             FROM symbols
             WHERE {where_clause}
             ORDER BY id DESC
@@ -509,12 +579,15 @@ def lookup_symbol(
         cur.execute(sql, params)
         row = cur.fetchone()
         if row:
-            parsed_sym: Dict[str, Any] = json.loads(row["json_data"])
-            return parsed_sym
+            parsed_sym: object = json.loads(row["json_data"])
+            assert isinstance(parsed_sym, dict)
+            return IndexedSymbolRecord.from_raw_dict(
+                parsed_sym, framework=str(row["framework"] or clean_fw)
+            )
         return None
 
 
-def clear_index(db_path: Optional[str] = None) -> bool:
+def clear_index(db_path: str | None = None) -> bool:
     """Clear and delete the local ephemeral index database file.
 
     Args:

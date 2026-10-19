@@ -4,6 +4,8 @@ Verifies that wheels built via pyproject.toml bundle all required JSON snapshots
 contain 0 database files, and can be queried in clean isolated environments.
 """
 
+from __future__ import annotations
+
 import os
 import shutil
 import zipfile

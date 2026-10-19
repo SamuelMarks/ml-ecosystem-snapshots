@@ -5,14 +5,13 @@ from __future__ import annotations
 import ast
 import inspect
 import re
-from typing import Any, Optional, Tuple
 
 from ml_ecosystem_snapshots.utils import strip_sphinx_roles
 
 
 def sanitize_param_default(
-    val: Any,
-) -> Tuple[Optional[str], Optional[str], bool]:
+    val: object,
+) -> tuple[str | None, str | None, bool]:
     """Sanitize parameter default value while preserving semantic literals and scrubbing memory addresses.
 
     Args:
@@ -71,7 +70,7 @@ def sanitize_param_default(
         return ("<unrepresentable>", None, False)
 
 
-def sanitize_type_str(typ_str: Optional[str]) -> Optional[str]:
+def sanitize_type_str(typ_str: str | None) -> str | None:
     """Normalize type hint strings to PEP-585 and PEP-604 syntax.
 
     Args:
@@ -83,12 +82,10 @@ def sanitize_type_str(typ_str: Optional[str]) -> Optional[str]:
     if not typ_str:
         return typ_str
 
-    # Clean Sphinx roles like :class:`~torch.Tensor` -> torch.Tensor
     typ_str = strip_sphinx_roles(typ_str)
     if not typ_str:
         return typ_str
 
-    # Remove <class 'X'> before AST parsing
     typ_str = re.sub(r"<class '([^']+)'>", r"\1", typ_str)
 
     class TypeHintSanitizer(ast.NodeTransformer):

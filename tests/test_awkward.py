@@ -1,8 +1,9 @@
 """Tests for Awkward Array ragged and nested layout snapshot extractor."""
 
+from __future__ import annotations
+
 import sys
 import types
-from typing import Any
 import pytest
 
 from ml_ecosystem_snapshots.frameworks.awkward import (
@@ -10,7 +11,8 @@ from ml_ecosystem_snapshots.frameworks.awkward import (
     _get_awkward,
     collect_api,
 )
-from ml_ecosystem_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.models import ExtendedGhostRef
 from ml_switcheroo_ir.schema.ghost import (
     GhostPythonRef,
     SemanticTier,
@@ -28,7 +30,7 @@ def test_collect_api_awkward_live(monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock Awkward Array module."""
 
         @staticmethod
-        def Array(data: Any) -> Any:
+        def Array(data: object) -> object:
             """Mock Array constructor.
 
             Args:
@@ -40,7 +42,7 @@ def test_collect_api_awkward_live(monkeypatch: pytest.MonkeyPatch) -> None:
             return data
 
         @staticmethod
-        def Record(data: Any) -> Any:
+        def Record(data: object) -> object:
             """Mock Record constructor.
 
             Args:
@@ -52,7 +54,7 @@ def test_collect_api_awkward_live(monkeypatch: pytest.MonkeyPatch) -> None:
             return data
 
         @staticmethod
-        def flatten(data: Any) -> Any:
+        def flatten(data: object) -> object:
             """Mock flatten method.
 
             Args:
@@ -64,7 +66,7 @@ def test_collect_api_awkward_live(monkeypatch: pytest.MonkeyPatch) -> None:
             return data
 
         @staticmethod
-        def mean(data: Any) -> Any:
+        def mean(data: object) -> object:
             """Mock mean method.
 
             Args:
@@ -81,7 +83,9 @@ def test_collect_api_awkward_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
     real_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: Any, name: str, is_public: bool = True) -> Any:
+    def mock_inspect(
+        obj: object, name: str, is_public: bool = True
+    ) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -150,9 +154,9 @@ def test_get_awkward_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     import builtins
 
-    real_import = builtins.__import__
+    real_import = getattr(builtins, "__import__")
 
-    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+    def mock_import(name: str, *args: object, **kwargs: object) -> object:
         """Mock import function.
 
         Args:
@@ -162,19 +166,6 @@ def test_get_awkward_exception(monkeypatch: pytest.MonkeyPatch) -> None:
 
         Returns:
             The imported module or raises.
-        """
-        """Mock import raising ImportError on awkward.
-
-        Args:
-            name: Module name.
-            *args: Positional import arguments.
-            **kwargs: Keyword import arguments.
-
-        Returns:
-            Imported module.
-
-        Raises:
-            ImportError: When importing awkward.
         """
         if "awkward" in name:
             raise ImportError("Simulated awkward absent")
@@ -202,25 +193,7 @@ def test_collect_api_awkward_inspection_exception(
         "ml_ecosystem_snapshots.frameworks.awkward._get_awkward", lambda: FlakyAwkward()
     )
 
-    def mock_inspect(*args: Any, **kwargs: Any) -> Any:
-        """Mock inspect function.
-
-        Args:
-            *args: Variable arguments.
-            **kwargs: Variable arguments.
-
-        Returns:
-            A mocked GhostRef.
-        """
-        """Mock inspect function.
-
-        Args:
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            A mocked GhostRef.
-        """
+    def mock_inspect(*args: object, **kwargs: object) -> object:
         """Mock inspect raising RuntimeError.
 
         Args:

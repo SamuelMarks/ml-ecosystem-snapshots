@@ -1,8 +1,10 @@
 """Data models and diagnostic report structures for the Grounding SDK."""
 
+from __future__ import annotations
+
 from enum import Enum
-from typing import List, Optional
-from pydantic import BaseModel, Field
+
+import pydantic
 
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
@@ -15,36 +17,38 @@ class DiagnosticSeverity(str, Enum):
     ERROR = "ERROR"
 
 
-class GroundingDiagnostic(BaseModel):
+class GroundingDiagnostic(pydantic.BaseModel):
     """Specific diagnostic message emitted during symbol or operation verification."""
 
-    field: str = Field(description="The component, attribute, or operand evaluated.")
-    message: str = Field(description="Human-readable diagnostic explanation.")
-    severity: DiagnosticSeverity = Field(
+    field: str = pydantic.Field(
+        description="The component, attribute, or operand evaluated."
+    )
+    message: str = pydantic.Field(description="Human-readable diagnostic explanation.")
+    severity: DiagnosticSeverity = pydantic.Field(
         default=DiagnosticSeverity.ERROR,
         description="Severity level of the diagnostic.",
     )
-    suggested_fix: Optional[str] = Field(
+    suggested_fix: str | None = pydantic.Field(
         default=None,
         description="Suggested replacement or typo correction.",
     )
 
 
-class GroundingReport(BaseModel):
+class GroundingReport(pydantic.BaseModel):
     """Comprehensive validation report for a verified operation or symbol."""
 
-    is_grounded: bool = Field(
+    is_grounded: bool = pydantic.Field(
         description="True if the symbol is grounded and valid without fatal errors."
     )
-    target: str = Field(description="Target framework, dialect, or ISA.")
-    symbol: str = Field(
+    target: str = pydantic.Field(description="Target framework, dialect, or ISA.")
+    symbol: str = pydantic.Field(
         description="Queried symbol, mnemonic, or operation identifier."
     )
-    diagnostics: List[GroundingDiagnostic] = Field(
+    diagnostics: list[GroundingDiagnostic] = pydantic.Field(
         default_factory=list,
         description="Collection of diagnostics produced during verification.",
     )
-    matched_ref: Optional[ExtendedGhostRef] = Field(
+    matched_ref: ExtendedGhostRef | None = pydantic.Field(
         default=None,
         description="Resolved ground-truth reference object if discovered.",
     )
@@ -63,7 +67,7 @@ class GroundingReport(BaseModel):
         field: str,
         message: str,
         severity: DiagnosticSeverity = DiagnosticSeverity.ERROR,
-        suggested_fix: Optional[str] = None,
+        suggested_fix: str | None = None,
     ) -> None:
         """Append a new diagnostic message to the report.
 

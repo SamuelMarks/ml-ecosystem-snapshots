@@ -5,30 +5,50 @@ from __future__ import annotations
 import json
 import os
 import threading
-from typing import Any, Callable, Dict, List, Optional, Tuple
+import typing
 
 from ml_ecosystem_snapshots.api import (
+    CollectorFn,
     FRAMEWORK_COLLECTORS as FRAMEWORK_COLLECTORS,
     extract_snapshot as _imported_extract_snapshot,
 )
+from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.network_env import (
     get_custom_snapshots_paths,
     is_offline_mode,
 )
 
-extract_snapshot: Optional[Callable[..., Dict[str, Any]]] = _imported_extract_snapshot
-_extract_snapshot_fn: Optional[Callable[..., Dict[str, Any]]] = (
-    _imported_extract_snapshot
-)
 
-_SNAPSHOT_CACHE: Dict[str, Dict[str, Any]] = {}
+class ExtractSnapshotFn(typing.Protocol):
+    """Protocol for framework snapshot extraction callable."""
+
+    def __call__(
+        self,
+        framework_name: str,
+        include_nonpublic: bool = False,
+    ) -> dict[str, JsonValue]:
+        """Extract a framework snapshot dictionary.
+
+        Args:
+            framework_name: Target framework identifier.
+            include_nonpublic: Whether to include non-public symbols.
+
+        Returns:
+            Extracted snapshot dictionary.
+        """
+        ...
+
+
+extract_snapshot: ExtractSnapshotFn | None = _imported_extract_snapshot
+
+_SNAPSHOT_CACHE: dict[str, dict[str, JsonValue]] = {}
 
 
 def get_framework_snapshot(
     framework: str,
-    version: Optional[str] = None,
-    prefer_bundled: Optional[bool] = None,
-) -> Dict[str, Any]:
+    version: str | None = None,
+    prefer_bundled: bool | None = None,
+) -> dict[str, JsonValue]:
     """Retrieve or build a cached snapshot for a target framework.
 
     Args:
@@ -41,24 +61,23 @@ def get_framework_snapshot(
     Returns:
         The snapshot dictionary containing categorized GhostRefs.
     """
-    active_cache: Dict[str, Dict[str, Any]] = _SNAPSHOT_CACHE
-    active_extract: Optional[Callable[..., Dict[str, Any]]] = extract_snapshot
-    active_extract_default: Optional[Callable[..., Dict[str, Any]]] = (
-        _extract_snapshot_fn
-    )
-    active_collectors: Dict[str, Any] = FRAMEWORK_COLLECTORS
+    active_cache: dict[str, dict[str, JsonValue]] = _SNAPSHOT_CACHE
+    active_extract: ExtractSnapshotFn | None = extract_snapshot
+    active_collectors: dict[str, CollectorFn] = FRAMEWORK_COLLECTORS
     active_custom_paths = get_custom_snapshots_paths
     active_offline = is_offline_mode
 
     clean_fw = framework.lower().strip()
     cache_key = f"{clean_fw}@{version}" if version else clean_fw
     if cache_key not in active_cache:
-        loaded_data = None
+        loaded_data: dict[str, JsonValue] | None = None
         source_kind = "not_found"
         use_bundled = (
             prefer_bundled
             if prefer_bundled is not None
-            else (active_extract is None or active_extract is active_extract_default)
+            else (
+                active_extract is None or active_extract == _imported_extract_snapshot
+            )
         )
         if use_bundled:
             from ml_ecosystem_snapshots.index import get_cache_dir
@@ -66,10 +85,10 @@ def get_framework_snapshot(
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             clean_ver = version.lstrip("vV") if version else None
 
-            custom_dirs: List[Tuple[str, str]] = [
+            custom_dirs: list[tuple[str, str]] = [
                 (cd, "custom_path") for cd in active_custom_paths()
             ]
-            candidates: List[Tuple[str, str]] = custom_dirs + [
+            candidates: list[tuple[str, str]] = custom_dirs + [
                 (os.path.join(base_dir, "snapshots"), "bundled_package"),
                 (os.path.join(base_dir, "frameworks"), "bundled_package"),
                 (os.path.join(get_cache_dir(), "snapshots"), "local_cache"),
@@ -107,9 +126,9 @@ def get_framework_snapshot(
                                     "r",
                                     encoding="utf-8",
                                 ) as f:
-                                    data = json.load(f)
-                                    if "categories" in data:
-                                        loaded_data = data
+                                    data: object = json.load(f)
+                                    if isinstance(data, dict) and "categories" in data:
+                                        loaded_data = dict(data)
                                     elif isinstance(data, dict) and (
                                         "operations" in data or "instructions" in data
                                     ):
@@ -153,9 +172,9 @@ def get_framework_snapshot(
             )
         ):
             try:
-                data = active_extract(clean_fw)
-                data["_snapshot_source"] = "runtime_introspection"
-                active_cache[cache_key] = data
+                extracted = active_extract(clean_fw)
+                extracted["_snapshot_source"] = "runtime_introspection"
+                active_cache[cache_key] = extracted
             except Exception:
                 active_cache[cache_key] = {"categories": {}}
         else:
@@ -167,7 +186,7 @@ class SnapshotRepository:
     """Thread-safe repository managing in-memory framework snapshot caches."""
 
     def __init__(
-        self, backing_store: Optional[Dict[str, Dict[str, Any]]] = None
+        self, backing_store: dict[str, dict[str, JsonValue]] | None = None
     ) -> None:
         """Initialize the snapshot repository with a thread lock and backing dictionary.
 
@@ -176,7 +195,7 @@ class SnapshotRepository:
                 the canonical `_SNAPSHOT_CACHE`.
         """
         self._lock = threading.RLock()
-        self._store: Dict[str, Dict[str, Any]] = (
+        self._store: dict[str, dict[str, JsonValue]] = (
             backing_store if backing_store is not None else _SNAPSHOT_CACHE
         )
 
@@ -188,9 +207,9 @@ class SnapshotRepository:
     def get(
         self,
         framework: str,
-        version: Optional[str] = None,
-        prefer_bundled: Optional[bool] = None,
-    ) -> Dict[str, Any]:
+        version: str | None = None,
+        prefer_bundled: bool | None = None,
+    ) -> dict[str, JsonValue]:
         """Retrieve or load a snapshot for a target framework.
 
         Args:
@@ -213,7 +232,10 @@ class SnapshotRepository:
             return snap
 
     def put(
-        self, framework: str, data: Dict[str, Any], version: Optional[str] = None
+        self,
+        framework: str,
+        data: dict[str, JsonValue],
+        version: str | None = None,
     ) -> None:
         """Explicitly insert a snapshot dictionary into the repository cache.
 
@@ -228,7 +250,10 @@ class SnapshotRepository:
             self._store[cache_key] = data
 
     def preload(
-        self, framework: str, data: Dict[str, Any], version: Optional[str] = None
+        self,
+        framework: str,
+        data: dict[str, JsonValue],
+        version: str | None = None,
     ) -> None:
         """Preload a snapshot dictionary into the repository cache for testing or warming.
 
@@ -242,10 +267,10 @@ class SnapshotRepository:
 
 def resolve_snapshot(
     framework: str,
-    version: Optional[str] = None,
-    prefer_bundled: Optional[bool] = None,
-    repository: Optional[SnapshotRepository] = None,
-) -> Dict[str, Any]:
+    version: str | None = None,
+    prefer_bundled: bool | None = None,
+    repository: SnapshotRepository | None = None,
+) -> dict[str, JsonValue]:
     """Resolve a framework snapshot via an explicit `SnapshotRepository` or default loader.
 
     Args:
@@ -271,10 +296,10 @@ def resolve_snapshot(
 
 
 __all__ = [
+    "ExtractSnapshotFn",
     "FRAMEWORK_COLLECTORS",
     "SnapshotRepository",
     "_SNAPSHOT_CACHE",
-    "_extract_snapshot_fn",
     "extract_snapshot",
     "get_framework_snapshot",
     "resolve_snapshot",

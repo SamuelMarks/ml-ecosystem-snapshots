@@ -1,5 +1,7 @@
 """Unit tests for snapshot envelope versioning and dual format support across MLIR, StableHLO, NVIDIA, and AMD frameworks."""
 
+from __future__ import annotations
+
 import json
 import os
 import tempfile
@@ -213,14 +215,14 @@ def test_scraper_cli_arguments_and_envelope_emission() -> None:
         # MLIR
         out_mlir = os.path.join(tmpdir, "mlir_custom.json")
         with mock.patch(
-            "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html", return_value=""
+            "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_url", return_value=""
         ):
             with mock.patch(
                 "ml_ecosystem_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
                 return_value=[],
             ):
                 with mock.patch(
-                    "ml_ecosystem_snapshots.tools.scrape_mlir.scrape_stablehlo",
+                    "ml_ecosystem_snapshots.tools.scrape_mlir.extract_ops",
                     return_value=[],
                 ):
                     mlir_main(

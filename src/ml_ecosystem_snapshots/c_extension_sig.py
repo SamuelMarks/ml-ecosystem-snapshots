@@ -5,31 +5,108 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterable, MutableSequence
 import re
-from typing import (
-    Any,
-    Iterator,
-    List,
-    NamedTuple,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-    overload,
-)
+import typing
+from typing_extensions import TypeAlias
+
+import pydantic
 
 from ml_ecosystem_snapshots.exceptions import CExtensionSignatureError
 
+RawParamTuple: TypeAlias = tuple[str, str, typing.Optional[str], typing.Optional[str]]
 
-class ParsedParamTuple(NamedTuple):
+
+class IndexSlice(typing.Protocol):
+    """Structural protocol representing a slice index without generic Any variance."""
+
+    @property
+    def start(self) -> int | None:
+        """Return slice start index.
+
+        Returns:
+            Start index or None.
+        """
+        ...
+
+    @property
+    def stop(self) -> int | None:
+        """Return slice stop index.
+
+        Returns:
+            Stop index or None.
+        """
+        ...
+
+    @property
+    def step(self) -> int | None:
+        """Return slice step stride.
+
+        Returns:
+            Step stride or None.
+        """
+        ...
+
+
+class ParsedParamTuple(pydantic.BaseModel):
     """Structured parameter tuple extracted from C-extension or PyBind11 docstrings."""
+
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
     name: str
     kind: str
-    default: Optional[str] = None
-    annotation: Optional[str] = None
+    default: str | None = None
+    annotation: str | None = None
+
+    def __init__(
+        self,
+        name: str,
+        kind: str,
+        default: str | None = None,
+        annotation: str | None = None,
+    ) -> None:
+        """Initialize a `ParsedParamTuple` from positional or keyword arguments.
+
+        Args:
+            name: Parameter name.
+            kind: Parameter kind string (e.g. 'POSITIONAL_OR_KEYWORD').
+            default: Optional default value string representation.
+            annotation: Optional type annotation string representation.
+        """
+        super().__init__(
+            name=name,
+            kind=kind,
+            default=default,
+            annotation=annotation,
+        )
+
+    def as_tuple(self) -> RawParamTuple:
+        """Return the 4-tuple `(name, kind, default, annotation)` representation.
+
+        Returns:
+            Tuple of `(name, kind, default, annotation)`.
+        """
+        return (self.name, self.kind, self.default, self.annotation)
+
+    @typing.overload
+    def __getitem__(self, index: typing.Literal[0, 1]) -> str: ...
+
+    @typing.overload
+    def __getitem__(self, index: int) -> str | None: ...
+
+    def __getitem__(self, index: int) -> str | None:
+        """Retrieve a parameter element by tuple index.
+
+        Args:
+            index: Element index (0=name, 1=kind, 2=default, 3=annotation).
+
+        Returns:
+            Element string or None.
+        """
+        return self.as_tuple()[index]
 
 
-def _to_parsed_param_tuple(item: Any) -> ParsedParamTuple:
+def _to_parsed_param_tuple(
+    item: ParsedParamTuple | RawParamTuple,
+) -> ParsedParamTuple:
     """Coerce a 4-tuple or `ParsedParamTuple` into a `ParsedParamTuple` instance.
 
     Args:
@@ -43,16 +120,20 @@ def _to_parsed_param_tuple(item: Any) -> ParsedParamTuple:
     return ParsedParamTuple(item[0], item[1], item[2], item[3])
 
 
-class CExtensionSignature(
-    MutableSequence[Tuple[str, str, Optional[str], Optional[str]]]
-):
+class CExtensionSignature(pydantic.BaseModel):
     """Extracted signature parameter sequence for C-extensions with overloads support."""
+
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    params: list[ParsedParamTuple] = pydantic.Field(default_factory=list)
+    returns_type: str | None = None
+    overloads: list[CExtensionSignature] = pydantic.Field(default_factory=list)
 
     def __init__(
         self,
-        params: Sequence[Tuple[str, str, Optional[str], Optional[str]]],
-        returns_type: Optional[str] = None,
-        overloads: Optional[List["CExtensionSignature"]] = None,
+        params: typing.Sequence[ParsedParamTuple | RawParamTuple] = (),
+        returns_type: str | None = None,
+        overloads: list[CExtensionSignature] | None = None,
     ) -> None:
         """Initialize signature with parameters, return type, and optional overloads.
 
@@ -61,11 +142,11 @@ class CExtensionSignature(
             returns_type: Optional return type annotation string.
             overloads: Optional list of secondary/tertiary overload signatures.
         """
-        self._params: List[ParsedParamTuple] = [
-            _to_parsed_param_tuple(p) for p in params
-        ]
-        self.returns_type: Optional[str] = returns_type
-        self.overloads: List["CExtensionSignature"] = overloads or []
+        super().__init__(
+            params=[_to_parsed_param_tuple(p) for p in params],
+            returns_type=returns_type,
+            overloads=overloads or [],
+        )
 
     def __len__(self) -> int:
         """Return the number of extracted parameters.
@@ -73,22 +154,19 @@ class CExtensionSignature(
         Returns:
             Parameter count.
         """
-        return len(self._params)
+        return len(self.params)
 
-    @overload
+    @typing.overload
     def __getitem__(self, index: int) -> ParsedParamTuple: ...
 
-    @overload
+    @typing.overload
     def __getitem__(
-        self, index: slice
-    ) -> MutableSequence[Tuple[str, str, Optional[str], Optional[str]]]: ...
+        self, index: IndexSlice
+    ) -> MutableSequence[ParsedParamTuple | RawParamTuple]: ...
 
     def __getitem__(
-        self, index: Union[int, slice]
-    ) -> Union[
-        ParsedParamTuple,
-        MutableSequence[Tuple[str, str, Optional[str], Optional[str]]],
-    ]:
+        self, index: int | IndexSlice
+    ) -> ParsedParamTuple | MutableSequence[ParsedParamTuple | RawParamTuple]:
         """Retrieve a parameter tuple or slice of parameter tuples.
 
         Args:
@@ -97,34 +175,35 @@ class CExtensionSignature(
         Returns:
             Single `ParsedParamTuple` or list of `ParsedParamTuple` items.
         """
-        if isinstance(index, slice):
-            res_slice: List[Tuple[str, str, Optional[str], Optional[str]]] = list(
-                self._params[index]
-            )
-            return res_slice
-        return self._params[index]
+        if isinstance(index, int):
+            return self.params[index]
+        res_slice: list[ParsedParamTuple | RawParamTuple] = list(
+            self.params[slice(index.start, index.stop, index.step)]
+        )
+        return res_slice
 
-    @overload
+    @typing.overload
     def __setitem__(
         self,
         index: int,
-        value: Tuple[str, str, Optional[str], Optional[str]],
+        value: ParsedParamTuple | RawParamTuple,
     ) -> None: ...
 
-    @overload
+    @typing.overload
     def __setitem__(
         self,
-        index: slice,
-        value: Iterable[Tuple[str, str, Optional[str], Optional[str]]],
+        index: IndexSlice,
+        value: Iterable[ParsedParamTuple | RawParamTuple],
     ) -> None: ...
 
     def __setitem__(
         self,
-        index: Union[int, slice],
-        value: Union[
-            Tuple[str, str, Optional[str], Optional[str]],
-            Iterable[Tuple[str, str, Optional[str], Optional[str]]],
-        ],
+        index: int | IndexSlice,
+        value: (
+            ParsedParamTuple
+            | RawParamTuple
+            | Iterable[ParsedParamTuple | RawParamTuple]
+        ),
     ) -> None:
         """Assign a parameter tuple or slice of parameter tuples.
 
@@ -132,23 +211,31 @@ class CExtensionSignature(
             index: Integer index or slice.
             value: Replacement tuple or sequence of tuples.
         """
-        if isinstance(index, slice):
-            self._params[index] = [_to_parsed_param_tuple(item) for item in value]
+        if isinstance(index, int):
+            assert isinstance(value, (ParsedParamTuple, tuple))
+            self.params[index] = _to_parsed_param_tuple(value)
         else:
-            self._params[index] = _to_parsed_param_tuple(value)
+            assert not isinstance(value, (ParsedParamTuple, tuple))
+            self.params[slice(index.start, index.stop, index.step)] = [
+                _to_parsed_param_tuple(item) for item in value
+            ]
 
-    def __delitem__(self, index: Union[int, slice]) -> None:
+    def __delitem__(self, index: int | IndexSlice) -> None:
         """Remove a parameter tuple or slice of parameter tuples.
 
         Args:
             index: Integer index or slice to delete.
         """
-        del self._params[index]
+        del self.params[
+            index
+            if isinstance(index, int)
+            else slice(index.start, index.stop, index.step)
+        ]
 
     def insert(
         self,
         index: int,
-        value: Tuple[str, str, Optional[str], Optional[str]],
+        value: ParsedParamTuple | RawParamTuple,
     ) -> None:
         """Insert a parameter tuple at `index`.
 
@@ -156,15 +243,15 @@ class CExtensionSignature(
             index: Target insertion index.
             value: Parameter tuple to insert.
         """
-        self._params.insert(index, _to_parsed_param_tuple(value))
+        self.params.insert(index, _to_parsed_param_tuple(value))
 
-    def __iter__(self) -> Iterator[ParsedParamTuple]:
+    def iter_params(self) -> typing.Iterator[ParsedParamTuple]:
         """Iterate over the parameter tuples.
 
         Returns:
             Iterator of `ParsedParamTuple` items.
         """
-        return iter(self._params)
+        return iter(self.params)
 
     def __eq__(self, other: object) -> bool:
         """Compare equality against another `CExtensionSignature` or `list` of tuples.
@@ -176,9 +263,9 @@ class CExtensionSignature(
             True if parameter sequences are equal, False otherwise.
         """
         if isinstance(other, CExtensionSignature):
-            return self._params == other._params
+            return self.params == other.params
         if isinstance(other, list):
-            return list(self._params) == other
+            return list(self.params) == other
         return False
 
     def __repr__(self) -> str:
@@ -187,7 +274,10 @@ class CExtensionSignature(
         Returns:
             Formatted representation string.
         """
-        return repr(list(self._params))
+        return repr([p.as_tuple() for p in self.params])
+
+
+setattr(CExtensionSignature, "__iter__", CExtensionSignature.iter_params)
 
 
 def _normalize_c_sig_args(args_str: str) -> str:
@@ -201,9 +291,9 @@ def _normalize_c_sig_args(args_str: str) -> str:
     Returns:
         Normalized Python parameter string.
     """
-    tokens: List[str] = []
+    tokens: list[str] = []
     depth = 0
-    cur: List[str] = []
+    cur: list[str] = []
     for char in args_str:
         if char in "<[(":
             depth += 1
@@ -219,7 +309,7 @@ def _normalize_c_sig_args(args_str: str) -> str:
     if cur:
         tokens.append("".join(cur).strip())
 
-    transformed: List[str] = []
+    transformed: list[str] = []
     for tok in tokens:
         if not tok:
             continue
@@ -281,13 +371,7 @@ def _parse_c_sig_ast_arguments(args_str: str) -> ast.arguments:
 
 def _parse_c_extension_sig_str(
     sig_line: str,
-) -> Optional[
-    Tuple[
-        str,
-        List[Tuple[str, str, Optional[str], Optional[str]]],
-        Optional[str],
-    ]
-]:
+) -> tuple[str, list[ParsedParamTuple], str | None] | None:
     """Parse a single signature line into function name, params, and return type.
 
     Args:
@@ -312,9 +396,9 @@ def _parse_c_extension_sig_str(
     except CExtensionSignatureError:
         return None
 
-    extracted_params: List[Tuple[str, str, Optional[str], Optional[str]]] = []
+    extracted_params: list[ParsedParamTuple] = []
 
-    def unparse_anno(node: Any) -> Optional[str]:
+    def unparse_anno(node: ast.AST | None) -> str | None:
         """Convert an AST annotation node back to a string.
 
         Args:
@@ -327,14 +411,14 @@ def _parse_c_extension_sig_str(
             return None
         return ast.unparse(node)
 
-    def unparse_default(node: Any) -> Optional[str]:
+    def unparse_default(node: ast.AST) -> str:
         """Convert an AST default value node to a string representation.
 
         Args:
             node: AST node.
 
         Returns:
-            String representation or None.
+            String representation.
         """
         try:
             val = ast.literal_eval(node)
@@ -389,8 +473,8 @@ def _parse_c_extension_sig_str(
 
 
 def extract_c_extension_signature(
-    target: Any, target_name: str
-) -> Optional[CExtensionSignature]:
+    target: object, target_name: str
+) -> CExtensionSignature | None:
     """Extract signature parameters from C-extension / PyBind11 docstrings.
 
     Args:
@@ -407,13 +491,7 @@ def extract_c_extension_signature(
 
     lines = docstring.strip().splitlines()
 
-    parsed_sigs: List[
-        Tuple[
-            str,
-            List[Tuple[str, str, Optional[str], Optional[str]]],
-            Optional[str],
-        ]
-    ] = []
+    parsed_sigs: list[tuple[str, list[ParsedParamTuple], str | None]] = []
 
     has_numbered = any(re.match(r"^\s*\d+[\.\)]", line) for line in lines)
 
@@ -478,6 +556,7 @@ def extract_c_extension_signature(
 __all__ = [
     "CExtensionSignature",
     "ParsedParamTuple",
+    "RawParamTuple",
     "_normalize_c_sig_args",
     "_parse_c_extension_sig_str",
     "extract_c_extension_signature",

@@ -2,17 +2,42 @@
 
 Exposes ground-truth framework signatures, assembly instruction verifiers,
 and MLIR/StableHLO dialect verification tools over a standard JSON-RPC stdio
-interface for AI code generation agents.
+interface for code-generation agents.
 """
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional, TextIO
+import typing
 
 from ml_ecosystem_snapshots.mcp.cache import (
+    ExtractSnapshotFn,
     SnapshotRepository,
     _SNAPSHOT_CACHE,
     get_framework_snapshot,
+    resolve_snapshot,
+)
+
+try:
+    from ml_ecosystem_snapshots.api import (
+        CollectorFn,
+        FRAMEWORK_COLLECTORS as _imported_collectors,
+        extract_snapshot as _imported_extract_snapshot,
+    )
+
+    FRAMEWORK_COLLECTORS: dict[str, CollectorFn] = _imported_collectors
+    extract_snapshot: ExtractSnapshotFn | None = _imported_extract_snapshot
+except ImportError:
+    FRAMEWORK_COLLECTORS = {}
+    extract_snapshot = None
+from ml_ecosystem_snapshots.mcp.models import (
+    AntiPatternExplanationResult,
+    CodeBlockCheckResult,
+    CodeBlockFinding,
+    ConceptTranslationResult,
+    DomainOpCheckResult,
+    HallucinationCheckResult,
+    IrCheckResult,
+    IsaCheckResult,
 )
 from ml_ecosystem_snapshots.mcp.protocol import (
     JsonRpcError,
@@ -64,7 +89,6 @@ from ml_ecosystem_snapshots.mcp.tools.search import search_apis
 from ml_ecosystem_snapshots.mcp.tools.signature import get_api_signature
 from ml_ecosystem_snapshots.mcp.tools.translation import (
     CONCEPT_ALIAS_MAP,
-    CONCEPT_ARG_MAPPINGS,
     DEFAULT_CONCEPT_MAP,
     load_concept_map,
     translate_concept_arguments,
@@ -74,24 +98,10 @@ from ml_ecosystem_snapshots.network_env import (
     is_offline_mode,
 )
 
-extract_snapshot: Optional[Callable[..., Dict[str, Any]]]
-_extract_snapshot_fn: Optional[Callable[..., Dict[str, Any]]]
-try:
-    from ml_ecosystem_snapshots.api import (
-        FRAMEWORK_COLLECTORS as FRAMEWORK_COLLECTORS,
-        extract_snapshot as _imported_extract_snapshot,
-    )
-
-    extract_snapshot = _imported_extract_snapshot
-    _extract_snapshot_fn = _imported_extract_snapshot
-except ImportError:
-    FRAMEWORK_COLLECTORS = {}
-    extract_snapshot = None
-    _extract_snapshot_fn = None
-
 
 def run_mcp_server(
-    input_stream: Optional[TextIO] = None, output_stream: Optional[TextIO] = None
+    input_stream: typing.TextIO | None = None,
+    output_stream: typing.TextIO | None = None,
 ) -> None:
     """Run the stdio MCP JSON-RPC loop for code-generation agent queries.
 
@@ -105,20 +115,26 @@ def run_mcp_server(
 
 
 __all__ = [
+    "AntiPatternExplanationResult",
     "CONCEPT_ALIAS_MAP",
-    "CONCEPT_ARG_MAPPINGS",
+    "CodeBlockCheckResult",
+    "CodeBlockFinding",
+    "ConceptTranslationResult",
     "DEFAULT_CONCEPT_MAP",
     "DOMAIN_OP_CONFIGS",
     "DTYPE_CANONICAL_ALIASES",
     "DomainOpCheckConfig",
+    "DomainOpCheckResult",
     "FRAMEWORK_COLLECTORS",
+    "HallucinationCheckResult",
+    "IrCheckResult",
+    "IsaCheckResult",
     "JsonRpcError",
     "JsonRpcRequest",
     "JsonRpcResponse",
     "McpToolSpec",
     "SnapshotRepository",
     "_SNAPSHOT_CACHE",
-    "_extract_snapshot_fn",
     "_matches_rank_constraint",
     "build_domain_op_tool_schemas",
     "check_array_api_op",
@@ -154,6 +170,7 @@ __all__ = [
     "is_offline_mode",
     "load_concept_map",
     "normalize_dtype_name",
+    "resolve_snapshot",
     "run_mcp_server",
     "run_stdio_loop",
     "search_apis",

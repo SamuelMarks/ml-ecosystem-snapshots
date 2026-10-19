@@ -5,8 +5,10 @@ check_rdna_instruction, check_ptx_instruction, check_mlir_op, check_stablehlo_op
 operate strictly without network access, querying bundled ground-truth JSON files.
 """
 
+from __future__ import annotations
+
 import socket
-from typing import Any
+import typing
 from unittest import mock
 import pytest
 
@@ -14,14 +16,14 @@ from ml_ecosystem_snapshots import mcp_server
 
 
 @pytest.fixture(autouse=True)
-def forbid_network_connections() -> Any:
+def forbid_network_connections() -> typing.Generator[None, None, None]:
     """Fixture that forbids any outgoing socket connections during offline test execution.
 
     Yields:
         None after patching socket.socket.connect.
     """
 
-    def _block_connect(*args: Any, **kwargs: Any) -> None:
+    def _block_connect(*args: object, **kwargs: object) -> None:
         """Blocked connect function.
 
         Args:
@@ -412,7 +414,7 @@ def test_offline_stablehlo_op_validation() -> None:
     assert len(empty_res) == 0
 
 
-def test_offline_index_db_in_memory_fallback(monkeypatch: Any) -> None:
+def test_offline_index_db_in_memory_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify init_db falls back to in-memory database if disk directory creation fails.
 
     Args:

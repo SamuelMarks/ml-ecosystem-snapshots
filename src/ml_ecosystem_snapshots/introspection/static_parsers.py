@@ -3,27 +3,32 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+import typing
+from typing_extensions import TypeAlias
+
+import griffe
 
 from ml_ecosystem_snapshots.utils import (
     get_framework_docstring_parser,
     resolve_griffe_parser,
 )
 
-_GRIFFE_CACHE: Dict[str, Any] = {}
+GriffeCacheEntry: TypeAlias = typing.Union[
+    griffe.Module, griffe.Object, griffe.Alias, object, None
+]
+
+_GRIFFE_CACHE: dict[str, GriffeCacheEntry] = {}
 
 logging.getLogger("griffe").setLevel(logging.CRITICAL)
 
 
-def preload_griffe_cache(frameworks: Optional[List[str]] = None) -> None:
+def preload_griffe_cache(frameworks: list[str] | None = None) -> None:
     """Preload Griffe AST trees for target ML frameworks into the module cache.
 
     Args:
         frameworks: Optional list of package names to preload. If None,
             preloads common ML packages if installed.
     """
-    import griffe
-
     targets = (
         frameworks
         if frameworks is not None
@@ -33,9 +38,11 @@ def preload_griffe_cache(frameworks: Optional[List[str]] = None) -> None:
         if target not in _GRIFFE_CACHE:
             try:
                 parser = resolve_griffe_parser(get_framework_docstring_parser(target))
-                _GRIFFE_CACHE[target] = griffe.load(target, docstring_parser=parser)
+                loaded = griffe.load(target, docstring_parser=parser)
+                assert isinstance(loaded, (griffe.Module, griffe.Object, griffe.Alias))
+                _GRIFFE_CACHE[target] = loaded
             except Exception:
                 pass
 
 
-__all__ = ["_GRIFFE_CACHE", "preload_griffe_cache"]
+__all__ = ["GriffeCacheEntry", "_GRIFFE_CACHE", "preload_griffe_cache"]

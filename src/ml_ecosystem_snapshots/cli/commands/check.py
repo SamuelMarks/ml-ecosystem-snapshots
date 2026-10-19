@@ -7,18 +7,21 @@ import collections
 import json
 import os
 import sys
-from typing import Any, Callable, Dict, Mapping
+import typing
+
+from ml_ecosystem_snapshots.mcp.models import DomainOpCheckResult
+from ml_ecosystem_snapshots.models import JsonValue
 
 
 def _run_domain_op_check_cli(
     args: argparse.Namespace,
-    check_fn: Callable[..., Mapping[str, Any]],
+    check_fn: object,
     label: str,
     op_attr: str = "op_name",
     count_attr: str = "inputs_count",
     count_param: str = "inputs_count",
     invalid_format: str = "Invalid:",
-    extra_kwargs: Dict[str, Any] | None = None,
+    extra_kwargs: dict[str, JsonValue] | None = None,
 ) -> None:
     """Execute a domain op verification check and format CLI stdout/exit codes.
 
@@ -33,11 +36,11 @@ def _run_domain_op_check_cli(
         extra_kwargs: Optional additional keyword arguments to forward to `check_fn`.
     """
     raw_attrs = getattr(args, "attributes", None)
-    attrs = (
+    attrs: list[JsonValue] | None = (
         [a.strip() for a in raw_attrs.split(",") if a.strip()] if raw_attrs else None
     )
-    target = getattr(args, op_attr)
-    call_kwargs: Dict[str, Any] = {
+    target = str(getattr(args, op_attr))
+    call_kwargs: dict[str, JsonValue] = {
         op_attr: target,
         count_param: getattr(args, count_attr, None),
         "attributes": attrs,
@@ -45,16 +48,40 @@ def _run_domain_op_check_cli(
     if extra_kwargs:
         call_kwargs.update(extra_kwargs)
 
-    res = check_fn(**call_kwargs)
-    if not res.get("is_valid"):
+    assert callable(check_fn)
+    res: DomainOpCheckResult | typing.Mapping[str, JsonValue] = check_fn(**call_kwargs)
+    is_valid = (
+        res.is_valid
+        if isinstance(res, DomainOpCheckResult)
+        else bool(res.get("is_valid"))
+    )
+    if not is_valid:
         print(f"{label} '{target}' {invalid_format}")
-        for err in res.get("errors", []):
+        errs = (
+            res.errors
+            if isinstance(res, DomainOpCheckResult)
+            else res.get("errors", [])
+        )
+        assert isinstance(errs, list)
+        for err in errs:
             print(f"  - {err}")
         sys.exit(1)
 
+    exp_inputs = (
+        res.expected_inputs
+        if isinstance(res, DomainOpCheckResult)
+        else res.get("expected_inputs", [])
+    )
+    exp_attrs = (
+        res.expected_attributes
+        if isinstance(res, DomainOpCheckResult)
+        else res.get("expected_attributes", [])
+    )
+    inp_len = len(exp_inputs) if isinstance(exp_inputs, list) else 0
+    attr_strs = [str(a) for a in exp_attrs] if isinstance(exp_attrs, list) else []
     print(f"{label} '{target}' is valid.")
-    print(f"  Inputs:     {len(res.get('expected_inputs', []))}")
-    print(f"  Attributes: {', '.join(res.get('expected_attributes', []))}")
+    print(f"  Inputs:     {inp_len}")
+    print(f"  Attributes: {', '.join(attr_strs)}")
 
 
 def cmd_check(args: argparse.Namespace) -> None:
@@ -150,7 +177,7 @@ def cmd_check(args: argparse.Namespace) -> None:
     if missing:
         print(f"\nMissing APIs ({len(missing)}):\n")
 
-        ref_map: Dict[str, GhostRef] = {}
+        ref_map: dict[str, GhostRef] = {}
         for _cat, items in reference_snapshot.get("categories", {}).items():
             for item in items:
                 ref_item = GhostRef.model_validate(item)
@@ -206,7 +233,7 @@ def cmd_check(args: argparse.Namespace) -> None:
         print(f"\nMismatched APIs ({len(mismatched)}):")
         for item in sorted(mismatched, key=lambda x: x["api_path"])[:20]:
             print(
-                f"  ~ {item['api_path']}\n    Expected: {item.get('expected')}\n    Actual:   {item.get('actual')}"
+                f"  ~ {item['api_path']}\n    Expected: {item['expected']}\n    Actual:   {item['actual']}"
             )
         if len(mismatched) > 20:
             print(f"  ~ ... and {len(mismatched) - 20} more")
@@ -352,7 +379,7 @@ def cmd_check_ptx(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_ptx_instruction
 
-    mnemonic = getattr(args, "opt_mnemonic", None) or getattr(args, "mnemonic", None)
+    mnemonic = getattr(args, "mnemonic", None)
     if not mnemonic:
         print("Error: Instruction mnemonic must be specified.")
         sys.exit(1)

@@ -4,28 +4,29 @@ Provides functions to dynamically introspect the MLX library and generate
 GhostRefs for layers, losses, optimizers, and activations.
 """
 
+from __future__ import annotations
+
 import inspect
+import types
+
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.utils import get_all_members
-from typing import List
 
-from ml_ecosystem_snapshots.models import GhostInspector
-from ml_switcheroo_ir.schema.ghost import GhostRef
-from ml_switcheroo_ir.schema.ghost import SemanticTier
-
-import typing
-
+mlx: types.ModuleType | None = None
 try:
     import mlx.core as _core  # noqa: F401
     import mlx.nn as _nn  # noqa: F401
     import mlx.optimizers as _optimizers  # noqa: F401
     import mlx as _mlx
 
-    mlx: typing.Any = _mlx
+    mlx = _mlx
 except ImportError:
     mlx = None
 
 
-def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[GhostRef]:
+def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[GhostRef]:
     """Scan the live MLX library for a specific API category.
 
     Args:
@@ -151,7 +152,7 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Entrypoint to collect the MLX API signature for a given category.
 
     Args:

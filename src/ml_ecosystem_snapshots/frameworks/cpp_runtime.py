@@ -4,99 +4,108 @@ Formalizes standard C++17 STL algorithms, mathematical intrinsics (<cmath>),
 and PyBind11/LibTorch tensor buffer access functions.
 """
 
-from typing import Any, Dict, List
+from __future__ import annotations
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     OperandDirection,
     SemanticTier,
 )
+import pydantic
+
+from ml_ecosystem_snapshots.frameworks._base import CanonicalSsaOpSpec
 
 
-CANONICAL_CPP_RUNTIME_OPS: List[Dict[str, Any]] = [
-    # C++ STL <cmath> / <algorithm>
-    {
-        "name": "clamp",
-        "category": "stl_algorithm",
-        "inputs": ["v", "lo", "hi"],
-        "outputs": ["result"],
-        "attributes": [],
-        "description": "Clamps value v between lower limit lo and upper limit hi.",
-    },
-    {
-        "name": "fma",
-        "category": "stl_cmath",
-        "inputs": ["x", "y", "z"],
-        "outputs": ["result"],
-        "attributes": [],
-        "description": "Computes (x * y) + z as a single ternary operation.",
-    },
-    {
-        "name": "sqrt",
-        "category": "stl_cmath",
-        "inputs": ["arg"],
-        "outputs": ["result"],
-        "attributes": [],
-        "description": "Computes square root of arg.",
-    },
-    {
-        "name": "exp",
-        "category": "stl_cmath",
-        "inputs": ["arg"],
-        "outputs": ["result"],
-        "attributes": [],
-        "description": "Computes e raised to the given power arg.",
-    },
-    {
-        "name": "log",
-        "category": "stl_cmath",
-        "inputs": ["arg"],
-        "outputs": ["result"],
-        "attributes": [],
-        "description": "Computes natural logarithm of arg.",
-    },
-    # PyBind11 & LibTorch Interop
-    {
-        "name": "data_ptr",
-        "category": "interop",
-        "inputs": ["tensor"],
-        "outputs": ["ptr"],
-        "attributes": [
-            {"name": "dtype", "type": "str", "default": "'float'"},
-        ],
-        "description": "Retrieve raw contiguous memory pointer from PyTorch / LibTorch tensor.",
-    },
-    {
-        "name": "from_blob",
-        "category": "interop",
-        "inputs": ["data", "sizes", "options"],
-        "outputs": ["tensor"],
-        "attributes": [],
-        "description": "Construct an unmanaged PyTorch tensor view wrapping a raw memory pointer.",
-    },
-    {
-        "name": "make_tuple",
-        "category": "stl_utility",
-        "inputs": ["args"],
-        "outputs": ["tuple"],
-        "attributes": [],
-        "description": "Creates a std::tuple object deducing target element types from arguments.",
-    },
-]
+CANONICAL_CPP_RUNTIME_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(
+    list[CanonicalSsaOpSpec]
+).validate_python(
+    [
+        # C++ STL <cmath> / <algorithm>
+        {
+            "name": "clamp",
+            "category": "stl_algorithm",
+            "inputs": ["v", "lo", "hi"],
+            "outputs": ["result"],
+            "attributes": [],
+            "description": "Clamps value v between lower limit lo and upper limit hi.",
+        },
+        {
+            "name": "fma",
+            "category": "stl_cmath",
+            "inputs": ["x", "y", "z"],
+            "outputs": ["result"],
+            "attributes": [],
+            "description": "Computes (x * y) + z as a single ternary operation.",
+        },
+        {
+            "name": "sqrt",
+            "category": "stl_cmath",
+            "inputs": ["arg"],
+            "outputs": ["result"],
+            "attributes": [],
+            "description": "Computes square root of arg.",
+        },
+        {
+            "name": "exp",
+            "category": "stl_cmath",
+            "inputs": ["arg"],
+            "outputs": ["result"],
+            "attributes": [],
+            "description": "Computes e raised to the given power arg.",
+        },
+        {
+            "name": "log",
+            "category": "stl_cmath",
+            "inputs": ["arg"],
+            "outputs": ["result"],
+            "attributes": [],
+            "description": "Computes natural logarithm of arg.",
+        },
+        # PyBind11 & LibTorch Interop
+        {
+            "name": "data_ptr",
+            "category": "interop",
+            "inputs": ["tensor"],
+            "outputs": ["ptr"],
+            "attributes": [
+                {"name": "dtype", "type": "str", "default": "'float'"},
+            ],
+            "description": "Retrieve raw contiguous memory pointer from PyTorch / LibTorch tensor.",
+        },
+        {
+            "name": "from_blob",
+            "category": "interop",
+            "inputs": ["data", "sizes", "options"],
+            "outputs": ["tensor"],
+            "attributes": [],
+            "description": "Construct an unmanaged PyTorch tensor view wrapping a raw memory pointer.",
+        },
+        {
+            "name": "make_tuple",
+            "category": "stl_utility",
+            "inputs": ["args"],
+            "outputs": ["tuple"],
+            "attributes": [],
+            "description": "Creates a std::tuple object deducing target element types from arguments.",
+        },
+    ]
+)
+
+CANONICAL_CPP_OPS: list[CanonicalSsaOpSpec] = CANONICAL_CPP_RUNTIME_OPS
 
 
-def _load_cpp_runtime_ops() -> List[Dict[str, Any]]:
+def _load_cpp_runtime_ops() -> list[CanonicalSsaOpSpec]:
     """Load canonical C++17 and PyBind11 runtime operation specifications.
 
     Returns:
-        List of C++ runtime operation dictionaries.
+        List of C++ runtime operation specifications.
     """
     return CANONICAL_CPP_RUNTIME_OPS
 
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect C++17 and PyBind11 native runtime operations.
 
     Args:

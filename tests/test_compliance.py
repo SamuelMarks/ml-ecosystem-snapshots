@@ -1,12 +1,8 @@
 """Tests for the compliance checking module."""
 
+from __future__ import annotations
+
 import os
-
-from typing import Any
-
-
-from typing import Dict
-
 
 import pytest
 from pathlib import Path
@@ -17,6 +13,7 @@ from ml_ecosystem_snapshots.compliance import (
 )
 import griffe
 from ml_ecosystem_snapshots.compliance import extract_target_refs, score_compliance
+from ml_ecosystem_snapshots.models import ExtendedGhostRef, JsonValue
 
 
 def test_get_module_info_from_path_file(tmp_path: Path) -> None:
@@ -153,7 +150,7 @@ def test_extract_target_refs(tmp_path: Path) -> None:
 
 def test_score_compliance_empty() -> None:
     """Test compliance scoring with empty reference."""
-    ref_snap: Dict[str, Any] = {"categories": {}}
+    ref_snap: dict[str, JsonValue] = {"categories": {}}
     res = score_compliance(ref_snap, [])
     assert res["score_percentage"] == 0.0
 
@@ -455,7 +452,7 @@ def test_extract_target_refs_catch_all_exception(tmp_path: Path) -> None:
     assert any(r.name == "BrokenClass" for r in refs) or refs == []
 
 
-def test_extract_target_refs_catch_inner_exception(tmp_path: Any) -> None:
+def test_extract_target_refs_catch_inner_exception(tmp_path: Path) -> None:
     """Test extracting target refs fails cleanly on inner node walk.
 
     Args:
@@ -471,11 +468,13 @@ def test_extract_target_refs_catch_inner_exception(tmp_path: Any) -> None:
     # Create an invalid state for Griffe so dynamic import fails but walk continues
     sub_mod.write_text("class Outer:\n    class Inner:\n        pass\n")
 
-    import ml_ecosystem_snapshots.models
+    import ml_ecosystem_snapshots.introspection.inspector
 
-    orig_inspect = ml_ecosystem_snapshots.models.GhostInspector.inspect
+    orig_inspect = ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect
 
-    def mock_inspect(obj: Any, api_path: Any, is_public: Any = None) -> Any:
+    def mock_inspect(
+        obj: object, api_path: str, is_public: bool | None = None
+    ) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -488,17 +487,19 @@ def test_extract_target_refs_catch_inner_exception(tmp_path: Any) -> None:
         """
         if "Inner" in api_path:
             raise RuntimeError("inner broken")
-        return orig_inspect(obj, api_path, is_public)
+        return orig_inspect(obj, api_path, is_public=bool(is_public))
 
     with patch.object(
-        ml_ecosystem_snapshots.models.GhostInspector, "inspect", mock_inspect
+        ml_ecosystem_snapshots.introspection.inspector.GhostInspector,
+        "inspect",
+        mock_inspect,
     ):
         refs = extract_target_refs(str(sub_mod), "inner_broken_pkg.api", "reference")
         # Should have extracted Outer, skipped Inner due to exception
         assert len(refs) == 1
 
 
-def test_extract_target_refs_no_parts(tmp_path: Any) -> None:
+def test_extract_target_refs_no_parts(tmp_path: Path) -> None:
     """Test extracting target refs handles paths with no inner parts (just module).
 
     Args:
@@ -515,7 +516,7 @@ def test_extract_target_refs_no_parts(tmp_path: Any) -> None:
     assert len(refs) == 1
 
 
-def test_extract_target_refs_break_loop(tmp_path: Any) -> None:
+def test_extract_target_refs_break_loop(tmp_path: Path) -> None:
     """Test extracting target refs loop breaking logic.
 
     Args:
@@ -536,7 +537,7 @@ def test_extract_target_refs_break_loop(tmp_path: Any) -> None:
     assert len(refs) == 1
 
 
-def test_extract_target_refs_continue_loop(tmp_path: Any) -> None:
+def test_extract_target_refs_continue_loop(tmp_path: Path) -> None:
     """Test extracting target refs handles the loop fully exiting.
 
     Args:
@@ -558,7 +559,7 @@ def test_extract_target_refs_continue_loop(tmp_path: Any) -> None:
     assert any(r.name == "func" or r.name == "sys" for r in refs)
 
 
-def test_derive_base_path_src(tmp_path: Any) -> None:
+def test_derive_base_path_src(tmp_path: Path) -> None:
     """Verify derive base path src behavior.
 
     Args:

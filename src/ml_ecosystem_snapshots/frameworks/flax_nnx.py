@@ -5,21 +5,21 @@ generate GhostRefs for layers. Defers to core JAX extractors for
 losses, optimizers, and activations.
 """
 
+from __future__ import annotations
+
 import inspect
-from ml_ecosystem_snapshots.utils import get_all_members
-from typing import List
+import types
 
-from ml_ecosystem_snapshots.models import GhostInspector
-from ml_switcheroo_ir.schema.ghost import GhostRef
-from ml_switcheroo_ir.schema.ghost import SemanticTier
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
 from ml_ecosystem_snapshots.frameworks.jax import collect_api as jax_collect_api
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.utils import get_all_members
 
-import typing
-
-nnx: typing.Any = None
+nnx: types.ModuleType | None = None
 
 
-def _get_nnx() -> typing.Any:
+def _get_nnx() -> types.ModuleType | None:
     """Lazily load flax.nnx to avoid circular import issues with jax.
 
     Returns:
@@ -37,7 +37,7 @@ def _get_nnx() -> typing.Any:
         return None
 
 
-def _scan_nnx_layers(include_nonpublic: bool) -> List[GhostRef]:
+def _scan_nnx_layers(include_nonpublic: bool) -> list[GhostRef]:
     """Scan `flax.nnx` module for classes inheriting from `nnx.Module`.
 
     Excludes the base `Module` class itself.
@@ -49,33 +49,21 @@ def _scan_nnx_layers(include_nonpublic: bool) -> List[GhostRef]:
         A list of GhostRef objects representing found NNX layers.
 
     """
-    found: List[GhostRef] = []
-    nnx = _get_nnx()
-    if not nnx:
+    found: list[GhostRef] = []
+    nnx_mod = _get_nnx()
+    if not nnx_mod:
         return found
     try:
-        for name, obj in get_all_members(nnx):
+        for name, obj in get_all_members(nnx_mod):
             if not include_nonpublic and name.startswith("_"):
                 continue
             if inspect.isclass(obj) and name != "Module":
-                # Check inheritance gracefully (some objects might not be types)
                 try:
-                    if issubclass(obj, nnx.Module):
+                    if issubclass(obj, getattr(nnx_mod, "Module")):
                         found.append(GhostInspector.inspect(obj, f"flax.nnx.{name}"))
                 except TypeError:
                     pass
-    except (
-        AttributeError,
-        TypeError,
-        ValueError,
-        KeyError,
-        IndexError,
-        SyntaxError,
-        OSError,
-        ImportError,
-        RuntimeError,
-        Exception,
-    ):
+    except Exception:
         pass
 
     return found
@@ -83,7 +71,7 @@ def _scan_nnx_layers(include_nonpublic: bool) -> List[GhostRef]:
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Entrypoint to collect the Flax API signature for a given category.
 
     Args:

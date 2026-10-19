@@ -1,11 +1,14 @@
 """Unit tests and verification suite for export."""
 
-from typing import Any
+from __future__ import annotations
+
+import pytest_mock
 from unittest.mock import patch
 
 import pytest
 
 from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.export import (
     to_json_schema,
     to_openapi,
@@ -62,7 +65,7 @@ def sample_ghost_ref() -> GhostRef:
     )
 
 
-def test_ghost_to_cdd_ir(sample_ghost_ref: Any) -> None:
+def test_ghost_to_cdd_ir(sample_ghost_ref: GhostRef) -> None:
     """Verify ghost to cdd ir behavior.
 
     Args:
@@ -93,7 +96,7 @@ def test_ghost_to_cdd_ir(sample_ghost_ref: Any) -> None:
     assert returns["return_type"]["doc"] == "A tensor of shape"
 
 
-def test_to_json_schema(sample_ghost_ref: Any) -> None:
+def test_to_json_schema(sample_ghost_ref: GhostRef) -> None:
     """Verify to json schema behavior.
 
     Args:
@@ -102,18 +105,19 @@ def test_to_json_schema(sample_ghost_ref: Any) -> None:
     schema = to_json_schema(sample_ghost_ref)
 
     assert schema["$id"] == "torch.nn.Linear"
-    assert schema["description"].startswith(
-        "Applies a linear transformation to the incoming data."
-    )
+    desc = schema["description"]
+    assert isinstance(desc, str)
+    assert desc.startswith("Applies a linear transformation to the incoming data.")
     assert schema["type"] == "object"
 
     properties = schema.get("properties", {})
+    assert isinstance(properties, dict)
     assert "in_features" in properties
     assert "out_features" in properties
     assert "bias" in properties
 
 
-def test_to_openapi(sample_ghost_ref: Any) -> None:
+def test_to_openapi(sample_ghost_ref: GhostRef) -> None:
     """Verify to openapi behavior.
 
     Args:
@@ -124,14 +128,17 @@ def test_to_openapi(sample_ghost_ref: Any) -> None:
     assert openapi_dict["openapi"] == "3.0.0"
 
     paths = openapi_dict.get("paths", {})
+    assert isinstance(paths, dict)
     assert "/torch/nn/Linear" in paths
 
     components = openapi_dict.get("components", {})
+    assert isinstance(components, dict)
     schemas = components.get("schemas", {})
+    assert isinstance(schemas, dict)
     assert "Linear" in schemas
 
 
-def test_to_pydantic(sample_ghost_ref: Any) -> None:
+def test_to_pydantic(sample_ghost_ref: GhostRef) -> None:
     """Verify to pydantic behavior.
 
     Args:
@@ -161,7 +168,7 @@ def test_to_pydantic_empty() -> None:
     assert "pass" in code
 
 
-def test_to_protobuf(sample_ghost_ref: Any) -> None:
+def test_to_protobuf(sample_ghost_ref: GhostRef) -> None:
     """Verify to protobuf behavior.
 
     Args:
@@ -257,7 +264,9 @@ def test_export_branches() -> None:
     assert "class X" in pyd_str
     schema_dict = to_json_schema(r)
     assert isinstance(schema_dict, dict)
-    assert "p1" in schema_dict.get("properties", {})
+    schema_props = schema_dict.get("properties", {})
+    assert isinstance(schema_props, dict)
+    assert "p1" in schema_props
 
     r_empty_anno = GhostRef(
         name="Y",
@@ -268,12 +277,14 @@ def test_export_branches() -> None:
     )  # No returns_description
     ir_empty = _ghost_to_cdd_ir(r_empty_anno)
     assert "p_empty" in ir_empty["params"]
+    assert ir_empty["returns"] is not None
     assert ir_empty["returns"]["return_type"]["typ"] == "str"
 
     r_ret_desc = GhostRef(
         name="Z", api_path="Z", kind="function", params=[], returns_description="desc"
     )
     ir_desc = _ghost_to_cdd_ir(r_ret_desc)
+    assert ir_desc["returns"] is not None
     assert ir_desc["returns"]["return_type"]["doc"] == "desc"
 
 
@@ -312,7 +323,9 @@ def test_export_branches_more() -> None:
     openapi_r = to_openapi([r])
     assert "openapi" in openapi_r
     json_r = to_json_schema(r)
-    assert "p1" in json_r.get("properties", {})
+    json_props = json_r.get("properties", {})
+    assert isinstance(json_props, dict)
+    assert "p1" in json_props
 
     r2 = GhostRef(
         name="X",
@@ -505,13 +518,13 @@ def test_export_mlir_prompt_context() -> None:
     assert "%res = gpu.barrier() : none" in context_min
 
 
-def test_export_scoped_prompt_context(mocker: Any) -> None:
+def test_export_scoped_prompt_context(mocker: pytest_mock.MockerFixture) -> None:
     """Test export_scoped_prompt_context with hierarchical indexing and scoping across domains.
 
     Args:
         mocker: Pytest mocker fixture.
     """
-    mock_torch_snap = {
+    mock_torch_snap: dict[str, JsonValue] = {
         "categories": {
             "nn": [
                 {
@@ -528,7 +541,9 @@ def test_export_scoped_prompt_context(mocker: Any) -> None:
 
     orig_get_snap = mcp_server.get_framework_snapshot
 
-    def mock_get_snap(framework: str, version: Any = None) -> Any:
+    def mock_get_snap(
+        framework: str, version: str | None = None
+    ) -> dict[str, JsonValue]:
         """Mock framework snapshot getter returning mock torch snapshot.
 
         Args:

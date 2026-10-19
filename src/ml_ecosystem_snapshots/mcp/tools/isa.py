@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+import typing
 
 from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository, resolve_snapshot
 from ml_ecosystem_snapshots.mcp.models import IsaCheckResult
+from ml_ecosystem_snapshots.models import JsonValue
 
 
 def check_sass_instruction(
     mnemonic: str,
-    operands: Optional[List[str]] = None,
-    modifiers: Optional[List[str]] = None,
-    sm_arch: Optional[str] = None,
-    control_codes: Optional[Dict[str, Any]] = None,
-    repository: Optional[SnapshotRepository] = None,
+    operands: list[str] | None = None,
+    modifiers: list[str] | None = None,
+    sm_arch: str | None = None,
+    control_codes: typing.Mapping[str, JsonValue] | None = None,
+    repository: SnapshotRepository | None = None,
 ) -> IsaCheckResult:
     """Validate whether an NVIDIA SASS assembly instruction is valid and supported.
 
@@ -28,12 +29,12 @@ def check_sass_instruction(
         repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
-        Validation report dictionary with is_valid, supported_architectures, and errors.
+        `IsaCheckResult` validation report model with is_valid, supported_architectures, and errors.
     """
     snap = resolve_snapshot("nvidia_sass", repository=repository)
-    inst = None
+    inst: dict[str, JsonValue] | None = None
     raw_mnemonic = mnemonic.upper().strip()
-    extracted_modifiers: List[str] = []
+    extracted_modifiers: list[str] = []
     if "." in raw_mnemonic:
         tokens = raw_mnemonic.split(".")
         target_name = tokens[0].strip()
@@ -51,26 +52,31 @@ def check_sass_instruction(
             combined_modifiers.append(em)
     modifiers = combined_modifiers if combined_modifiers else None
 
-    for _cat, items in snap.get("categories", {}).items():
+    raw_cats = snap.get("categories") or {}
+    assert isinstance(raw_cats, dict)
+    for _cat, items in raw_cats.items():
+        assert isinstance(items, list)
         for item in items:
-            name = item.get("mnemonic") or item.get("name")
+            assert isinstance(item, dict)
+            name = str(item.get("mnemonic") or item.get("name") or "")
             if name and name.upper() == target_name:
-                inst = item
+                inst = dict(item)
                 break
         if inst:
             break
 
     if not inst:
-        return {
-            "is_valid": False,
-            "mnemonic_exists": False,
-            "errors": [
+        return IsaCheckResult(
+            is_valid=False,
+            mnemonic_exists=False,
+            errors=[
                 f"Instruction mnemonic '{target_name}' does not exist in SASS ISA."
             ],
-        }
+        )
 
-    errors: List[str] = []
-    meta = inst.get("domain_metadata") or {}
+    errors: list[str] = []
+    raw_meta = inst.get("domain_metadata")
+    meta = dict(raw_meta) if isinstance(raw_meta, dict) else {}
     from ml_ecosystem_snapshots.frameworks.nvidia_sass import (
         parse_sass_modifiers,
         resolve_sm_architectures,
@@ -80,10 +86,22 @@ def check_sass_instruction(
         validate_sass_register,
     )
 
-    arch = inst.get("architecture") or meta.get("architecture")
-    supported_archs = meta.get("valid_architectures") or resolve_sm_architectures(arch)
-    valid_modifiers = meta.get("modifiers") or parse_sass_modifiers(
-        inst.get("modifiers", [])
+    raw_arch = inst.get("architecture") or meta.get("architecture")
+    raw_valid_archs = meta.get("valid_architectures")
+    supported_archs: list[str] = (
+        [str(a) for a in raw_valid_archs]
+        if isinstance(raw_valid_archs, list) and raw_valid_archs
+        else resolve_sm_architectures(raw_arch)
+    )
+    raw_meta_mods = meta.get("modifiers")
+    raw_inst_mods = inst.get("modifiers")
+    inst_mods_list = (
+        [str(m) for m in raw_inst_mods] if isinstance(raw_inst_mods, list) else []
+    )
+    valid_modifiers: list[str] = (
+        [str(m) for m in raw_meta_mods]
+        if isinstance(raw_meta_mods, list) and raw_meta_mods
+        else parse_sass_modifiers(inst_mods_list)
     )
 
     if target_name.startswith("WGMMA"):
@@ -126,7 +144,12 @@ def check_sass_instruction(
         errors.extend(mod_conflicts)
 
     if operands is not None:
-        op_sigs = meta.get("operand_signatures") or inst.get("operands") or []
+        raw_sigs = meta.get("operand_signatures") or inst.get("operands")
+        op_sigs = (
+            [sig for sig in raw_sigs if isinstance(sig, list)]
+            if isinstance(raw_sigs, list)
+            else []
+        )
         if op_sigs:
             matching_len = [sig for sig in op_sigs if len(sig) == len(operands)]
             if not matching_len:
@@ -149,23 +172,23 @@ def check_sass_instruction(
         )
         errors.extend(cc_errs)
 
-    return {
-        "is_valid": len(errors) == 0,
-        "mnemonic_exists": True,
-        "supported_architectures": supported_archs,
-        "valid_modifiers": valid_modifiers,
-        "errors": errors,
-    }
+    return IsaCheckResult(
+        is_valid=len(errors) == 0,
+        mnemonic_exists=True,
+        supported_architectures=supported_archs,
+        valid_modifiers=valid_modifiers,
+        errors=errors,
+    )
 
 
 def check_rdna_instruction(
     mnemonic: str,
-    operands: Optional[List[str]] = None,
-    encoding: Optional[str] = None,
-    gfx_arch: Optional[str] = None,
-    modifiers: Optional[List[str]] = None,
-    wave_size: Optional[int] = None,
-    repository: Optional[SnapshotRepository] = None,
+    operands: list[str] | None = None,
+    encoding: str | None = None,
+    gfx_arch: str | None = None,
+    modifiers: list[str] | None = None,
+    wave_size: int | None = None,
+    repository: SnapshotRepository | None = None,
 ) -> IsaCheckResult:
     """Validate whether an AMD RDNA assembly instruction is valid and supported.
 
@@ -179,10 +202,10 @@ def check_rdna_instruction(
         repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
-        Validation report dictionary with is_valid, supported_architectures, and errors.
+        `IsaCheckResult` validation report model with is_valid, supported_architectures, and errors.
     """
     snap = resolve_snapshot("amd_rdna", repository=repository)
-    inst = None
+    inst: dict[str, JsonValue] | None = None
     target_name = mnemonic.lower().strip()
     extracted_suffix = None
     suffix_match = re.match(
@@ -194,11 +217,15 @@ def check_rdna_instruction(
     else:
         base_target = target_name
 
-    for _cat, items in snap.get("categories", {}).items():
+    raw_cats = snap.get("categories") or {}
+    assert isinstance(raw_cats, dict)
+    for _cat, items in raw_cats.items():
+        assert isinstance(items, list)
         for item in items:
-            name = (item.get("mnemonic") or item.get("name") or "").lower()
+            assert isinstance(item, dict)
+            name = str(item.get("mnemonic") or item.get("name") or "").lower()
             if name in (target_name, base_target):
-                inst = item
+                inst = dict(item)
                 break
         if inst:
             break
@@ -208,20 +235,20 @@ def check_rdna_instruction(
             _get_canonical_fallback_rdna,
         )
 
-        for item in _get_canonical_fallback_rdna():
-            name = (item.get("mnemonic") or item.get("name") or "").lower()
+        for fb_item in _get_canonical_fallback_rdna():
+            name = str(fb_item.get("mnemonic") or fb_item.get("name") or "").lower()
             if name in (target_name, base_target):
-                inst = item
+                inst = dict(fb_item)
                 break
 
     if not inst:
-        return {
-            "is_valid": False,
-            "mnemonic_exists": False,
-            "errors": [
+        return IsaCheckResult(
+            is_valid=False,
+            mnemonic_exists=False,
+            errors=[
                 f"Instruction mnemonic '{target_name}' does not exist in RDNA ISA."
             ],
-        }
+        )
 
     if extracted_suffix:
         if modifiers is None:
@@ -229,8 +256,9 @@ def check_rdna_instruction(
         elif extracted_suffix not in modifiers:
             modifiers = list(modifiers) + [extracted_suffix]
 
-    errors: List[str] = []
-    meta = inst.get("domain_metadata") or {}
+    errors: list[str] = []
+    raw_meta = inst.get("domain_metadata")
+    meta = dict(raw_meta) if isinstance(raw_meta, dict) else {}
     from ml_ecosystem_snapshots.frameworks.amd_rdna import (
         resolve_gfx_architectures,
         validate_rdna_constant_bus,
@@ -239,9 +267,15 @@ def check_rdna_instruction(
         validate_rdna_register,
     )
 
-    arch = inst.get("architecture") or meta.get("architecture")
-    supported_archs = meta.get("valid_architectures") or resolve_gfx_architectures(arch)
-    actual_encoding = inst.get("encoding") or meta.get("encoding")
+    raw_arch = inst.get("architecture") or meta.get("architecture")
+    raw_valid_archs = meta.get("valid_architectures")
+    supported_archs: list[str] = (
+        [str(a) for a in raw_valid_archs]
+        if isinstance(raw_valid_archs, list) and raw_valid_archs
+        else resolve_gfx_architectures(raw_arch)
+    )
+    raw_enc = inst.get("encoding") or meta.get("encoding")
+    actual_encoding = str(raw_enc) if raw_enc is not None else None
 
     uarch_errors = validate_rdna_microarchitecture(
         target_name, gfx_arch=gfx_arch, wave_size=wave_size
@@ -264,7 +298,12 @@ def check_rdna_instruction(
         errors.extend(mod_errors)
 
     if operands is not None:
-        op_sigs = meta.get("operand_signatures") or inst.get("operands") or []
+        raw_sigs = meta.get("operand_signatures") or inst.get("operands")
+        op_sigs = (
+            [sig for sig in raw_sigs if isinstance(sig, list)]
+            if isinstance(raw_sigs, list)
+            else []
+        )
         if op_sigs:
             matching_len = [sig for sig in op_sigs if len(sig) == len(operands)]
             if not matching_len:
@@ -282,23 +321,23 @@ def check_rdna_instruction(
         )
         errors.extend(cbus_errs)
 
-    return {
-        "is_valid": len(errors) == 0,
-        "mnemonic_exists": True,
-        "encoding": actual_encoding,
-        "supported_architectures": supported_archs,
-        "errors": errors,
-    }
+    return IsaCheckResult(
+        is_valid=len(errors) == 0,
+        mnemonic_exists=True,
+        encoding=actual_encoding,
+        supported_architectures=supported_archs,
+        errors=errors,
+    )
 
 
 def check_ptx_instruction(
     mnemonic: str,
-    types: Optional[List[str]] = None,
-    operands: Optional[List[str]] = None,
-    state_space: Optional[str] = None,
-    scope: Optional[str] = None,
-    vector_width: Optional[str] = None,
-    sm_arch: Optional[str] = None,
+    types: list[str] | None = None,
+    operands: list[str] | None = None,
+    state_space: str | None = None,
+    scope: str | None = None,
+    vector_width: str | None = None,
+    sm_arch: str | None = None,
 ) -> IsaCheckResult:
     """Validate whether an NVIDIA PTX assembly instruction is valid on target SM architecture.
 
@@ -312,7 +351,7 @@ def check_ptx_instruction(
         sm_arch: Optional target SM architecture (e.g. 'sm_80', 'sm_90').
 
     Returns:
-        Validation report dictionary with is_valid, mnemonic_exists, and errors.
+        `IsaCheckResult` validation report model with is_valid, mnemonic_exists, and errors.
     """
     from ml_ecosystem_snapshots.frameworks.nvidia_ptx import (
         _load_exhaustive_ptx,
@@ -320,13 +359,13 @@ def check_ptx_instruction(
     )
 
     clean_mnem = mnemonic.strip().lower()
-    ptx_db = {inst["mnemonic"]: inst for inst in _load_exhaustive_ptx()}
+    ptx_db = {str(inst["mnemonic"]): inst for inst in _load_exhaustive_ptx()}
     if clean_mnem not in ptx_db:
-        return {
-            "is_valid": False,
-            "mnemonic_exists": False,
-            "errors": [f"Instruction mnemonic '{mnemonic}' does not exist in PTX ISA."],
-        }
+        return IsaCheckResult(
+            is_valid=False,
+            mnemonic_exists=False,
+            errors=[f"Instruction mnemonic '{mnemonic}' does not exist in PTX ISA."],
+        )
 
     errors = validate_ptx_instruction(
         clean_mnem,
@@ -339,14 +378,18 @@ def check_ptx_instruction(
     )
 
     inst_meta = ptx_db[clean_mnem]
-    return {
-        "is_valid": len(errors) == 0,
-        "mnemonic_exists": True,
-        "category": inst_meta.get("category", "instruction"),
-        "min_sm": inst_meta.get("min_sm", "sm_50"),
-        "supported_types": inst_meta.get("supported_types", []),
-        "errors": errors,
-    }
+    raw_supp_types = inst_meta.get("supported_types")
+    supp_types = (
+        [str(t) for t in raw_supp_types] if isinstance(raw_supp_types, list) else []
+    )
+    return IsaCheckResult(
+        is_valid=len(errors) == 0,
+        mnemonic_exists=True,
+        category=str(inst_meta.get("category") or "instruction"),
+        min_sm=str(inst_meta.get("min_sm") or "sm_50"),
+        supported_types=supp_types,
+        errors=errors,
+    )
 
 
 __all__ = [

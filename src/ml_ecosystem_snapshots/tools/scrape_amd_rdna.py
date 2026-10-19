@@ -1,11 +1,15 @@
 """Script to scrape AMD RDNA instructions from LLVM TableGen sources."""
 
+from __future__ import annotations
+
 import argparse
 from collections import defaultdict
 import json
 import os
 import re
-from typing import Any, DefaultDict, Dict, List, Optional
+import typing
+
+from ml_ecosystem_snapshots.models import IsaInstructionRecordModel, JsonValue
 
 LLVM_REPO_BASE = (
     "https://raw.githubusercontent.com/llvm/llvm-project/main/llvm/lib/Target/AMDGPU"
@@ -35,7 +39,7 @@ ALL_GFX_ARCHITECTURES = [
 
 
 def fetch_td_file(
-    filename: str, local_dir: Optional[str] = None, use_cache: bool = True
+    filename: str, local_dir: str | None = None, use_cache: bool = True
 ) -> str:
     """Fetch a TableGen file from local checkout or LLVM repository.
 
@@ -81,7 +85,7 @@ def fetch_td_file(
             pass
 
     url = f"{LLVM_REPO_BASE}/{filename}"
-    from ml_ecosystem_snapshots.utils import fetch_url
+    from ml_ecosystem_snapshots.network_env import fetch_url
 
     content = fetch_url(url)
     if content is not None:
@@ -109,7 +113,7 @@ def fetch_td_file(
 
 def resolve_td_instruction_info(
     def_name: str, class_name: str, mnemonic: str
-) -> Dict[str, Any]:
+) -> IsaInstructionRecordModel:
     """Derive real operand signatures, encodings, modifiers, and architectures from TableGen classes.
 
     Args:
@@ -124,8 +128,8 @@ def resolve_td_instruction_info(
     df = def_name.upper()
 
     encoding = "Unknown"
-    modifiers: List[str] = []
-    operands: List[List[str]] = []
+    modifiers: list[JsonValue] = []
+    operands: list[JsonValue] = []
 
     # 1. Vector Arithmetic (VOP1, VOP2, VOP3, VOPC, VOP3P)
     if "VOP1" in cls or "VOP1" in df:
@@ -272,16 +276,18 @@ def resolve_td_instruction_info(
     else:
         arch = "GFX10+"
 
-    return {
-        "mnemonic": mnemonic,
-        "architecture": arch,
-        "encoding": encoding,
-        "modifiers": modifiers,
-        "operands": operands,
-    }
+    return IsaInstructionRecordModel(
+        {
+            "mnemonic": mnemonic,
+            "architecture": arch,
+            "encoding": encoding,
+            "modifiers": modifiers,
+            "operands": operands,
+        }
+    )
 
 
-def parse_td_content(content: str) -> List[Dict[str, Any]]:
+def parse_td_content(content: str) -> list[IsaInstructionRecordModel]:
     """Parse TableGen source content to extract real instructions, encodings, and operand profiles.
 
     Args:
@@ -290,7 +296,7 @@ def parse_td_content(content: str) -> List[Dict[str, Any]]:
     Returns:
         List of extracted instruction dictionaries.
     """
-    instructions: List[Dict[str, Any]] = []
+    instructions: list[IsaInstructionRecordModel] = []
 
     pattern = re.compile(
         r'defm?\s+([A-Za-z0-9_]+)\s*:\s*([A-Za-z0-9_]+)\s*<\s*"([a-z0-9_]+)"'
@@ -318,7 +324,9 @@ def parse_td_content(content: str) -> List[Dict[str, Any]]:
     return instructions
 
 
-def parse_llvm_tblgen_json(tblgen_json: Dict[str, Any]) -> List[Dict[str, Any]]:
+def parse_llvm_tblgen_json(
+    tblgen_json: typing.Mapping[str, object],
+) -> list[IsaInstructionRecordModel]:
     """Parse LLVM TableGen JSON export (from llvm-tblgen --dump-json) into structured instruction records.
 
     Extracts real register classes (VGPR_32, VReg_64, VReg_96, VReg_128, VReg_256, VReg_512,
@@ -331,7 +339,7 @@ def parse_llvm_tblgen_json(tblgen_json: Dict[str, Any]) -> List[Dict[str, Any]]:
     Returns:
         List of structured instruction records.
     """
-    instructions: List[Dict[str, Any]] = []
+    instructions: list[IsaInstructionRecordModel] = []
 
     for def_name, record in tblgen_json.items():
         if def_name.startswith("!"):
@@ -339,13 +347,16 @@ def parse_llvm_tblgen_json(tblgen_json: Dict[str, Any]) -> List[Dict[str, Any]]:
         if not isinstance(record, dict):
             continue
 
-        superclasses = record.get("!superclasses", [])
+        raw_supers = record.get("!superclasses", [])
+        superclasses: list[str] = [
+            str(sc) for sc in (raw_supers if isinstance(raw_supers, list) else [])
+        ]
         sc_str = " ".join(superclasses)
 
         # Resolve mnemonic
         raw_mnemonic = record.get("Mnemonic")
         if isinstance(raw_mnemonic, dict):
-            mnemonic = raw_mnemonic.get("def", "").lower()
+            mnemonic = str(raw_mnemonic.get("def", "")).lower()
         elif isinstance(raw_mnemonic, str) and raw_mnemonic:
             mnemonic = raw_mnemonic.lower()
         else:
@@ -356,7 +367,7 @@ def parse_llvm_tblgen_json(tblgen_json: Dict[str, Any]) -> List[Dict[str, Any]]:
 
         # Resolve encoding profile
         encoding = "Unknown"
-        modifiers: List[str] = []
+        modifiers: list[str] = []
         for enc_candidate in [
             "VOP3P",
             "VOPD",
@@ -382,30 +393,31 @@ def parse_llvm_tblgen_json(tblgen_json: Dict[str, Any]) -> List[Dict[str, Any]]:
                 break
 
         # Register classes extraction from operand lists
-        operands: List[str] = []
+        operands: list[JsonValue] = []
         out_ops = record.get("OutOperandList", [])
         in_ops = record.get("InOperandList", [])
 
         # Process out operands
         if isinstance(out_ops, list):
             for op in out_ops:
-                op_name = op.get("def") if isinstance(op, dict) else str(op)
+                op_name = str(op.get("def", "")) if isinstance(op, dict) else str(op)
                 if op_name:
                     operands.append(op_name)
 
         # Process in operands
         if isinstance(in_ops, list):
             for op in in_ops:
-                op_name = op.get("def") if isinstance(op, dict) else str(op)
+                op_name = str(op.get("def", "")) if isinstance(op, dict) else str(op)
                 if op_name:
                     operands.append(op_name)
 
+        operands_list: JsonValue
         if not operands:
             info = resolve_td_instruction_info(def_name, sc_str, clean_mnemonic)
-            operands_list = info["operands"]
-            modifiers = info["modifiers"]
+            operands_list = [list(s) for s in info["operands"]]
+            modifiers = [str(m) for m in info["modifiers"]]
             if encoding == "Unknown":
-                encoding = info["encoding"]
+                encoding = str(info["encoding"])
         else:
             operands_list = [operands]
             if encoding == "VOP3":
@@ -442,26 +454,28 @@ def parse_llvm_tblgen_json(tblgen_json: Dict[str, Any]) -> List[Dict[str, Any]]:
             arch = "GFX10+"
 
         instructions.append(
-            {
-                "mnemonic": clean_mnemonic,
-                "architecture": arch,
-                "description": f"AMD RDNA {clean_mnemonic} instruction.",
-                "encoding": encoding,
-                "modifiers": sorted(list(set(modifiers))),
-                "operands": operands_list,
-            }
+            IsaInstructionRecordModel(
+                {
+                    "mnemonic": clean_mnemonic,
+                    "architecture": arch,
+                    "description": f"AMD RDNA {clean_mnemonic} instruction.",
+                    "encoding": encoding,
+                    "modifiers": list(sorted(list(set(modifiers)))),
+                    "operands": operands_list,
+                }
+            )
         )
 
     return instructions
 
 
 def scrape_amd_rdna(
-    output_path: Optional[str] = None,
-    tblgen_json_path: Optional[str] = None,
-    local_dir: Optional[str] = None,
+    output_path: str | None = None,
+    tblgen_json_path: str | None = None,
+    local_dir: str | None = None,
     llvm_version: str = "19.1.0",
     rocm_version: str = "6.2.0",
-) -> List[Dict[str, Any]]:
+) -> list[IsaInstructionRecordModel]:
     """Scrape AMD RDNA TableGen sources or parse TableGen JSON and write the exhaustive JSON dump.
 
     Args:
@@ -481,63 +495,60 @@ def scrape_amd_rdna(
         "amd_rdna_exhaustive.json",
     )
 
-    instructions: DefaultDict[str, Dict[str, Any]] = defaultdict(
-        lambda: {
-            "modifiers": set(),
-            "operands": [],
-            "encoding": "Unknown",
-            "architecture": "GFX10+",
-        }
-    )
+    inst_mods: dict[str, set[str]] = defaultdict(set)
+    inst_ops: dict[str, list[JsonValue]] = defaultdict(list)
+    inst_enc: dict[str, str] = {}
+    inst_arch: dict[str, str] = {}
+
+    def _merge_instrs(
+        parsed_instrs: typing.Sequence[IsaInstructionRecordModel],
+    ) -> None:
+        """Merge parsed instruction records into the aggregated RDNA lookup tables.
+
+        Args:
+            parsed_instrs: Sequence of parsed `IsaInstructionRecordModel` items.
+        """
+        for instr in parsed_instrs:
+            base_name = str(instr["mnemonic"])
+            inst_enc[base_name] = str(instr.get("encoding", "Unknown"))
+            inst_arch[base_name] = str(instr.get("architecture", "GFX10+"))
+
+            raw_mods = instr.get("modifiers", [])
+            for mod in raw_mods if isinstance(raw_mods, list) else []:
+                inst_mods[base_name].add(str(mod))
+
+            raw_ops = instr.get("operands", [])
+            for sig in raw_ops if isinstance(raw_ops, list) else []:
+                if sig not in inst_ops[base_name]:
+                    inst_ops[base_name].append(sig)
 
     if tblgen_json_path and os.path.exists(tblgen_json_path):
         with open(tblgen_json_path, "r", encoding="utf-8") as f:
-            tblgen_json = json.load(f)
-        parsed_instrs = parse_llvm_tblgen_json(tblgen_json)
-        for instr in parsed_instrs:
-            base_name = instr["mnemonic"]
-            instructions[base_name]["encoding"] = instr["encoding"]
-            instructions[base_name]["architecture"] = instr["architecture"]
-
-            for mod in instr["modifiers"]:
-                instructions[base_name]["modifiers"].add(mod)
-
-            for sig in instr["operands"]:
-                if sig not in instructions[base_name]["operands"]:
-                    instructions[base_name]["operands"].append(sig)
+            tblgen_json: dict[str, object] = json.load(f)
+        _merge_instrs(parse_llvm_tblgen_json(tblgen_json))
     else:
         for td_file in TD_FILES:
             content = fetch_td_file(td_file, local_dir=local_dir)
             if not content:
                 continue
+            _merge_instrs(parse_td_content(content))
 
-            parsed_instrs = parse_td_content(content)
-            for instr in parsed_instrs:
-                base_name = instr["mnemonic"]
-                instructions[base_name]["encoding"] = instr["encoding"]
-                instructions[base_name]["architecture"] = instr["architecture"]
-
-                for mod in instr["modifiers"]:
-                    instructions[base_name]["modifiers"].add(mod)
-
-                for sig in instr["operands"]:
-                    if sig not in instructions[base_name]["operands"]:
-                        instructions[base_name]["operands"].append(sig)
-
-    exhaustive_list: List[Dict[str, Any]] = []
-    for mnemonic, info in sorted(instructions.items()):
+    exhaustive_list: list[IsaInstructionRecordModel] = []
+    for mnemonic in sorted(inst_enc.keys()):
         exhaustive_list.append(
-            {
-                "mnemonic": mnemonic,
-                "architecture": info["architecture"],
-                "description": f"AMD RDNA {mnemonic} instruction.",
-                "encoding": info["encoding"],
-                "modifiers": sorted(list(info["modifiers"])),
-                "operands": info["operands"],
-            }
+            IsaInstructionRecordModel(
+                {
+                    "mnemonic": mnemonic,
+                    "architecture": inst_arch[mnemonic],
+                    "description": f"AMD RDNA {mnemonic} instruction.",
+                    "encoding": inst_enc[mnemonic],
+                    "modifiers": list(sorted(list(inst_mods[mnemonic]))),
+                    "operands": inst_ops[mnemonic],
+                }
+            )
         )
 
-    exhaustive_data = {
+    exhaustive_data: dict[str, object] = {
         "schema_version": "2.0.0",
         "target": "amd_rdna",
         "version": llvm_version,
@@ -552,7 +563,7 @@ def scrape_amd_rdna(
             "GFX11.5",
             "GFX12/RDNA4",
         ],
-        "instructions": exhaustive_list,
+        "instructions": list(exhaustive_list),
     }
 
     with open(resolved_output, "w", encoding="utf-8", newline="\n") as f:
@@ -562,7 +573,7 @@ def scrape_amd_rdna(
     return exhaustive_list
 
 
-def main(argv: Optional[List[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     """Run the script to generate the exhaustive RDNA JSON dump.
 
     Args:

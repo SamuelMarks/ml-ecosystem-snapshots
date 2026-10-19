@@ -1,8 +1,10 @@
 """Unit test suite for the NVIDIA PTX ISA TableGen scraper tool."""
 
+from __future__ import annotations
+
 import json
+import pytest_mock
 import os
-from typing import Any
 import urllib.error
 from unittest import mock
 
@@ -134,7 +136,7 @@ def test_main_invocation() -> None:
         mock_scrape.assert_called_once()
 
 
-def test_scrape_nvidia_ptx_main_entrypoint(mocker: Any) -> None:
+def test_scrape_nvidia_ptx_main_entrypoint(mocker: pytest_mock.MockerFixture) -> None:
     """Test running scrape_nvidia_ptx as __main__ writes output catalog.
 
     Args:
@@ -143,7 +145,7 @@ def test_scrape_nvidia_ptx_main_entrypoint(mocker: Any) -> None:
     import runpy
 
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("ml_ecosystem_snapshots.utils.fetch_url", return_value="")
+    mocker.patch("ml_ecosystem_snapshots.network_env.fetch_url", return_value="")
     res = runpy.run_path(scrape_nvidia_ptx.__file__, run_name="__main__")
     assert "main" in res
     assert mock_open.called

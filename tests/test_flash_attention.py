@@ -7,7 +7,6 @@ and live/fallback introspection with 100% coverage.
 from __future__ import annotations
 
 import argparse
-from typing import Any
 from unittest.mock import MagicMock, patch
 import pytest
 
@@ -75,7 +74,7 @@ def test_collect_api_inspection_exception_handled() -> None:
         return_value=fake_mod,
     ):
         with patch(
-            "ml_ecosystem_snapshots.models.GhostInspector.inspect",
+            "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",
             side_effect=ValueError("boom"),
         ):
             refs = flash_attention.collect_api(SemanticTier.NEURAL_OPS)
@@ -87,6 +86,7 @@ def test_extract_snapshot_flash_attention() -> None:
     snap = extract_snapshot("flash_attention")
     assert snap.get("target") == "flash_attention"
     cats = snap.get("categories", {})
+    assert isinstance(cats, dict)
     assert "neural_ops" in cats or "util" in cats
 
 
@@ -136,7 +136,9 @@ def test_check_flash_attention_op_mcp() -> None:
     assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw["errors"][0]
 
 
-def test_cmd_check_flash_attention_cli_valid(capsys: Any) -> None:
+def test_cmd_check_flash_attention_cli_valid(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Verify CLI command execution on valid attention operation.
 
     Args:
@@ -153,7 +155,9 @@ def test_cmd_check_flash_attention_cli_valid(capsys: Any) -> None:
     assert "Inputs:     3" in captured.out
 
 
-def test_cmd_check_flash_attention_cli_invalid_exits(capsys: Any) -> None:
+def test_cmd_check_flash_attention_cli_invalid_exits(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Verify CLI command exits with non-zero code on invalid operator.
 
     Args:

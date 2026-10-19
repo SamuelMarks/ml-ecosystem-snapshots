@@ -5,11 +5,13 @@ memref, gpu, vector, llvm, nvvm, rocdl) by parsing an exhaustive JSON dump prese
 attributes, results, and regions.
 """
 
+from __future__ import annotations
+
 from enum import Enum
 import json
 import os
 import re
-from typing import Any, Dict, List, Optional
+import typing
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -23,6 +25,7 @@ from ..models import (
     GhostMlirRef,
     GhostResult,
     IRParameterRole,
+    JsonValue,
     OperandDirection,
 )
 
@@ -80,7 +83,7 @@ def classify_mlir_type(type_str: str) -> str:
     return MLIRTypeCategory.CUSTOM.value
 
 
-def validate_mlir_type(type_str: str, constraint: Optional[str] = None) -> List[str]:
+def validate_mlir_type(type_str: str, constraint: str | None = None) -> list[str]:
     """Validate MLIR SSA type syntax and check compliance against TableGen type constraints.
 
     Validates:
@@ -97,7 +100,7 @@ def validate_mlir_type(type_str: str, constraint: Optional[str] = None) -> List[
     Returns:
         List of type validation errors.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     cleaned = type_str.strip()
     c_low = (constraint or "").lower()
 
@@ -199,12 +202,12 @@ def validate_mlir_type(type_str: str, constraint: Optional[str] = None) -> List[
 
 def validate_mlir_traits(
     op_name: str,
-    traits: List[str],
-    operand_types: Optional[List[str]] = None,
-    result_types: Optional[List[str]] = None,
-    attributes: Optional[List[str]] = None,
-    structured_attributes: Optional[Dict[str, Any]] = None,
-) -> List[str]:
+    traits: list[str],
+    operand_types: list[str] | None = None,
+    result_types: list[str] | None = None,
+    attributes: list[str] | None = None,
+    structured_attributes: typing.Mapping[str, object] | None = None,
+) -> list[str]:
     """Validate dialect verification traits for an MLIR operation invocation.
 
     Checks:
@@ -225,7 +228,7 @@ def validate_mlir_traits(
     Returns:
         List of trait verification error messages.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     t_set = set(traits)
 
     # 1. SameOperandsAndResultType
@@ -233,7 +236,7 @@ def validate_mlir_traits(
         MLIRDialectTrait.SAME_OPERANDS_AND_RESULT_TYPE.value in t_set
         or "SameOperandsAndResultType" in t_set
     ):
-        all_types: List[str] = []
+        all_types: list[str] = []
         if operand_types:
             all_types.extend(operand_types)
         if result_types:
@@ -265,9 +268,10 @@ def validate_mlir_traits(
             has_segment_attr = True
             seg_val = structured_attributes["operand_segment_sizes"]
             if isinstance(seg_val, list) and operand_types is not None:
-                if sum(seg_val) != len(operand_types):
+                seg_ints = [x for x in seg_val if isinstance(x, int)]
+                if sum(seg_ints) != len(operand_types):
                     errors.append(
-                        f"AttrSizedOperandSegments mismatch for '{op_name}': sum of operand_segment_sizes ({sum(seg_val)}) does not match operand count ({len(operand_types)})."
+                        f"AttrSizedOperandSegments mismatch for '{op_name}': sum of operand_segment_sizes ({sum(seg_ints)}) does not match operand count ({len(operand_types)})."
                     )
         if not has_segment_attr and (
             attributes is not None or structured_attributes is not None
@@ -327,10 +331,10 @@ def validate_mlir_traits(
 def validate_mlir_region(
     op_name: str,
     region_name: str,
-    block_args: List[str],
-    yield_types: List[str],
+    block_args: list[str],
+    yield_types: list[str],
     isolated_from_above: bool = False,
-) -> List[str]:
+) -> list[str]:
     """Validate MLIR region body block arguments, yield terminator types, and capture isolation.
 
     Args:
@@ -343,7 +347,7 @@ def validate_mlir_region(
     Returns:
         List of region verification error messages.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     clean_op = op_name.strip().lower()
 
     if clean_op in ("scf.for", "for"):
@@ -371,9 +375,9 @@ def validate_mlir_region(
 
 def validate_mlir_successors(
     op_name: str,
-    successors: List[str],
-    expected_count: Optional[int] = None,
-) -> List[str]:
+    successors: list[str],
+    expected_count: int | None = None,
+) -> list[str]:
     """Validate successor block targets for MLIR control flow operations.
 
     Args:
@@ -384,7 +388,7 @@ def validate_mlir_successors(
     Returns:
         List of successor validation error messages.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     clean_op = op_name.strip().lower()
 
     for succ in successors:
@@ -415,7 +419,7 @@ def validate_mlir_successors(
     return errors
 
 
-def _get_canonical_mlir_records() -> List[Dict[str, Any]]:
+def _get_canonical_mlir_records() -> list[dict[str, JsonValue]]:
     """Return canonical baseline MLIR operations for offline operation when unbuilt.
 
     Returns:
@@ -615,33 +619,45 @@ def _get_canonical_mlir_records() -> List[Dict[str, Any]]:
     ]
 
 
-def _load_mlir_exhaustive() -> List[GhostRef]:
+def _load_mlir_exhaustive() -> list[GhostRef]:
     """Load the MLIR exhaustive JSON dump or canonical fallback and map it to GhostRefs.
 
     Returns:
         A list of GhostRef items representing MLIR operations.
     """
     json_path = os.path.join(os.path.dirname(__file__), "mlir_exhaustive.json")
+    ops_list: list[dict[str, JsonValue]]
     if os.path.exists(json_path):
         try:
             with open(json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                data: JsonValue = json.load(f)
             if isinstance(data, dict):
-                if "categories" in data:
-                    all_ops: List[Dict[str, Any]] = []
+                if "categories" in data and isinstance(data["categories"], dict):
+                    all_ops: list[dict[str, JsonValue]] = []
                     for cat_ops in data["categories"].values():
                         if isinstance(cat_ops, list):
-                            all_ops.extend(cat_ops)
+                            all_ops.extend(
+                                item for item in cat_ops if isinstance(item, dict)
+                            )
                     ops_list = all_ops
                 else:
-                    ops_list = (
+                    raw_cand = (
                         data.get("operations")
                         or data.get("instructions")
                         or data.get("items")
                         or []
                     )
+                    ops_list = [
+                        item
+                        for item in (raw_cand if isinstance(raw_cand, list) else [])
+                        if isinstance(item, dict)
+                    ]
             else:
-                ops_list = data
+                ops_list = [
+                    item
+                    for item in (data if isinstance(data, list) else [])
+                    if isinstance(item, dict)
+                ]
         except (json.JSONDecodeError, OSError):
             return []
     elif os.environ.get("MLIR_DISABLE_FALLBACK") == "1":
@@ -649,15 +665,20 @@ def _load_mlir_exhaustive() -> List[GhostRef]:
     else:
         ops_list = _get_canonical_mlir_records()
 
-    refs: List[GhostRef] = []
+    refs: list[GhostRef] = []
     for op in ops_list:
-        params: List[GhostParam] = []
+        params: list[GhostParam] = []
 
         # 1. SSA Operands
-        for operand in op.get("operands", []):
-            op_name = operand["name"] if isinstance(operand, dict) else str(operand)
+        raw_operands = op.get("operands", [])
+        for operand in raw_operands if isinstance(raw_operands, list) else []:
+            op_name = (
+                str(operand["name"]) if isinstance(operand, dict) else str(operand)
+            )
             op_type = (
-                operand.get("type", "Value") if isinstance(operand, dict) else "Value"
+                str(operand.get("type", "Value"))
+                if isinstance(operand, dict)
+                else "Value"
             )
             params.append(
                 ExtendedGhostParam(
@@ -672,12 +693,15 @@ def _load_mlir_exhaustive() -> List[GhostRef]:
             )
 
         # 2. Attributes
-        for attribute in op.get("attributes", []):
+        raw_attributes = op.get("attributes", [])
+        for attribute in raw_attributes if isinstance(raw_attributes, list) else []:
             attr_name = (
-                attribute["name"] if isinstance(attribute, dict) else str(attribute)
+                str(attribute["name"])
+                if isinstance(attribute, dict)
+                else str(attribute)
             )
             attr_type = (
-                attribute.get("type", "Attribute")
+                str(attribute.get("type", "Attribute"))
                 if isinstance(attribute, dict)
                 else "Attribute"
             )
@@ -693,8 +717,9 @@ def _load_mlir_exhaustive() -> List[GhostRef]:
             )
 
         # 3. Regions
-        for region in op.get("regions", []):
-            reg_name = region["name"] if isinstance(region, dict) else str(region)
+        raw_regions = op.get("regions", [])
+        for region in raw_regions if isinstance(raw_regions, list) else []:
+            reg_name = str(region["name"]) if isinstance(region, dict) else str(region)
             params.append(
                 ExtendedGhostParam(
                     name=reg_name,
@@ -706,14 +731,16 @@ def _load_mlir_exhaustive() -> List[GhostRef]:
                 )
             )
 
-        returns_type: Optional[str] = None
-        ghost_results: List[GhostResult] = []
+        returns_type: str | None = None
+        ghost_results: list[GhostResult] = []
         results = op.get("results", [])
-        if results:
-            res_types: List[str] = []
+        if isinstance(results, list) and results:
+            res_types: list[str] = []
             for r in results:
-                r_name = r.get("name", "result") if isinstance(r, dict) else "result"
-                r_type = r.get("type", "Value") if isinstance(r, dict) else str(r)
+                r_name = (
+                    str(r.get("name", "result")) if isinstance(r, dict) else "result"
+                )
+                r_type = str(r.get("type", "Value")) if isinstance(r, dict) else str(r)
                 res_types.append(r_type)
                 ghost_results.append(GhostResult(name=r_name, type=r_type))
             returns_type = (
@@ -723,26 +750,38 @@ def _load_mlir_exhaustive() -> List[GhostRef]:
             )
 
         docstring_parts = [
-            op.get("description") or f"MLIR {op.get('class_name', 'Op')} operation."
+            str(
+                op.get("description") or f"MLIR {op.get('class_name', 'Op')} operation."
+            )
         ]
-        traits = op.get("traits", [])
+        raw_traits = op.get("traits", [])
+        traits: list[str] = [
+            str(t) for t in (raw_traits if isinstance(raw_traits, list) else [])
+        ]
         if traits:
             docstring_parts.append(f"Traits: {', '.join(traits)}")
 
-        domain_metadata = {
+        domain_metadata: dict[str, JsonValue] = {
             "dialect": op.get("dialect"),
-            "traits": traits,
+            "traits": list(traits),
             "regions": op.get("regions", []),
         }
 
-        ssa_operands: List[GhostParam] = [
+        ssa_operands: list[GhostParam] = [
             p for p in params if getattr(p, "role", None) == IRParameterRole.OPERAND
         ]
 
+        raw_succs = op.get("successors")
+        successors: list[str] | None = (
+            [str(s) for s in raw_succs] if isinstance(raw_succs, list) else None
+        )
+        raw_attrs_val = op.get("attributes")
+        raw_regs_val = op.get("regions")
+
         refs.append(
             GhostMlirRef(
-                name=op.get("class_name", "UnknownOp"),
-                api_path=op.get("api_path", ""),
+                name=str(op.get("class_name", "UnknownOp")),
+                api_path=str(op.get("api_path", "")),
                 kind="function",
                 params=params,
                 operands=ssa_operands,
@@ -752,15 +791,9 @@ def _load_mlir_exhaustive() -> List[GhostRef]:
                 environment_tags=["cpu", "cuda", "rocm", "tpu"],
                 domain_metadata=domain_metadata,
                 traits=traits,
-                attributes=op.get("attributes")
-                if isinstance(op.get("attributes"), dict)
-                else None,
-                regions=op.get("regions")
-                if isinstance(op.get("regions"), dict)
-                else None,
-                successors=op.get("successors")
-                if isinstance(op.get("successors"), list)
-                else None,
+                attributes=raw_attrs_val if isinstance(raw_attrs_val, dict) else None,
+                regions=raw_regs_val if isinstance(raw_regs_val, dict) else None,
+                successors=successors,
             )
         )
 
@@ -769,7 +802,7 @@ def _load_mlir_exhaustive() -> List[GhostRef]:
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Entrypoint to collect the MLIR API signature for a given category.
 
     Args:

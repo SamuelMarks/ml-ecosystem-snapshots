@@ -73,13 +73,12 @@ def test_resolve_snapshot_path_not_found_error() -> None:
 
 def test_schema_and_introspection_domain_errors() -> None:
     """Verify SnapshotSchemaError, CExtensionSignatureError, and IntrospectionError are raised on invalid inputs."""
-    from typing import Any
     from ml_ecosystem_snapshots.api import validate_snapshot_envelope
     from ml_ecosystem_snapshots.c_extension_sig import _parse_c_sig_ast_arguments
     from ml_ecosystem_snapshots.introspection.ast_kwargs import _parse_callable_ast
     from ml_ecosystem_snapshots.serialization.hydration import hydrate_ghost_ref
 
-    invalid_payload: Any = "not_a_dict"
+    invalid_payload: object = "not_a_dict"
     with pytest.raises(SnapshotSchemaError, match="must be a dictionary"):
         hydrate_ghost_ref(invalid_payload)
 

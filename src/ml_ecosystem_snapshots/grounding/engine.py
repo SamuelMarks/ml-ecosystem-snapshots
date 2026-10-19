@@ -5,10 +5,14 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from typing import Any, Dict, List, Optional, Set
 
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository
-from ml_ecosystem_snapshots.models import ExtendedGhostRef, GhostInspector
+from ml_ecosystem_snapshots.models import (
+    ExtendedGhostRef,
+    JsonValue,
+    SnapshotEnvelope,
+)
 from ml_ecosystem_snapshots.network_env import load_json_data
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,7 +47,9 @@ def compute_levenshtein(s1: str, s2: str) -> int:
     return previous_row[-1]
 
 
-def _extract_raw_items(raw_data: Any) -> List[Dict[str, Any]]:
+def _extract_raw_items(
+    raw_data: SnapshotEnvelope | JsonValue | object,
+) -> list[dict[str, JsonValue]]:
     """Extract raw GhostRef dictionary items from a loaded snapshot structure.
 
     Args:
@@ -52,18 +58,18 @@ def _extract_raw_items(raw_data: Any) -> List[Dict[str, Any]]:
     Returns:
         Flat list of GhostRef item dictionaries.
     """
-    raw_items: List[Dict[str, Any]] = []
+    raw_items: list[dict[str, JsonValue]] = []
     if isinstance(raw_data, list):
-        raw_items = [item for item in raw_data if isinstance(item, dict)]
+        raw_items = [dict(item) for item in raw_data if isinstance(item, dict)]
     elif isinstance(raw_data, dict):
         if "categories" in raw_data and isinstance(raw_data["categories"], dict):
             for cat_items in raw_data["categories"].values():
                 if isinstance(cat_items, list):
-                    raw_items.extend(i for i in cat_items if isinstance(i, dict))
+                    raw_items.extend(dict(i) for i in cat_items if isinstance(i, dict))
         elif "items" in raw_data and isinstance(raw_data["items"], list):
-            raw_items = [i for i in raw_data["items"] if isinstance(i, dict)]
+            raw_items = [dict(i) for i in raw_data["items"] if isinstance(i, dict)]
         else:
-            raw_items = [raw_data]
+            raw_items = [dict(raw_data)]
     return raw_items
 
 
@@ -72,8 +78,8 @@ class GroundingEngine:
 
     def __init__(
         self,
-        base_dirs: Optional[List[str]] = None,
-        repository: Optional[SnapshotRepository] = None,
+        base_dirs: list[str] | None = None,
+        repository: SnapshotRepository | None = None,
     ) -> None:
         """Initialize the GroundingEngine.
 
@@ -85,18 +91,16 @@ class GroundingEngine:
         default_snapshots = os.path.join(os.path.dirname(__file__), "..", "snapshots")
 
         self._has_custom_dirs = base_dirs is not None
-        self.search_dirs: List[str] = base_dirs or [
+        self.search_dirs: list[str] = base_dirs or [
             os.path.abspath(default_frameworks),
             os.path.abspath(default_snapshots),
         ]
         self._repository = repository
         self._lock = threading.RLock()
-        # In-memory target registry: target -> {symbol_key: ExtendedGhostRef}
-        self._target_cache: Dict[str, Dict[str, ExtendedGhostRef]] = {}
-        # Mnemonic/short-name map: target -> {short_name: ExtendedGhostRef}
-        self._short_name_cache: Dict[str, Dict[str, ExtendedGhostRef]] = {}
+        self._target_cache: dict[str, dict[str, ExtendedGhostRef]] = {}
+        self._short_name_cache: dict[str, dict[str, ExtendedGhostRef]] = {}
 
-    def get_loaded_targets(self) -> List[str]:
+    def get_loaded_targets(self) -> list[str]:
         """Retrieve the names of all currently loaded targets.
 
         Returns:
@@ -105,7 +109,7 @@ class GroundingEngine:
         with self._lock:
             return sorted(list(self._target_cache.keys()))
 
-    def _discover_target_files(self, target: str) -> List[str]:
+    def _discover_target_files(self, target: str) -> list[str]:
         """Locate snapshot or exhaustive files matching a target name.
 
         Args:
@@ -115,7 +119,7 @@ class GroundingEngine:
             List of matching file paths.
         """
         norm_target = target.lower().replace("-", "_")
-        matched_files: List[str] = []
+        matched_files: list[str] = []
 
         for d in self.search_dirs:
             if not os.path.isdir(d):
@@ -140,9 +144,9 @@ class GroundingEngine:
 
     def _index_item(
         self,
-        item: Dict[str, Any],
-        symbol_index: Dict[str, ExtendedGhostRef],
-        short_index: Dict[str, ExtendedGhostRef],
+        item: dict[str, JsonValue],
+        symbol_index: dict[str, ExtendedGhostRef],
+        short_index: dict[str, ExtendedGhostRef],
     ) -> None:
         """Hydrate a single raw item dictionary and index it into symbol_index and short_index.
 
@@ -165,7 +169,7 @@ class GroundingEngine:
         except (AttributeError, TypeError, ValueError, KeyError) as exc:
             _LOGGER.debug("Skipping invalid GhostRef item during indexing: %s", exc)
 
-    def load_target(self, target: str) -> Dict[str, ExtendedGhostRef]:
+    def load_target(self, target: str) -> dict[str, ExtendedGhostRef]:
         """Lazily load and index all symbols for a target framework or ISA.
 
         Args:
@@ -180,8 +184,8 @@ class GroundingEngine:
                 return self._target_cache[norm_target]
 
             files = self._discover_target_files(norm_target)
-            symbol_index: Dict[str, ExtendedGhostRef] = {}
-            short_index: Dict[str, ExtendedGhostRef] = {}
+            symbol_index: dict[str, ExtendedGhostRef] = {}
+            short_index: dict[str, ExtendedGhostRef] = {}
 
             for file_path in files:
                 raw_data = load_json_data(file_path)
@@ -240,7 +244,7 @@ class GroundingEngine:
         short_map = self._short_name_cache.get(target.lower().replace("-", "_"), {})
         return norm_symbol in short_map
 
-    def get_symbol(self, target: str, symbol: str) -> Optional[ExtendedGhostRef]:
+    def get_symbol(self, target: str, symbol: str) -> ExtendedGhostRef | None:
         """Retrieve the canonical ExtendedGhostRef for a symbol.
 
         Args:
@@ -259,7 +263,7 @@ class GroundingEngine:
 
     def suggest_closest_symbol(
         self, target: str, typo_candidate: str, max_distance: int = 4
-    ) -> Optional[str]:
+    ) -> str | None:
         """Suggest the closest valid symbol using Levenshtein distance matching.
 
         Args:
@@ -275,10 +279,10 @@ class GroundingEngine:
             return None
 
         clean_candidate = typo_candidate.lower()
-        best_candidate: Optional[str] = None
+        best_candidate: str | None = None
         best_distance = max_distance + 1
 
-        all_candidates: Set[str] = set()
+        all_candidates: set[str] = set()
         for ref in index.values():
             if ref.api_path:
                 all_candidates.add(ref.api_path)
@@ -299,7 +303,7 @@ class GroundingEngine:
 
         return best_candidate if best_distance <= max_distance else None
 
-    def fuzzy_search_symbol(self, target: str, query: str, top_k: int = 5) -> List[str]:
+    def fuzzy_search_symbol(self, target: str, query: str, top_k: int = 5) -> list[str]:
         """Search symbols in target using fuzzy substring and Levenshtein ranking.
 
         Args:
@@ -315,9 +319,9 @@ class GroundingEngine:
             return []
 
         clean_query = query.lower()
-        matches: List[tuple[int, str]] = []
+        matches: list[tuple[int, str]] = []
 
-        seen: Set[str] = set()
+        seen: set[str] = set()
         for ref in index.values():
             for sym in [ref.api_path, ref.name]:
                 if not sym or sym in seen:

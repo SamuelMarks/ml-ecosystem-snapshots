@@ -363,7 +363,7 @@ The command-line interface provides the user-facing entrypoint for snapshot capt
 ### Multi-Tier Snapshot Path Resolution (`resolve_snapshot_path`)
 Resolves snapshot identifiers (e.g. `torch`, `torch_v2.4.0.json`, or custom paths) across a cascading hierarchy:
 1. Exact file path or `.json` suffix.
-2. Custom paths defined in `ML_SNAPSHOTS_PATH` or `ML_FRAMEWORK_SNAPSHOTS_PATH`.
+2. Custom paths defined in `ML_SNAPSHOTS_PATH`.
 3. Local cache directory (`~/.cache/ml_ecosystem_snapshots/snapshots`).
 4. Project repository root `snapshots/`.
 5. Package-bundled `src/ml_ecosystem_snapshots/snapshots/` and `frameworks/`.
@@ -383,8 +383,7 @@ Resolves snapshot identifiers (e.g. `torch`, `torch_v2.4.0.json`, or custom path
 | `pull` | Download an official snapshot asset from GitHub Releases into local cache |
 | `download-all` | Download all canonical pre-compiled snapshots into cache |
 | `verify-local-cache` | Verify SHA-256 integrity of all cached snapshots |
-| `index` | Inspect or rebuild the local SQLite FTS5 search index |
-| `index-cache` | Clean or optimize the SQLite index database |
+| `index` | Inspect, clear, or rebuild the local SQLite FTS5 search index |
 | `check-sass` | Validate NVIDIA SASS assembly instructions, modifiers, and SM architectures |
 | `check-rdna` | Validate AMD RDNA assembly instructions, encodings, and GFX generations |
 | `check-mlir` | Validate MLIR dialect operations and traits |

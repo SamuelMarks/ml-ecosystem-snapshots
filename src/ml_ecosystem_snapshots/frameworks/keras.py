@@ -4,13 +4,15 @@ Provides functions to statically introspect the Keras library using Griffe and g
 GhostRefs for layers, losses, optimizers, and activations.
 """
 
-from typing import Any, List, Optional, Set
+from __future__ import annotations
 
-from ml_ecosystem_snapshots.models import GhostInspector
-from ml_switcheroo_ir.schema.ghost import GhostRef
-from ml_switcheroo_ir.schema.ghost import SemanticTier
+import types
 
-griffe: Optional[Any]
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+
+griffe: types.ModuleType | None = None
 try:
     import griffe as _griffe_mod
 
@@ -25,9 +27,9 @@ def _scan_griffe_module(
     module_path: str,
     prefix: str,
     kind: str = "class",
-    block_list: Optional[Set[str]] = None,
+    block_list: set[str] | None = None,
     include_nonpublic: bool = False,
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Statically scans a Keras module for members of a specific kind.
 
     Args:
@@ -44,14 +46,14 @@ def _scan_griffe_module(
         return []
 
     block_list = block_list or set()
-    found: List[GhostRef] = []
+    found: list[GhostRef] = []
 
     try:
         mod = griffe.load(module_path)
     except Exception:
         return []
 
-    for name, member in mod.members.items():
+    for name, member in getattr(mod, "members", {}).items():
         if (not include_nonpublic and name.startswith("_")) or name in block_list:
             continue
 
@@ -64,7 +66,7 @@ def _scan_griffe_module(
     return found
 
 
-def _collect_static(category: SemanticTier, include_nonpublic: bool) -> List[GhostRef]:
+def _collect_static(category: SemanticTier, include_nonpublic: bool) -> list[GhostRef]:
     """Scan the Keras library for a specific API category via Griffe.
 
     Args:
@@ -174,7 +176,7 @@ def _collect_static(category: SemanticTier, include_nonpublic: bool) -> List[Gho
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Entrypoint to collect the Keras API signature for a given category.
 
     Args:

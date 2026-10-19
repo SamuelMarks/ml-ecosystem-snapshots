@@ -4,6 +4,8 @@ Tests Pydantic V2 model generation with overloaded signatures and validated tupl
 Protobuf structured type mapping and enum preservation, and Scoped LLM prompt context export.
 """
 
+from __future__ import annotations
+
 from unittest.mock import patch
 
 from ml_ecosystem_snapshots.export import (
@@ -169,13 +171,13 @@ def test_export_scoped_prompt_context_with_hallucination_guards() -> None:
                             "name": "A",
                             "kind": "POSITIONAL_OR_KEYWORD",
                             "annotation": "Tensor",
-                            "dtypes": [
+                            "allowed_dtypes": [
                                 "float32",
                                 "float64",
                                 "complex64",
                                 "complex128",
                             ],
-                            "rank": ">=2",
+                            "rank_constraint": ">=2",
                         }
                     ],
                 }

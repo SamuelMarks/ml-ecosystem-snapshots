@@ -1,7 +1,10 @@
 """Tests for the NVIDIA SASS framework extractor."""
 
+from __future__ import annotations
+
 import json
-from typing import Any
+from pathlib import Path
+import pytest
 from unittest import mock
 
 from ml_switcheroo_ir.schema.ghost import SemanticTier, GhostRef, GhostParam
@@ -66,15 +69,21 @@ def test_build_structured_sass_operands() -> None:
     )
     assert len(structured) == 8
     assert structured[0]["role"] == "dest"
+    assert isinstance(structured[0]["register_classes"], list)
     assert "R" in structured[0]["register_classes"]
 
     assert structured[1]["immediate_type"] == "float32"
     assert structured[2]["immediate_type"] == "int32"
 
+    assert isinstance(structured[3]["register_classes"], list)
     assert "UR" in structured[3]["register_classes"]
+    assert isinstance(structured[4]["register_classes"], list)
     assert "P" in structured[4]["register_classes"]
+    assert isinstance(structured[5]["register_classes"], list)
     assert "CBANK" in structured[5]["register_classes"]
+    assert isinstance(structured[6]["register_classes"], list)
     assert "UP" in structured[6]["register_classes"]
+    assert isinstance(structured[7]["register_classes"], list)
     assert "B" in structured[7]["register_classes"]
 
     # Store, branch, barrier instruction roles
@@ -511,7 +520,7 @@ def test_check_sass_instruction_extended() -> None:
     assert res_fp4_explicit["is_valid"] is True
 
 
-def test_cli_check_sass(capsys: Any, tmp_path: Any) -> None:
+def test_cli_check_sass(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     """Test CLI check-sass subcommand with file, valid mnemonic, and error cases.
 
     Args:

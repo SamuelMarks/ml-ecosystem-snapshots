@@ -4,25 +4,27 @@ Provides functions to dynamically introspect the JAX and Optax libraries and
 generate GhostRefs for activations, losses, and optimizers.
 """
 
+from __future__ import annotations
+
 import inspect
+import types
+
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
+from ml_ecosystem_snapshots.frameworks.optax import OptaxScanner
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.utils import get_all_members
-from typing import Any, List
-import typing
 
-from ml_ecosystem_snapshots.models import GhostInspector
-from ml_switcheroo_ir.schema.ghost import GhostRef
-from ml_switcheroo_ir.schema.ghost import SemanticTier
-from ml_ecosystem_snapshots.frameworks.optax_shim import OptaxScanner
-
+jax: types.ModuleType | None = None
 try:
     import jax as _jax
 
-    jax: typing.Any = _jax
+    jax = _jax
 except Exception:
     jax = None
 
 
-def _scan_jax_activations(include_nonpublic: bool) -> List[GhostRef]:
+def _scan_jax_activations(include_nonpublic: bool) -> list[GhostRef]:
     """Dynamically scans jax.nn for activation-like functions.
 
     Args:
@@ -34,7 +36,7 @@ def _scan_jax_activations(include_nonpublic: bool) -> List[GhostRef]:
     """
     if jax is None:
         return []
-    found: List[GhostRef] = []
+    found: list[GhostRef] = []
     try:
         import jax.nn as jax_nn
 
@@ -43,23 +45,12 @@ def _scan_jax_activations(include_nonpublic: bool) -> List[GhostRef]:
                 continue
             if inspect.isfunction(obj):
                 found.append(GhostInspector.inspect(obj, f"jax.nn.{name}"))
-    except (
-        AttributeError,
-        TypeError,
-        ValueError,
-        KeyError,
-        IndexError,
-        SyntaxError,
-        OSError,
-        ImportError,
-        RuntimeError,
-        Exception,
-    ):
+    except Exception:
         pass
     return found
 
 
-def _scan_jax_initializers(include_nonpublic: bool) -> List[GhostRef]:
+def _scan_jax_initializers(include_nonpublic: bool) -> list[GhostRef]:
     """Dynamically scans jax.nn.initializers for initializer functions.
 
     Args:
@@ -71,7 +62,7 @@ def _scan_jax_initializers(include_nonpublic: bool) -> List[GhostRef]:
     """
     if jax is None:
         return []
-    found: List[GhostRef] = []
+    found: list[GhostRef] = []
     try:
         import jax.nn.initializers as jax_init
 
@@ -80,23 +71,12 @@ def _scan_jax_initializers(include_nonpublic: bool) -> List[GhostRef]:
                 continue
             if inspect.isfunction(obj):
                 found.append(GhostInspector.inspect(obj, f"jax.nn.initializers.{name}"))
-    except (
-        AttributeError,
-        TypeError,
-        ValueError,
-        KeyError,
-        IndexError,
-        SyntaxError,
-        OSError,
-        ImportError,
-        RuntimeError,
-        Exception,
-    ):
+    except Exception:
         pass
     return found
 
 
-def _attach_jax_static_arg_metadata(ref: GhostRef, obj: Any) -> GhostRef:
+def _attach_jax_static_arg_metadata(ref: GhostRef, obj: object) -> GhostRef:
     """Attach static argument numbers and names from JIT-compiled functions as metadata.
 
     Args:
@@ -137,11 +117,11 @@ def _attach_jax_static_arg_metadata(ref: GhostRef, obj: Any) -> GhostRef:
 
 
 def _collect_jax_namespace(
-    ns_obj: Any,
+    ns_obj: types.ModuleType | object,
     api_prefix: str,
     include_nonpublic: bool,
     attach_static_args: bool = False,
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect callable non-class members from a JAX submodule namespace.
 
     Args:
@@ -153,7 +133,7 @@ def _collect_jax_namespace(
     Returns:
         List of inspected `GhostRef` objects.
     """
-    collected: List[GhostRef] = []
+    collected: list[GhostRef] = []
     for name, obj in get_all_members(ns_obj):
         if (
             (include_nonpublic or not name.startswith("_"))
@@ -170,7 +150,7 @@ def _collect_jax_namespace(
     return collected
 
 
-def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
+def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
     """Scan JAX for array API functions, primitives, random generation, and transforms.
 
     Args:
@@ -179,7 +159,7 @@ def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
     Returns:
         List of GhostRefs.
     """
-    found: List[GhostRef] = []
+    found: list[GhostRef] = []
     try:
         import jax
         import jax.numpy as jnp
@@ -333,7 +313,7 @@ def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
     return found
 
 
-def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[GhostRef]:
+def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[GhostRef]:
     """Scan the live JAX library for a specific API category.
 
     Args:
@@ -362,7 +342,7 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> List[Ghost
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Entrypoint to collect the JAX API signature for a given category.
 
     Args:

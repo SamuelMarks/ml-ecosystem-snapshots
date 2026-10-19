@@ -1,57 +1,115 @@
 """Export module for generating JSON Schema, OpenAPI specifications, Pydantic classes, and Protobuf definitions."""
 
-from typing import Any, Dict, List, Optional, Sequence, Set
+from __future__ import annotations
+
 from collections import OrderedDict
+import typing
 
-from ml_switcheroo_ir.schema.ghost import GhostRef
+from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef
+import pydantic
+
+from ml_ecosystem_snapshots.models import JsonValue
+
+if typing.TYPE_CHECKING:
+    from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository
 
 
-def _ghost_to_cdd_ir(ref: GhostRef) -> Dict[str, Any]:
+class CddIrModel(pydantic.BaseModel):
+    """Typed cdd-python Intermediate Representation (IR) model."""
+
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    name: str
+    type: str = "static"
+    doc: str = ""
+    params: dict[str, dict[str, str]] = pydantic.Field(default_factory=dict)
+    returns: dict[str, dict[str, str]] | None = None
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["name", "type", "doc"]) -> str: ...
+
+    @typing.overload
+    def __getitem__(
+        self, key: typing.Literal["params"]
+    ) -> dict[str, dict[str, str]]: ...
+
+    @typing.overload
+    def __getitem__(
+        self, key: typing.Literal["returns"]
+    ) -> dict[str, dict[str, str]] | None: ...
+
+    @typing.overload
+    def __getitem__(self, key: str) -> str | dict[str, dict[str, str]] | JsonValue: ...
+
+    def __getitem__(self, key: str) -> str | dict[str, dict[str, str]] | JsonValue:
+        """Retrieve a CDD IR field by dictionary key.
+
+        Args:
+            key: Field name ('name', 'type', 'doc', 'params', or 'returns').
+
+        Returns:
+            Field value.
+        """
+        val: str | dict[str, dict[str, str]] | JsonValue = getattr(self, key)
+        return val
+
+    def to_cdd_dict(self) -> dict[str, object]:
+        """Convert to a mutable dictionary with `OrderedDict` params/returns for `cdd-python`.
+
+        Returns:
+            Dictionary suitable for `cdd-python` emitters.
+        """
+        return {
+            "name": self.name,
+            "type": self.type,
+            "doc": self.doc,
+            "params": OrderedDict(self.params),
+            "returns": (
+                OrderedDict(self.returns) if self.returns is not None else None
+            ),
+        }
+
+
+def _ghost_to_cdd_ir(ref: GhostRef) -> CddIrModel:
     """Convert a GhostRef to cdd-python Intermediate Representation (IR).
 
     Args:
-        ref: The `GhostRef` instance to convert into a cdd-python IR dictionary.
+        ref: The `GhostRef` instance to convert into a `CddIrModel`.
 
     Returns:
-        The cdd IR representation.
+        The `CddIrModel` representation.
     """
-    ir: "dict[str, Any]" = {
-        "name": ref.name,
-        "type": "class" if ref.kind == "class" else "static",
-        "doc": ref.docstring or "",
-        "params": OrderedDict(),
-        "returns": None,
-    }
+    params_map: dict[str, dict[str, str]] = {}
 
     for param in ref.params:
-        p_dict = {}
+        p_dict: dict[str, str] = {}
         if param.annotation:
             p_dict["typ"] = param.annotation
-        else:
-            pass
         if param.description:
             p_dict["doc"] = param.description
-        else:
-            pass
         if param.default is not None:
             p_dict["default"] = param.default
-        else:
-            pass
-        ir["params"][param.name] = p_dict
+        params_map[param.name] = p_dict
 
+    returns_map: dict[str, dict[str, str]] | None = None
     if ref.returns_type or ref.returns_description:
-        ir["returns"] = OrderedDict()
-        ret_dict = {}
+        ret_dict: dict[str, str] = {}
         if ref.returns_type:
             ret_dict["typ"] = ref.returns_type
         if ref.returns_description:
             ret_dict["doc"] = ref.returns_description
-        ir["returns"]["return_type"] = ret_dict
+        returns_map = {"return_type": ret_dict}
 
-    return ir
+    return CddIrModel(
+        name=ref.name,
+        type="class" if ref.kind == "class" else "static",
+        doc=ref.docstring or "",
+        params=params_map,
+        returns=returns_map,
+    )
 
 
-def to_json_schema(ref: GhostRef) -> Dict[str, Any]:
+def to_json_schema(ref: GhostRef) -> dict[str, JsonValue]:
     """Convert a GhostRef into a JSON Schema.
 
     Args:
@@ -59,18 +117,17 @@ def to_json_schema(ref: GhostRef) -> Dict[str, Any]:
 
     Returns:
         A dictionary representing the JSON Schema.
-
     """
     import cdd.json_schema.emit
 
     ir = _ghost_to_cdd_ir(ref)
-    schema: Dict[str, Any] = cdd.json_schema.emit.json_schema(
-        ir, identifier=ref.api_path
+    schema: dict[str, JsonValue] = cdd.json_schema.emit.json_schema(
+        ir.to_cdd_dict(), identifier=ref.api_path
     )
     return schema
 
 
-def to_openapi(refs: Sequence[GhostRef]) -> Dict[str, Any]:
+def to_openapi(refs: typing.Sequence[GhostRef]) -> dict[str, JsonValue]:
     """Convert a sequence of GhostRefs into an OpenAPI specification.
 
     Args:
@@ -78,7 +135,6 @@ def to_openapi(refs: Sequence[GhostRef]) -> Dict[str, Any]:
 
     Returns:
         A dictionary representing the OpenAPI specification.
-
     """
     import cdd.compound.openapi.emit
     from cdd.compound.openapi.utils.emit_openapi_utils import NameModelRouteIdCrud
@@ -86,16 +142,19 @@ def to_openapi(refs: Sequence[GhostRef]) -> Dict[str, Any]:
     nm_cruds = []
     for ref in refs:
         ir = _ghost_to_cdd_ir(ref)
-        # Use api_path for route to make it unique and descriptive
         route = f"/{ref.api_path.replace('.', '/')}"
 
         nm_cruds.append(
             NameModelRouteIdCrud(
-                name=ref.name, model=ir, route=route, id=None, crud="CRU"
+                name=ref.name,
+                model=ir.to_cdd_dict(),
+                route=route,
+                id=None,
+                crud="CRU",
             )
         )
 
-    spec: Dict[str, Any] = cdd.compound.openapi.emit.openapi(nm_cruds)
+    spec: dict[str, JsonValue] = cdd.compound.openapi.emit.openapi(nm_cruds)
     return spec
 
 
@@ -121,14 +180,16 @@ def to_pydantic(ref: GhostRef, validate_varargs: bool = False) -> str:
     ]
 
     def _render_single_model(
-        name: str, doc: Optional[str], params: List[Any]
-    ) -> List[str]:
+        name: str,
+        doc: str | None,
+        params: typing.Sequence[GhostParam],
+    ) -> list[str]:
         """Render Python source code lines for a single Pydantic model.
 
         Args:
             name: Class name for the Pydantic model.
             doc: Optional docstring for the class.
-            params: List of GhostParam specifications.
+            params: Sequence of GhostParam specifications.
 
         Returns:
             List of Python source code lines for the class.
@@ -188,7 +249,7 @@ def to_pydantic(ref: GhostRef, validate_varargs: bool = False) -> str:
 
         return m_lines
 
-    all_models: List[str] = []
+    all_models: list[str] = []
     if ref.overloads:
         all_variants = [ref] + [ov for ov in ref.overloads if isinstance(ov, GhostRef)]
         variant_names = []
@@ -215,7 +276,7 @@ PROTO_TENSOR_DEFINITION = """message TensorProto {
   bytes raw_data = 3;
 }"""
 
-PROTO_ENUM_DEFINITIONS: Dict[str, str] = {
+PROTO_ENUM_DEFINITIONS: dict[str, str] = {
     "reduction": """enum ReductionType {
   REDUCTION_UNSPECIFIED = 0;
   REDUCTION_NONE = 1;
@@ -250,7 +311,7 @@ PROTO_ENUM_DEFINITIONS: Dict[str, str] = {
 }
 
 
-PROTO_DEFINITIONS_BY_TYPE: Dict[str, str] = {
+PROTO_DEFINITIONS_BY_TYPE: dict[str, str] = {
     "TensorProto": PROTO_TENSOR_DEFINITION,
     "ReductionType": PROTO_ENUM_DEFINITIONS["reduction"],
     "PaddingMode": PROTO_ENUM_DEFINITIONS["padding"],
@@ -259,7 +320,7 @@ PROTO_DEFINITIONS_BY_TYPE: Dict[str, str] = {
 }
 
 
-def _py_type_to_proto(typ: Optional[str], param_name: str = "") -> str:
+def _py_type_to_proto(typ: str | None, param_name: str = "") -> str:
     """Map Python type to Protobuf type with structured message and enum mapping.
 
     Args:
@@ -275,7 +336,6 @@ def _py_type_to_proto(typ: Optional[str], param_name: str = "") -> str:
     clean_t = str(typ).lower().strip()
     p_norm = param_name.lower().strip()
 
-    # 1. Structured Tensor types -> TensorProto
     if clean_t in (
         "tensor",
         "torch.tensor",
@@ -285,7 +345,6 @@ def _py_type_to_proto(typ: Optional[str], param_name: str = "") -> str:
     ) or clean_t.startswith("tensor<"):
         return "TensorProto"
 
-    # 2. Dimension shapes -> repeated int64
     if p_norm in ("shape", "size", "dims", "dimensions") or clean_t in (
         "shape",
         "dimensions",
@@ -294,7 +353,6 @@ def _py_type_to_proto(typ: Optional[str], param_name: str = "") -> str:
     ):
         return "repeated int64"
 
-    # 3. Preserved Enums
     if p_norm in ("reduction", "reduction_type"):
         return "ReductionType"
     if p_norm in ("padding", "padding_mode"):
@@ -328,12 +386,11 @@ def to_protobuf(ref: GhostRef, package: str = "ml_framework") -> str:
 
     Returns:
         A string containing the .proto definition.
-
     """
-    preamble_blocks: List[str] = []
-    seen_blocks: Set[str] = set()
+    preamble_blocks: list[str] = []
+    seen_blocks: set[str] = set()
 
-    field_lines: List[str] = []
+    field_lines: list[str] = []
     field_num = 1
     for param in ref.params:
         if param.kind in ("VAR_POSITIONAL", "VAR_KEYWORD"):
@@ -377,7 +434,7 @@ def to_protobuf(ref: GhostRef, package: str = "ml_framework") -> str:
     return "\n".join(lines) + "\n"
 
 
-def export_llm_prompt_context(refs: Sequence[GhostRef]) -> str:
+def export_llm_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
     """Export GhostRef sequence into a compact, typed format optimized for LLM prompting.
 
     Formats functions, operands, attributes, and constraints into concise markdown
@@ -389,11 +446,11 @@ def export_llm_prompt_context(refs: Sequence[GhostRef]) -> str:
     Returns:
         A Markdown-formatted string with compact signatures and parameter constraints.
     """
-    blocks: List[str] = []
+    blocks: list[str] = []
 
     for ref in refs:
-        params_str_list: List[str] = []
-        param_details: List[str] = []
+        params_str_list: list[str] = []
+        param_details: list[str] = []
 
         for p in ref.params:
             type_annot = p.annotation or "Any"
@@ -402,15 +459,11 @@ def export_llm_prompt_context(refs: Sequence[GhostRef]) -> str:
 
             desc = f" - {p.description}" if p.description else ""
 
-            constraints: List[str] = []
-            p_dtypes = getattr(p, "allowed_dtypes", None) or getattr(p, "dtypes", None)
+            constraints: list[str] = []
+            p_dtypes = getattr(p, "allowed_dtypes", None)
             if p_dtypes:
                 constraints.append(f"dtypes: {p_dtypes}")
-            p_rank = (
-                getattr(p, "rank_constraint", None)
-                if getattr(p, "rank_constraint", None) is not None
-                else getattr(p, "rank", None)
-            )
+            p_rank = getattr(p, "rank_constraint", None)
             if p_rank is not None:
                 constraints.append(f"rank: {p_rank}")
             constr_str = f" [{', '.join(constraints)}]" if constraints else ""
@@ -448,7 +501,7 @@ def export_llm_prompt_context(refs: Sequence[GhostRef]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-def export_sass_prompt_context(refs: Sequence[GhostRef]) -> str:
+def export_sass_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
     """Export SASS instruction specifications as canonical assembly prompt templates.
 
     Formats GPU instructions into real SASS assembly syntax templates rather than
@@ -460,7 +513,7 @@ def export_sass_prompt_context(refs: Sequence[GhostRef]) -> str:
     Returns:
         Markdown string formatted with assembly syntax templates and register constraints.
     """
-    blocks: List[str] = []
+    blocks: list[str] = []
 
     for ref in refs:
         meta = getattr(ref, "domain_metadata", None) or {}
@@ -501,11 +554,8 @@ def export_sass_prompt_context(refs: Sequence[GhostRef]) -> str:
         if ref.params:
             lines.append("- **Operands**:")
             for p in ref.params:
-                dir_str = (
-                    f" [{p.direction}]"
-                    if hasattr(p, "direction") and p.direction
-                    else ""
-                )
+                dir_val = getattr(p, "direction", None)
+                dir_str = f" [{dir_val}]" if dir_val else ""
                 lines.append(
                     f"  - `{p.name}` ({p.standardized_name or 'operand'}, type `{p.annotation or 'Register'}`){dir_str}"
                 )
@@ -519,7 +569,7 @@ def export_sass_prompt_context(refs: Sequence[GhostRef]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-def export_mlir_prompt_context(refs: Sequence[GhostRef]) -> str:
+def export_mlir_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
     """Export MLIR / StableHLO operations as canonical SSA IR prompt templates.
 
     Formats compiler operations into true MLIR syntax templates, distinguishing
@@ -531,15 +581,15 @@ def export_mlir_prompt_context(refs: Sequence[GhostRef]) -> str:
     Returns:
         Markdown string formatted with canonical MLIR operation specifications.
     """
-    blocks: List[str] = []
+    blocks: list[str] = []
 
     for ref in refs:
         meta = getattr(ref, "domain_metadata", None) or {}
         traits = meta.get("traits") or []
         regions = meta.get("regions") or []
 
-        operands: List[str] = []
-        attributes: List[str] = []
+        operands: list[str] = []
+        attributes: list[str] = []
 
         for p in ref.params:
             role = getattr(p, "role", None)
@@ -601,7 +651,7 @@ def export_mlir_prompt_context(refs: Sequence[GhostRef]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-COMMON_HALLUCINATION_GUARDS: Dict[str, List[str]] = {
+COMMON_HALLUCINATION_GUARDS: dict[str, list[str]] = {
     "torch": [
         "Do NOT pass 'axis' to 'torch.sum' or reduction operations; use 'dim'.",
         "Do NOT pass 'keepdims' to PyTorch reduction ops; use 'keepdim'.",
@@ -630,9 +680,9 @@ COMMON_HALLUCINATION_GUARDS: Dict[str, List[str]] = {
 
 def export_scoped_prompt_context(
     framework: str,
-    module_prefix: Optional[str] = None,
+    module_prefix: str | None = None,
     max_symbols: int = 50,
-    repository: Optional[Any] = None,
+    repository: SnapshotRepository | None = None,
 ) -> str:
     """Export a scoped prompt context with a hierarchical summary index.
 
@@ -648,21 +698,25 @@ def export_scoped_prompt_context(
     Returns:
         Structured Markdown string containing an index summary followed by detailed signatures.
     """
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
     from ml_ecosystem_snapshots.mcp.cache import resolve_snapshot
-    from ml_ecosystem_snapshots.models import GhostInspector
 
     snap = resolve_snapshot(framework, repository=repository)
-    categories = snap.get("categories", {})
+    raw_categories = snap.get("categories", {})
 
-    all_raw_items: List[Dict[str, Any]] = []
-    for _cat, items in sorted(categories.items()):
-        all_raw_items.extend(items)
+    all_raw_items: list[dict[str, JsonValue]] = []
+    assert isinstance(raw_categories, dict)
+    for _cat, items in sorted(raw_categories.items()):
+        assert isinstance(items, list)
+        for raw_it in items:
+            if isinstance(raw_it, dict):
+                all_raw_items.append(dict(raw_it))
 
-    matching_items: List[Dict[str, Any]] = []
+    matching_items: list[dict[str, JsonValue]] = []
     for item in all_raw_items:
-        if not isinstance(item, dict):
-            continue
-        path = item.get("api_path") or item.get("name") or item.get("mnemonic") or ""
+        path = str(
+            item.get("api_path") or item.get("name") or item.get("mnemonic") or ""
+        )
         if module_prefix:
             if path.startswith(module_prefix) or path.startswith(f"{module_prefix}."):
                 matching_items.append(item)
@@ -672,14 +726,14 @@ def export_scoped_prompt_context(
     total_matching = len(matching_items)
     selected_items = matching_items[:max_symbols]
 
-    hydrated_refs: List[GhostRef] = []
+    hydrated_refs: list[GhostRef] = []
     for item in selected_items:
         try:
             hydrated_refs.append(GhostInspector.hydrate(item))
         except Exception:
             pass
 
-    index_lines: List[str] = [
+    index_lines: list[str] = [
         f"# Framework Grounding Context: `{framework}`",
     ]
 
@@ -691,9 +745,11 @@ def export_scoped_prompt_context(
 
     index_lines.append(f"\n## Index of Available Operations ({total_matching} total)")
 
-    grouped: Dict[str, List[str]] = {}
+    grouped: dict[str, list[str]] = {}
     for item in matching_items:
-        path = item.get("api_path") or item.get("name") or item.get("mnemonic") or ""
+        path = str(
+            item.get("api_path") or item.get("name") or item.get("mnemonic") or ""
+        )
         parts = path.split(".")
         group_key = ".".join(parts[:2]) if len(parts) >= 2 else parts[0]
         if group_key not in grouped:
@@ -726,7 +782,7 @@ def export_scoped_prompt_context(
     return "\n\n".join(result_parts).strip() + "\n"
 
 
-def export_rdna_prompt_context(refs: Sequence[GhostRef]) -> str:
+def export_rdna_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
     """Export AMD RDNA / CDNA instruction specifications as canonical assembly prompt templates.
 
     Args:
@@ -735,10 +791,10 @@ def export_rdna_prompt_context(refs: Sequence[GhostRef]) -> str:
     Returns:
         Markdown string formatted with RDNA assembly syntax and architecture constraints.
     """
-    blocks: List[str] = []
+    blocks: list[str] = []
     for ref in refs:
         encoding = "VOP"
-        archs: List[str] = []
+        archs: list[str] = []
         for tag in ref.environment_tags or []:
             if any(tag.startswith(pfx) for pfx in ("VOP", "SOP", "SMEM", "FLAT", "DS")):
                 encoding = tag
@@ -760,7 +816,7 @@ def export_rdna_prompt_context(refs: Sequence[GhostRef]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-def export_ptx_prompt_context(refs: Sequence[GhostRef]) -> str:
+def export_ptx_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
     """Export NVIDIA PTX instruction specifications as canonical assembly prompt templates.
 
     Args:
@@ -769,10 +825,10 @@ def export_ptx_prompt_context(refs: Sequence[GhostRef]) -> str:
     Returns:
         Markdown string formatted with PTX assembly syntax and SM requirements.
     """
-    blocks: List[str] = []
+    blocks: list[str] = []
     for ref in refs:
         min_sm = "sm_50"
-        supp_types: List[str] = []
+        supp_types: list[str] = []
         for tag in ref.environment_tags or []:
             if tag.startswith("sm_"):
                 min_sm = tag
@@ -794,7 +850,7 @@ def export_ptx_prompt_context(refs: Sequence[GhostRef]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-def export_stablehlo_prompt_context(refs: Sequence[GhostRef]) -> str:
+def export_stablehlo_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
     """Export StableHLO operations as canonical MLIR dialect SSA prompt templates.
 
     Args:
@@ -817,7 +873,7 @@ def to_cpp_header(ref: GhostRef, namespace: str = "ml_ecosystem") -> str:
         Formatted C++ header string with struct definition and docstrings.
     """
     clean_name = ref.name.replace(".", "_")
-    lines: List[str] = [
+    lines: list[str] = [
         "// Generated by ml-ecosystem-snapshots",
         "#pragma once",
         "",
@@ -861,7 +917,7 @@ def to_typescript_interface(ref: GhostRef) -> str:
         Formatted TypeScript interface definition string.
     """
     clean_name = ref.name.replace(".", "_")
-    lines: List[str] = []
+    lines: list[str] = []
     if ref.docstring:
         lines.append(f"/** {ref.docstring.strip().splitlines()[0]} */")
     lines.append(f"export interface {clean_name} {{")
@@ -881,3 +937,6 @@ def to_typescript_interface(ref: GhostRef) -> str:
         lines.append(f"  {p.name}{opt}: {ts_type};")
     lines.append("}")
     return "\n".join(lines)
+
+
+to_pydantic_code = to_pydantic

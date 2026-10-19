@@ -3,7 +3,7 @@
 Provides a static snapshot of standard HTML tags and attributes for the HTML DSL.
 """
 
-from typing import List
+from __future__ import annotations
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -66,7 +66,7 @@ _HTML_TAGS = [
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Entrypoint to collect the HTML DSL API signature.
 
     Args:

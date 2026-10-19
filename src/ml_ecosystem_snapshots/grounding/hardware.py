@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+import typing
+
+import pydantic
 
 from ml_ecosystem_snapshots.grounding.engine import GroundingEngine
 from ml_ecosystem_snapshots.grounding.models import (
@@ -12,13 +14,27 @@ from ml_ecosystem_snapshots.grounding.models import (
 )
 
 
+class SassControlCodeSpec(pydantic.BaseModel):
+    """Typed specification for NVIDIA SASS instruction scoreboard control codes."""
+
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
+
+    stall_count: int = 0
+    yield_flag: bool = False
+    write_barrier: int | None = None
+    read_barrier: int | None = None
+    wait_barrier_mask: int | str = 0
+
+
 def validate_sass_instruction(
     mnemonic: str,
     architecture: str,
-    operands: List[str],
-    modifiers: Optional[List[str]] = None,
-    engine: Optional[GroundingEngine] = None,
-    control_codes: Optional[Dict[str, Any]] = None,
+    operands: list[str],
+    modifiers: list[str] | None = None,
+    engine: GroundingEngine | None = None,
+    control_codes: (
+        SassControlCodeSpec | typing.Mapping[str, int | bool | str] | None
+    ) = None,
 ) -> GroundingReport:
     """Verify an NVIDIA SASS instruction against the ground-truth offline ISA catalog.
 
@@ -31,7 +47,7 @@ def validate_sass_instruction(
         operands: List of operand expressions (e.g., ['R1', 'R2', 'R3', 'R4']).
         modifiers: Optional instruction modifier flags (e.g., ['.F16', '.FTZ']).
         engine: Optional GroundingEngine instance. If omitted, a singleton is used.
-        control_codes: Optional control code dictionary (e.g., {'stall_count': 1}).
+        control_codes: Optional control code specification (e.g., {'stall_count': 1}).
 
     Returns:
         GroundingReport containing diagnostic results and grounding status.
@@ -67,7 +83,6 @@ def validate_sass_instruction(
 
     report.matched_ref = ref
 
-    # Verify architecture support
     valid_archs = ref.environment_tags or []
     if clean_arch not in valid_archs and valid_archs:
         report.add_diagnostic(
@@ -80,9 +95,11 @@ def validate_sass_instruction(
             suggested_fix=valid_archs[-1] if valid_archs else None,
         )
 
-    # Verify modifier legality and conflicts
     domain_meta = ref.domain_metadata or {}
-    allowed_modifiers = domain_meta.get("modifiers") or []
+    raw_allowed_mods = domain_meta.get("modifiers")
+    allowed_modifiers = (
+        [str(m) for m in raw_allowed_mods] if isinstance(raw_allowed_mods, list) else []
+    )
     for mod in mods:
         if allowed_modifiers and mod not in allowed_modifiers:
             report.add_diagnostic(
@@ -98,8 +115,12 @@ def validate_sass_instruction(
                 severity=DiagnosticSeverity.ERROR,
             )
 
-    # Verify operand counts
-    allowed_sigs = domain_meta.get("operand_signatures") or []
+    raw_allowed_sigs = domain_meta.get("operand_signatures")
+    allowed_sigs = (
+        [sig for sig in raw_allowed_sigs if isinstance(sig, list)]
+        if isinstance(raw_allowed_sigs, list)
+        else []
+    )
     if allowed_sigs:
         matching_count_sig = [sig for sig in allowed_sigs if len(sig) == len(operands)]
         if not matching_count_sig:
@@ -113,7 +134,6 @@ def validate_sass_instruction(
                 severity=DiagnosticSeverity.ERROR,
             )
 
-    # Delegate register legality and operand directionality checks
     for i, op in enumerate(operands):
         role = "dst" if i == 0 else f"src{i - 1}"
         for reg_err in validate_sass_register(
@@ -133,9 +153,14 @@ def validate_sass_instruction(
         )
 
     if control_codes is not None:
+        cc_dict: dict[str, int | bool | str | None] = (
+            control_codes.model_dump()
+            if isinstance(control_codes, SassControlCodeSpec)
+            else dict(control_codes)
+        )
         for cc_err in validate_sass_control_code(
             clean_mnemonic,
-            control_codes,
+            cc_dict,
             sm_arch=clean_arch if clean_arch else None,
         ):
             report.add_diagnostic(
@@ -150,11 +175,11 @@ def validate_sass_instruction(
 def validate_rdna_instruction(
     mnemonic: str,
     gfx_arch: str,
-    operands: List[str],
-    modifiers: Optional[List[str]] = None,
-    engine: Optional[GroundingEngine] = None,
-    encoding: Optional[str] = None,
-    wave_size: Optional[int] = None,
+    operands: list[str],
+    modifiers: list[str] | None = None,
+    engine: GroundingEngine | None = None,
+    encoding: str | None = None,
+    wave_size: int | None = None,
 ) -> GroundingReport:
     """Verify an AMD RDNA / CDNA instruction against the ground-truth offline ISA catalog.
 
@@ -204,12 +229,15 @@ def validate_rdna_instruction(
 
     report.matched_ref = ref
     domain_meta = ref.domain_metadata or {}
-    actual_encoding = getattr(ref, "encoding", None) or domain_meta.get("encoding")
-    arch_str = getattr(ref, "architecture", None) or domain_meta.get("architecture")
-    supported_archs = (
-        domain_meta.get("valid_architectures")
-        or ref.environment_tags
-        or resolve_gfx_architectures(arch_str)
+    raw_enc = getattr(ref, "encoding", None) or domain_meta.get("encoding")
+    actual_encoding = str(raw_enc) if raw_enc is not None else None
+    raw_arch = getattr(ref, "architecture", None) or domain_meta.get("architecture")
+    arch_str = str(raw_arch) if raw_arch is not None else None
+    raw_supp = domain_meta.get("valid_architectures")
+    supported_archs: list[str] = (
+        [str(a) for a in raw_supp]
+        if isinstance(raw_supp, list)
+        else list(ref.environment_tags or resolve_gfx_architectures(arch_str))
     )
 
     if gfx_arch and supported_archs:
@@ -258,7 +286,12 @@ def validate_rdna_instruction(
                 severity=DiagnosticSeverity.ERROR,
             )
 
-    op_sigs = domain_meta.get("operand_signatures") or []
+    raw_op_sigs = domain_meta.get("operand_signatures")
+    op_sigs = (
+        [s for s in raw_op_sigs if isinstance(s, list)]
+        if isinstance(raw_op_sigs, list)
+        else []
+    )
     if op_sigs and not any(":" in op for op in operands):
         matching_len = [sig for sig in op_sigs if len(sig) == len(operands)]
         if not matching_len:
@@ -271,7 +304,6 @@ def validate_rdna_instruction(
                 severity=DiagnosticSeverity.ERROR,
             )
 
-    # Check 64-bit even-index register alignment: v[n:n+1] requires n to be even
     even_reg_pattern = re.compile(r"^[vs]\[(\d+):(\d+)\]$", re.IGNORECASE)
     for idx, op in enumerate(operands):
         match = even_reg_pattern.match(op.strip())
@@ -310,13 +342,13 @@ def validate_rdna_instruction(
 
 def validate_ptx_instruction(
     mnemonic: str,
-    sm_arch: Optional[str] = None,
-    types: Optional[List[str]] = None,
-    operands: Optional[List[str]] = None,
-    state_space: Optional[str] = None,
-    scope: Optional[str] = None,
-    vector_width: Optional[str] = None,
-    engine: Optional[GroundingEngine] = None,
+    sm_arch: str | None = None,
+    types: list[str] | None = None,
+    operands: list[str] | None = None,
+    state_space: str | None = None,
+    scope: str | None = None,
+    vector_width: str | None = None,
+    engine: GroundingEngine | None = None,
 ) -> GroundingReport:
     """Verify an NVIDIA PTX instruction against the ground-truth offline ISA catalog.
 
@@ -347,7 +379,7 @@ def validate_ptx_instruction(
         symbol=clean_mnemonic,
     )
 
-    ptx_db = {inst["mnemonic"]: inst for inst in _load_exhaustive_ptx()}
+    ptx_db = {str(inst["mnemonic"]): inst for inst in _load_exhaustive_ptx()}
     if clean_mnemonic not in ptx_db:
         suggested = eng.suggest_closest_symbol("nvidia_ptx", clean_mnemonic)
         report.add_diagnostic(
@@ -382,6 +414,7 @@ def validate_ptx_instruction(
 
 
 __all__ = [
+    "SassControlCodeSpec",
     "validate_ptx_instruction",
     "validate_rdna_instruction",
     "validate_sass_instruction",

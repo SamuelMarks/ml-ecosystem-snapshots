@@ -1,10 +1,13 @@
 """Unit tests and verification suite for frameworks."""
 
+from __future__ import annotations
+
 import types
-from typing import Any
 from unittest import mock
 from unittest.mock import patch
+
 import pytest
+import pytest_mock
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
@@ -12,16 +15,16 @@ pytestmark = [pytest.mark.frameworks]
 
 
 @pytest.fixture(autouse=True)
-def _stub_heavy_griffe_cache(monkeypatch: Any) -> None:
+def _stub_heavy_griffe_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     """Prevent synthetic unit tests from triggering full disk AST parses of heavy packages via griffe.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
     import griffe
-    from ml_ecosystem_snapshots import models
+    from ml_ecosystem_snapshots.introspection import static_parsers
 
-    monkeypatch.setitem(models._GRIFFE_CACHE, "__loader__", griffe.load)
+    monkeypatch.setitem(static_parsers._GRIFFE_CACHE, "__loader__", griffe.load)
     for pkg in (
         "torch",
         "torchmetrics",
@@ -41,10 +44,10 @@ def _stub_heavy_griffe_cache(monkeypatch: Any) -> None:
         "deepspeed",
         "onnxruntime",
     ):
-        monkeypatch.setitem(models._GRIFFE_CACHE, pkg, None)
+        monkeypatch.setitem(static_parsers._GRIFFE_CACHE, pkg, None)
 
 
-def create_module(name: str, attrs: dict[str, Any]) -> types.ModuleType:
+def create_module(name: str, attrs: dict[str, object]) -> types.ModuleType:
     """Execute helper create module.
 
     Args:
@@ -61,7 +64,7 @@ def create_module(name: str, attrs: dict[str, Any]) -> types.ModuleType:
     return mod
 
 
-def test_torch_collect(mocker: Any) -> None:
+def test_torch_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Verify torch collect behavior.
 
     Args:
@@ -144,11 +147,11 @@ def test_torch_collect(mocker: Any) -> None:
 
         pass
 
-    def xavier_uniform_() -> Any:
+    def xavier_uniform_() -> None:
         """Execute helper xavier uniform ."""
         pass
 
-    def _private_init() -> Any:
+    def _private_init() -> None:
         """Execute helper private init."""
         pass
 
@@ -397,14 +400,17 @@ def test_torch_collect(mocker: Any) -> None:
     torch_fw.collect_api(SemanticTier.ARRAY_API)
 
 
-def test_torch_collect_in_place_mutation_already_tagged(mocker: Any) -> None:
+def test_torch_collect_in_place_mutation_already_tagged(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test torch collect_api when in_place_mutation tag is already present on Tensor method.
 
     Args:
         mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
-    from ml_ecosystem_snapshots.models import GhostInspector, GhostPythonRef
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+    from ml_ecosystem_snapshots.models import GhostPythonRef
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     fake_ref = GhostPythonRef(
@@ -425,7 +431,7 @@ def test_torch_collect_in_place_mutation_already_tagged(mocker: Any) -> None:
     assert refs[0].environment_tags == ["in_place_mutation"]
 
 
-def test_torch_import_error(mocker: Any) -> None:
+def test_torch_import_error(mocker: pytest_mock.MockerFixture) -> None:
     """Verify torch import error behavior.
 
     Args:
@@ -454,7 +460,7 @@ def test_torch_import_error(mocker: Any) -> None:
         assert len(res) == 0
 
 
-def test_torch_typeerror(mocker: Any) -> None:
+def test_torch_typeerror(mocker: pytest_mock.MockerFixture) -> None:
     """Verify torch typeerror behavior.
 
     Args:
@@ -488,7 +494,7 @@ def test_torch_typeerror(mocker: Any) -> None:
     assert torch_fw.collect_api(SemanticTier.UTIL) == []
 
 
-def test_tensorflow_collect(mocker: Any) -> None:
+def test_tensorflow_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Verify tensorflow collect behavior.
 
     Args:
@@ -496,7 +502,7 @@ def test_tensorflow_collect(mocker: Any) -> None:
     """
     from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
 
-    def relu() -> Any:
+    def relu() -> None:
         """Execute helper relu."""
         pass
 
@@ -545,11 +551,11 @@ def test_tensorflow_collect(mocker: Any) -> None:
 
         pass
 
-    def abs() -> Any:
+    def abs() -> None:
         """Execute helper abs."""
         pass
 
-    def matmul() -> Any:
+    def matmul() -> None:
         """Execute helper matmul."""
         pass
 
@@ -587,15 +593,15 @@ def test_tensorflow_collect(mocker: Any) -> None:
         "tf.data", {"Dataset": Dataset, "_PrivateDataset": _PrivateDataset}
     )
 
-    def concat() -> Any:
+    def concat() -> None:
         """Execute helper concat."""
         pass
 
-    def Add() -> Any:
+    def Add() -> None:
         """Execute helper Add."""
         pass
 
-    def custom_tensor_op() -> Any:
+    def custom_tensor_op() -> None:
         """Execute helper custom tensor op."""
         pass
 
@@ -705,7 +711,7 @@ def test_tensorflow_collect(mocker: Any) -> None:
     assert tf_fw.collect_api(SemanticTier.MODEL) == []
 
 
-def test_tf_raw_ops_none_env_tags(mocker: Any) -> None:
+def test_tf_raw_ops_none_env_tags(mocker: pytest_mock.MockerFixture) -> None:
     """Test tensorflow raw_ops when ref.environment_tags is None.
 
     Args:
@@ -728,7 +734,7 @@ def test_tf_raw_ops_none_env_tags(mocker: Any) -> None:
     )
     mocker.patch.object(tf_fw, "tf", fake_tf)
     mocker.patch(
-        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",
         return_value=ref,
     )
 
@@ -737,7 +743,7 @@ def test_tf_raw_ops_none_env_tags(mocker: Any) -> None:
     assert res[0].environment_tags == ["tf.raw_op"]
 
 
-def test_tf_raw_ops_inspect_exception(mocker: Any) -> None:
+def test_tf_raw_ops_inspect_exception(mocker: pytest_mock.MockerFixture) -> None:
     """Test tensorflow raw_ops catches inspection exceptions.
 
     Args:
@@ -754,7 +760,7 @@ def test_tf_raw_ops_inspect_exception(mocker: Any) -> None:
 
     mocker.patch.object(tf_fw, "tf", fake_tf)
     mocker.patch(
-        "ml_ecosystem_snapshots.models.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",
         side_effect=RuntimeError("Broken op inspect"),
     )
 
@@ -762,7 +768,7 @@ def test_tf_raw_ops_inspect_exception(mocker: Any) -> None:
     assert res == []
 
 
-def test_tf_collect_outer_exception(mocker: Any) -> None:
+def test_tf_collect_outer_exception(mocker: pytest_mock.MockerFixture) -> None:
     """Test tensorflow outer exception handling.
 
     Args:
@@ -803,7 +809,7 @@ def test_tf_collect_outer_exception(mocker: Any) -> None:
     assert tf_fw.collect_api(SemanticTier.LOSS) == []
 
 
-def test_keras_collect(mocker: Any) -> None:
+def test_keras_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Verify keras collect behavior.
 
     Args:
@@ -953,7 +959,7 @@ def test_keras_collect(mocker: Any) -> None:
     assert keras_fw.collect_api(SemanticTier.LOSS) == []
 
 
-def test_keras_collect_static_none_env_tags(mocker: Any) -> None:
+def test_keras_collect_static_none_env_tags(mocker: pytest_mock.MockerFixture) -> None:
     """Test _collect_static for ARRAY_API when ref.environment_tags is None.
 
     Args:
@@ -979,7 +985,7 @@ def test_keras_collect_static_none_env_tags(mocker: Any) -> None:
     assert "backend:jax" in res[0].environment_tags
 
 
-def test_mlx_collect(mocker: Any) -> None:
+def test_mlx_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Verify mlx collect behavior.
 
     Args:
@@ -992,11 +998,11 @@ def test_mlx_collect(mocker: Any) -> None:
 
         pass
 
-    def relu() -> Any:
+    def relu() -> None:
         """Execute helper relu."""
         pass
 
-    def mse_loss() -> Any:
+    def mse_loss() -> None:
         """Execute helper mse loss."""
         pass
 
@@ -1079,24 +1085,24 @@ def test_mlx_collect(mocker: Any) -> None:
     assert mlx_fw.collect_api(SemanticTier.LAYER) == []
 
 
-def test_jax_collect(mocker: Any) -> None:
+def test_jax_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Verify jax collect behavior.
 
     Args:
         mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import jax as jax_fw
-    from ml_ecosystem_snapshots.frameworks.optax_shim import OptaxScanner
+    from ml_ecosystem_snapshots.frameworks.optax import OptaxScanner
 
-    def relu() -> Any:
+    def relu() -> None:
         """Execute helper relu."""
         pass
 
-    def _priv() -> Any:
+    def _priv() -> None:
         """Execute helper priv."""
         pass
 
-    def glorot() -> Any:
+    def glorot() -> None:
         """Execute helper glorot."""
         pass
 
@@ -1133,7 +1139,7 @@ def test_jax_collect(mocker: Any) -> None:
         },
     )
 
-    def static_func(axis: int, data: Any) -> None:
+    def static_func(axis: int, data: object) -> None:
         """Static arg test function.
 
         Args:
@@ -1227,7 +1233,9 @@ def test_jax_collect(mocker: Any) -> None:
     assert jax_fw.collect_api(SemanticTier.UTIL) == []
 
 
-def test_jax_static_arg_metadata_none_environment_tags(mocker: Any) -> None:
+def test_jax_static_arg_metadata_none_environment_tags(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test _attach_jax_static_arg_metadata when environment_tags is None.
 
     Args:
@@ -1302,7 +1310,7 @@ def test_jax_static_arg_metadata_none_environment_tags(mocker: Any) -> None:
         assert len(jax_fw.collect_api(SemanticTier.ARRAY_API)) > 0
 
 
-def test_flax_nnx_collect(mocker: Any) -> None:
+def test_flax_nnx_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Verify flax nnx collect behavior.
 
     Args:
@@ -1370,51 +1378,51 @@ def test_flax_nnx_collect(mocker: Any) -> None:
     assert flax_fw.collect_api(SemanticTier.LAYER) == []
 
 
-def test_optax_shim_collect(mocker: Any) -> None:
+def test_optax_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Verify optax shim collect behavior.
 
     Args:
         mocker: Pytest mocker fixture.
     """
-    import ml_ecosystem_snapshots.frameworks.optax_shim as o_shim
+    import ml_ecosystem_snapshots.frameworks.optax as o_shim
 
-    def adam() -> Any:
+    def adam() -> None:
         """Execute helper adam."""
         pass
 
-    def sgd() -> Any:
+    def sgd() -> None:
         """Execute helper sgd."""
         pass
 
-    def my_optimizer() -> Any:
+    def my_optimizer() -> None:
         """Execute helper my optimizer."""
         pass
 
-    def _priv() -> Any:
+    def _priv() -> None:
         """Execute helper priv."""
         pass
 
-    def mse_loss() -> Any:
+    def mse_loss() -> None:
         """Execute helper mse loss."""
         pass
 
-    def other_error() -> Any:
+    def other_error() -> None:
         """Execute helper other error."""
         pass
 
-    def kl_entropy() -> Any:
+    def kl_entropy() -> None:
         """Execute helper kl entropy."""
         pass
 
-    def _priv_loss() -> Any:
+    def _priv_loss() -> None:
         """Execute helper priv loss."""
         pass
 
-    def some_other_func() -> Any:
+    def some_other_func() -> None:
         """Execute helper some other func."""
         pass
 
-    def cosine() -> Any:
+    def cosine() -> None:
         """Execute helper cosine."""
         pass
 
@@ -1434,7 +1442,7 @@ def test_optax_shim_collect(mocker: Any) -> None:
         "schedules", {"cosine": cosine, "_priv": _priv, "not_a_func": 123}
     )
 
-    def not_a_thing() -> Any:
+    def not_a_thing() -> None:
         """Execute helper not a thing."""
         pass
 
@@ -1471,7 +1479,8 @@ def test_optax_shim_collect(mocker: Any) -> None:
 
     # Exception branch coverage
     mocker.patch(
-        "ml_ecosystem_snapshots.models.GhostInspector.inspect", side_effect=Exception
+        "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",
+        side_effect=Exception,
     )
     assert o_shim.OptaxScanner.scan_optimizers() == []
     assert o_shim.OptaxScanner.scan_losses() == []
@@ -1483,7 +1492,7 @@ def test_optax_shim_collect(mocker: Any) -> None:
     assert o_shim.OptaxScanner.scan_schedulers() == []
 
 
-def test_sklearn_collect(mocker: Any) -> None:
+def test_sklearn_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Verify sklearn collect behavior.
 
     Args:
@@ -1514,7 +1523,7 @@ def test_sklearn_collect(mocker: Any) -> None:
 
         pass
 
-    def accuracy_score(y_true: Any, y_pred: Any) -> Any:
+    def accuracy_score(y_true: object, y_pred: object) -> None:
         """Execute helper accuracy score.
 
         Args:
@@ -1571,7 +1580,7 @@ def test_sklearn_collect(mocker: Any) -> None:
     assert empty == []
 
 
-def test_sklearn_import_error(mocker: Any) -> None:
+def test_sklearn_import_error(mocker: pytest_mock.MockerFixture) -> None:
     """Verify sklearn import error behavior.
 
     Args:
@@ -1586,7 +1595,7 @@ def test_sklearn_import_error(mocker: Any) -> None:
     assert layers == []
 
 
-def test_sklearn_module_import_error(mocker: Any) -> None:
+def test_sklearn_module_import_error(mocker: pytest_mock.MockerFixture) -> None:
     """Verify sklearn module import error behavior.
 
     Args:
@@ -1600,9 +1609,9 @@ def test_sklearn_module_import_error(mocker: Any) -> None:
     mock_sklearn = types.ModuleType("sklearn")
     mocker.patch.object(sklearn_fw, "sklearn", mock_sklearn)
 
-    original_import = builtins.__import__
+    original_import: object = getattr(builtins, "__import__")
 
-    def mock_import(name: Any, *args: Any, **kwargs: Any) -> Any:
+    def mock_import(name: str, *args: object, **kwargs: object) -> object:
         """Mock import function.
 
         Args:
@@ -1613,22 +1622,9 @@ def test_sklearn_module_import_error(mocker: Any) -> None:
         Returns:
             The imported module or raises.
         """
-        """Function docstring.
-
-        Args:
-            name: description
-            args: description
-            kwargs: description
-
-
-        Raises:
-            ImportError: Exception.
-
-        Returns:
-            Return value.
-        """
         if name.startswith("sklearn."):
             raise ImportError("Mocked import error")
+        assert callable(original_import)
         return original_import(name, *args, **kwargs)
 
     mocker.patch("builtins.__import__", side_effect=mock_import)
@@ -1640,7 +1636,7 @@ def test_sklearn_module_import_error(mocker: Any) -> None:
     assert metrics == []
 
 
-def test_sklearn_scan_module_edge_cases(mocker: Any) -> None:
+def test_sklearn_scan_module_edge_cases(mocker: pytest_mock.MockerFixture) -> None:
     """Verify sklearn scan module edge cases behavior.
 
     Args:
@@ -1660,7 +1656,7 @@ def test_sklearn_scan_module_edge_cases(mocker: Any) -> None:
         """Mock or helper class BadObj for unit testing."""
 
         @property
-        def bad(self) -> Any:
+        def bad(self) -> None:
             """Execute helper bad.
 
             Raises:
@@ -1694,7 +1690,7 @@ def test_sklearn_scan_module_edge_cases(mocker: Any) -> None:
     assert _scan_module(mock_mod2, "prefix", block_list={"blocked"}) == []
 
 
-def test_sklearn_scan_module_branches(mocker: Any) -> None:
+def test_sklearn_scan_module_branches(mocker: pytest_mock.MockerFixture) -> None:
     """Verify sklearn scan module branches behavior.
 
     Args:
@@ -1710,7 +1706,7 @@ def test_sklearn_scan_module_branches(mocker: Any) -> None:
 
         pass
 
-    def valid_func() -> Any:
+    def valid_func() -> None:
         """Execute helper valid func."""
         pass
 
@@ -1734,7 +1730,7 @@ def test_sklearn_scan_module_branches(mocker: Any) -> None:
     assert len(res) == 1
 
 
-def test_sklearn_scan_module_exception(mocker: Any) -> None:
+def test_sklearn_scan_module_exception(mocker: pytest_mock.MockerFixture) -> None:
     """Verify sklearn scan module exception behavior.
 
     Args:
@@ -1752,7 +1748,7 @@ def test_sklearn_scan_module_exception(mocker: Any) -> None:
     assert res == []
 
 
-def test_numpy_collect(mocker: Any) -> None:
+def test_numpy_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Verify numpy collect behavior.
 
     Args:
@@ -1760,7 +1756,7 @@ def test_numpy_collect(mocker: Any) -> None:
     """
     import ml_ecosystem_snapshots.frameworks.numpy as np_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
-    from ml_ecosystem_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
     def tanh(x: float) -> float:
         """Compute hyperbolic tangent.
@@ -1807,20 +1803,22 @@ def test_numpy_collect(mocker: Any) -> None:
 
     original_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: Any, api_path: Any, **kwargs: Any) -> Any:
+    def mock_inspect(
+        obj: object, api_path: str, is_public: bool | None = None
+    ) -> GhostRef:
         """Mock inspect function delegating to real GhostInspector.inspect except on minimum.
 
         Args:
             obj: Target live object to inspect.
             api_path: Dotted canonical API path.
-            **kwargs: Variable arguments.
+            is_public: Optional public visibility flag.
 
         Returns:
             A populated `GhostRef`.
         """
         if "minimum" in api_path:
             raise ValueError("mock error")
-        return original_inspect(obj, api_path, **kwargs)
+        return original_inspect(obj, api_path, is_public=is_public)
 
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.numpy.GhostInspector.inspect",
@@ -1856,7 +1854,7 @@ def test_numpy_collect(mocker: Any) -> None:
     assert not np_shim.collect_api(SemanticTier.ACTIVATION)
 
 
-def test_orbax_collect(mocker: Any) -> None:
+def test_orbax_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Verify orbax collect behavior.
 
     Args:
@@ -1864,7 +1862,7 @@ def test_orbax_collect(mocker: Any) -> None:
     """
     import ml_ecosystem_snapshots.frameworks.orbax_checkpoint as ocp_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
-    from ml_ecosystem_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
     def checkpoint(directory: str) -> bool:
         """Save checkpoint to directory.
@@ -1877,14 +1875,14 @@ def test_orbax_collect(mocker: Any) -> None:
         """
         return bool(directory)
 
-    def _priv() -> Any:
+    def _priv() -> None:
         """Private helper."""
         pass
 
     class Checkpointer:
         """Checkpoint manager class."""
 
-        def __init__(self, handler: Any) -> None:
+        def __init__(self, handler: object) -> None:
             """Initialize Checkpointer.
 
             Args:
@@ -1892,7 +1890,7 @@ def test_orbax_collect(mocker: Any) -> None:
             """
             self.handler = handler
 
-    def error_func() -> Any:
+    def error_func() -> None:
         """Function triggering simulated inspection error."""
         pass
 
@@ -1910,20 +1908,22 @@ def test_orbax_collect(mocker: Any) -> None:
 
     original_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: Any, api_path: Any, **kwargs: Any) -> Any:
+    def mock_inspect(
+        obj: object, api_path: str, is_public: bool | None = None
+    ) -> GhostRef:
         """Mock inspect function delegating to real GhostInspector.inspect except on error_func.
 
         Args:
             obj: Target live object to inspect.
             api_path: Dotted canonical API path.
-            **kwargs: Variable arguments.
+            is_public: Optional public visibility flag.
 
         Returns:
             A populated `GhostRef`.
         """
         if "error_func" in api_path:
             raise ValueError("mock error")
-        return original_inspect(obj, api_path, **kwargs)
+        return original_inspect(obj, api_path, is_public=is_public)
 
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.orbax_checkpoint.GhostInspector.inspect",
@@ -1955,7 +1955,7 @@ def test_orbax_collect(mocker: Any) -> None:
     assert not ocp_shim.collect_api(SemanticTier.ARRAY_API)
 
 
-def test_pax_collect(mocker: Any) -> None:
+def test_pax_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Verify pax collect behavior.
 
     Args:
@@ -1963,7 +1963,7 @@ def test_pax_collect(mocker: Any) -> None:
     """
     import ml_ecosystem_snapshots.frameworks.pax as pax_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
-    from ml_ecosystem_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
     class Linear:
         """Praxis Linear layer."""
@@ -1983,7 +1983,7 @@ def test_pax_collect(mocker: Any) -> None:
 
         pass
 
-    def not_a_class() -> Any:
+    def not_a_class() -> None:
         """Helper function."""
         pass
 
@@ -2006,20 +2006,22 @@ def test_pax_collect(mocker: Any) -> None:
 
     original_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: Any, api_path: Any, **kwargs: Any) -> Any:
+    def mock_inspect(
+        obj: object, api_path: str, is_public: bool | None = None
+    ) -> GhostRef:
         """Mock inspect function delegating to real GhostInspector.inspect except on ErrorClass.
 
         Args:
             obj: Target live object to inspect.
             api_path: Dotted canonical API path.
-            **kwargs: Variable arguments.
+            is_public: Optional public visibility flag.
 
         Returns:
             A populated `GhostRef`.
         """
         if "ErrorClass" in api_path:
             raise ValueError("mock error")
-        return original_inspect(obj, api_path, **kwargs)
+        return original_inspect(obj, api_path, is_public=is_public)
 
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.pax.GhostInspector.inspect",
@@ -2044,7 +2046,7 @@ def test_pax_collect(mocker: Any) -> None:
     assert not pax_shim.collect_api(SemanticTier.NEURAL)
 
 
-def test_triton_collect(mocker: Any) -> None:
+def test_triton_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Verify triton collect behavior.
 
     Args:
@@ -2072,13 +2074,12 @@ def test_triton_collect(mocker: Any) -> None:
 
     original_import = importlib.import_module
 
-    def mock_import(name: Any, *args: Any, **kwargs: Any) -> Any:
+    def mock_import(name: str, package: str | None = None) -> types.ModuleType:
         """Mock import function returning synthetic triton modules.
 
         Args:
             name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
+            package: Optional package anchor.
 
         Returns:
             The imported module.
@@ -2092,7 +2093,7 @@ def test_triton_collect(mocker: Any) -> None:
             return fake_tl
         elif name == "triton_fail":
             raise ImportError("mock error")
-        return original_import(name, *args, **kwargs)
+        return original_import(name, package)
 
     mocker.patch("importlib.import_module", side_effect=mock_import)
 
@@ -2109,7 +2110,7 @@ def test_triton_collect(mocker: Any) -> None:
     assert not triton_shim.collect_api(SemanticTier.UTIL)
 
 
-def test_deepspeed_collect(mocker: Any) -> None:
+def test_deepspeed_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Verify deepspeed collect behavior.
 
     Args:
@@ -2122,7 +2123,9 @@ def test_deepspeed_collect(mocker: Any) -> None:
     # Early return for unsupported category (line 26 -> 27)
     assert ds_shim.collect_api(SemanticTier.LOSS) == []
 
-    def initialize(model: Any, config_params: str = "ds_config.json") -> Any:
+    def initialize(
+        model: object, config_params: str = "ds_config.json"
+    ) -> tuple[object, str]:
         """Initialize DeepSpeed engine.
 
         Args:
@@ -2151,20 +2154,19 @@ def test_deepspeed_collect(mocker: Any) -> None:
 
     original_import = importlib.import_module
 
-    def mock_import(name: Any, *args: Any, **kwargs: Any) -> Any:
+    def mock_import(name: str, package: str | None = None) -> types.ModuleType:
         """Mock import function returning synthetic deepspeed module.
 
         Args:
             name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
+            package: Optional package anchor.
 
         Returns:
             The imported module.
         """
         if name == "deepspeed":
             return fake_ds
-        return original_import(name, *args, **kwargs)
+        return original_import(name, package)
 
     mocker.patch("importlib.import_module", side_effect=mock_import)
     # Filter out helper_util for MODEL (branch 50 -> 36)
@@ -2188,7 +2190,7 @@ def test_deepspeed_collect(mocker: Any) -> None:
     assert not ds_shim.collect_api(SemanticTier.MODEL)
 
 
-def test_onnxruntime_collect(mocker: Any) -> None:
+def test_onnxruntime_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Verify onnxruntime collect behavior.
 
     Args:
@@ -2226,20 +2228,19 @@ def test_onnxruntime_collect(mocker: Any) -> None:
 
     original_import = importlib.import_module
 
-    def mock_import(name: Any, *args: Any, **kwargs: Any) -> Any:
+    def mock_import(name: str, package: str | None = None) -> types.ModuleType:
         """Mock import function returning synthetic onnxruntime module.
 
         Args:
             name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
+            package: Optional package anchor.
 
         Returns:
             The imported module.
         """
         if name == "onnxruntime":
             return fake_ort
-        return original_import(name, *args, **kwargs)
+        return original_import(name, package)
 
     mocker.patch("importlib.import_module", side_effect=mock_import)
 
@@ -2258,7 +2259,7 @@ def test_onnxruntime_collect(mocker: Any) -> None:
     assert not ort_shim.collect_api(SemanticTier.MODEL)
 
 
-def test_huggingface_collect(mocker: Any) -> None:
+def test_huggingface_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Verify huggingface collect behavior.
 
     Args:
@@ -2271,7 +2272,7 @@ def test_huggingface_collect(mocker: Any) -> None:
     class PreTrainedModel:
         """Base class for Hugging Face pretrained models."""
 
-        def __init__(self, config: Any = None) -> None:
+        def __init__(self, config: object = None) -> None:
             """Initialize PreTrainedModel.
 
             Args:
@@ -2282,7 +2283,7 @@ def test_huggingface_collect(mocker: Any) -> None:
     class Trainer:
         """Hugging Face training loop orchestrator."""
 
-        def __init__(self, model: Any = None, args: Any = None) -> None:
+        def __init__(self, model: object = None, args: object = None) -> None:
             """Initialize Trainer.
 
             Args:
@@ -2298,20 +2299,19 @@ def test_huggingface_collect(mocker: Any) -> None:
 
     original_import = importlib.import_module
 
-    def mock_import(name: Any, *args: Any, **kwargs: Any) -> Any:
+    def mock_import(name: str, package: str | None = None) -> types.ModuleType:
         """Mock import function returning synthetic transformers module.
 
         Args:
             name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
+            package: Optional package anchor.
 
         Returns:
             The imported module.
         """
         if name == "transformers":
             return fake_transformers
-        return original_import(name, *args, **kwargs)
+        return original_import(name, package)
 
     mocker.patch("importlib.import_module", side_effect=mock_import)
 
@@ -2333,7 +2333,7 @@ def test_huggingface_collect(mocker: Any) -> None:
     assert not hf_shim.collect_transformers(SemanticTier.MODEL)
 
 
-def test_maxtext_collect(mocker: Any) -> None:
+def test_maxtext_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Test the maxtext API collector.
 
     Args:
@@ -2391,7 +2391,7 @@ def test_maxtext_collect(mocker: Any) -> None:
     assert maxtext_fw.collect_api(SemanticTier.MODEL) == []
 
 
-def test_mlir_collect(mocker: Any) -> None:
+def test_mlir_collect(mocker: pytest_mock.MockerFixture) -> None:
     """Test the mlir API collector.
 
     Args:
@@ -2497,14 +2497,14 @@ def test_static_dsl_extractors() -> None:
 
 def test_tensor_instance_methods_extraction() -> None:
     """Test extraction of tensor core instance methods across Torch, JAX, and TensorFlow."""
-    from ml_ecosystem_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
     try:
         import torch
 
         if not hasattr(torch, "Tensor") or not hasattr(torch.Tensor, "view"):
             raise ImportError("torch has no Tensor.view")
-        torch_mod: Any = torch
+        torch_mod: object = torch
     except ImportError:
 
         class MockTensor:
@@ -2566,7 +2566,7 @@ def test_tensor_instance_methods_extraction() -> None:
                 """
                 return self
 
-            def to(self, *args: Any, **kwargs: Any) -> "MockTensor":
+            def to(self, *args: object, **kwargs: object) -> "MockTensor":
                 """Cast tensor.
 
                 Args:
@@ -2591,13 +2591,13 @@ def test_tensor_instance_methods_extraction() -> None:
     try:
         import jax
 
-        jax_mod: Any = jax
+        jax_mod: object = jax
     except ImportError:
 
         class MockArray:
             """Mock JAX Array."""
 
-            def reshape(self, *args: Any, **kwargs: Any) -> "MockArray":
+            def reshape(self, *args: object, **kwargs: object) -> "MockArray":
                 """Reshape array.
 
                 Args:
@@ -2609,7 +2609,7 @@ def test_tensor_instance_methods_extraction() -> None:
                 """
                 return self
 
-            def transpose(self, *args: Any, **kwargs: Any) -> "MockArray":
+            def transpose(self, *args: object, **kwargs: object) -> "MockArray":
                 """Transpose array.
 
                 Args:
@@ -2637,13 +2637,13 @@ def test_tensor_instance_methods_extraction() -> None:
     try:
         import tensorflow as tf
 
-        tf_mod: Any = tf
+        tf_mod: object = tf
     except ImportError:
 
         class MockTFTensor:
             """Mock TensorFlow Tensor."""
 
-            def get_shape(self) -> Any:
+            def get_shape(self) -> tuple[int, ...]:
                 """Get tensor shape.
 
                 Returns:
@@ -2651,7 +2651,7 @@ def test_tensor_instance_methods_extraction() -> None:
                 """
                 return (1,)
 
-            def set_shape(self, shape: Any) -> None:
+            def set_shape(self, shape: object) -> None:
                 """Set tensor shape.
 
                 Args:
@@ -2662,7 +2662,7 @@ def test_tensor_instance_methods_extraction() -> None:
         class MockTFVariable:
             """Mock TensorFlow Variable."""
 
-            def assign(self, value: Any) -> Any:
+            def assign(self, value: object) -> object:
                 """Assign variable value.
 
                 Args:
@@ -2673,7 +2673,7 @@ def test_tensor_instance_methods_extraction() -> None:
                 """
                 return value
 
-            def assign_add(self, delta: Any) -> Any:
+            def assign_add(self, delta: object) -> object:
                 """Assign add variable value.
 
                 Args:
@@ -2687,14 +2687,15 @@ def test_tensor_instance_methods_extraction() -> None:
         tf_mod = types.SimpleNamespace(Tensor=MockTFTensor, Variable=MockTFVariable)
 
     # 1. PyTorch Tensor methods
+    torch_tensor_cls = getattr(torch_mod, "Tensor")
     for m in ("view", "reshape", "permute", "transpose", "repeat", "to"):
-        obj = getattr(torch_mod.Tensor, m)
+        obj = getattr(torch_tensor_cls, m)
         ref = GhostInspector.inspect(obj, f"torch.Tensor.{m}", kind="method")
         assert ref.kind == "method"
         assert ref.api_path == f"torch.Tensor.{m}"
         assert len(ref.params) > 0
 
-    detach_obj = getattr(torch_mod.Tensor, "detach")
+    detach_obj = getattr(torch_tensor_cls, "detach")
     detach_ref = GhostInspector.inspect(
         detach_obj, "torch.Tensor.detach", kind="method"
     )
@@ -2703,28 +2704,31 @@ def test_tensor_instance_methods_extraction() -> None:
     assert len(detach_ref.params) == 0
 
     # 2. JAX Array methods
+    jax_array_cls = getattr(jax_mod, "Array")
     for m in ("reshape", "transpose", "flatten"):
-        obj = getattr(jax_mod.Array, m)
+        obj = getattr(jax_array_cls, m)
         ref = GhostInspector.inspect(obj, f"jax.Array.{m}", kind="method")
         assert ref.kind == "method"
         assert ref.api_path == f"jax.Array.{m}"
         assert len(ref.params) > 0
 
     # 3. TensorFlow Tensor and Variable methods
+    tf_tensor_cls = getattr(tf_mod, "Tensor")
     for m in ("get_shape", "set_shape"):
-        obj = getattr(tf_mod.Tensor, m)
+        obj = getattr(tf_tensor_cls, m)
         ref = GhostInspector.inspect(obj, f"tf.Tensor.{m}", kind="method")
         assert ref.kind == "method"
         assert ref.api_path == f"tf.Tensor.{m}"
 
+    tf_var_cls = getattr(tf_mod, "Variable")
     for m in ("assign", "assign_add"):
-        obj = getattr(tf_mod.Variable, m)
+        obj = getattr(tf_var_cls, m)
         ref = GhostInspector.inspect(obj, f"tf.Variable.{m}", kind="method")
         assert ref.kind == "method"
         assert ref.api_path == f"tf.Variable.{m}"
 
 
-def test_keras_griffe_missing(monkeypatch: Any) -> None:
+def test_keras_griffe_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test keras import logic when griffe is not available.
 
     Args:
@@ -2744,7 +2748,7 @@ def test_keras_griffe_missing(monkeypatch: Any) -> None:
     assert getattr(k_fw, "griffe") is not None
 
 
-def test_maxtext_import_fallback(monkeypatch: Any) -> None:
+def test_maxtext_import_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test maxtext import logic when module is available and unavailable.
 
     Args:
@@ -2759,12 +2763,12 @@ def test_maxtext_import_fallback(monkeypatch: Any) -> None:
     fake_mt = types.ModuleType("maxtext")
     monkeypatch.setitem(sys.modules, "maxtext", fake_mt)
     importlib.reload(m_fw)
-    assert m_fw.maxtext is fake_mt
+    assert getattr(m_fw, "maxtext") is fake_mt
 
     # Unavailable
     monkeypatch.setitem(sys.modules, "maxtext", None)
     importlib.reload(m_fw)
-    assert m_fw.maxtext is None
+    assert getattr(m_fw, "maxtext") is None
 
     # Restore
     monkeypatch.undo()

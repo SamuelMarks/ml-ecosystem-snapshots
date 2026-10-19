@@ -1,150 +1,30 @@
-"""Tests for the MLIR documentation scraper."""
+"""Tests for the MLIR TableGen ODS scraper."""
+
+from __future__ import annotations
 
 import json
-from typing import Any
+import pytest_mock
 from unittest import mock
 from ml_ecosystem_snapshots.tools import scrape_mlir
 
 
-def test_parse_table() -> None:
-    """Test parsing a table for operands/attributes."""
-    html = """
-    <table>
-    <tbody>
-    <tr><td><code>lhs</code></td><td>floating-point-like</td></tr>
-    <tr><td><code>rhs</code></td><td>floating-point-like</td></tr>
-    <tr><td>&amp;nbsp;</td><td>empty</td></tr>
-    <tr></tr>
-    </tbody>
-    </table>
-    """
-    cols = scrape_mlir.parse_table(html, 2)
-    assert cols == ["lhs", "rhs"]
-
-
-def test_parse_dialect_page(mocker: Any) -> None:
-    """Test parsing a mock MLIR dialect page.
-
-    Args:
-        mocker: Pytest mocker fixture.
-    """
-    html = """
-    <h3 id="arithaddf-arithaddfop"><code>arith.addf</code> (arith::AddFOp)</h3>
-    <p><em>Floating point addition operation</em></p>
-    <h4>Operands:</h4>
-    <table>
-    <tbody><tr><td><code>lhs</code></td><td>type</td></tr></tbody>
-    </table>
-    <h4>Attributes:</h4>
-    <table>
-    <tbody><tr><td><code>fastmath</code></td><td>type</td></tr></tbody>
-    </table>
-    <h3 id="no-header">No Header Here</h3>
-    <h3 id="minimal"><code>arith.min</code> (arith::MinOp)</h3>
-    """
-    mocker.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html", return_value=html
-    )
-    ops = scrape_mlir.parse_dialect_page("http://fake", "arith")
-    assert len(ops) == 2
-    assert ops[0]["api_path"] == "arith.addf"
-    assert ops[0]["class_name"] == "AddFOp"
-    assert ops[0]["operands"] == ["lhs"]
-    assert ops[0]["attributes"] == ["fastmath"]
-    assert ops[0]["description"] == "Floating point addition operation"
-    assert ops[1]["class_name"] == "MinOp"
-    assert ops[1]["operands"] == []
-    assert ops[1]["attributes"] == []
-
-    # Test empty page and page without h3 tags
-    mocker.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html",
-        return_value="No h3 header",
-    )
-    assert scrape_mlir.parse_dialect_page("http://fake", "empty") == []
-
-
-def test_scrape_stablehlo(mocker: Any) -> None:
-    """Test scraping a mock StableHLO markdown doc.
-
-    Args:
-        mocker: Pytest mocker fixture.
-    """
-    md = """
-# Spec
-### functions
-Ignored section.
-### INVALID-NAME
-Ignored op.
-### abs
-#### Semantics
-
-# Comment to ignore
-Does an abs operation.
-
-#### Inputs
-
-| Label | Name      | Type |
-|-------|-----------|------|
-| (I1)  | `operand` | tensor |
-| direct_operand | tensor |
-| | tensor |
-|---|---|---|
-
-#### Outputs
-"""
-    mocker.patch("ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html", return_value=md)
-    ops = scrape_mlir.scrape_stablehlo()
-    assert len(ops) == 1
-    assert ops[0]["api_path"] == "stablehlo.abs"
-    assert ops[0]["class_name"] == "AbsOp"
-    assert ops[0]["operands"] == ["operand", "direct_operand"]
-    assert ops[0]["description"] == "Does an abs operation."
-
-
-def test_main_docs(mocker: Any) -> None:
-    """Test the main entrypoint via HTML scraping fallback.
-
-    Args:
-        mocker: Pytest mocker fixture.
-    """
-    mocker.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
-        return_value=[],
-    )
-    # Quoted and unquoted hrefs to test both branches
-    mocker.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html",
-        return_value="""<a href="/docs/Dialects/ArithOps/">'arith' Dialect</a>""",
-    )
-    mocker.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.parse_dialect_page", return_value=[]
-    )
-    mocker.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.scrape_stablehlo", return_value=[]
-    )
-    mock_open = mocker.patch("builtins.open", mocker.mock_open())
-
-    scrape_mlir.main()
-    mock_open.assert_called_once()
-
-    # Second pass with unquoted href
-    mocker.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html",
-        return_value="""<a href=/docs/Dialects/ArithOps/>'arith' Dialect</a>""",
-    )
-    scrape_mlir.main()
-
-
-def test_main_live_inspection(mocker: Any) -> None:
+def test_main_live_inspection(mocker: pytest_mock.MockerFixture) -> None:
     """Test the main entrypoint when live inspection discovers operations.
 
     Args:
         mocker: Pytest mocker fixture.
     """
     mocker.patch(
+        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_url",
+        return_value=None,
+    )
+    mocker.patch(
         "ml_ecosystem_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
         return_value=[{"api_path": "arith.addf"}],
+    )
+    mocker.patch(
+        "ml_ecosystem_snapshots.tools.scrape_mlir.extract_ops",
+        side_effect=RuntimeError("Offline"),
     )
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
     scrape_mlir.main()
@@ -216,7 +96,7 @@ def TrailingOp : Op<"trailing"> {
     assert len(trailing["regions"]) == 1
 
 
-def test_inspect_mlir_python_module(mocker: Any) -> None:
+def test_inspect_mlir_python_module(mocker: pytest_mock.MockerFixture) -> None:
     """Test inspect_mlir_python_module with mocked modules.
 
     Args:
@@ -243,17 +123,7 @@ def test_inspect_mlir_python_module(mocker: Any) -> None:
 
     mock_mod = MockDialectModule()
 
-    def mock_import(name: str) -> Any:
-        """Mock import function.
-
-        Args:
-            name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            The imported module or raises.
-        """
+    def mock_import(name: str) -> object:
         """Mock import_module for MLIR dialects.
 
         Args:
@@ -378,23 +248,36 @@ def test_parse_mlir_tablegen_mnemonic_traits_and_unary() -> None:
     assert unary_op["operands"][0]["name"] == "in"
 
 
-def test_main_tablegen_empty_and_duplicate_ops(mocker: Any) -> None:
-    """Test main() with empty TableGen responses, duplicate ops, live ops, and stablehlo duplicates.
+def test_main_tablegen_empty_and_duplicate_ops(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
+    """Test main() with empty TableGen responses, JSON dump, duplicate ops, live ops, and stablehlo ops.
 
     Args:
         mocker: Pytest mocker fixture.
     """
-    # Simulate fetch_html returning empty string for some URLs (branch 634 -> 631)
-    # and duplicate ops in parsed TableGen (branch 637 -> 636)
     td_with_dups = """
     def Dialect_OpA : Op<"op_a"> { let summary = "Op A"; }
     def Dialect_OpADup : Op<"op_a"> { let summary = "Op A duplicate"; }
     """
+    json_dump = json.dumps(
+        {
+            "!instanceof": {"Op": ["Arith_SubFOp"]},
+            "Arith_SubFOp": {
+                "!name": "Arith_SubFOp",
+                "!superclasses": ["Op"],
+                "mnemonic": "subf",
+                "arguments": [],
+                "results": [],
+                "traits": [],
+            },
+        }
+    )
 
     call_count = [0]
 
     def mock_fetch(url: str) -> str:
-        """Mock fetching TableGen URL returning empty then duplicates.
+        """Mock fetching TableGen URL returning empty, JSON, then TableGen with duplicates.
 
         Args:
             url: Requested URL.
@@ -404,23 +287,29 @@ def test_main_tablegen_empty_and_duplicate_ops(mocker: Any) -> None:
         """
         call_count[0] += 1
         if call_count[0] == 1:
-            return ""  # Empty content
+            return ""
+        if call_count[0] == 2:
+            return json_dump
         return td_with_dups
 
     mocker.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html", side_effect=mock_fetch
+        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_url", side_effect=mock_fetch
     )
 
-    # inspect_mlir_python_module returns an unseen op (lines 645-646)
     mocker.patch(
         "ml_ecosystem_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
-        return_value=[{"api_path": "arith.live_unique_op", "name": "live_unique_op"}],
+        return_value=[
+            {"api_path": "arith.live_unique_op", "name": "live_unique_op"},
+            {"api_path": "arith.live_unique_op", "name": "live_unique_op"},
+        ],
     )
 
-    # scrape_stablehlo returns a duplicate op (arith.live_unique_op) already in seen_paths (branch 677 -> 676)
     mocker.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.scrape_stablehlo",
-        return_value=[{"api_path": "arith.live_unique_op", "name": "live_unique_op"}],
+        "ml_ecosystem_snapshots.tools.scrape_mlir.extract_ops",
+        return_value=[
+            {"api_path": "arith.live_unique_op", "name": "live_unique_op"},
+            {"api_path": "stablehlo.abs", "name": "abs"},
+        ],
     )
 
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
@@ -736,33 +625,6 @@ def test_dump_ast_via_llvm_tooling() -> None:
         assert res_err is None
 
 
-def test_parse_tblgen_json_dump_alias() -> None:
-    """Test parse_tblgen_json_dump alias and schema output.
-
-    Returns:
-        None.
-    """
-    raw_json = {
-        "!instanceof": {"Op": ["Arith_SubFOp"]},
-        "Arith_SubFOp": {
-            "!name": "Arith_SubFOp",
-            "!superclasses": ["Op"],
-            "mnemonic": "subf",
-            "arguments": [
-                {"name": "lhs", "type": "AnyFloat"},
-                {"name": "rhs", "type": "AnyFloat"},
-            ],
-            "results": [{"name": "result", "type": "AnyFloat"}],
-            "traits": ["SameOperandsAndResultType"],
-        },
-    }
-    ops = scrape_mlir.parse_tblgen_json_dump(raw_json, "arith")
-    assert len(ops) == 1
-    assert ops[0]["api_path"] == "arith.subf"
-    assert len(ops[0]["operands"]) == 2
-    assert ops[0]["results"][0]["name"] == "result"
-
-
 def test_scrape_mlir_sys_path_insert() -> None:
     """Test module reload when _src_dir is not in sys.path to cover sys.path insertion.
 
@@ -783,28 +645,6 @@ def test_scrape_mlir_sys_path_insert() -> None:
         sys.path = orig_path
 
 
-def test_fetch_html_exception() -> None:
-    """Test fetch_html exception handling when urlopen fails.
-
-    Returns:
-        None.
-    """
-    with mock.patch("ml_ecosystem_snapshots.utils.fetch_url", return_value=None):
-        assert scrape_mlir.fetch_html("https://invalid.url") == ""
-
-
-def test_parse_dialect_page_empty_html() -> None:
-    """Test parse_dialect_page returns empty list when fetch_html returns empty string.
-
-    Returns:
-        None.
-    """
-    with mock.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html", return_value=""
-    ):
-        assert scrape_mlir.parse_dialect_page("http://fake", "arith") == []
-
-
 def test_expand_foreach_nested_braces() -> None:
     """Test TableGenASTParser._expand_foreach with nested braces.
 
@@ -819,57 +659,7 @@ def test_expand_foreach_nested_braces() -> None:
     assert "let inner = { 1 };" in expanded
 
 
-def test_scrape_stablehlo_empty_md() -> None:
-    """Test scrape_stablehlo returns empty list when markdown fetching returns empty string.
-
-    Returns:
-        None.
-    """
-    with mock.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html", return_value=""
-    ):
-        assert scrape_mlir.scrape_stablehlo() == []
-
-
-def test_main_docs_with_ops_and_duplicates(mocker: Any) -> None:
-    """Test main() with duplicate dialect links and duplicate ops from parse_dialect_page.
-
-    Args:
-        mocker: Pytest mocker fixture.
-
-    Returns:
-        None.
-    """
-    mocker.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
-        return_value=[],
-    )
-    # Return duplicate links in index_html to exercise dialect_url in seen_urls branch
-    index_html = (
-        """<a href="/docs/Dialects/ArithOps/">'arith' Dialect</a>\n"""
-        """<a href="/docs/Dialects/ArithOps/">'arith' Dialect</a>\n"""
-    )
-    mocker.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html",
-        return_value=index_html,
-    )
-    mocker.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.parse_dialect_page",
-        return_value=[
-            {"api_path": "arith.addf"},
-            {"api_path": "arith.addf"},
-        ],
-    )
-    mocker.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.scrape_stablehlo",
-        return_value=[{"api_path": "stablehlo.abs"}],
-    )
-    mock_open = mocker.patch("builtins.open", mocker.mock_open())
-    scrape_mlir.main()
-    mock_open.assert_called_once()
-
-
-def test_scrape_mlir_main_entrypoint(mocker: Any) -> None:
+def test_scrape_mlir_main_entrypoint(mocker: pytest_mock.MockerFixture) -> None:
     """Test running scrape_mlir as __main__ writes output snapshot.
 
     Args:
@@ -878,14 +668,35 @@ def test_scrape_mlir_main_entrypoint(mocker: Any) -> None:
     import runpy
 
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("ml_ecosystem_snapshots.utils.fetch_url", return_value="<html></html>")
     mocker.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_html",
+        "ml_ecosystem_snapshots.network_env.fetch_url",
         return_value="<html></html>",
     )
     res = runpy.run_path(scrape_mlir.__file__, run_name="__main__")
     assert "main" in res
     assert mock_open.called
+
+
+def test_parse_mlir_tablegen_class_blocks_and_cast() -> None:
+    """Test parse_mlir_tablegen with class brace blocks, multi-level inheritance, semicolon defs, trait-first targs, and Cast fallback."""
+    td_content = """
+    class GrandParent<string mnem> : Op<mnem> {
+      let arguments = (ins FloatType:$x, { nested });
+      let results = (outs FloatType:$y);
+      let regions = (region SizedRegion<1>:$reg);
+    }
+    class Parent<string mnem> : GrandParent<mnem>;
+    def SemiOp : Parent<"semi_op">;
+    def TraitFirstOp : Op<[Pure]>;
+    def CastFallbackOp : Cast<"cast_op"> {
+      let extraClassDeclaration = [{ nested_brace }];
+    }
+    """
+    ops = scrape_mlir.parse_mlir_tablegen(td_content, "arith")
+    paths = {op["api_path"] for op in ops}
+    assert "arith.semi_op" in paths
+    assert "arith.traitfirstop" in paths
+    assert "arith.cast_op" in paths
 
 
 def test_parse_mlir_tablegen_unary_fallback() -> None:

@@ -1,8 +1,9 @@
 """Tests for PyData Sparse format snapshot extractor."""
 
+from __future__ import annotations
+
 import sys
 import types
-from typing import Any
 import pytest
 
 from ml_ecosystem_snapshots.frameworks.sparse import (
@@ -10,7 +11,7 @@ from ml_ecosystem_snapshots.frameworks.sparse import (
     _get_sparse,
     collect_api,
 )
-from ml_ecosystem_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_switcheroo_ir.schema.ghost import (
     GhostPythonRef,
     SemanticTier,
@@ -30,7 +31,7 @@ def test_collect_api_sparse_live(monkeypatch: pytest.MonkeyPatch) -> None:
         class COO:
             """Mock COO format array."""
 
-            def __init__(self, data: Any) -> None:
+            def __init__(self, data: object) -> None:
                 """Initialize mock COO.
 
                 Args:
@@ -39,7 +40,7 @@ def test_collect_api_sparse_live(monkeypatch: pytest.MonkeyPatch) -> None:
                 self.data = data
 
         @staticmethod
-        def dot(a: Any, b: Any) -> Any:
+        def dot(a: object, b: object) -> object:
             """Mock dot operator.
 
             Args:
@@ -52,7 +53,7 @@ def test_collect_api_sparse_live(monkeypatch: pytest.MonkeyPatch) -> None:
             return a
 
         @staticmethod
-        def matmul(a: Any, b: Any) -> Any:
+        def matmul(a: object, b: object) -> object:
             """Mock matmul operator.
 
             Args:
@@ -71,7 +72,7 @@ def test_collect_api_sparse_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
     real_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: Any, name: str, is_public: bool = True) -> Any:
+    def mock_inspect(obj: object, name: str, is_public: bool = True) -> object:
         """Mock inspect function.
 
         Args:
@@ -140,19 +141,9 @@ def test_get_sparse_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     import builtins
 
-    real_import = builtins.__import__
+    real_import = getattr(builtins, "__import__")
 
-    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        """Mock import function.
-
-        Args:
-            name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            The imported module or raises.
-        """
+    def mock_import(name: str, *args: object, **kwargs: object) -> object:
         """Mock import raising ImportError on sparse.
 
         Args:
@@ -192,25 +183,7 @@ def test_collect_api_sparse_inspection_exception(
         "ml_ecosystem_snapshots.frameworks.sparse._get_sparse", lambda: FlakySparse()
     )
 
-    def mock_inspect(*args: Any, **kwargs: Any) -> Any:
-        """Mock inspect function.
-
-        Args:
-            *args: Variable arguments.
-            **kwargs: Variable arguments.
-
-        Returns:
-            A mocked GhostRef.
-        """
-        """Mock inspect function.
-
-        Args:
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            A mocked GhostRef.
-        """
+    def mock_inspect(*args: object, **kwargs: object) -> None:
         """Mock inspect raising RuntimeError.
 
         Args:

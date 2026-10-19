@@ -1,14 +1,18 @@
 """Script to generate an exhaustive JSON dump of NVIDIA SASS instructions."""
 
+from __future__ import annotations
+
 import argparse
 from collections import defaultdict
 import json
 import os
 import re
-from typing import Any, DefaultDict, Dict, List, Optional
+import typing
+
+from ml_ecosystem_snapshots.models import IsaInstructionRecordModel, JsonValue
 
 
-def resolve_instruction_architectures(mnemonic: str) -> List[str]:
+def resolve_instruction_architectures(mnemonic: str) -> list[str]:
     """Determine the supported SM architectures for a SASS instruction mnemonic.
 
     Args:
@@ -29,7 +33,7 @@ def resolve_instruction_architectures(mnemonic: str) -> List[str]:
     return ["sm_70", "sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100"]
 
 
-def parse_nvdisasm_binary_info(raw_text: str) -> List[Dict[str, Any]]:
+def parse_nvdisasm_binary_info(raw_text: str) -> list[IsaInstructionRecordModel]:
     """Parse text disassembly or binary-info from nvdisasm into structured instruction records.
 
     Args:
@@ -38,9 +42,8 @@ def parse_nvdisasm_binary_info(raw_text: str) -> List[Dict[str, Any]]:
     Returns:
         List of instruction dictionaries grouped by mnemonic with modifiers and operands.
     """
-    instructions: DefaultDict[str, Dict[str, Any]] = defaultdict(
-        lambda: {"modifiers": set(), "operands": []}
-    )
+    inst_mods: dict[str, set[str]] = defaultdict(set)
+    inst_ops: dict[str, list[JsonValue]] = defaultdict(list)
 
     for line in raw_text.splitlines():
         line = line.strip()
@@ -72,10 +75,10 @@ def parse_nvdisasm_binary_info(raw_text: str) -> List[Dict[str, Any]]:
         modifiers = [f".{t}" for t in tokens[1:]]
 
         for mod in modifiers:
-            instructions[base_name]["modifiers"].add(mod)
+            inst_mods[base_name].add(mod)
 
         # Parse operands
-        sig: List[str] = []
+        sig: list[JsonValue] = []
         if operands_part:
             op_tokens = [tok.strip() for tok in operands_part.split(",") if tok.strip()]
             for op in op_tokens:
@@ -98,24 +101,28 @@ def parse_nvdisasm_binary_info(raw_text: str) -> List[Dict[str, Any]]:
                 else:
                     sig.append(op)
 
-        if sig not in instructions[base_name]["operands"]:
-            instructions[base_name]["operands"].append(sig)
+        if sig not in inst_ops[base_name]:
+            inst_ops[base_name].append(sig)
 
-    result: List[Dict[str, Any]] = []
-    for mnemonic, info in sorted(instructions.items()):
+    result: list[IsaInstructionRecordModel] = []
+    for mnemonic in sorted(inst_ops.keys()):
         result.append(
-            {
-                "mnemonic": mnemonic,
-                "architecture": resolve_instruction_architectures(mnemonic),
-                "description": f"NVIDIA SASS {mnemonic} instruction.",
-                "modifiers": sorted(list(info["modifiers"])),
-                "operands": info["operands"],
-            }
+            IsaInstructionRecordModel(
+                {
+                    "mnemonic": mnemonic,
+                    "architecture": list(resolve_instruction_architectures(mnemonic)),
+                    "description": f"NVIDIA SASS {mnemonic} instruction.",
+                    "modifiers": list(sorted(list(inst_mods[mnemonic]))),
+                    "operands": inst_ops[mnemonic],
+                }
+            )
         )
     return result
 
 
-def parse_cuda_binary_utilities(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+def parse_cuda_binary_utilities(
+    data: typing.Mapping[str, object],
+) -> list[IsaInstructionRecordModel]:
     """Parse CUDA Binary Utilities JSON dictionary into structured SASS instruction records.
 
     Args:
@@ -124,73 +131,82 @@ def parse_cuda_binary_utilities(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     Returns:
         Exhaustive list of formatted instruction records.
     """
-    instructions: DefaultDict[str, Dict[str, Any]] = defaultdict(
-        lambda: {"modifiers": set(), "operands": []}
-    )
+    inst_mods: dict[str, set[str]] = defaultdict(set)
+    inst_ops: dict[str, list[JsonValue]] = defaultdict(list)
 
     for _key, val in data.items():
+        assert isinstance(val, dict)
         parsed = val.get("parsed", {})
-        base_name = parsed.get("base_name")
-        if not base_name:
-            continue
+        assert isinstance(parsed, dict)
+        raw_base = parsed.get("base_name")
+        if isinstance(raw_base, str) and raw_base:
+            base_name = raw_base
 
-        for mod in parsed.get("modifiers", []):
-            mod_str = str(mod).strip()
-            if mod_str and not mod_str.startswith("???"):
-                formatted = mod_str if mod_str.startswith(".") else f".{mod_str}"
-                instructions[base_name]["modifiers"].add(formatted)
+            raw_pmods = parsed.get("modifiers", [])
+            for mod in raw_pmods if isinstance(raw_pmods, list) else []:
+                mod_str = str(mod).strip()
+                if mod_str and not mod_str.startswith("???"):
+                    formatted = mod_str if mod_str.startswith(".") else f".{mod_str}"
+                    inst_mods[base_name].add(formatted)
 
-        for mod in val.get("opcode_modis", []):
-            mod_str = str(mod).strip()
-            if mod_str and not mod_str.startswith("???"):
-                formatted = mod_str if mod_str.startswith(".") else f".{mod_str}"
-                instructions[base_name]["modifiers"].add(formatted)
+            raw_omods = val.get("opcode_modis", [])
+            for mod in raw_omods if isinstance(raw_omods, list) else []:
+                mod_str = str(mod).strip()
+                if mod_str and not mod_str.startswith("???"):
+                    formatted = mod_str if mod_str.startswith(".") else f".{mod_str}"
+                    inst_mods[base_name].add(formatted)
 
-        sig: List[str] = []
-        for op in parsed.get("operands", []):
-            op_type = op.get("type")
-            if op_type == "RegOperand":
-                reg_type = op.get("reg_type", "R")
-                sig.append(reg_type)
-            elif op_type == "IntIMMOperand":
-                sig.append("I")
-            elif op_type == "FloatIMMOperand":
-                sig.append("FI")
-            elif op_type == "ConstantMemOperand":
-                sig.append("cx[bank][offset]" if op.get("cx") else "c[bank][offset]")
-            elif op_type == "AddressOperand":
-                sig.append("ADDR")
-            elif op_type == "PredicateOperand":
-                sig.append("P")
-            elif op_type == "AttributeOperand":
-                sig.append("ATTR")
-            elif op_type == "DescOperand":
-                sig.append("DESC")
-            elif op_type == "SNOWFLAKE":
-                sig.append("R")
-            else:
-                sig.append(str(op_type))
+            sig: list[JsonValue] = []
+            raw_pops = parsed.get("operands", [])
+            for op in raw_pops if isinstance(raw_pops, list) else []:
+                assert isinstance(op, dict)
+                op_type = op.get("type")
+                if op_type == "RegOperand":
+                    reg_type = str(op.get("reg_type", "R"))
+                    sig.append(reg_type)
+                elif op_type == "IntIMMOperand":
+                    sig.append("I")
+                elif op_type == "FloatIMMOperand":
+                    sig.append("FI")
+                elif op_type == "ConstantMemOperand":
+                    sig.append(
+                        "cx[bank][offset]" if op.get("cx") else "c[bank][offset]"
+                    )
+                elif op_type == "AddressOperand":
+                    sig.append("ADDR")
+                elif op_type == "PredicateOperand":
+                    sig.append("P")
+                elif op_type == "AttributeOperand":
+                    sig.append("ATTR")
+                elif op_type == "DescOperand":
+                    sig.append("DESC")
+                elif op_type == "SNOWFLAKE":
+                    sig.append("R")
+                else:
+                    sig.append(str(op_type))
 
-        if sig not in instructions[base_name]["operands"]:
-            instructions[base_name]["operands"].append(sig)
+            if sig not in inst_ops[base_name]:
+                inst_ops[base_name].append(sig)
 
-    result: List[Dict[str, Any]] = []
-    for mnemonic, info in sorted(instructions.items()):
+    result: list[IsaInstructionRecordModel] = []
+    for mnemonic in sorted(inst_ops.keys()):
         result.append(
-            {
-                "mnemonic": mnemonic,
-                "architecture": resolve_instruction_architectures(mnemonic),
-                "description": f"NVIDIA SASS {mnemonic} instruction.",
-                "modifiers": sorted(list(info["modifiers"])),
-                "operands": info["operands"],
-            }
+            IsaInstructionRecordModel(
+                {
+                    "mnemonic": mnemonic,
+                    "architecture": list(resolve_instruction_architectures(mnemonic)),
+                    "description": f"NVIDIA SASS {mnemonic} instruction.",
+                    "modifiers": list(sorted(list(inst_mods[mnemonic]))),
+                    "operands": inst_ops[mnemonic],
+                }
+            )
         )
     return result
 
 
 def build_expanded_sass_catalog(
-    base_instructions: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    base_instructions: typing.Sequence[typing.Mapping[str, JsonValue]],
+) -> list[IsaInstructionRecordModel]:
     """Expand baseline SASS instructions into 1000+ operations covering Tensor Core, TMA, and control ops.
 
     Args:
@@ -199,23 +215,26 @@ def build_expanded_sass_catalog(
     Returns:
         Exhaustive list of 1000+ SASS instruction dictionaries.
     """
-    catalog: List[Dict[str, Any]] = []
-    seen = set()
+    catalog: list[IsaInstructionRecordModel] = []
+    seen: set[str] = set()
 
+    default_operands: JsonValue = [["R", "R"]]
     for item in base_instructions:
-        m = item["mnemonic"]
+        m = str(item["mnemonic"])
         if m not in seen:
             seen.add(m)
             catalog.append(
-                {
-                    "mnemonic": m,
-                    "architecture": resolve_instruction_architectures(m),
-                    "description": item.get(
-                        "description", f"NVIDIA SASS {m} instruction."
-                    ),
-                    "modifiers": item.get("modifiers", []),
-                    "operands": item.get("operands", [["R", "R"]]),
-                }
+                IsaInstructionRecordModel(
+                    {
+                        "mnemonic": m,
+                        "architecture": list(resolve_instruction_architectures(m)),
+                        "description": item.get(
+                            "description", f"NVIDIA SASS {m} instruction."
+                        ),
+                        "modifiers": item.get("modifiers") or [],
+                        "operands": item.get("operands") or default_operands,
+                    }
+                )
             )
 
     specific_ops = [
@@ -495,13 +514,15 @@ def build_expanded_sass_catalog(
         if op not in seen:
             seen.add(op)
             catalog.append(
-                {
-                    "mnemonic": op,
-                    "architecture": resolve_instruction_architectures(op),
-                    "description": desc,
-                    "modifiers": mods,
-                    "operands": opsigs,
-                }
+                IsaInstructionRecordModel(
+                    {
+                        "mnemonic": op,
+                        "architecture": list(resolve_instruction_architectures(op)),
+                        "description": desc,
+                        "modifiers": list(mods),
+                        "operands": [list(s) for s in opsigs],
+                    }
+                )
             )
 
     # Add memory instruction variations
@@ -512,15 +533,21 @@ def build_expanded_sass_catalog(
                 if m not in seen:
                     seen.add(m)
                     is_store = mem_op.startswith("ST")
-                    ops = [["ADDR", "R"]] if is_store else [["R", "ADDR"]]
+                    ops: list[JsonValue] = (
+                        [["ADDR", "R"]] if is_store else [["R", "ADDR"]]
+                    )
                     catalog.append(
-                        {
-                            "mnemonic": m,
-                            "architecture": resolve_instruction_architectures(m),
-                            "description": f"NVIDIA SASS {mem_op} {mode} {dtype} instruction.",
-                            "modifiers": [f".{mode}", f".{dtype}"],
-                            "operands": ops,
-                        }
+                        IsaInstructionRecordModel(
+                            {
+                                "mnemonic": m,
+                                "architecture": list(
+                                    resolve_instruction_architectures(m)
+                                ),
+                                "description": f"NVIDIA SASS {mem_op} {mode} {dtype} instruction.",
+                                "modifiers": [f".{mode}", f".{dtype}"],
+                                "operands": ops,
+                            }
+                        )
                     )
 
     # Add atomics
@@ -542,13 +569,17 @@ def build_expanded_sass_catalog(
                 if m not in seen:
                     seen.add(m)
                     catalog.append(
-                        {
-                            "mnemonic": m,
-                            "architecture": resolve_instruction_architectures(m),
-                            "description": f"NVIDIA SASS {a_op} {sub_op} {dtype} atomic.",
-                            "modifiers": [f".{sub_op}", f".{dtype}"],
-                            "operands": [["R", "ADDR", "R"]],
-                        }
+                        IsaInstructionRecordModel(
+                            {
+                                "mnemonic": m,
+                                "architecture": list(
+                                    resolve_instruction_architectures(m)
+                                ),
+                                "description": f"NVIDIA SASS {a_op} {sub_op} {dtype} atomic.",
+                                "modifiers": [f".{sub_op}", f".{dtype}"],
+                                "operands": [["R", "ADDR", "R"]],
+                            }
+                        )
                     )
 
     # Add math instruction variations
@@ -569,13 +600,17 @@ def build_expanded_sass_catalog(
                 if m not in seen:
                     seen.add(m)
                     catalog.append(
-                        {
-                            "mnemonic": m,
-                            "architecture": resolve_instruction_architectures(m),
-                            "description": f"NVIDIA SASS {math_op} {prec} {round_mode}.",
-                            "modifiers": [f".{prec}", f".{round_mode}", ".FTZ"],
-                            "operands": [["R", "R", "R"]],
-                        }
+                        IsaInstructionRecordModel(
+                            {
+                                "mnemonic": m,
+                                "architecture": list(
+                                    resolve_instruction_architectures(m)
+                                ),
+                                "description": f"NVIDIA SASS {math_op} {prec} {round_mode}.",
+                                "modifiers": [f".{prec}", f".{round_mode}", ".FTZ"],
+                                "operands": [["R", "R", "R"]],
+                            }
+                        )
                     )
 
     # Add conversions
@@ -586,13 +621,17 @@ def build_expanded_sass_catalog(
                 if m not in seen:
                     seen.add(m)
                     catalog.append(
-                        {
-                            "mnemonic": m,
-                            "architecture": resolve_instruction_architectures(m),
-                            "description": f"Convert {src} to {dst}.",
-                            "modifiers": [".RN", ".RZ", ".SAT"],
-                            "operands": [["R", "R"]],
-                        }
+                        IsaInstructionRecordModel(
+                            {
+                                "mnemonic": m,
+                                "architecture": list(
+                                    resolve_instruction_architectures(m)
+                                ),
+                                "description": f"Convert {src} to {dst}.",
+                                "modifiers": [".RN", ".RZ", ".SAT"],
+                                "operands": [["R", "R"]],
+                            }
+                        )
                     )
 
     # Add uniform registers
@@ -613,24 +652,26 @@ def build_expanded_sass_catalog(
             if m not in seen:
                 seen.add(m)
                 catalog.append(
-                    {
-                        "mnemonic": m,
-                        "architecture": resolve_instruction_architectures(m),
-                        "description": f"Uniform {u_op} {utype}.",
-                        "modifiers": [f".{utype}"],
-                        "operands": [["UR", "UR", "UR"]],
-                    }
+                    IsaInstructionRecordModel(
+                        {
+                            "mnemonic": m,
+                            "architecture": list(resolve_instruction_architectures(m)),
+                            "description": f"Uniform {u_op} {utype}.",
+                            "modifiers": [f".{utype}"],
+                            "operands": [["UR", "UR", "UR"]],
+                        }
+                    )
                 )
 
     return catalog
 
 
 def scrape_sass(
-    input_path: Optional[str] = None,
-    output_path: Optional[str] = None,
+    input_path: str | None = None,
+    output_path: str | None = None,
     expand_catalog: bool = False,
     cuda_version: str = "12.6.0",
-) -> List[Dict[str, Any]]:
+) -> list[IsaInstructionRecordModel]:
     """Scrape NVIDIA SASS instructions from a specified or default input source.
 
     Args:
@@ -659,7 +700,7 @@ def scrape_sass(
         content = f.read()
 
     try:
-        data = json.loads(content)
+        data: JsonValue = json.loads(content)
         if isinstance(data, dict):
             exhaustive_list = parse_cuda_binary_utilities(data)
         elif isinstance(data, list):
@@ -676,7 +717,7 @@ def scrape_sass(
         else exhaustive_list
     )
 
-    exhaustive_data = {
+    exhaustive_data: dict[str, object] = {
         "schema_version": "2.0.0",
         "target": "nvidia_sass",
         "version": cuda_version,
@@ -692,7 +733,7 @@ def scrape_sass(
             "sm_90",
             "sm_100",
         ],
-        "instructions": final_records,
+        "instructions": list(final_records),
     }
 
     with open(resolved_output, "w", encoding="utf-8", newline="\n") as f:
@@ -702,7 +743,7 @@ def scrape_sass(
     return final_records
 
 
-def main(argv: Optional[List[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     """Run the script to generate the exhaustive SASS JSON dump.
 
     Args:

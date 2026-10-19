@@ -1,5 +1,7 @@
 """Tests for WebGL 2.0 / GLSL ES 3.00 compute shader snapshot extractor, MCP server, and CLI."""
 
+from __future__ import annotations
+
 import argparse
 import pytest
 

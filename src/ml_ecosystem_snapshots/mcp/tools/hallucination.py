@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ast
 import re
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
+import typing
 
 from ml_ecosystem_snapshots.introspection.inspector import STANDARD_ENUM_MAP
 from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository, resolve_snapshot
@@ -20,8 +20,9 @@ from ml_ecosystem_snapshots.mcp.tools.isa import (
     check_sass_instruction,
 )
 from ml_ecosystem_snapshots.mcp.tools.signature import get_api_signature
+from ml_ecosystem_snapshots.models import JsonValue
 
-DTYPE_CANONICAL_ALIASES: Dict[str, str] = {
+DTYPE_CANONICAL_ALIASES: dict[str, str] = {
     "str": "string",
     "str_": "string",
     "object_": "object",
@@ -35,7 +36,7 @@ DTYPE_CANONICAL_ALIASES: Dict[str, str] = {
     "qint4x2": "qint4",
 }
 
-KNOWN_ENUM_VALUES: Dict[str, List[str]] = {
+KNOWN_ENUM_VALUES: dict[str, list[str]] = {
     **STANDARD_ENUM_MAP,
     "padding": ["valid", "same", "zeros", "reflect", "replicate", "circular"],
 }
@@ -68,7 +69,7 @@ def normalize_dtype_name(raw_dt: str) -> str:
     return DTYPE_CANONICAL_ALIASES.get(clean, clean)
 
 
-def _matches_rank_constraint(passed_rk: int, constraint: Union[int, str]) -> bool:
+def _matches_rank_constraint(passed_rk: int, constraint: int | str) -> bool:
     """Check whether a passed tensor rank satisfies a rank constraint specification.
 
     Args:
@@ -95,12 +96,26 @@ def _matches_rank_constraint(passed_rk: int, constraint: Union[int, str]) -> boo
     return True
 
 
+def _extract_cand_params(cand: dict[str, JsonValue]) -> list[dict[str, JsonValue]]:
+    """Extract a list of parameter dictionaries from a candidate signature dictionary.
+
+    Args:
+        cand: Candidate signature dictionary.
+
+    Returns:
+        List of parameter dictionaries.
+    """
+    raw = cand.get("params") or []
+    assert isinstance(raw, list)
+    return [dict(p) for p in raw if isinstance(p, dict)]
+
+
 def _validate_candidate_kwargs(
-    cand: Dict[str, Any],
-    kwargs: Optional[Sequence[str]],
+    cand: dict[str, JsonValue],
+    kwargs: typing.Sequence[str] | None,
     strict_kwargs: bool = True,
     strict_c_extensions: bool = False,
-) -> Tuple[List[str], List[str], bool, bool, Optional[str], Set[str]]:
+) -> tuple[list[str], list[str], bool, bool, str | None, set[str]]:
     """Validate passed keyword argument names against a candidate signature.
 
     Args:
@@ -112,28 +127,28 @@ def _validate_candidate_kwargs(
     Returns:
         Tuple of (invalid, unrecognized, cand_has_var_kwargs, cand_is_opaque, opaque_warning, cand_names).
     """
-    cand_names = {p["name"] for p in cand.get("params", []) if "name" in p}
-    cand_has_var_kwargs = any(
-        p.get("kind") == "VAR_KEYWORD" for p in cand.get("params", [])
-    )
+    cand_params = _extract_cand_params(cand)
+    cand_names = {str(p["name"]) for p in cand_params if "name" in p}
+    cand_has_var_kwargs = any(p.get("kind") == "VAR_KEYWORD" for p in cand_params)
+    raw_env_tags = cand.get("environment_tags")
+    env_tags = [str(t) for t in raw_env_tags] if isinstance(raw_env_tags, list) else []
     cand_is_opaque = (
         cand.get("signature_completeness") == "opaque"
-        or "inexact_signature" in cand.get("environment_tags", [])
-        or "opaque_c_extension" in cand.get("environment_tags", [])
+        or "inexact_signature" in env_tags
+        or "opaque_c_extension" in env_tags
     )
 
-    domain_meta = cand.get("domain_metadata") or {}
-    accepted_kwargs_list = cand.get("accepted_kwargs") or domain_meta.get(
-        "accepted_kwargs"
-    )
-    if accepted_kwargs_list is not None:
-        accepted_set: Optional[Set[str]] = set(accepted_kwargs_list)
+    raw_dom_meta = cand.get("domain_metadata")
+    domain_meta = dict(raw_dom_meta) if isinstance(raw_dom_meta, dict) else {}
+    raw_accepted = cand.get("accepted_kwargs") or domain_meta.get("accepted_kwargs")
+    if isinstance(raw_accepted, list):
+        accepted_set: set[str] | None = {str(x) for x in raw_accepted}
         cand_has_var_kwargs = False
     else:
         accepted_set = None
 
-    invalid: List[str] = []
-    unrecognized: List[str] = []
+    invalid: list[str] = []
+    unrecognized: list[str] = []
     if kwargs:
         for kw in kwargs:
             if kw not in cand_names:
@@ -145,7 +160,7 @@ def _validate_candidate_kwargs(
                 else:
                     invalid.append(kw)
 
-    opaque_warning: Optional[str] = None
+    opaque_warning: str | None = None
     if cand_is_opaque and kwargs:
         opaque_warning = "WARNING: API has opaque C-extension signature; cannot definitively confirm argument validity"
         if strict_c_extensions and unrecognized:
@@ -166,9 +181,9 @@ def _validate_candidate_kwargs(
 
 
 def _validate_candidate_enums_and_literals(
-    cand: Dict[str, Any],
-    kwarg_values: Optional[Dict[str, Any]],
-) -> List[str]:
+    cand: dict[str, JsonValue],
+    kwarg_values: typing.Mapping[str, JsonValue] | None,
+) -> list[str]:
     """Validate enum and Literal constraints for passed keyword argument values.
 
     Args:
@@ -178,18 +193,20 @@ def _validate_candidate_enums_and_literals(
     Returns:
         List of enum/literal validation error strings.
     """
-    enum_errors: List[str] = []
+    enum_errors: list[str] = []
     if not kwarg_values:
         return enum_errors
 
-    params_with_allowed = set()
-    for p in cand.get("params", []):
-        p_name = p.get("name")
+    cand_params = _extract_cand_params(cand)
+    params_with_allowed: set[str] = set()
+    for p in cand_params:
+        raw_p_name = p.get("name")
+        p_name = str(raw_p_name) if raw_p_name else ""
         if not p_name or p_name not in kwarg_values:
             continue
         val = kwarg_values[p_name]
         allowed_vals = p.get("allowed_values")
-        if allowed_vals:
+        if isinstance(allowed_vals, list) and allowed_vals:
             params_with_allowed.add(p_name.lower())
             if str(val).lower() not in [str(a).lower() for a in allowed_vals]:
                 enum_errors.append(
@@ -211,9 +228,10 @@ def _validate_candidate_enums_and_literals(
                     f"Invalid enum value '{val}' for parameter '{k}'. Expected one of {allowed}"
                 )
 
-    for p in cand.get("params", []):
-        p_name = p.get("name")
-        anno = p.get("annotation") or ""
+    for p in cand_params:
+        raw_p_name = p.get("name")
+        p_name = str(raw_p_name) if raw_p_name else ""
+        anno = str(p.get("annotation") or "")
         if (
             p_name in kwarg_values
             and anno
@@ -230,17 +248,17 @@ def _validate_candidate_enums_and_literals(
 
 
 def _validate_candidate_dtypes_and_ranks(
-    cand: Dict[str, Any],
+    cand: dict[str, JsonValue],
     api_path: str,
     framework: str,
-    kwarg_values: Optional[Dict[str, Any]] = None,
-    arg_dtypes: Optional[Union[List[str], Dict[str, str]]] = None,
-    kwarg_dtypes: Optional[Dict[str, str]] = None,
-    arg_ranks: Optional[
-        Union[List[Union[int, str]], Dict[str, Union[int, str]]]
-    ] = None,
-    kwarg_ranks: Optional[Dict[str, Union[int, str]]] = None,
-) -> Tuple[List[str], List[str]]:
+    kwarg_values: typing.Mapping[str, JsonValue] | None = None,
+    arg_dtypes: typing.Sequence[str] | typing.Mapping[str, str] | JsonValue = None,
+    kwarg_dtypes: typing.Mapping[str, str] | JsonValue = None,
+    arg_ranks: (
+        typing.Sequence[int | str] | typing.Mapping[str, int | str] | JsonValue
+    ) = None,
+    kwarg_ranks: typing.Mapping[str, int | str] | JsonValue = None,
+) -> tuple[list[str], list[str]]:
     """Validate tensor dtypes and ranks against a candidate signature.
 
     Args:
@@ -256,30 +274,35 @@ def _validate_candidate_dtypes_and_ranks(
     Returns:
         Tuple of (dtype_errors, rank_errors).
     """
-    dtype_errors: List[str] = []
-    rank_errors: List[str] = []
+    dtype_errors: list[str] = []
+    rank_errors: list[str] = []
+    cand_params = _extract_cand_params(cand)
 
-    passed_dtypes: Dict[str, str] = {}
-    if kwarg_dtypes:
-        passed_dtypes.update(kwarg_dtypes)
-    if isinstance(arg_dtypes, dict):
-        passed_dtypes.update(arg_dtypes)
+    passed_dtypes: dict[str, str] = {}
+    if isinstance(kwarg_dtypes, typing.Mapping):
+        for k, v in kwarg_dtypes.items():
+            passed_dtypes[str(k)] = str(v)
+    if isinstance(arg_dtypes, typing.Mapping):
+        for k, v in arg_dtypes.items():
+            passed_dtypes[str(k)] = str(v)
     elif isinstance(arg_dtypes, list):
-        cand_params = cand.get("params", [])
         for idx, dt in enumerate(arg_dtypes):
             if idx < len(cand_params):
-                passed_dtypes[cand_params[idx]["name"]] = dt
+                passed_dtypes[str(cand_params[idx]["name"])] = str(dt)
 
-    passed_ranks: Dict[str, Union[int, str]] = {}
-    if kwarg_ranks:
-        passed_ranks.update(kwarg_ranks)
-    if isinstance(arg_ranks, dict):
-        passed_ranks.update(arg_ranks)
+    passed_ranks: dict[str, int | str] = {}
+    if isinstance(kwarg_ranks, typing.Mapping):
+        for k, v in kwarg_ranks.items():
+            passed_ranks[str(k)] = v if isinstance(v, int) else str(v)
+    if isinstance(arg_ranks, typing.Mapping):
+        for k, v in arg_ranks.items():
+            passed_ranks[str(k)] = v if isinstance(v, int) else str(v)
     elif isinstance(arg_ranks, list):
-        cand_params = cand.get("params", [])
         for idx, rk in enumerate(arg_ranks):
             if idx < len(cand_params):
-                passed_ranks[cand_params[idx]["name"]] = rk
+                passed_ranks[str(cand_params[idx]["name"])] = (
+                    rk if isinstance(rk, int) else str(rk)
+                )
 
     if kwarg_values:
         for k, val in kwarg_values.items():
@@ -309,9 +332,12 @@ def _validate_candidate_dtypes_and_ranks(
         or "cholesky" in clean_api
     )
 
-    for p in cand.get("params", []):
-        p_name = p.get("name")
-        p_dtypes = p.get("allowed_dtypes") or p.get("dtypes")
+    for p in cand_params:
+        p_name = str(p.get("name") or "")
+        raw_p_dtypes = p.get("allowed_dtypes") or p.get("dtypes")
+        p_dtypes = (
+            [str(d) for d in raw_p_dtypes] if isinstance(raw_p_dtypes, list) else None
+        )
         p_rank = p.get("rank_constraint") or p.get("rank")
 
         if p_name in passed_dtypes:
@@ -326,9 +352,9 @@ def _validate_candidate_dtypes_and_ranks(
                         f"Dtype '{passed_dtypes[p_name]}' is not supported for parameter '{p_name}' of '{api_path}'. Supported dtypes: {allowed}"
                     )
 
-        if p_name in passed_ranks and p_rank is not None:
+        if p_name in passed_ranks and isinstance(p_rank, (int, str)):
             passed_rk = passed_ranks[p_name]
-            if isinstance(passed_rk, int):
+            if isinstance(passed_rk, int) and not isinstance(passed_rk, bool):
                 if not _matches_rank_constraint(passed_rk, p_rank):
                     rank_errors.append(
                         f"Rank {passed_rk} is not supported for parameter '{p_name}' of '{api_path}'. Expected rank: {p_rank}"
@@ -397,12 +423,12 @@ def _validate_candidate_dtypes_and_ranks(
 
 
 def _validate_candidate_shapes(
-    cand: Dict[str, Any],
+    cand: dict[str, JsonValue],
     api_path: str,
     clean_api: str,
-    arg_shapes: Optional[List[Sequence[Union[int, str]]]] = None,
-    kwarg_shapes: Optional[Dict[str, Sequence[Union[int, str]]]] = None,
-) -> List[str]:
+    arg_shapes: typing.Sequence[typing.Sequence[int | str]] | JsonValue = None,
+    kwarg_shapes: typing.Mapping[str, typing.Sequence[int | str]] | JsonValue = None,
+) -> list[str]:
     """Validate tensor shapes (broadcasting and matmul contraction) against a candidate.
 
     Args:
@@ -415,17 +441,27 @@ def _validate_candidate_shapes(
     Returns:
         List of shape validation error strings.
     """
-    shape_errors: List[str] = []
-    passed_shapes: Dict[str, Sequence[Union[int, str]]] = {}
-    if kwarg_shapes:
-        passed_shapes.update(kwarg_shapes)
+    shape_errors: list[str] = []
+    cand_params = _extract_cand_params(cand)
+    passed_shapes: dict[str, typing.Sequence[int | str]] = {}
+    if isinstance(kwarg_shapes, typing.Mapping):
+        for k, sh_val in kwarg_shapes.items():
+            passed_shapes[str(k)] = (
+                [d if isinstance(d, int) else str(d) for d in sh_val]
+                if isinstance(sh_val, typing.Sequence) and not isinstance(sh_val, str)
+                else []
+            )
     if isinstance(arg_shapes, list):
-        cand_params = cand.get("params", [])
         for idx, sh in enumerate(arg_shapes):
+            norm_sh: list[int | str] = (
+                [d if isinstance(d, int) else str(d) for d in sh]
+                if isinstance(sh, typing.Sequence) and not isinstance(sh, str)
+                else []
+            )
             if idx < len(cand_params):
-                passed_shapes[cand_params[idx]["name"]] = sh
+                passed_shapes[str(cand_params[idx]["name"])] = norm_sh
             else:
-                passed_shapes[f"arg_{idx}"] = sh
+                passed_shapes[f"arg_{idx}"] = norm_sh
 
     is_elementwise = (
         any(
@@ -471,9 +507,9 @@ def _validate_candidate_shapes(
 
 
 def _validate_candidate_positional_arity(
-    cand: Dict[str, Any],
-    args_count: Optional[int],
-) -> Optional[str]:
+    cand: dict[str, JsonValue],
+    args_count: int | None,
+) -> str | None:
     """Validate positional argument count against a candidate signature.
 
     Args:
@@ -485,19 +521,20 @@ def _validate_candidate_positional_arity(
     """
     if args_count is None:
         return None
+    cand_params = _extract_cand_params(cand)
     min_pos = sum(
         1
-        for p in cand.get("params", [])
+        for p in cand_params
         if p.get("default") is None
         and p.get("kind") in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
     )
     max_pos = sum(
         1
-        for p in cand.get("params", [])
+        for p in cand_params
         if p.get("kind") in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
     )
-    cand_has_varargs = cand.get("has_varargs", False) or any(
-        p.get("kind") == "VAR_POSITIONAL" for p in cand.get("params", [])
+    cand_has_varargs = bool(cand.get("has_varargs", False)) or any(
+        p.get("kind") == "VAR_POSITIONAL" for p in cand_params
     )
     if args_count < min_pos:
         return f"Missing required positional arguments: expected at least {min_pos}, got {args_count}"
@@ -509,21 +546,21 @@ def _validate_candidate_positional_arity(
 def check_hallucination(
     framework: str,
     api_path: str,
-    kwargs: Optional[List[str]] = None,
-    args_count: Optional[int] = None,
+    kwargs: list[str] | None = None,
+    args_count: int | None = None,
     strict_kwargs: bool = True,
-    kwarg_values: Optional[Dict[str, Any]] = None,
-    version: Optional[str] = None,
-    arg_dtypes: Optional[Union[List[str], Dict[str, str]]] = None,
-    kwarg_dtypes: Optional[Dict[str, str]] = None,
-    arg_ranks: Optional[
-        Union[List[Union[int, str]], Dict[str, Union[int, str]]]
-    ] = None,
-    kwarg_ranks: Optional[Dict[str, Union[int, str]]] = None,
-    arg_shapes: Optional[List[Sequence[Union[int, str]]]] = None,
-    kwarg_shapes: Optional[Dict[str, Sequence[Union[int, str]]]] = None,
+    kwarg_values: typing.Mapping[str, JsonValue] | None = None,
+    version: str | None = None,
+    arg_dtypes: typing.Sequence[str] | typing.Mapping[str, str] | JsonValue = None,
+    kwarg_dtypes: typing.Mapping[str, str] | JsonValue = None,
+    arg_ranks: (
+        typing.Sequence[int | str] | typing.Mapping[str, int | str] | JsonValue
+    ) = None,
+    kwarg_ranks: typing.Mapping[str, int | str] | JsonValue = None,
+    arg_shapes: typing.Sequence[typing.Sequence[int | str]] | JsonValue = None,
+    kwarg_shapes: typing.Mapping[str, typing.Sequence[int | str]] | JsonValue = None,
     strict_c_extensions: bool = False,
-    repository: Optional[SnapshotRepository] = None,
+    repository: SnapshotRepository | None = None,
 ) -> HallucinationCheckResult:
     """Verify whether an API or specified arguments represent hallucinations.
 
@@ -557,21 +594,18 @@ def check_hallucination(
         repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
-        Dictionary containing:
-            - 'api_exists': bool
-            - 'is_hallucinated': bool
-            - 'invalid_kwargs': List[str]
-            - 'canonical_params': List[str]
-            - 'has_unconstrained_kwargs': bool
-            - 'reason': str
+        `HallucinationCheckResult` model containing validation details.
     """
     if kwargs is None and kwarg_values is not None:
         kwargs = list(kwarg_values.keys())
 
     sig = get_api_signature(framework, api_path, version=version, repository=repository)
     snap = resolve_snapshot(framework, version=version, repository=repository)
-    snapshot_source = snap.get(
-        "_snapshot_source", "not_found" if not snap.get("categories") else "unknown"
+    raw_source = snap.get("_snapshot_source")
+    snapshot_source = (
+        str(raw_source)
+        if raw_source is not None
+        else ("not_found" if not snap.get("categories") else "unknown")
     )
     if not sig:
         if snapshot_source == "not_found":
@@ -582,19 +616,25 @@ def check_hallucination(
             )
         else:
             reason = f"API '{api_path}' does not exist in ground-truth '{framework}' snapshot."
-        return {
-            "api_exists": False,
-            "is_hallucinated": True,
-            "invalid_kwargs": kwargs or [],
-            "canonical_params": [],
-            "has_unconstrained_kwargs": False,
-            "snapshot_source": snapshot_source,
-            "reason": reason,
-        }
+        return HallucinationCheckResult(
+            api_exists=False,
+            is_hallucinated=True,
+            invalid_kwargs=kwargs or [],
+            canonical_params=[],
+            has_unconstrained_kwargs=False,
+            snapshot_source=snapshot_source,
+            reason=reason,
+        )
 
-    candidates = [sig] + [ov for ov in sig.get("overloads", []) if isinstance(ov, dict)]
+    raw_overloads = sig.get("overloads")
+    overload_dicts: list[dict[str, JsonValue]] = (
+        [dict(ov) for ov in raw_overloads if isinstance(ov, dict)]
+        if isinstance(raw_overloads, list)
+        else []
+    )
+    candidates = [sig] + overload_dicts
 
-    best_result: Optional[HallucinationCheckResult] = None
+    best_result: HallucinationCheckResult | None = None
     fewest_errors = 999999
     clean_api = api_path.split(".")[-1].lower()
 
@@ -661,31 +701,28 @@ def check_hallucination(
         elif unrecognized:
             reason = f"Unconstrained keyword arguments passed to **kwargs: {', '.join(unrecognized)}"
 
-        res: HallucinationCheckResult = {
-            "api_exists": True,
-            "is_hallucinated": cand_hallucinated,
-            "invalid_kwargs": invalid,
-            "canonical_params": sorted(list(cand_names)),
-            "has_unconstrained_kwargs": cand_has_var_kwargs,
-            "reason": reason,
-            "snapshot_source": snapshot_source,
-            "signature_completeness": str(
+        if opaque_warning and not cand_hallucinated and reason == "Valid API call":
+            reason = f"Valid API call with warning: {opaque_warning}"
+
+        res = HallucinationCheckResult(
+            api_exists=True,
+            is_hallucinated=cand_hallucinated,
+            invalid_kwargs=invalid,
+            canonical_params=sorted(list(cand_names)),
+            has_unconstrained_kwargs=cand_has_var_kwargs,
+            reason=reason,
+            snapshot_source=snapshot_source,
+            signature_completeness=str(
                 cand.get(
                     "signature_completeness", "opaque" if cand_is_opaque else "exact"
                 )
             ),
-            "is_c_extension": bool(cand.get("is_c_extension", False) or cand_is_opaque),
-        }
-        if dtype_errors:
-            res["dtype_errors"] = dtype_errors
-        if rank_errors:
-            res["rank_errors"] = rank_errors
-        if shape_errors:
-            res["shape_errors"] = shape_errors
-        if opaque_warning:
-            res["warning"] = opaque_warning
-            if not cand_hallucinated and reason == "Valid API call":
-                res["reason"] = f"Valid API call with warning: {opaque_warning}"
+            is_c_extension=bool(cand.get("is_c_extension", False) or cand_is_opaque),
+            dtype_errors=dtype_errors if dtype_errors else None,
+            rank_errors=rank_errors if rank_errors else None,
+            shape_errors=shape_errors if shape_errors else None,
+            warning=opaque_warning,
+        )
 
         if not cand_hallucinated:
             return res
@@ -702,23 +739,23 @@ def check_hallucination(
             fewest_errors = err_count
             best_result = res
 
-    return best_result or {
-        "api_exists": True,
-        "is_hallucinated": True,
-        "invalid_kwargs": kwargs or [],
-        "canonical_params": [],
-        "has_unconstrained_kwargs": False,
-        "snapshot_source": snapshot_source,
-        "reason": "No matching overload signature found.",
-    }
+    return best_result or HallucinationCheckResult(
+        api_exists=True,
+        is_hallucinated=True,
+        invalid_kwargs=kwargs or [],
+        canonical_params=[],
+        has_unconstrained_kwargs=False,
+        snapshot_source=snapshot_source,
+        reason="No matching overload signature found.",
+    )
 
 
 def explain_anti_pattern(
     framework: str,
     api_path: str,
     hallucinated_argument: str,
-    passed_value: Optional[Any] = None,
-    repository: Optional[SnapshotRepository] = None,
+    passed_value: JsonValue = None,
+    repository: SnapshotRepository | None = None,
 ) -> AntiPatternExplanationResult:
     """Provide canonical migration advice and rationale for a flagged anti-pattern or hallucinated argument.
 
@@ -730,12 +767,12 @@ def explain_anti_pattern(
         repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
-        Structured guidance dictionary with canonical replacement, explanation, and code example.
+        Structured `AntiPatternExplanationResult` with canonical replacement, explanation, and code example.
     """
     clean_fw = framework.lower().strip()
     arg_clean = hallucinated_argument.strip().lower()
 
-    known_migrations: Dict[str, Dict[str, Dict[str, str]]] = {
+    known_migrations: dict[str, dict[str, dict[str, str]]] = {
         "torch": {
             "axis": {
                 "canonical": "dim",
@@ -802,44 +839,42 @@ def explain_anti_pattern(
     fw_rules = known_migrations.get(clean_fw, {})
     if arg_clean in fw_rules:
         rule = fw_rules[arg_clean]
-        return {
-            "framework": framework,
-            "api_path": api_path,
-            "hallucinated_argument": hallucinated_argument,
-            "is_known_anti_pattern": True,
-            "canonical_argument": rule["canonical"],
-            "explanation": rule["explanation"],
-            "canonical_example": rule["example"],
-        }
+        return AntiPatternExplanationResult(
+            framework=framework,
+            api_path=api_path,
+            hallucinated_argument=hallucinated_argument,
+            is_known_anti_pattern=True,
+            canonical_argument=rule["canonical"],
+            explanation=rule["explanation"],
+            canonical_example=rule["example"],
+        )
 
     sig = get_api_signature(framework, api_path, repository=repository)
-    canonical_params: List[str] = []
+    canonical_params: list[str] = []
     if sig:
         canonical_params = [
-            p["name"]
-            for p in sig.get("params", [])
-            if isinstance(p, dict) and "name" in p
+            str(p["name"]) for p in _extract_cand_params(sig) if "name" in p
         ]
 
-    return {
-        "framework": framework,
-        "api_path": api_path,
-        "hallucinated_argument": hallucinated_argument,
-        "is_known_anti_pattern": False,
-        "canonical_argument": None,
-        "explanation": f"Argument '{hallucinated_argument}' is not recognized in {framework} for '{api_path}'.",
-        "canonical_params": canonical_params,
-        "canonical_example": f"{api_path}(...)",
-    }
+    return AntiPatternExplanationResult(
+        framework=framework,
+        api_path=api_path,
+        hallucinated_argument=hallucinated_argument,
+        is_known_anti_pattern=False,
+        canonical_argument=None,
+        explanation=f"Argument '{hallucinated_argument}' is not recognized in {framework} for '{api_path}'.",
+        canonical_params=canonical_params,
+        canonical_example=f"{api_path}(...)",
+    )
 
 
 def check_code_block(
     code: str,
-    framework: Optional[str] = None,
-    version: Optional[str] = None,
-    sm_arch: Optional[str] = None,
-    gfx_arch: Optional[str] = None,
-    repository: Optional[SnapshotRepository] = None,
+    framework: str | None = None,
+    version: str | None = None,
+    sm_arch: str | None = None,
+    gfx_arch: str | None = None,
+    repository: SnapshotRepository | None = None,
 ) -> CodeBlockCheckResult:
     """Batch verify a code block for nonexistent APIs, invalid kwargs, and hardware constraints.
 
@@ -855,16 +890,16 @@ def check_code_block(
         repository: Optional `SnapshotRepository` instance for snapshot lookup.
 
     Returns:
-        Dictionary report containing 'total_analyzed', 'hallucinations_detected', 'is_valid', and 'findings'.
+        `CodeBlockCheckResult` containing 'total_analyzed', 'hallucinations_detected', 'is_valid', and 'findings'.
     """
-    findings: List[CodeBlockFinding] = []
+    findings: list[CodeBlockFinding] = []
     total_analyzed = 0
 
     is_python = False
     try:
         tree = ast.parse(code)
-        imports: Dict[str, str] = {}
-        calls: List[Tuple[int, str, List[str], int, Dict[str, Any]]] = []
+        imports: dict[str, str] = {}
+        calls: list[tuple[int, str, list[str], int, dict[str, JsonValue]]] = []
 
         class CallVisitor(ast.NodeVisitor):
             """Visitor for tracking imports and collecting function calls."""
@@ -901,8 +936,8 @@ def check_code_block(
                 Args:
                     node: The AST Call node.
                 """
-                curr: Any = node.func
-                attr_parts: List[str] = []
+                curr: ast.expr = node.func
+                attr_parts: list[str] = []
                 while isinstance(curr, ast.Attribute):
                     attr_parts.append(curr.attr)
                     curr = curr.value
@@ -916,10 +951,14 @@ def check_code_block(
                         full_path = resolved_base
 
                     kw_names = [kw.arg for kw in node.keywords if kw.arg]
-                    kw_vals = {}
+                    kw_vals: dict[str, JsonValue] = {}
                     for kw in node.keywords:
                         if kw.arg and isinstance(kw.value, ast.Constant):
-                            kw_vals[kw.arg] = kw.value.value
+                            val = kw.value.value
+                            assert (
+                                isinstance(val, (str, int, float, bool)) or val is None
+                            )
+                            kw_vals[kw.arg] = val
                     calls.append(
                         (node.lineno, full_path, kw_names, len(node.args), kw_vals)
                     )
@@ -970,14 +1009,14 @@ def check_code_block(
                 )
                 if res.get("is_hallucinated"):
                     findings.append(
-                        {
-                            "line": lineno,
-                            "type": "api_hallucination",
-                            "framework": fw,
-                            "target": api_name,
-                            "reason": res.get("reason", "Invalid API call"),
-                            "invalid_kwargs": res.get("invalid_kwargs", []),
-                        }
+                        CodeBlockFinding(
+                            line=lineno,
+                            type="api_hallucination",
+                            framework=fw,
+                            target=api_name,
+                            reason=str(res.get("reason", "Invalid API call")),
+                            invalid_kwargs=list(res.get("invalid_kwargs", [])),
+                        )
                     )
     except SyntaxError:
         is_python = False
@@ -1022,12 +1061,12 @@ def check_code_block(
                 mlir_res = check_mlir_op(op_name, repository=repository)
                 if not mlir_res.get("is_valid"):
                     findings.append(
-                        {
-                            "line": lineno,
-                            "type": "mlir_error",
-                            "target": op_name,
-                            "reason": "; ".join(mlir_res.get("errors", [])),
-                        }
+                        CodeBlockFinding(
+                            line=lineno,
+                            type="mlir_error",
+                            target=op_name,
+                            reason="; ".join(mlir_res.get("errors", [])),
+                        )
                     )
 
             elif sass_match and (
@@ -1050,12 +1089,12 @@ def check_code_block(
                 )
                 if not sass_res.get("is_valid"):
                     findings.append(
-                        {
-                            "line": lineno,
-                            "type": "sass_error",
-                            "target": mnem,
-                            "reason": "; ".join(sass_res.get("errors", [])),
-                        }
+                        CodeBlockFinding(
+                            line=lineno,
+                            type="sass_error",
+                            target=mnem,
+                            reason="; ".join(sass_res.get("errors", [])),
+                        )
                     )
 
             elif rdna_match:
@@ -1074,20 +1113,20 @@ def check_code_block(
                 )
                 if not rdna_res.get("is_valid"):
                     findings.append(
-                        {
-                            "line": lineno,
-                            "type": "rdna_error",
-                            "target": base_mnem,
-                            "reason": "; ".join(rdna_res.get("errors", [])),
-                        }
+                        CodeBlockFinding(
+                            line=lineno,
+                            type="rdna_error",
+                            target=base_mnem,
+                            reason="; ".join(rdna_res.get("errors", [])),
+                        )
                     )
 
-    return {
-        "total_analyzed": total_analyzed,
-        "hallucinations_detected": len(findings),
-        "is_valid": len(findings) == 0,
-        "findings": findings,
-    }
+    return CodeBlockCheckResult(
+        total_analyzed=total_analyzed,
+        hallucinations_detected=len(findings),
+        is_valid=len(findings) == 0,
+        findings=findings,
+    )
 
 
 __all__ = [

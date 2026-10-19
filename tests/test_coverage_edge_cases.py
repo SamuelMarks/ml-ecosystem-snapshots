@@ -1,15 +1,16 @@
 """Edge case tests for coverage gaps."""
 
+from __future__ import annotations
+
 import pytest
 import os
 import sys
 from unittest.mock import patch
-from typing import Any
 
 
 def test_ghostref_from_obj_griffe_import_error() -> None:
     """Test GhostInspector handles missing griffe import gracefully."""
-    from ml_ecosystem_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
     with patch.dict(sys.modules, {"griffe": None}):
 
@@ -23,7 +24,7 @@ def test_ghostref_from_obj_griffe_import_error() -> None:
 
 def test_extended_ghost_ref_dict_with_non_string_default() -> None:
     """Test hydrate method coerces non-string default values to strings."""
-    from ml_ecosystem_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
     data = {
         "name": "foo",
@@ -39,7 +40,7 @@ def test_build_stablehlo_snapshot_fetch_fail() -> None:
     """Test extract_ops throws RuntimeError when both fetch endpoints fail."""
     from ml_ecosystem_snapshots.tools.build_stablehlo_snapshot import extract_ops
 
-    with patch("ml_ecosystem_snapshots.utils.fetch_url", return_value=None):
+    with patch("ml_ecosystem_snapshots.network_env.fetch_url", return_value=None):
         with pytest.raises(RuntimeError):
             extract_ops(source_content=None)
 
@@ -54,9 +55,11 @@ def test_fetch_amdgpu_td_file_cache_write_error(
     """
     from ml_ecosystem_snapshots.tools.scrape_amd_rdna import fetch_td_file
 
-    monkeypatch.setattr("ml_ecosystem_snapshots.utils.fetch_url", lambda url: "content")
+    monkeypatch.setattr(
+        "ml_ecosystem_snapshots.network_env.fetch_url", lambda url: "content"
+    )
 
-    def mock_makedirs(*args: Any, **kwargs: Any) -> None:
+    def mock_makedirs(*args: object, **kwargs: object) -> None:
         """Mock makedirs throwing OSError.
 
         Args:
@@ -78,7 +81,9 @@ def test_fetch_amdgpu_td_file_fetch_none(monkeypatch: pytest.MonkeyPatch) -> Non
     """
     from ml_ecosystem_snapshots.tools.scrape_amd_rdna import fetch_td_file
 
-    monkeypatch.setattr("ml_ecosystem_snapshots.utils.fetch_url", lambda url: None)
+    monkeypatch.setattr(
+        "ml_ecosystem_snapshots.network_env.fetch_url", lambda url: None
+    )
     res = fetch_td_file("foo.td", use_cache=True)
     assert res == ""
 
@@ -91,7 +96,9 @@ def test_fetch_amdgpu_td_file_no_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     from ml_ecosystem_snapshots.tools.scrape_amd_rdna import fetch_td_file
 
-    monkeypatch.setattr("ml_ecosystem_snapshots.utils.fetch_url", lambda url: "content")
+    monkeypatch.setattr(
+        "ml_ecosystem_snapshots.network_env.fetch_url", lambda url: "content"
+    )
     res = fetch_td_file("foo.td", use_cache=False)
     assert res == "content"
 

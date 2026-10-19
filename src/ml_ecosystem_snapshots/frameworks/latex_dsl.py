@@ -3,7 +3,7 @@
 Provides a static snapshot of standard LaTeX math environments and formatting macros.
 """
 
-from typing import List
+from __future__ import annotations
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -131,7 +131,7 @@ _LATEX_ENVIRONMENTS = [
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Entrypoint to collect the LaTeX DSL API signature.
 
     Args:

@@ -3,7 +3,7 @@
 Provides a static snapshot of standard TikZ drawing commands and node shapes.
 """
 
-from typing import List
+from __future__ import annotations
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -45,7 +45,7 @@ _TIKZ_SHAPES = [
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Entrypoint to collect the TikZ DSL API signature.
 
     Args:

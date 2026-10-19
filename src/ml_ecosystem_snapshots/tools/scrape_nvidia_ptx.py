@@ -6,11 +6,15 @@ asynchronous data movement, tensor core matrix operations, barriers,
 and memory qualifiers across PTX ISA 7.x and 8.x.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
 import re
-from typing import Any, Dict, List, Optional
+import typing
+
+from ml_ecosystem_snapshots.models import IsaInstructionRecordModel, JsonValue
 
 LLVM_NVPTX_BASE_URL = (
     "https://raw.githubusercontent.com/llvm/llvm-project/main/llvm/lib/Target/NVPTX"
@@ -21,7 +25,7 @@ NVPTX_TD_FILES = [
 ]
 
 
-def fetch_nvptx_td_file(filename: str, local_dir: Optional[str] = None) -> str:
+def fetch_nvptx_td_file(filename: str, local_dir: str | None = None) -> str:
     """Fetch a TableGen file from local checkout or LLVM repository.
 
     Args:
@@ -39,7 +43,7 @@ def fetch_nvptx_td_file(filename: str, local_dir: Optional[str] = None) -> str:
                 return f.read()
 
     url = f"{LLVM_NVPTX_BASE_URL}/{filename}"
-    from ml_ecosystem_snapshots.utils import fetch_url
+    from ml_ecosystem_snapshots.network_env import fetch_url
 
     content = fetch_url(url)
     if content is not None:
@@ -48,7 +52,7 @@ def fetch_nvptx_td_file(filename: str, local_dir: Optional[str] = None) -> str:
     return ""
 
 
-def parse_nvptx_td_content(content: str) -> List[Dict[str, Any]]:
+def parse_nvptx_td_content(content: str) -> list[IsaInstructionRecordModel]:
     """Parse NVPTX TableGen text content to extract instruction mnemonics.
 
     Args:
@@ -57,7 +61,7 @@ def parse_nvptx_td_content(content: str) -> List[Dict[str, Any]]:
     Returns:
         List of parsed instruction dictionaries.
     """
-    instructions: List[Dict[str, Any]] = []
+    instructions: list[IsaInstructionRecordModel] = []
     pattern = re.compile(
         r'def\s+([A-Za-z0-9_]+)\s*:\s*[A-Za-z0-9_]*\s*<.*?"([a-z0-9_\.]+)"'
     )
@@ -65,23 +69,25 @@ def parse_nvptx_td_content(content: str) -> List[Dict[str, Any]]:
         _def_name = match.group(1)
         mnemonic = match.group(2)
         instructions.append(
-            {
-                "mnemonic": mnemonic,
-                "category": "instruction",
-                "description": f"PTX {mnemonic} instruction parsed from TableGen.",
-                "supported_types": [".b32", ".b64"],
-                "vector_widths": [],
-                "state_spaces": [],
-                "operands": [],
-                "min_sm": "sm_50",
-            }
+            IsaInstructionRecordModel(
+                {
+                    "mnemonic": mnemonic,
+                    "category": "instruction",
+                    "description": f"PTX {mnemonic} instruction parsed from TableGen.",
+                    "supported_types": [".b32", ".b64"],
+                    "vector_widths": [],
+                    "state_spaces": [],
+                    "operands": [],
+                    "min_sm": "sm_50",
+                }
+            )
         )
     return instructions
 
 
 def build_exhaustive_ptx_catalog(
-    base_instructions: Optional[List[Dict[str, Any]]] = None,
-) -> List[Dict[str, Any]]:
+    base_instructions: typing.Sequence[typing.Mapping[str, JsonValue]] | None = None,
+) -> list[IsaInstructionRecordModel]:
     """Build the comprehensive NVIDIA PTX ISA 7.x / 8.x instruction catalog.
 
     Includes:
@@ -99,17 +105,17 @@ def build_exhaustive_ptx_catalog(
     Returns:
         Exhaustive list of PTX instruction metadata dictionaries.
     """
-    catalog: Dict[str, Dict[str, Any]] = {}
+    catalog: dict[str, IsaInstructionRecordModel] = {}
 
     # Seed with base parsed instructions if provided
     if base_instructions:
         for inst in base_instructions:
             m = inst.get("mnemonic")
-            if m and m not in catalog:
-                catalog[m] = inst
+            if isinstance(m, str) and m and m not in catalog:
+                catalog[m] = IsaInstructionRecordModel(dict(inst))
 
     # Comprehensive PTX 7.x / 8.x instruction definitions
-    standard_ops: List[Dict[str, Any]] = [
+    standard_ops: list[dict[str, JsonValue]] = [
         # Arithmetic & Transcendental
         {
             "mnemonic": "add",
@@ -1157,17 +1163,17 @@ def build_exhaustive_ptx_catalog(
     ]
 
     for op in standard_ops:
-        catalog[op["mnemonic"]] = op
+        catalog[str(op["mnemonic"])] = IsaInstructionRecordModel(op)
 
     return list(catalog.values())
 
 
 def scrape_ptx(
-    td_dir: Optional[str] = None,
-    output_path: Optional[str] = None,
+    td_dir: str | None = None,
+    output_path: str | None = None,
     isa_version: str = "8.5",
     cuda_version: str = "12.6.0",
-) -> List[Dict[str, Any]]:
+) -> list[IsaInstructionRecordModel]:
     """Scrape NVPTX TableGen definitions and write the exhaustive PTX ISA dump.
 
     Args:
@@ -1179,7 +1185,7 @@ def scrape_ptx(
     Returns:
         List of generated instruction metadata records.
     """
-    base_instructions: List[Dict[str, Any]] = []
+    base_instructions: list[IsaInstructionRecordModel] = []
     for td_file in NVPTX_TD_FILES:
         content = fetch_nvptx_td_file(td_file, local_dir=td_dir)
         if content:
@@ -1194,7 +1200,7 @@ def scrape_ptx(
         "nvidia_ptx_exhaustive.json",
     )
 
-    exhaustive_data = {
+    exhaustive_data: dict[str, object] = {
         "schema_version": "2.0.0",
         "target": "nvidia_ptx",
         "version": isa_version,
@@ -1212,7 +1218,7 @@ def scrape_ptx(
             "sm_90",
             "sm_100",
         ],
-        "instructions": catalog,
+        "instructions": list(catalog),
     }
 
     with open(resolved_output, "w", encoding="utf-8") as f:
@@ -1222,7 +1228,7 @@ def scrape_ptx(
     return catalog
 
 
-def main(argv: Optional[List[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     """Entrypoint script for running the PTX ISA scraper.
 
     Args:

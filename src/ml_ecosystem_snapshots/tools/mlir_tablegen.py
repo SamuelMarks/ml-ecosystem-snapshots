@@ -6,8 +6,9 @@ import json
 import re
 import shutil
 import subprocess
-from typing import Any, Dict, List, Optional, Tuple, Union
+import typing
 
+from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel
 from ml_ecosystem_snapshots.utils import extract_tablegen_traits
 
 
@@ -36,7 +37,7 @@ class TableGenASTParser:
         """
         self.raw_content = content
         self.content = strip_tablegen_comments(content)
-        self.multiclasses: Dict[str, Dict[str, Any]] = {}
+        self.multiclasses: dict[str, dict[str, list[str] | str]] = {}
 
     def _extract_multiclasses(self, text: str) -> str:
         """Extract multiclass definitions and replace them with whitespace.
@@ -51,7 +52,7 @@ class TableGenASTParser:
             r"\bmulticlass\s+([A-Za-z0-9_]+)(?:<([^>]*)>)?\s*\{", re.DOTALL
         )
         pos = 0
-        chunks: List[str] = []
+        chunks: list[str] = []
         while True:
             m = pattern.search(text, pos)
             if not m:
@@ -90,7 +91,7 @@ class TableGenASTParser:
             r"\bforeach\s+([A-Za-z0-9_]+)\s*=\s*\[(.*?)\]\s*in\s*\{", re.DOTALL
         )
         pos = 0
-        chunks: List[str] = []
+        chunks: list[str] = []
         while True:
             m = pattern.search(text, pos)
             if not m:
@@ -116,7 +117,7 @@ class TableGenASTParser:
                 i += 1
             body = text[start_idx : i - 1]
 
-            unrolled_parts: List[str] = []
+            unrolled_parts: list[str] = []
             for item in items:
                 sub_body = re.sub(rf"\b{var_name}\b", item, body)
                 unrolled_parts.append(sub_body)
@@ -138,7 +139,7 @@ class TableGenASTParser:
             re.DOTALL,
         )
         pos = 0
-        chunks: List[str] = []
+        chunks: list[str] = []
         while True:
             m = pattern.search(text, pos)
             if not m:
@@ -156,8 +157,9 @@ class TableGenASTParser:
 
             if mc_name in self.multiclasses:
                 mc_info = self.multiclasses[mc_name]
-                mc_body = mc_info["body"]
-                mc_params = mc_info["params"]
+                mc_body = str(mc_info["body"])
+                raw_mc_params = mc_info["params"]
+                mc_params = raw_mc_params if isinstance(raw_mc_params, list) else []
 
                 inst_body = mc_body
                 for p_idx, p_name in enumerate(mc_params):
@@ -219,8 +221,8 @@ class TableGenASTParser:
 
 
 def parse_tablegen_args(
-    args_str: Optional[str],
-) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+    args_str: str | None,
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     """Parse TableGen (ins ...) argument declarations into operands and attributes.
 
     Args:
@@ -229,14 +231,14 @@ def parse_tablegen_args(
     Returns:
         Tuple of (operands list, attributes list).
     """
-    operands: List[Dict[str, str]] = []
-    attributes: List[Dict[str, str]] = []
+    operands: list[dict[str, str]] = []
+    attributes: list[dict[str, str]] = []
     if not args_str:
         return operands, attributes
 
     depth = 0
-    parts: List[str] = []
-    curr: List[str] = []
+    parts: list[str] = []
+    curr: list[str] = []
     for c in args_str:
         if c in "<(":
             depth += 1
@@ -290,7 +292,7 @@ def parse_tablegen_args(
     return operands, attributes
 
 
-def parse_tablegen_results(res_str: Optional[str]) -> List[Dict[str, str]]:
+def parse_tablegen_results(res_str: str | None) -> list[dict[str, str]]:
     """Parse TableGen (outs ...) result declarations into structured results.
 
     Args:
@@ -299,13 +301,13 @@ def parse_tablegen_results(res_str: Optional[str]) -> List[Dict[str, str]]:
     Returns:
         List of result dictionaries containing name and type.
     """
-    results: List[Dict[str, str]] = []
+    results: list[dict[str, str]] = []
     if not res_str:
         return results
 
     depth = 0
-    parts: List[str] = []
-    curr: List[str] = []
+    parts: list[str] = []
+    curr: list[str] = []
     for c in res_str:
         if c in "<(":
             depth += 1
@@ -335,7 +337,7 @@ def parse_tablegen_results(res_str: Optional[str]) -> List[Dict[str, str]]:
     return results
 
 
-def parse_tablegen_regions(reg_str: Optional[str]) -> List[str]:
+def parse_tablegen_regions(reg_str: str | None) -> list[str]:
     """Parse TableGen (region ...) declarations into region names.
 
     Args:
@@ -344,7 +346,7 @@ def parse_tablegen_regions(reg_str: Optional[str]) -> List[str]:
     Returns:
         List of region name strings.
     """
-    regions: List[str] = []
+    regions: list[str] = []
     if not reg_str:
         return regions
 
@@ -363,7 +365,7 @@ def parse_tablegen_regions(reg_str: Optional[str]) -> List[str]:
     return regions
 
 
-def parse_mlir_tablegen(content: str, dialect_name: str) -> List[Dict[str, Any]]:
+def parse_mlir_tablegen(content: str, dialect_name: str) -> list[TableGenRecordModel]:
     """Parse MLIR TableGen / ODS definitions into structured operations.
 
     Args:
@@ -374,9 +376,9 @@ def parse_mlir_tablegen(content: str, dialect_name: str) -> List[Dict[str, Any]]
         List of structured operation dictionaries.
     """
     clean_content = TableGenASTParser(content).expand()
-    ops: List[Dict[str, Any]] = []
+    ops: list[TableGenRecordModel] = []
 
-    classes: Dict[str, Dict[str, Any]] = {}
+    classes: dict[str, dict[str, str | list[str] | None]] = {}
     for m in re.finditer(
         r"\bclass\s+([A-Za-z0-9_]+)(?:<.*?>)?\s*(?::\s*([^{;]+))?\s*(\{|;)",
         clean_content,
@@ -415,7 +417,7 @@ def parse_mlir_tablegen(content: str, dialect_name: str) -> List[Dict[str, Any]]
             "supers": supers,
         }
 
-    def resolve_field(cls_name: str, field_name: str) -> Optional[str]:
+    def resolve_field(cls_name: str, field_name: str) -> str | None:
         """Recursively resolve inherited TableGen fields from base classes.
 
         Args:
@@ -430,7 +432,8 @@ def parse_mlir_tablegen(content: str, dialect_name: str) -> List[Dict[str, Any]]
         val = classes[cls_name].get(field_name)
         if val is not None:
             return str(val)
-        for s in classes[cls_name]["supers"]:
+        raw_supers = classes[cls_name]["supers"]
+        for s in raw_supers if isinstance(raw_supers, list) else []:
             res = resolve_field(s, field_name)
             if res is not None:
                 return str(res)
@@ -485,7 +488,7 @@ def parse_mlir_tablegen(content: str, dialect_name: str) -> List[Dict[str, Any]]
             else:
                 op_name = clean_class.lower()
 
-        traits: List[str] = []
+        traits: list[str] = []
         if "[" in targs:
             traits.extend(extract_tablegen_traits(targs))
         body_traits = re.search(r"let\s+traits\s*=\s*\[(.*?)\];", body, re.DOTALL)
@@ -559,25 +562,27 @@ def parse_mlir_tablegen(content: str, dialect_name: str) -> List[Dict[str, Any]]
                 traits.append("AttrSizedResultSegments")
 
         ops.append(
-            {
-                "api_path": f"{dialect_name}.{op_name}",
-                "dialect": dialect_name,
-                "class_name": class_name,
-                "operands": operands,
-                "attributes": attributes,
-                "results": results,
-                "regions": regions,
-                "traits": traits,
-                "description": description,
-            }
+            TableGenRecordModel(
+                {
+                    "api_path": f"{dialect_name}.{op_name}",
+                    "dialect": dialect_name,
+                    "class_name": class_name,
+                    "operands": [dict(o) for o in operands],
+                    "attributes": [dict(a) for a in attributes],
+                    "results": [dict(r) for r in results],
+                    "regions": list(regions),
+                    "traits": list(traits),
+                    "description": description,
+                }
+            )
         )
 
     return ops
 
 
 def parse_llvm_tblgen_json(
-    json_data: Union[str, Dict[str, Any]], dialect_name: str
-) -> List[Dict[str, Any]]:
+    json_data: str | typing.Mapping[str, object], dialect_name: str
+) -> list[TableGenRecordModel]:
     """Parse JSON dump from llvm-tblgen -dump-json into structured MLIR operations.
 
     Args:
@@ -588,23 +593,31 @@ def parse_llvm_tblgen_json(
         List of structured operation dictionaries conforming to snapshot schema.
     """
     if isinstance(json_data, str):
-        data: Dict[str, Any] = json.loads(json_data)
+        data: typing.Mapping[str, object] = json.loads(json_data)
     else:
         data = json_data
 
-    ops: List[Dict[str, Any]] = []
-    instance_of = data.get("!instanceof", {})
-    op_def_names = set(instance_of.get("Op", []))
+    ops: list[TableGenRecordModel] = []
+    raw_instance_of = data.get("!instanceof", {})
+    raw_op_defs = (
+        raw_instance_of.get("Op", []) if isinstance(raw_instance_of, dict) else []
+    )
+    op_def_names = {
+        str(x) for x in (raw_op_defs if isinstance(raw_op_defs, list) else [])
+    }
 
     for rec_name, rec in data.items():
         if rec_name.startswith("!") or not isinstance(rec, dict):
             continue
 
-        superclasses = rec.get("!superclasses", [])
+        raw_supers = rec.get("!superclasses", [])
+        superclasses = [
+            str(s) for s in (raw_supers if isinstance(raw_supers, list) else [])
+        ]
         is_op = (
             rec_name in op_def_names
             or "Op" in superclasses
-            or any(str(s).endswith("_Op") or str(s) == "Op" for s in superclasses)
+            or any(s.endswith("_Op") or s == "Op" for s in superclasses)
             or rec_name.endswith("Op")
             or "mnemonic" in rec
         )
@@ -622,16 +635,17 @@ def parse_llvm_tblgen_json(
                 else clean_class.lower()
             )
 
-        operands: List[Dict[str, str]] = []
-        attributes: List[Dict[str, str]] = []
+        operands: list[JsonValue] = []
+        attributes: list[JsonValue] = []
 
         raw_args = rec.get("arguments")
         if isinstance(raw_args, dict) and raw_args.get("kind") == "dag":
-            for arg in raw_args.get("args", []):
+            dag_args = raw_args.get("args", [])
+            for arg in dag_args if isinstance(dag_args, list) else []:
                 if isinstance(arg, (list, tuple)) and len(arg) >= 2:
                     arg_type_obj, arg_name = arg[0], str(arg[1])
                     arg_type = (
-                        arg_type_obj.get("def", "Type")
+                        str(arg_type_obj.get("def", "Type"))
                         if isinstance(arg_type_obj, dict)
                         else str(arg_type_obj)
                     )
@@ -655,8 +669,12 @@ def parse_llvm_tblgen_json(
                         operands.append({"name": arg_name, "type": arg_type})
         elif isinstance(raw_args, list):
             for arg in raw_args:
-                aname = arg.get("name", "arg") if isinstance(arg, dict) else str(arg)
-                atype = arg.get("type", "Type") if isinstance(arg, dict) else "Type"
+                aname = (
+                    str(arg.get("name", "arg")) if isinstance(arg, dict) else str(arg)
+                )
+                atype = (
+                    str(arg.get("type", "Type")) if isinstance(arg, dict) else "Type"
+                )
                 is_attr = any(
                     k in atype.lower()
                     for k in (
@@ -676,38 +694,46 @@ def parse_llvm_tblgen_json(
                 else:
                     operands.append({"name": aname, "type": atype})
 
-        results: List[Dict[str, str]] = []
+        results: list[JsonValue] = []
         raw_results = rec.get("results")
         if isinstance(raw_results, dict) and raw_results.get("kind") == "dag":
-            for res in raw_results.get("args", []):
+            dag_res = raw_results.get("args", [])
+            for res in dag_res if isinstance(dag_res, list) else []:
                 if isinstance(res, (list, tuple)) and len(res) >= 2:
                     res_type_obj, res_name = res[0], str(res[1])
                     res_type = (
-                        res_type_obj.get("def", "Type")
+                        str(res_type_obj.get("def", "Type"))
                         if isinstance(res_type_obj, dict)
                         else str(res_type_obj)
                     )
                     results.append({"name": res_name or "result", "type": res_type})
         elif isinstance(raw_results, list):
             for res in raw_results:
-                rname = res.get("name", "result") if isinstance(res, dict) else "result"
-                rtype = res.get("type", "Type") if isinstance(res, dict) else "Type"
+                rname = (
+                    str(res.get("name", "result"))
+                    if isinstance(res, dict)
+                    else "result"
+                )
+                rtype = (
+                    str(res.get("type", "Type")) if isinstance(res, dict) else "Type"
+                )
                 results.append({"name": rname, "type": rtype})
 
-        regions: List[str] = []
+        regions: list[JsonValue] = []
         raw_regions = rec.get("regions")
         if isinstance(raw_regions, dict) and raw_regions.get("kind") == "dag":
-            for reg in raw_regions.get("args", []):
+            dag_regs = raw_regions.get("args", [])
+            for reg in dag_regs if isinstance(dag_regs, list) else []:
                 if isinstance(reg, (list, tuple)) and len(reg) >= 2:
                     regions.append(str(reg[1]))
         elif isinstance(raw_regions, list):
             regions.extend(str(r) for r in raw_regions)
 
-        traits: List[str] = []
+        traits: list[JsonValue] = []
         raw_traits = rec.get("traits", [])
         if isinstance(raw_traits, list):
             for t in raw_traits:
-                t_name = t.get("def") if isinstance(t, dict) else str(t)
+                t_name = str(t.get("def", "")) if isinstance(t, dict) else str(t)
                 if t_name:
                     traits.append(t_name)
 
@@ -715,28 +741,29 @@ def parse_llvm_tblgen_json(
         description = rec.get("description") or summary
 
         ops.append(
-            {
-                "api_path": f"{dialect_name}.{mnemonic}",
-                "dialect": dialect_name,
-                "class_name": class_name,
-                "operands": operands,
-                "attributes": attributes,
-                "results": results,
-                "regions": regions,
-                "traits": traits,
-                "description": description,
-            }
+            TableGenRecordModel(
+                {
+                    "api_path": f"{dialect_name}.{mnemonic}",
+                    "dialect": dialect_name,
+                    "class_name": class_name,
+                    "operands": operands,
+                    "attributes": attributes,
+                    "results": results,
+                    "regions": regions,
+                    "traits": traits,
+                    "description": str(description)
+                    if description is not None
+                    else None,
+                }
+            )
         )
 
     return ops
 
 
-parse_tblgen_json_dump = parse_llvm_tblgen_json
-
-
 def dump_ast_via_llvm_tooling(
-    td_path: str, dialect_name: str, tool_binary: Optional[str] = None
-) -> Optional[List[Dict[str, Any]]]:
+    td_path: str, dialect_name: str, tool_binary: str | None = None
+) -> list[TableGenRecordModel] | None:
     """Dump AST using host llvm-tblgen or mlir-tblgen binary when available.
 
     Args:
@@ -766,7 +793,9 @@ def dump_ast_via_llvm_tooling(
     return None
 
 
-def validate_dialect_ops_ods(ops: List[Dict[str, Any]], dialect_name: str) -> List[str]:
+def validate_dialect_ops_ods(
+    ops: typing.Sequence[typing.Mapping[str, object]], dialect_name: str
+) -> list[str]:
     """Validate extracted dialect operations against official ODS structural rules.
 
     Args:
@@ -776,10 +805,10 @@ def validate_dialect_ops_ods(ops: List[Dict[str, Any]], dialect_name: str) -> Li
     Returns:
         List of validation error descriptions.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     prefix = f"{dialect_name}."
     for op in ops:
-        path = op.get("api_path", "")
+        path = str(op.get("api_path", ""))
         if not path.startswith(prefix):
             errors.append(
                 f"Operation '{path}' does not match dialect prefix '{prefix}'."
@@ -803,7 +832,6 @@ __all__ = [
     "parse_tablegen_args",
     "parse_tablegen_regions",
     "parse_tablegen_results",
-    "parse_tblgen_json_dump",
     "strip_tablegen_comments",
     "validate_dialect_ops_ods",
 ]

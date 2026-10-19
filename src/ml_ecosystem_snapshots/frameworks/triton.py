@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import importlib
 import inspect
-from typing import Any, List
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
-from ml_ecosystem_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
 
 def _extract_triton_kernel(
-    obj: Any, name: str, module_name: str, inspector: GhostInspector
+    obj: object, name: str, module_name: str, inspector: GhostInspector
 ) -> GhostRef:
     """Extract a `GhostRef` for a Triton JIT kernel or language primitive.
 
@@ -25,21 +24,23 @@ def _extract_triton_kernel(
     Returns:
         The extracted `GhostRef` with `tl.constexpr` annotations normalized.
     """
-    fn = obj.fn if hasattr(obj, "fn") else obj
+    fn: object = getattr(obj, "fn") if hasattr(obj, "fn") else obj
 
     ref = inspector.inspect(fn, f"{module_name}.{name}")
-    if ref:
-        for param in ref.params:
-            if hasattr(fn, "__annotations__") and param.name in fn.__annotations__:
-                anno = fn.__annotations__[param.name]
-                if "constexpr" in str(anno):
-                    param.annotation = "tl.constexpr"
+    if ref is not None:
+        raw_annos = getattr(fn, "__annotations__", None)
+        if isinstance(raw_annos, dict):
+            for param in ref.params:
+                if param.name in raw_annos:
+                    anno = raw_annos[param.name]
+                    if "constexpr" in str(anno):
+                        param.annotation = "tl.constexpr"
     return ref
 
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect Triton language (`triton.language` and `triton.language.math`) API symbols.
 
     Args:
@@ -49,7 +50,7 @@ def collect_api(
     Returns:
         List of extracted `GhostRef` definitions.
     """
-    results: List[GhostRef] = []
+    results: list[GhostRef] = []
     if category != SemanticTier.UTIL:
         return results
 
@@ -68,7 +69,7 @@ def collect_api(
             obj = getattr(tl, name, None)
             if obj and callable(obj):
                 ref = _extract_triton_kernel(obj, name, "triton.language", inspector)
-                if ref:
+                if ref is not None:
                     results.append(ref)
 
         tl_math = getattr(tl, "math", None)
@@ -81,7 +82,7 @@ def collect_api(
                     ref = _extract_triton_kernel(
                         obj, name, "triton.language.math", inspector
                     )
-                    if ref:
+                    if ref is not None:
                         results.append(ref)
     except ImportError:
         pass

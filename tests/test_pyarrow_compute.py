@@ -1,8 +1,9 @@
 """Tests for Apache Arrow Compute kernel snapshot extractor."""
 
+from __future__ import annotations
+
 import sys
 import types
-from typing import Any
 import pytest
 
 from ml_ecosystem_snapshots.frameworks.pyarrow_compute import (
@@ -10,7 +11,7 @@ from ml_ecosystem_snapshots.frameworks.pyarrow_compute import (
     _get_pyarrow_compute,
     collect_api,
 )
-from ml_ecosystem_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_switcheroo_ir.schema.ghost import (
     GhostPythonRef,
     SemanticTier,
@@ -28,7 +29,7 @@ def test_collect_api_pyarrow_compute_live(monkeypatch: pytest.MonkeyPatch) -> No
         """Mock pyarrow.compute module."""
 
         @staticmethod
-        def add(a: Any, b: Any) -> Any:
+        def add(a: int, b: int) -> int:
             """Mock add kernel.
 
             Args:
@@ -41,7 +42,7 @@ def test_collect_api_pyarrow_compute_live(monkeypatch: pytest.MonkeyPatch) -> No
             return a + b
 
         @staticmethod
-        def sum(arr: Any) -> Any:
+        def sum(arr: object) -> object:
             """Mock sum kernel.
 
             Args:
@@ -53,7 +54,7 @@ def test_collect_api_pyarrow_compute_live(monkeypatch: pytest.MonkeyPatch) -> No
             return arr
 
         @staticmethod
-        def subtract(a: Any, b: Any) -> Any:
+        def subtract(a: int, b: int) -> int:
             """Mock subtract kernel.
 
             Args:
@@ -72,7 +73,7 @@ def test_collect_api_pyarrow_compute_live(monkeypatch: pytest.MonkeyPatch) -> No
 
     real_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: Any, name: str, is_public: bool = True) -> Any:
+    def mock_inspect(obj: object, name: str, is_public: bool = True) -> object:
         """Mock inspect function.
 
         Args:
@@ -147,19 +148,9 @@ def test_get_pyarrow_compute_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     import builtins
 
-    real_import = builtins.__import__
+    real_import = getattr(builtins, "__import__")
 
-    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        """Mock import function.
-
-        Args:
-            name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            The imported module or raises.
-        """
+    def mock_import(name: str, *args: object, **kwargs: object) -> object:
         """Mock import raising ImportError on pyarrow.
 
         Args:
@@ -200,25 +191,7 @@ def test_collect_api_pyarrow_compute_inspection_exception(
         lambda: FlakyPyArrow(),
     )
 
-    def mock_inspect(*args: Any, **kwargs: Any) -> Any:
-        """Mock inspect function.
-
-        Args:
-            *args: Variable arguments.
-            **kwargs: Variable arguments.
-
-        Returns:
-            A mocked GhostRef.
-        """
-        """Mock inspect function.
-
-        Args:
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            A mocked GhostRef.
-        """
+    def mock_inspect(*args: object, **kwargs: object) -> None:
         """Mock inspect raising RuntimeError.
 
         Args:

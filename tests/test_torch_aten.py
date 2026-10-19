@@ -4,8 +4,12 @@ Tests native_functions.yaml parsing, tensor dtypes, rank constraints,
 and semantic default value preservation.
 """
 
+from __future__ import annotations
+
 import inspect
-from typing import Any, List
+from pathlib import Path
+import pytest
+import pytest_mock
 
 from ml_ecosystem_snapshots.frameworks.torch import (
     extract_aten_c_extension_signature,
@@ -15,11 +19,11 @@ from ml_ecosystem_snapshots.frameworks.torch import (
 )
 from ml_ecosystem_snapshots.mcp_server import check_hallucination, handle_mcp_message
 from ml_switcheroo_ir.schema.ghost import ParameterKind
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.sanitize import sanitize_param_default
 from ml_ecosystem_snapshots.models import (
     ExtendedGhostParam,
-    GhostInspector,
     GhostPythonRef,
-    sanitize_param_default,
 )
 
 
@@ -133,7 +137,6 @@ def test_extended_ghost_param_fields() -> None:
     )
     assert param.name == "input"
     assert param.allowed_dtypes == ["float32", "bfloat16", "float16"]
-    assert param.dtypes == ["float32", "bfloat16", "float16"]
     assert param.rank_constraint == "==2"
     assert param.is_mandatory is False
 
@@ -264,7 +267,7 @@ def test_extract_aten_c_extension_signature_real() -> None:
     assert extract_aten_c_extension_signature(None, "torch.not_existing_at_all") is None
 
 
-def test_parse_native_functions_yaml(tmp_path: Any) -> None:
+def test_parse_native_functions_yaml(tmp_path: Path) -> None:
     """Test parse_native_functions_yaml parsing PyTorch native function YAML definitions.
 
     Args:
@@ -550,7 +553,7 @@ def test_handle_mcp_message_dtypes_and_ranks() -> None:
         assert "not supported" in resp["result"]["content"][0]["text"]
 
 
-def test_aten_edge_cases_and_mocks(mocker: Any) -> None:
+def test_aten_edge_cases_and_mocks(mocker: pytest_mock.MockerFixture) -> None:
     """Test edge branches of get_aten_op_schema and extract_aten_c_extension_signature with mocks.
 
     Args:
@@ -564,7 +567,7 @@ def test_aten_edge_cases_and_mocks(mocker: Any) -> None:
     class DummyOp:
         """Dummy operator."""
 
-        def overloads(self) -> List[str]:
+        def overloads(self) -> list[str]:
             """List overloads.
 
             Returns:
@@ -615,7 +618,7 @@ def test_aten_edge_cases_and_mocks(mocker: Any) -> None:
     assert sig.overloads[0][0][0] == "y"
 
 
-def test_torch_collect_api_array_api_aten(mocker: Any) -> None:
+def test_torch_collect_api_array_api_aten(mocker: pytest_mock.MockerFixture) -> None:
     """Test collect_api(ARRAY_API) with real PyTorch to verify aten ops collection.
 
     Args:
@@ -649,7 +652,7 @@ def test_torch_collect_api_array_api_aten(mocker: Any) -> None:
         assert "in_place_mutation" in tensor_in_place[0].environment_tags
 
 
-def test_get_jit_schemas_for_op(monkeypatch: Any) -> None:
+def test_get_jit_schemas_for_op(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test get_jit_schemas_for_op parsing and when torch._C lacks _jit_get_all_schemas.
 
     Args:

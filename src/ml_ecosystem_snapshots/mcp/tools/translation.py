@@ -4,11 +4,33 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, List, Optional, Set
+import typing
+
+import pydantic
 
 from ml_ecosystem_snapshots.mcp.models import ConceptTranslationResult
+from ml_ecosystem_snapshots.models import JsonValue
 
-DEFAULT_CONCEPT_MAP: Dict[str, Any] = {
+
+class ConceptParameterSpec(pydantic.BaseModel):
+    """Typed parameter translation specification for a mathematical concept."""
+
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    description: str = ""
+    roles: dict[str, dict[str, list[str]]] = pydantic.Field(default_factory=dict)
+    defaults: dict[str, dict[str, JsonValue]] | None = None
+
+
+class ConceptMapSchema(pydantic.BaseModel):
+    """Typed concept ontology and parameter translation schema."""
+
+    model_config = pydantic.ConfigDict(extra="allow")
+
+    concepts: dict[str, ConceptParameterSpec] = pydantic.Field(default_factory=dict)
+
+
+DEFAULT_CONCEPT_MAP: dict[str, JsonValue] = {
     "normalization": {
         "torch": ["torch.nn.LayerNorm", "torch.nn.functional.layer_norm"],
         "jax": ["jax.nn.standardize"],
@@ -300,8 +322,8 @@ DEFAULT_CONCEPT_MAP: Dict[str, Any] = {
 
 
 def load_concept_map(
-    custom_path: Optional[str] = None,
-) -> Dict[str, Any]:
+    custom_path: str | None = None,
+) -> dict[str, JsonValue]:
     """Load concept ontology mapping from bundled JSON or custom external file with fallback.
 
     Args:
@@ -314,9 +336,9 @@ def load_concept_map(
         if os.path.exists(custom_path):
             try:
                 with open(custom_path, "r", encoding="utf-8") as f:
-                    data: Any = json.load(f)
+                    data: object = json.load(f)
                     if isinstance(data, dict):
-                        loaded_custom: Dict[str, Any] = data
+                        loaded_custom: dict[str, JsonValue] = dict(data)
                         return loaded_custom
             except Exception as e:
                 print(f"Warning: Failed to load concept map from {custom_path}: {e}")
@@ -329,25 +351,24 @@ def load_concept_map(
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
-                data_bundled: Any = json.load(f)
+                data_bundled: object = json.load(f)
                 if isinstance(data_bundled, dict):
-                    loaded_bundled: Dict[str, Any] = data_bundled
+                    loaded_bundled: dict[str, JsonValue] = dict(data_bundled)
                     return loaded_bundled
         except Exception as e:
             print(f"Warning: Failed to load concept map from {path}: {e}")
     return DEFAULT_CONCEPT_MAP
 
 
-CONCEPT_ALIAS_MAP: Dict[str, Any] = load_concept_map()
-CONCEPT_ARG_MAPPINGS: Dict[str, Any] = CONCEPT_ALIAS_MAP
+CONCEPT_ALIAS_MAP: dict[str, JsonValue] = load_concept_map()
 
 
 def translate_concept_arguments(
     concept: str,
     source_framework: str,
     target_framework: str,
-    source_kwargs: Dict[str, Any],
-    alias_map: Optional[Dict[str, Any]] = None,
+    source_kwargs: typing.Mapping[str, JsonValue],
+    alias_map: typing.Mapping[str, JsonValue] | None = None,
 ) -> ConceptTranslationResult:
     """Translate operation arguments across frameworks using concept parameter mapping schemas.
 
@@ -366,7 +387,7 @@ def translate_concept_arguments(
         alias_map: Optional concept alias mapping override (defaults to `CONCEPT_ALIAS_MAP`).
 
     Returns:
-        Dictionary of translated target keyword arguments and structured attributes.
+        `ConceptTranslationResult` model with translated target keyword arguments and structured attributes.
     """
     active_alias_map = alias_map if alias_map is not None else CONCEPT_ALIAS_MAP
 
@@ -375,15 +396,18 @@ def translate_concept_arguments(
     t_fw = target_framework.lower().strip()
 
     raw_pt = active_alias_map.get("_parameter_translations", {})
-    param_translations: Dict[str, Any] = raw_pt if isinstance(raw_pt, dict) else {}
-    schema: Optional[Dict[str, Any]] = None
+    param_translations: dict[str, JsonValue] = (
+        dict(raw_pt) if isinstance(raw_pt, dict) else {}
+    )
+    schema: dict[str, JsonValue] | None = None
 
     if c_clean in param_translations and isinstance(param_translations[c_clean], dict):
-        cand_schema: Dict[str, Any] = param_translations[c_clean]
-        schema = cand_schema
+        cand_schema = param_translations[c_clean]
+        assert isinstance(cand_schema, dict)
+        schema = dict(cand_schema)
     elif "matmul" in c_clean or c_clean in ("mm", "bmm", "dot"):
         raw_matmul = param_translations.get("matmul")
-        schema = raw_matmul if isinstance(raw_matmul, dict) else None
+        schema = dict(raw_matmul) if isinstance(raw_matmul, dict) else None
     elif any(
         k in c_clean
         for k in (
@@ -399,32 +423,42 @@ def translate_concept_arguments(
         )
     ):
         raw_red = param_translations.get("reduction")
-        schema = raw_red if isinstance(raw_red, dict) else None
+        schema = dict(raw_red) if isinstance(raw_red, dict) else None
     elif "conv" in c_clean:
         raw_conv = param_translations.get("convolution")
-        schema = raw_conv if isinstance(raw_conv, dict) else None
+        schema = dict(raw_conv) if isinstance(raw_conv, dict) else None
     elif "norm" in c_clean:
         raw_norm = param_translations.get("normalization")
-        schema = raw_norm if isinstance(raw_norm, dict) else None
+        schema = dict(raw_norm) if isinstance(raw_norm, dict) else None
 
-    translated: Dict[str, Any] = {}
-    unmapped: Dict[str, Any] = {}
-    mapped_keys: Set[str] = set()
+    translated: dict[str, JsonValue] = {}
+    unmapped: dict[str, JsonValue] = {}
+    mapped_keys: set[str] = set()
 
-    if schema and "roles" in schema:
-        roles: Dict[str, Dict[str, List[str]]] = schema["roles"]
-        for role, fw_map in roles.items():
-            src_keys = fw_map.get(s_fw, [])
+    if schema and "roles" in schema and isinstance(schema["roles"], dict):
+        roles = schema["roles"]
+        for _role, fw_map in roles.items():
+            assert isinstance(fw_map, dict)
+            raw_src_keys = fw_map.get(s_fw)
+            src_keys: list[str] = (
+                [str(k) for k in raw_src_keys] if isinstance(raw_src_keys, list) else []
+            )
             if not src_keys:
-                all_keys: List[str] = []
+                all_keys: list[str] = []
                 for aliases in fw_map.values():
-                    all_keys.extend(aliases)
+                    assert isinstance(aliases, list)
+                    all_keys.extend(str(a) for a in aliases)
                 src_keys = all_keys
 
             for sk in src_keys:
                 if sk in source_kwargs:
                     val = source_kwargs[sk]
-                    tgt_keys = fw_map.get(t_fw, [])
+                    raw_tgt_keys = fw_map.get(t_fw)
+                    tgt_keys = (
+                        [str(k) for k in raw_tgt_keys]
+                        if isinstance(raw_tgt_keys, list)
+                        else []
+                    )
                     if tgt_keys:
                         translated[tgt_keys[0]] = val
                         mapped_keys.add(sk)
@@ -433,9 +467,15 @@ def translate_concept_arguments(
                         mapped_keys.add(sk)
                     break
 
-        defaults = schema.get("defaults", {})
-        if t_fw in defaults and isinstance(defaults[t_fw], dict):
-            translated.update(defaults[t_fw])
+        raw_defaults = schema.get("defaults")
+        if (
+            isinstance(raw_defaults, dict)
+            and t_fw in raw_defaults
+            and isinstance(raw_defaults[t_fw], dict)
+        ):
+            tgt_def = raw_defaults[t_fw]
+            assert isinstance(tgt_def, dict)
+            translated.update(tgt_def)
 
     for k, v in source_kwargs.items():
         if k not in mapped_keys:
@@ -444,18 +484,19 @@ def translate_concept_arguments(
             else:
                 unmapped[k] = v
 
-    return {
-        "concept": concept,
-        "source_framework": source_framework,
-        "target_framework": target_framework,
-        "translated_kwargs": translated,
-        "unmapped_kwargs": unmapped,
-    }
+    return ConceptTranslationResult(
+        concept=concept,
+        source_framework=source_framework,
+        target_framework=target_framework,
+        translated_kwargs=translated,
+        unmapped_kwargs=unmapped,
+    )
 
 
 __all__ = [
     "CONCEPT_ALIAS_MAP",
-    "CONCEPT_ARG_MAPPINGS",
+    "ConceptMapSchema",
+    "ConceptParameterSpec",
     "DEFAULT_CONCEPT_MAP",
     "load_concept_map",
     "translate_concept_arguments",

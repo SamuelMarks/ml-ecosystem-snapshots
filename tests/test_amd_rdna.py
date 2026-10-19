@@ -1,7 +1,10 @@
 """Tests for the AMD RDNA framework extractor."""
 
+from __future__ import annotations
+
 import json
-from typing import Any
+from pathlib import Path
+import pytest
 from unittest import mock
 from ml_switcheroo_ir.schema.ghost import SemanticTier, GhostRef, GhostParam
 from ml_ecosystem_snapshots.frameworks import amd_rdna
@@ -346,7 +349,7 @@ def test_check_rdna_instruction_extended() -> None:
     )
 
 
-def test_cli_check_rdna(capsys: Any, tmp_path: Any) -> None:
+def test_cli_check_rdna(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     """Test CLI check-rdna subcommand with file, mnemonic, and errors.
 
     Args:

@@ -4,18 +4,22 @@ Provides functions to dynamically introspect the PyTorch library and generate
 GhostRefs for layers, losses, optimizers, and activations.
 """
 
+from __future__ import annotations
+
 import inspect
 import os
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+import types
+import typing
 import warnings
 
-from ml_ecosystem_snapshots.utils import CExtensionSignature, get_all_members
-from ml_ecosystem_snapshots.models import GhostInspector
-from ml_switcheroo_ir.schema.ghost import GhostRef
-from ml_switcheroo_ir.schema.ghost import SemanticTier
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+import pydantic
 
-import typing
+from ml_ecosystem_snapshots.c_extension_sig import CExtensionSignature
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.models import JsonValue
+from ml_ecosystem_snapshots.utils import get_all_members
 
 warnings.filterwarnings(
     "ignore",
@@ -29,16 +33,16 @@ try:
     import torch.optim as _optim
     import torch.utils.data as _data
 
-    nn: typing.Any = _nn
-    optim: typing.Any = _optim
-    data: typing.Any = _data
+    nn: types.ModuleType | None = _nn
+    optim: types.ModuleType | None = _optim
+    data: types.ModuleType | None = _data
 except (ImportError, RuntimeError):
     nn = None
     optim = None
     data = None
 
 
-def _scan_losses(include_nonpublic: bool) -> List[GhostRef]:
+def _scan_losses(include_nonpublic: bool) -> list[GhostRef]:
     """Scan `torch.nn` for loss classes.
 
     Args:
@@ -50,7 +54,7 @@ def _scan_losses(include_nonpublic: bool) -> List[GhostRef]:
     """
     if not nn:
         return []
-    found: List[GhostRef] = []
+    found: list[GhostRef] = []
     for name, obj in get_all_members(nn):
         if inspect.isclass(obj) and name.endswith("Loss") and name != "_Loss":
             if not include_nonpublic and name.startswith("_"):
@@ -63,7 +67,7 @@ def _scan_losses(include_nonpublic: bool) -> List[GhostRef]:
     return found
 
 
-def _scan_optimizers(include_nonpublic: bool) -> List[GhostRef]:
+def _scan_optimizers(include_nonpublic: bool) -> list[GhostRef]:
     """Scan `torch.optim` for optimizer classes.
 
     Args:
@@ -75,7 +79,7 @@ def _scan_optimizers(include_nonpublic: bool) -> List[GhostRef]:
     """
     if not optim:
         return []
-    found: List[GhostRef] = []
+    found: list[GhostRef] = []
     for name, obj in get_all_members(optim):
         if inspect.isclass(obj) and name != "Optimizer":
             if not include_nonpublic and name.startswith("_"):
@@ -88,16 +92,17 @@ def _scan_optimizers(include_nonpublic: bool) -> List[GhostRef]:
     return found
 
 
-def _get_activation_names() -> Set[str]:
+def _get_activation_names() -> set[str]:
     """Retrieve all activation module names from torch.nn.modules.activation with fallback.
 
     Returns:
         Set of activation module class names.
     """
-    names: Set[str] = set()
+    names: set[str] = set()
     try:
         import torch.nn.modules.activation as act_mod
 
+        assert nn is not None
         for name, obj in get_all_members(act_mod):
             if inspect.isclass(obj) and issubclass(obj, nn.Module):
                 names.add(name)
@@ -127,7 +132,7 @@ def _get_activation_names() -> Set[str]:
     return names
 
 
-def _scan_activations(include_nonpublic: bool) -> List[GhostRef]:
+def _scan_activations(include_nonpublic: bool) -> list[GhostRef]:
     """Scan `torch.nn` for activation functions.
 
     Args:
@@ -139,7 +144,7 @@ def _scan_activations(include_nonpublic: bool) -> List[GhostRef]:
     """
     if not nn:
         return []
-    found: List[GhostRef] = []
+    found: list[GhostRef] = []
     target_activations = _get_activation_names()
 
     for name, obj in get_all_members(nn):
@@ -154,7 +159,7 @@ def _scan_activations(include_nonpublic: bool) -> List[GhostRef]:
     return found
 
 
-def _scan_layers(include_nonpublic: bool) -> List[GhostRef]:
+def _scan_layers(include_nonpublic: bool) -> list[GhostRef]:
     """Scan `torch.nn` for layer classes (excluding losses and activations).
 
     Args:
@@ -166,7 +171,7 @@ def _scan_layers(include_nonpublic: bool) -> List[GhostRef]:
     """
     if not nn:
         return []
-    found: List[GhostRef] = []
+    found: list[GhostRef] = []
     target_activations = _get_activation_names()
 
     for name, obj in get_all_members(nn):
@@ -182,7 +187,7 @@ def _scan_layers(include_nonpublic: bool) -> List[GhostRef]:
     return found
 
 
-def _scan_schedulers(include_nonpublic: bool) -> List[GhostRef]:
+def _scan_schedulers(include_nonpublic: bool) -> list[GhostRef]:
     """Scan `torch.optim.lr_scheduler` for schedulers.
 
     Args:
@@ -194,7 +199,7 @@ def _scan_schedulers(include_nonpublic: bool) -> List[GhostRef]:
     """
     if not optim or not hasattr(optim, "lr_scheduler"):
         return []
-    found: List[GhostRef] = []
+    found: list[GhostRef] = []
     for name, obj in get_all_members(optim.lr_scheduler):
         if inspect.isclass(obj) and name != "LRScheduler":
             if not include_nonpublic and name.startswith("_"):
@@ -205,7 +210,7 @@ def _scan_schedulers(include_nonpublic: bool) -> List[GhostRef]:
     return found
 
 
-def _scan_initializers(include_nonpublic: bool) -> List[GhostRef]:
+def _scan_initializers(include_nonpublic: bool) -> list[GhostRef]:
     """Scan `torch.nn.init` for initializers.
 
     Args:
@@ -217,7 +222,7 @@ def _scan_initializers(include_nonpublic: bool) -> List[GhostRef]:
     """
     if not nn or not hasattr(nn, "init"):
         return []
-    found: List[GhostRef] = []
+    found: list[GhostRef] = []
     for name, obj in get_all_members(nn.init):
         if inspect.isfunction(obj):
             if not include_nonpublic and name.startswith("_"):
@@ -226,7 +231,7 @@ def _scan_initializers(include_nonpublic: bool) -> List[GhostRef]:
     return found
 
 
-def _scan_metrics(include_nonpublic: bool) -> List[GhostRef]:
+def _scan_metrics(include_nonpublic: bool) -> list[GhostRef]:
     """Scan for metrics (delegates to torchmetrics if installed, otherwise returns empty).
 
     Args:
@@ -236,7 +241,7 @@ def _scan_metrics(include_nonpublic: bool) -> List[GhostRef]:
         A list of GhostRef objects representing found metrics.
 
     """
-    found: List[GhostRef] = []
+    found: list[GhostRef] = []
     try:
         import torchmetrics
 
@@ -262,7 +267,7 @@ def _scan_metrics(include_nonpublic: bool) -> List[GhostRef]:
     return found
 
 
-def _scan_dataloaders(include_nonpublic: bool) -> List[GhostRef]:
+def _scan_dataloaders(include_nonpublic: bool) -> list[GhostRef]:
     """Scan `torch.utils.data` for dataloader-related classes.
 
     Args:
@@ -274,7 +279,7 @@ def _scan_dataloaders(include_nonpublic: bool) -> List[GhostRef]:
     """
     if not data:
         return []
-    found: List[GhostRef] = []
+    found: list[GhostRef] = []
     for name, obj in get_all_members(data):
         if inspect.isclass(obj):
             if not include_nonpublic and name.startswith("_"):
@@ -284,10 +289,10 @@ def _scan_dataloaders(include_nonpublic: bool) -> List[GhostRef]:
 
 
 def _collect_torch_namespace(
-    ns_obj: Any,
+    ns_obj: types.ModuleType | type,
     api_prefix: str,
     include_nonpublic: bool,
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect callable non-class members from a PyTorch submodule namespace.
 
     Args:
@@ -298,7 +303,7 @@ def _collect_torch_namespace(
     Returns:
         List of inspected `GhostRef` objects.
     """
-    collected: List[GhostRef] = []
+    collected: list[GhostRef] = []
     for name, obj in get_all_members(ns_obj):
         if (
             (include_nonpublic or not name.startswith("_"))
@@ -312,7 +317,7 @@ def _collect_torch_namespace(
     return collected
 
 
-def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
+def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
     """Scan top-level PyTorch module for array API functions and submodules.
 
     Exhaustively discovers:
@@ -328,7 +333,7 @@ def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
     Returns:
         A list of GhostRef objects representing found array API functions.
     """
-    found: List[GhostRef] = []
+    found: list[GhostRef] = []
     try:
         import torch
 
@@ -336,7 +341,7 @@ def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
         for name, obj in get_all_members(torch):
             if not include_nonpublic and name.startswith("_"):
                 continue
-            if callable(obj) and not inspect.isclass(obj) and not inspect.ismodule(obj):
+            if callable(obj) and not inspect.isclass(obj):
                 try:
                     found.append(GhostInspector.inspect(obj, f"torch.{name}"))
                 except Exception:
@@ -427,7 +432,7 @@ def _scan_array_api(include_nonpublic: bool) -> List[GhostRef]:
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Entrypoint to collect the PyTorch API signature for a given category.
 
     Args:
@@ -459,7 +464,7 @@ def collect_api(
     return []
 
 
-FLOAT_COMPLEX_OPS: Set[str] = {
+FLOAT_COMPLEX_OPS: set[str] = {
     "cholesky",
     "inverse",
     "linalg_inv",
@@ -479,7 +484,7 @@ FLOAT_COMPLEX_OPS: Set[str] = {
     "linalg_pinv",
 }
 
-FLOAT_OPS: Set[str] = {
+FLOAT_OPS: set[str] = {
     "sin",
     "cos",
     "tan",
@@ -504,7 +509,7 @@ FLOAT_OPS: Set[str] = {
     "silu",
 }
 
-RANK_RULES: Dict[str, Dict[str, Union[int, str]]] = {
+RANK_RULES: dict[str, dict[str, int | str]] = {
     "mm": {"input": 2, "mat2": 2},
     "bmm": {"input": 3, "mat2": 3},
     "mv": {"input": 2, "mat": 2, "vec": 1},
@@ -516,9 +521,91 @@ RANK_RULES: Dict[str, Dict[str, Union[int, str]]] = {
 }
 
 
+class AtenSchemaArg(pydantic.BaseModel):
+    """Pydantic model for a single argument in an ATen or JIT operator schema."""
+
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    name: str
+    kind: str = "POSITIONAL_OR_KEYWORD"
+    default: str | None = None
+    annotation: str = "Tensor"
+    is_out: bool = False
+    allowed_dtypes: list[str] | None = None
+    rank_constraint: str | None = None
+    dtypes: list[str] | None = None
+    rank: str | None = None
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["name", "kind", "annotation"]) -> str: ...
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["is_out"]) -> bool: ...
+
+    @typing.overload
+    def __getitem__(
+        self, key: typing.Literal["default", "rank_constraint", "rank"]
+    ) -> str | None: ...
+
+    @typing.overload
+    def __getitem__(self, key: str) -> JsonValue: ...
+
+    def __getitem__(self, key: str) -> str | bool | None | JsonValue:
+        """Retrieve an argument field by dictionary key.
+
+        Args:
+            key: Field name.
+
+        Returns:
+            Field value.
+        """
+        d: dict[str, JsonValue] = self.model_dump()
+        return d[key]
+
+
+class AtenOpSchema(pydantic.BaseModel):
+    """Pydantic model for an ATen or JIT operator overload schema."""
+
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    func: str | None = None
+    name: str | None = None
+    overload_name: str = "default"
+    params: list[AtenSchemaArg] = pydantic.Field(default_factory=list)
+    returns_type: str | None = "Tensor"
+    is_inplace: bool = False
+    is_out: bool = False
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["overload_name"]) -> str: ...
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["is_inplace", "is_out"]) -> bool: ...
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["params"]) -> list[AtenSchemaArg]: ...
+
+    @typing.overload
+    def __getitem__(self, key: str) -> str | bool | list[AtenSchemaArg] | JsonValue: ...
+
+    def __getitem__(self, key: str) -> str | bool | list[AtenSchemaArg] | JsonValue:
+        """Retrieve an overload schema field by dictionary key.
+
+        Args:
+            key: Field name.
+
+        Returns:
+            Field value.
+        """
+        if key == "params":
+            return self.params
+        d: dict[str, JsonValue] = self.model_dump()
+        return d[key]
+
+
 def infer_torch_dtype_and_rank(
     op_name: str, param_name: str, type_str: str = ""
-) -> Tuple[Optional[List[str]], Optional[str]]:
+) -> tuple[list[str] | None, str | None]:
     """Infer allowed PyTorch tensor dtypes and rank constraints for an operator parameter.
 
     Args:
@@ -532,8 +619,8 @@ def infer_torch_dtype_and_rank(
     clean_op = op_name.split(".")[-1].lower()
     clean_param = param_name.lower()
 
-    dtypes: Optional[List[str]] = None
-    rank: Optional[str] = None
+    dtypes: list[str] | None = None
+    rank: str | None = None
 
     normalized_op = clean_op.replace("linalg.", "linalg_")
     if clean_op in FLOAT_COMPLEX_OPS or normalized_op in FLOAT_COMPLEX_OPS:
@@ -547,7 +634,7 @@ def infer_torch_dtype_and_rank(
 
     rank_dict = RANK_RULES.get(clean_op) or RANK_RULES.get(normalized_op)
     if rank_dict:
-        raw_rank: Optional[Union[int, str]] = None
+        raw_rank: int | str | None = None
         if clean_param in rank_dict:
             raw_rank = rank_dict[clean_param]
         elif "input" in rank_dict and clean_param in ("self", "a"):
@@ -564,14 +651,14 @@ def infer_torch_dtype_and_rank(
 
 def parse_native_functions_yaml(
     yaml_content_or_path: str,
-) -> Dict[str, List[Dict[str, Any]]]:
+) -> dict[str, list[AtenOpSchema]]:
     """Parse PyTorch native_functions.yaml into structured operator definitions and overloads.
 
     Args:
         yaml_content_or_path: File path to native_functions.yaml or raw YAML string.
 
     Returns:
-        Dictionary mapping base operator names to a list of overload dictionaries.
+        Dictionary mapping base operator names to a list of `AtenOpSchema` objects.
     """
     import importlib
 
@@ -586,7 +673,7 @@ def parse_native_functions_yaml(
     if not isinstance(data, list):
         return {}
 
-    ops: Dict[str, List[Dict[str, Any]]] = {}
+    ops: dict[str, list[AtenOpSchema]] = {}
     sig_pattern = re.compile(
         r"^([a-zA-Z0-9_]+)(?:\.([a-zA-Z0-9_]+))?\((.*)\)\s*->\s*(.*)$"
     )
@@ -603,7 +690,7 @@ def parse_native_functions_yaml(
         overload_name = overload_name or "default"
         returns_type = returns_type.strip()
 
-        params = []
+        params: list[AtenSchemaArg] = []
         is_kwarg_only = False
         raw_args = [a.strip() for a in args_str.split(",") if a.strip()]
 
@@ -633,28 +720,28 @@ def parse_native_functions_yaml(
             norm_name = "input" if arg_name == "self" else arg_name
 
             params.append(
-                {
-                    "name": norm_name,
-                    "kind": kind,
-                    "default": default_val,
-                    "annotation": clean_type,
-                    "is_out": is_out,
-                    "allowed_dtypes": dtypes,
-                    "rank_constraint": rank,
-                    "dtypes": dtypes,
-                    "rank": rank,
-                }
+                AtenSchemaArg(
+                    name=norm_name,
+                    kind=kind,
+                    default=default_val,
+                    annotation=clean_type,
+                    is_out=is_out,
+                    allowed_dtypes=dtypes,
+                    rank_constraint=rank,
+                    dtypes=dtypes,
+                    rank=rank,
+                )
             )
 
-        overload_info = {
-            "func": func_str,
-            "name": base_op,
-            "overload_name": overload_name,
-            "params": params,
-            "returns_type": returns_type,
-            "is_inplace": base_op.endswith("_"),
-            "is_out": any(p.get("is_out") for p in params),
-        }
+        overload_info = AtenOpSchema(
+            func=func_str,
+            name=base_op,
+            overload_name=overload_name,
+            params=params,
+            returns_type=returns_type,
+            is_inplace=base_op.endswith("_"),
+            is_out=any(p.is_out for p in params),
+        )
 
         if base_op not in ops:
             ops[base_op] = []
@@ -663,17 +750,17 @@ def parse_native_functions_yaml(
     return ops
 
 
-_JIT_SCHEMAS_CACHE: Optional[Dict[str, List[Any]]] = None
+_JIT_SCHEMAS_CACHE: dict[str, list[object]] | None = None
 
 
-def get_jit_schemas_for_op(op_name: str) -> List[Dict[str, Any]]:
+def get_jit_schemas_for_op(op_name: str) -> list[AtenOpSchema]:
     """Retrieve structured schemas from torch._C._jit_get_all_schemas() for an operator.
 
     Args:
         op_name: Operator name (e.g. 'add', 'relu', 'matmul', 'aten::add').
 
     Returns:
-        List of overload schema dictionaries.
+        List of `AtenOpSchema` objects.
     """
     global _JIT_SCHEMAS_CACHE
     try:
@@ -687,9 +774,9 @@ def get_jit_schemas_for_op(op_name: str) -> List[Dict[str, Any]]:
     clean_op = op_name.split(".")[-1]
 
     if _JIT_SCHEMAS_CACHE is None:
-        cache: Dict[str, List[Any]] = {}
+        cache: dict[str, list[object]] = {}
         for s in torch._C._jit_get_all_schemas():
-            s_name = s.name
+            s_name = str(getattr(s, "name", ""))
             s_short = s_name.split("::")[-1]
             cache.setdefault(s_name, []).append(s)
             cache.setdefault(s_short, []).append(s)
@@ -703,63 +790,70 @@ def get_jit_schemas_for_op(op_name: str) -> List[Dict[str, Any]]:
     if not schemas:
         return []
 
-    results: List[Dict[str, Any]] = []
+    results: list[AtenOpSchema] = []
     for schema in schemas:
-        params: List[Dict[str, Any]] = []
-        for arg in schema.arguments:
-            p_kind = "KEYWORD_ONLY" if arg.kwarg_only else "POSITIONAL_OR_KEYWORD"
-            p_name = "input" if arg.name == "self" else arg.name
-            p_default = (
-                str(arg.default_value)
-                if hasattr(arg, "has_default_value") and arg.has_default_value()
-                else (
-                    str(arg.default_value)
-                    if getattr(arg, "default_value", None) is not None
-                    else None
-                )
+        params: list[AtenSchemaArg] = []
+        raw_arguments: list[object] = list(getattr(schema, "arguments", []))
+        for arg in raw_arguments:
+            p_kind = (
+                "KEYWORD_ONLY"
+                if bool(getattr(arg, "kwarg_only", False))
+                else "POSITIONAL_OR_KEYWORD"
             )
-            p_anno = str(arg.type)
-            is_out = getattr(arg, "is_out", False)
+            raw_arg_name = str(getattr(arg, "name", ""))
+            p_name = "input" if raw_arg_name == "self" else raw_arg_name
+            has_def_fn = getattr(arg, "has_default_value", None)
+            def_val = getattr(arg, "default_value", None)
+            p_default = (
+                str(def_val)
+                if callable(has_def_fn) and bool(has_def_fn())
+                else (str(def_val) if def_val is not None else None)
+            )
+            p_anno = str(getattr(arg, "type", "Tensor"))
+            is_out = bool(getattr(arg, "is_out", False))
 
             dtypes, rank = infer_torch_dtype_and_rank(clean_op, p_name, p_anno)
 
             params.append(
-                {
-                    "name": p_name,
-                    "kind": p_kind,
-                    "default": p_default,
-                    "annotation": p_anno,
-                    "is_out": is_out,
-                    "allowed_dtypes": dtypes,
-                    "rank_constraint": rank,
-                    "dtypes": dtypes,
-                    "rank": rank,
-                }
+                AtenSchemaArg(
+                    name=p_name,
+                    kind=p_kind,
+                    default=p_default,
+                    annotation=p_anno,
+                    is_out=is_out,
+                    allowed_dtypes=dtypes,
+                    rank_constraint=rank,
+                    dtypes=dtypes,
+                    rank=rank,
+                )
             )
 
-        ret_type = str(schema.returns[0].type) if schema.returns else "Tensor"
-        ov_name = getattr(schema, "overload_name", "default") or "default"
+        raw_returns: list[object] = list(getattr(schema, "returns", []))
+        ret_type = (
+            str(getattr(raw_returns[0], "type", "Tensor")) if raw_returns else "Tensor"
+        )
+        ov_name = str(getattr(schema, "overload_name", "default") or "default")
         results.append(
-            {
-                "overload_name": ov_name,
-                "params": params,
-                "returns_type": ret_type,
-                "is_inplace": clean_op.endswith("_"),
-                "is_out": any(p.get("is_out") for p in params),
-            }
+            AtenOpSchema(
+                overload_name=ov_name,
+                params=params,
+                returns_type=ret_type,
+                is_inplace=clean_op.endswith("_"),
+                is_out=any(p.is_out for p in params),
+            )
         )
 
     return results
 
 
-def get_aten_op_schema(op_name: str) -> Optional[List[Dict[str, Any]]]:
+def get_aten_op_schema(op_name: str) -> list[AtenOpSchema] | None:
     """Retrieve structured schema and overloads for an ATen operator from torch.ops.aten or JIT registry.
 
     Args:
         op_name: Operator name (e.g. 'add', 'relu', 'matmul', 'add_').
 
     Returns:
-        List of overload dictionaries if found, otherwise None.
+        List of `AtenOpSchema` objects if found, otherwise None.
     """
     try:
         import torch
@@ -768,7 +862,7 @@ def get_aten_op_schema(op_name: str) -> Optional[List[Dict[str, Any]]]:
 
     clean_op = op_name.split(".")[-1]
     aten_op = getattr(torch.ops.aten, clean_op, None)
-    results: List[Dict[str, Any]] = []
+    results: list[AtenOpSchema] = []
 
     if aten_op and hasattr(aten_op, "overloads"):
         for ov_name in aten_op.overloads():
@@ -777,39 +871,39 @@ def get_aten_op_schema(op_name: str) -> Optional[List[Dict[str, Any]]]:
             if not schema:
                 continue
 
-            params: List[Dict[str, Any]] = []
+            params: list[AtenSchemaArg] = []
             for arg in schema.arguments:
                 p_kind = "KEYWORD_ONLY" if arg.kwarg_only else "POSITIONAL_OR_KEYWORD"
                 p_name = "input" if arg.name == "self" else arg.name
                 p_default = str(arg.default_value) if arg.has_default_value() else None
                 p_anno = str(arg.type)
-                is_out = getattr(arg, "is_out", False)
+                is_out = bool(getattr(arg, "is_out", False))
 
                 dtypes, rank = infer_torch_dtype_and_rank(clean_op, p_name, p_anno)
 
                 params.append(
-                    {
-                        "name": p_name,
-                        "kind": p_kind,
-                        "default": p_default,
-                        "annotation": p_anno,
-                        "is_out": is_out,
-                        "allowed_dtypes": dtypes,
-                        "rank_constraint": rank,
-                        "dtypes": dtypes,
-                        "rank": rank,
-                    }
+                    AtenSchemaArg(
+                        name=p_name,
+                        kind=p_kind,
+                        default=p_default,
+                        annotation=p_anno,
+                        is_out=is_out,
+                        allowed_dtypes=dtypes,
+                        rank_constraint=rank,
+                        dtypes=dtypes,
+                        rank=rank,
+                    )
                 )
 
             ret_type = str(schema.returns[0].type) if schema.returns else "Tensor"
             results.append(
-                {
-                    "overload_name": ov_name,
-                    "params": params,
-                    "returns_type": ret_type,
-                    "is_inplace": clean_op.endswith("_"),
-                    "is_out": any(p.get("is_out") for p in params),
-                }
+                AtenOpSchema(
+                    overload_name=str(ov_name),
+                    params=params,
+                    returns_type=ret_type,
+                    is_inplace=clean_op.endswith("_"),
+                    is_out=any(p.is_out for p in params),
+                )
             )
 
     if results:
@@ -819,9 +913,25 @@ def get_aten_op_schema(op_name: str) -> Optional[List[Dict[str, Any]]]:
     return jit_results if jit_results else None
 
 
+def _coerce_aten_schema(
+    ov: AtenOpSchema | typing.Mapping[str, JsonValue],
+) -> AtenOpSchema:
+    """Coerce an `AtenOpSchema` or dictionary into `AtenOpSchema`.
+
+    Args:
+        ov: Overload schema model or mapping.
+
+    Returns:
+        Validated `AtenOpSchema`.
+    """
+    if isinstance(ov, AtenOpSchema):
+        return ov
+    return AtenOpSchema.model_validate(dict(ov))
+
+
 def extract_aten_c_extension_signature(
-    target: Any, name: Optional[str] = None, is_method: bool = False
-) -> Optional[CExtensionSignature]:
+    target: object, name: str | None = None, is_method: bool = False
+) -> CExtensionSignature | None:
     """Extract a CExtensionSignature with exhaustive overloads from torch.ops.aten.
 
     Args:
@@ -833,15 +943,16 @@ def extract_aten_c_extension_signature(
         CExtensionSignature with primary parameters and overloads if found, else None.
     """
     op_name = str(name or getattr(target, "__name__", "") or "")
-    schemas = get_aten_op_schema(op_name)
-    if not schemas:
+    raw_schemas = get_aten_op_schema(op_name)
+    if not raw_schemas:
         return None
 
+    schemas = [_coerce_aten_schema(ov) for ov in raw_schemas]
     is_method_call = is_method or (name is not None and ".Tensor." in name)
 
     primary_idx = 0
     for idx, ov in enumerate(schemas):
-        if ov.get("overload_name") in ("Tensor", "default"):
+        if ov.overload_name in ("Tensor", "default"):
             primary_idx = idx
             break
 
@@ -849,32 +960,32 @@ def extract_aten_c_extension_signature(
     secondary = [ov for idx, ov in enumerate(schemas) if idx != primary_idx]
 
     def to_param_tuples(
-        p_list: List[Dict[str, Any]],
-    ) -> List[Tuple[str, str, Optional[str], Optional[str]]]:
-        """Convert parameter dictionary list to CExtensionSignature tuple format.
+        p_list: list[AtenSchemaArg],
+    ) -> list[tuple[str, str, str | None, str | None]]:
+        """Convert parameter model list to CExtensionSignature tuple format.
 
         Args:
-            p_list: List of parameter dictionaries.
+            p_list: List of `AtenSchemaArg` objects.
 
         Returns:
             List of (name, kind, default, annotation) tuples.
         """
         filtered = p_list
-        if is_method_call and filtered and filtered[0]["name"] in ("input", "self"):
+        if is_method_call and filtered and filtered[0].name in ("input", "self"):
             filtered = filtered[1:]
-        return [(p["name"], p["kind"], p["default"], p["annotation"]) for p in filtered]
+        return [(p.name, p.kind, p.default, p.annotation) for p in filtered]
 
     overload_objs = [
         CExtensionSignature(
-            params=to_param_tuples(ov["params"]),
-            returns_type=ov.get("returns_type"),
+            params=to_param_tuples(ov.params),
+            returns_type=ov.returns_type,
             overloads=[],
         )
         for ov in secondary
     ]
 
     return CExtensionSignature(
-        params=to_param_tuples(primary["params"]),
-        returns_type=primary.get("returns_type"),
+        params=to_param_tuples(primary.params),
+        returns_type=primary.returns_type,
         overloads=overload_objs,
     )

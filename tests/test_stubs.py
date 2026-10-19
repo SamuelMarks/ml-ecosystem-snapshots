@@ -1,15 +1,14 @@
 """Unit tests and verification suite for stubs."""
 
+from __future__ import annotations
+
 from pathlib import Path
 import os
-
-from typing import Any
-
 
 from ml_ecosystem_snapshots.stubs import generate_stubs
 
 
-def test_generate_stubs(tmp_path: Any) -> None:
+def test_generate_stubs(tmp_path: Path) -> None:
     """Verify generate stubs behavior.
 
     Args:
@@ -113,7 +112,7 @@ def test_generate_stubs(tmp_path: Any) -> None:
     assert "def varargs_func(x: Any, *args: Any) -> Any: ..." in content
 
 
-def test_generate_stubs_empty(tmp_path: Any) -> None:
+def test_generate_stubs_empty(tmp_path: Path) -> None:
     """Verify generate stubs empty behavior.
 
     Args:
@@ -124,7 +123,7 @@ def test_generate_stubs_empty(tmp_path: Any) -> None:
     assert not Path(os.path.join(out_dir, "test_fw")).exists()
 
 
-def test_generate_stubs_default_vals(tmp_path: Any) -> None:
+def test_generate_stubs_default_vals(tmp_path: Path) -> None:
     """Verify generate stubs default vals behavior.
 
     Args:
@@ -161,7 +160,7 @@ def test_generate_stubs_default_vals(tmp_path: Any) -> None:
     assert "def __init__(self, in_features: int = 10) -> Any: ..." in content
 
 
-def test_generate_stubs_no_module(tmp_path: Any) -> None:
+def test_generate_stubs_no_module(tmp_path: Path) -> None:
     """Verify generate stubs no module behavior.
 
     Args:
@@ -185,7 +184,7 @@ def test_generate_stubs_no_module(tmp_path: Any) -> None:
     assert not list(tmp_path.glob("**/*.pyi"))
 
 
-def test_generate_stubs_include_nonpublic(tmp_path: Any) -> None:
+def test_generate_stubs_include_nonpublic(tmp_path: Path) -> None:
     """Verify generate stubs include nonpublic behavior.
 
     Args:
@@ -222,7 +221,7 @@ def test_generate_stubs_include_nonpublic(tmp_path: Any) -> None:
     assert "class _PrivateLinear:" in content
 
 
-def test_generate_stubs_list_and_non_dict(tmp_path: Any) -> None:
+def test_generate_stubs_list_and_non_dict(tmp_path: Path) -> None:
     """Test generate_stubs when snapshot_data is a list or an unsupported type.
 
     Args:
@@ -245,9 +244,9 @@ def test_generate_stubs_list_and_non_dict(tmp_path: Any) -> None:
     assert helper_init.exists()
     assert "def helper(x: Any) -> Any: ..." in helper_init.read_text()
 
-    # Test snapshot_data as unsupported non-dict non-list type (e.g. integer or string)
+    # Test snapshot_data as unsupported non-dict non-list type (e.g. tuple)
     invalid_out_dir = Path(os.path.join(tmp_path, "stubs_invalid"))
-    invalid_data: Any = 42
+    invalid_data: tuple[dict[str, object], ...] = ()
     generate_stubs(invalid_data, str(invalid_out_dir))
     assert not list(invalid_out_dir.glob("**/*.pyi"))
 
@@ -256,7 +255,7 @@ def test_generate_stubs_list_and_non_dict(tmp_path: Any) -> None:
         validate_pyi_stub("def invalid syntax ::::")
 
 
-def test_generate_stubs_overloads_and_dsl(tmp_path: Any) -> None:
+def test_generate_stubs_overloads_and_dsl(tmp_path: Path) -> None:
     """Test stub generation with overloads and non-Python domain DSL items.
 
     Args:
@@ -394,7 +393,7 @@ def test_generate_stubs_overloads_and_dsl(tmp_path: Any) -> None:
     assert "def HMMA16816(d: str) -> Any: ..." in sass_text
 
 
-def test_generate_stubs_class_methods(tmp_path: Any) -> None:
+def test_generate_stubs_class_methods(tmp_path: Path) -> None:
     """Verify that class methods are nested inside class definitions in stubs.
 
     Args:

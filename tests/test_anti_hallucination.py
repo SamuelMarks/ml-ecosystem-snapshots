@@ -11,10 +11,13 @@ flag 100% of synthetic LLM hallucinations:
     7. Model Context Protocol (MCP) JSON-RPC tool server handlers
 """
 
+from __future__ import annotations
+
 import io
+from pathlib import Path
+import pytest_mock
 import json
 import os
-from typing import Any, List, Tuple
 from unittest.mock import patch
 import pytest
 
@@ -31,7 +34,7 @@ from ml_ecosystem_snapshots.mcp_server import (
     handle_mcp_message,
     run_mcp_server,
 )
-from ml_ecosystem_snapshots.models import ExtendedGhostRef
+from ml_ecosystem_snapshots.models import ExtendedGhostRef, JsonValue
 from ml_ecosystem_snapshots.stubs import validate_pyi_stub
 from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
@@ -369,7 +372,7 @@ class Linear:
         validate_pyi_stub(invalid_stub)
 
 
-def test_mcp_server_protocol(mocker: Any) -> None:
+def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
     """Test Model Context Protocol (MCP) tool list and tool call request handling.
 
     Args:
@@ -514,7 +517,7 @@ def test_run_mcp_server_stdio() -> None:
     assert "tools" in resp["result"]
 
 
-def test_mcp_server_branches(mocker: Any) -> None:
+def test_mcp_server_branches(mocker: pytest_mock.MockerFixture) -> None:
     """Test get_framework_snapshot uncached extractor, search limit, and varkwargs in check_hallucination.
 
     Args:
@@ -551,7 +554,9 @@ def test_mcp_server_branches(mocker: Any) -> None:
     _SNAPSHOT_CACHE.clear()
 
     snap = get_framework_snapshot("torch")
-    assert "math" in snap["categories"]
+    snap_categories = snap["categories"]
+    assert isinstance(snap_categories, dict)
+    assert "math" in snap_categories
 
     # Search with limit reached
     matches = search_apis("torch", "op", limit=1)
@@ -585,7 +590,9 @@ def test_mcp_server_branches(mocker: Any) -> None:
     _SNAPSHOT_CACHE.clear()
 
 
-def test_get_framework_snapshot_list_format(tmp_path: Any, monkeypatch: Any) -> None:
+def test_get_framework_snapshot_list_format(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test get_framework_snapshot when the disk file contains a JSON list.
 
     Args:
@@ -606,7 +613,9 @@ def test_get_framework_snapshot_list_format(tmp_path: Any, monkeypatch: Any) -> 
     monkeypatch.setattr(cache_mod, "__file__", str(tmp_path / "mcp" / "cache.py"))
     snap = get_framework_snapshot("customlist")
     assert "categories" in snap
-    assert "UTIL" in snap["categories"]
+    snap_categories = snap["categories"]
+    assert isinstance(snap_categories, dict)
+    assert "UTIL" in snap_categories
     _SNAPSHOT_CACHE.clear()
 
 
@@ -694,7 +703,9 @@ def test_check_mlir_op() -> None:
     assert res_none["is_valid"] is False
 
 
-def test_check_hallucination_positional_and_strict(mocker: Any) -> None:
+def test_check_hallucination_positional_and_strict(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test positional argument arity checking and strict kwargs in check_hallucination.
 
     Args:
@@ -783,7 +794,7 @@ def test_handle_mcp_message_new_tools() -> None:
     assert "result" in mlir_resp
 
 
-def test_mcp_server_disk_loading_branches(mocker: Any) -> None:
+def test_mcp_server_disk_loading_branches(mocker: pytest_mock.MockerFixture) -> None:
     """Test get_framework_snapshot candidate scanning edge cases.
 
     Args:
@@ -822,8 +833,14 @@ def test_mcp_server_disk_loading_branches(mocker: Any) -> None:
     mocker.patch("os.listdir", return_value=["testlist_ops.json"])
     mocker.patch("builtins.open", mocker.mock_open(read_data='[{"name": "raw_op"}]'))
     snap_list = get_framework_snapshot("testlist")
-    assert "UTIL" in snap_list["categories"]
-    assert snap_list["categories"]["UTIL"][0]["name"] == "raw_op"
+    snap_list_cats = snap_list["categories"]
+    assert isinstance(snap_list_cats, dict)
+    assert "UTIL" in snap_list_cats
+    util_items = snap_list_cats["UTIL"]
+    assert isinstance(util_items, list)
+    first_util = util_items[0]
+    assert isinstance(first_util, dict)
+    assert first_util["name"] == "raw_op"
     _SNAPSHOT_CACHE.clear()
 
     # 3. JSON file content is a dict without 'categories' (branch 60 -> 62)
@@ -833,7 +850,7 @@ def test_mcp_server_disk_loading_branches(mocker: Any) -> None:
     _SNAPSHOT_CACHE.clear()
 
 
-def test_mcp_server_search_without_path(mocker: Any) -> None:
+def test_mcp_server_search_without_path(mocker: pytest_mock.MockerFixture) -> None:
     """Test search_apis when category item does not contain api_path (branch 119 -> 121).
 
     Args:
@@ -855,7 +872,9 @@ def test_mcp_server_search_without_path(mocker: Any) -> None:
     assert "" in res or len(res) == 1
 
 
-def test_check_hallucination_strict_and_max_args(mocker: Any) -> None:
+def test_check_hallucination_strict_and_max_args(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test strict_kwargs with unrecognized arguments and excess positional arguments.
 
     Args:
@@ -895,7 +914,9 @@ def test_check_hallucination_strict_and_max_args(mocker: Any) -> None:
     assert "Too many positional arguments" in res_excess["reason"]
 
 
-def test_check_hallucination_pytorch_factory_strict_kwargs(mocker: Any) -> None:
+def test_check_hallucination_pytorch_factory_strict_kwargs(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Verify that passing illegal kwargs to functions that declare **kwargs is strictly flagged by default.
 
     Args:
@@ -954,7 +975,7 @@ def test_check_hallucination_pytorch_factory_strict_kwargs(mocker: Any) -> None:
 
 
 def test_get_api_signature_and_check_hallucination_overload_resolution(
-    mocker: Any,
+    mocker: pytest_mock.MockerFixture,
 ) -> None:
     """Validate overload resolution in mcp_server.py:get_api_signature and check_hallucination.
 
@@ -1009,8 +1030,14 @@ def test_get_api_signature_and_check_hallucination_overload_resolution(
     sig = get_api_signature("torch", "torch.add")
     assert sig is not None
     assert "overloads" in sig
-    assert len(sig["overloads"]) == 1
-    assert any(p["name"] == "alpha" for p in sig["overloads"][0]["params"])
+    overloads = sig["overloads"]
+    assert isinstance(overloads, list)
+    assert len(overloads) == 1
+    first_ov = overloads[0]
+    assert isinstance(first_ov, dict)
+    ov_params = first_ov["params"]
+    assert isinstance(ov_params, list)
+    assert any(isinstance(p, dict) and p["name"] == "alpha" for p in ov_params)
 
     # 2. check_hallucination with alpha resolves via overload
     res_alpha = check_hallucination("torch", "torch.add", kwargs=["alpha"])
@@ -1023,7 +1050,9 @@ def test_get_api_signature_and_check_hallucination_overload_resolution(
     assert "nonexistent" in res_invalid["invalid_kwargs"]
 
 
-def test_check_sass_instruction_extra_branches(mocker: Any) -> None:
+def test_check_sass_instruction_extra_branches(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test check_sass_instruction with modifier normalization and empty operand signatures.
 
     Args:
@@ -1058,7 +1087,9 @@ def test_check_sass_instruction_extra_branches(mocker: Any) -> None:
     assert res_no_sigs["is_valid"] is True
 
 
-def test_check_rdna_instruction_extra_branches(mocker: Any) -> None:
+def test_check_rdna_instruction_extra_branches(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test check_rdna_instruction unsupported arch, matching operands, mismatch, and empty signatures.
 
     Args:
@@ -1114,7 +1145,7 @@ def test_check_rdna_instruction_extra_branches(mocker: Any) -> None:
     assert res_empty_sigs["is_valid"] is True
 
 
-def test_check_mlir_op_variadic_operands(mocker: Any) -> None:
+def test_check_mlir_op_variadic_operands(mocker: pytest_mock.MockerFixture) -> None:
     """Test check_mlir_op when operand count differs but operand is variadic (branch 427 -> 432).
 
     Args:
@@ -1144,7 +1175,7 @@ def test_check_mlir_op_variadic_operands(mocker: Any) -> None:
 
 
 def test_check_mlir_op_structured_attributes_and_type_constraints(
-    mocker: Any,
+    mocker: pytest_mock.MockerFixture,
 ) -> None:
     """Validate check_mlir_op with ODS type constraints and structured attributes.
 
@@ -1457,7 +1488,7 @@ def test_check_rdna_instruction_register_alignment_and_microarch() -> None:
 def test_search_apis_concept_alias_mapping() -> None:
     """Test concept alias mapping in search_apis for cross-framework grounding."""
     # 1. 'convolution' maps across frameworks
-    torch_convs = search_apis("torch", "convolution")
+    torch_convs = search_apis("torch", "convolution", limit=1)
     assert any("conv" in p.lower() for p in torch_convs)
 
     stablehlo_convs = search_apis("stablehlo", "convolution")
@@ -1467,11 +1498,13 @@ def test_search_apis_concept_alias_mapping() -> None:
     assert "v_dot4c_i32_i8" in rdna_convs
 
     # 2. 'matmul' concept mapping
-    torch_matmul = search_apis("torch", "matmul")
+    torch_matmul = search_apis("torch", "matmul", limit=1)
     assert any("matmul" in p.lower() or "mm" in p.lower() for p in torch_matmul)
 
 
-def test_check_hallucination_string_enum_values(mocker: Any) -> None:
+def test_check_hallucination_string_enum_values(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test validation of string enum arguments in check_hallucination.
 
     Args:
@@ -1522,7 +1555,9 @@ def test_check_hallucination_string_enum_values(mocker: Any) -> None:
     )
 
 
-def test_synthetic_hallucination_benchmark_suite(mocker: Any) -> None:
+def test_synthetic_hallucination_benchmark_suite(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Benchmark suite verifying 100% detection rate across 500+ synthetic hallucinations.
 
     Args:
@@ -1537,7 +1572,7 @@ def test_synthetic_hallucination_benchmark_suite(mocker: Any) -> None:
         check_mlir_op,
     )
 
-    hallucination_cases: List[Tuple[Any, ...]] = []
+    hallucination_cases: list[tuple[object, ...]] = []
 
     # Category 1: Argument swapping (dim vs axis, keepdim vs keepdims) (100 cases)
     swap_apis = [
@@ -1726,13 +1761,15 @@ def test_synthetic_hallucination_benchmark_suite(mocker: Any) -> None:
 
     assert len(hallucination_cases) >= 500
 
-    torch_ops = []
+    torch_ops: list[JsonValue] = []
     for case in hallucination_cases:
         if case[0] == "api_kwarg" and case[1] == "torch":
             _, _fw, _api, _kw = case
+            assert isinstance(_api, str)
+            assert isinstance(_kw, list)
             name = _api.split(".")[-1]
             if "axis" in _kw or "keepdims" in _kw:
-                params = [
+                params: list[JsonValue] = [
                     {"name": "input", "kind": "POSITIONAL_OR_KEYWORD"},
                     {"name": "dim", "kind": "KEYWORD_ONLY"},
                     {"name": "keepdim", "kind": "KEYWORD_ONLY"},
@@ -1745,10 +1782,12 @@ def test_synthetic_hallucination_benchmark_suite(mocker: Any) -> None:
                 ]
             torch_ops.append({"name": name, "api_path": _api, "params": params})
 
-    mock_torch_snap = {"categories": {"ops": torch_ops}}
+    mock_torch_snap: dict[str, JsonValue] = {"categories": {"ops": torch_ops}}
     orig_get_snap = mcp_server.get_framework_snapshot
 
-    def mock_get_snap(framework: str, version: Any = None) -> Any:
+    def mock_get_snap(
+        framework: str, version: str | None = None
+    ) -> dict[str, JsonValue]:
         """Mock framework snapshot getter returning mock torch snapshot when requested.
 
         Args:
@@ -1772,40 +1811,66 @@ def test_synthetic_hallucination_benchmark_suite(mocker: Any) -> None:
     )
 
     detected = 0
-    res: Any
     for case in hallucination_cases:
         kind = case[0]
         if kind == "api_kwarg":
-            _, fw, api, kw = case
-            res = check_hallucination(fw, api, kwargs=kw, strict_kwargs=True)
-            if res.get("is_hallucinated"):
+            _, fw, c_api, kw = case
+            assert isinstance(fw, str)
+            assert isinstance(c_api, str)
+            assert isinstance(kw, list)
+            kw_strs = [str(k) for k in kw]
+            if check_hallucination(fw, c_api, kwargs=kw_strs, strict_kwargs=True).get(
+                "is_hallucinated"
+            ):
                 detected += 1
         elif kind == "sass":
-            _, mnem, ops, arch = case
-            res = check_sass_instruction(mnem, operands=ops, sm_arch=arch)
-            if not res.get("is_valid"):
+            _, s_mnem, ops, s_arch = case
+            assert isinstance(s_mnem, str)
+            assert ops is None or isinstance(ops, list)
+            assert isinstance(s_arch, str)
+            sass_ops = [str(o) for o in ops] if ops is not None else None
+            if not check_sass_instruction(
+                s_mnem, operands=sass_ops, sm_arch=s_arch
+            ).get("is_valid"):
                 detected += 1
         elif kind == "ptx":
-            _, mnem, types, ops, state_space, arch = case
-            res = check_ptx_instruction(
-                mnem, types=types, operands=ops, state_space=state_space, sm_arch=arch
-            )
-            if not res.get("is_valid"):
+            _, p_mnem, types, ops, state_space, p_arch = case
+            assert isinstance(p_mnem, str)
+            assert isinstance(types, list)
+            assert isinstance(ops, list)
+            assert state_space is None or isinstance(state_space, str)
+            assert isinstance(p_arch, str)
+            ptx_types = [str(t) for t in types]
+            ptx_ops = [str(o) for o in ops]
+            if not check_ptx_instruction(
+                p_mnem,
+                types=ptx_types,
+                operands=ptx_ops,
+                state_space=state_space,
+                sm_arch=p_arch,
+            ).get("is_valid"):
                 detected += 1
         elif kind == "mlir":
             _, op_name, op_types, struct_attrs = case
+            assert isinstance(op_name, str)
+            assert op_types is None or isinstance(op_types, list)
             assert struct_attrs is None or isinstance(struct_attrs, dict)
-            res = check_mlir_op(
+            mlir_op_types = [str(t) for t in op_types] if op_types is not None else None
+            if not check_mlir_op(
                 op_name,
-                operand_types=op_types,
+                operand_types=mlir_op_types,
                 structured_attributes=struct_attrs,
-            )
-            if not res.get("is_valid"):
+            ).get("is_valid"):
                 detected += 1
         elif kind == "rdna":
-            _, mnem, ops, garch = case
-            res = check_rdna_instruction(mnem, operands=ops, gfx_arch=garch)
-            if not res.get("is_valid"):
+            _, r_mnem, ops, garch = case
+            assert isinstance(r_mnem, str)
+            assert ops is None or isinstance(ops, list)
+            assert garch is None or isinstance(garch, str)
+            rdna_ops = [str(o) for o in ops] if ops is not None else None
+            if not check_rdna_instruction(
+                r_mnem, operands=rdna_ops, gfx_arch=garch
+            ).get("is_valid"):
                 detected += 1
 
     # Verify 100% detection rate across all 500+ synthetic hallucinations
@@ -1814,7 +1879,7 @@ def test_synthetic_hallucination_benchmark_suite(mocker: Any) -> None:
     ), f"Detection rate: {detected}/{len(hallucination_cases)}"
 
 
-def test_mcp_server_remaining_branches(mocker: Any) -> None:
+def test_mcp_server_remaining_branches(mocker: pytest_mock.MockerFixture) -> None:
     """Test remaining branches in search_apis, check_hallucination, check_sass, check_rdna, and check_mlir.
 
     Args:
@@ -2000,7 +2065,7 @@ def test_mcp_server_remaining_branches(mocker: Any) -> None:
         assert res_from_params["is_valid"] is True
 
 
-def test_mcp_server_versioned(tmp_path: Any, monkeypatch: Any) -> None:
+def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test MCP server versioned snapshot lookups, search, and message handling.
 
     Args:
@@ -2040,11 +2105,13 @@ def test_mcp_server_versioned(tmp_path: Any, monkeypatch: Any) -> None:
             f,
         )
 
-    monkeypatch.setenv("ML_FRAMEWORK_SNAPSHOTS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", str(tmp_path))
 
     # Test get_framework_snapshot with version
     snap = get_framework_snapshot("torch", version="2.4.0")
-    assert "ops" in snap.get("categories", {})
+    snap_cats = snap.get("categories", {})
+    assert isinstance(snap_cats, dict)
+    assert "ops" in snap_cats
 
     # Test get_api_signature with version
     sig = get_api_signature(
@@ -2119,7 +2186,7 @@ def test_mcp_server_versioned(tmp_path: Any, monkeypatch: Any) -> None:
     assert '"is_hallucinated": false' in resp_chk["result"]["content"][0]["text"]
 
 
-def test_opaque_c_extension_guardrails(mocker: Any) -> None:
+def test_opaque_c_extension_guardrails(mocker: pytest_mock.MockerFixture) -> None:
     """Verify anti-hallucination guardrails and warnings for opaque C-extension signatures.
 
     Args:
@@ -2162,9 +2229,11 @@ def test_opaque_c_extension_guardrails(mocker: Any) -> None:
         strict_c_extensions=False,
     )
     assert res_perm["is_hallucinated"] is False
+    perm_warning = res_perm["warning"]
+    assert perm_warning is not None
     assert (
         "WARNING: API has opaque C-extension signature; cannot definitively confirm argument validity"
-        in res_perm["warning"]
+        in perm_warning
     )
     assert res_perm["signature_completeness"] == "opaque"
     assert res_perm["is_c_extension"] is True
@@ -2180,7 +2249,7 @@ def test_opaque_c_extension_guardrails(mocker: Any) -> None:
     assert res_strict_c["is_hallucinated"] is True
     assert "hallucinated_kwarg" in res_strict_c["invalid_kwargs"]
     # 3. Test compliance.score_compliance with strict_c_extensions
-    target_opaque: List[GhostRef] = [
+    target_opaque: list[GhostRef] = [
         ExtendedGhostRef(
             name="opaque_func",
             api_path="torch.opaque_func",
@@ -2206,7 +2275,9 @@ def test_opaque_c_extension_guardrails(mocker: Any) -> None:
     score_strict = score_compliance(mock_snap, target_opaque, strict_c_extensions=True)
     assert "torch.opaque_func" not in score_strict["matched"]
     assert any(
-        m["api_path"] == "torch.opaque_func" and "Opaque C-extension" in m["reason"]
+        m["api_path"] == "torch.opaque_func"
+        and m["reason"] is not None
+        and "Opaque C-extension" in m["reason"]
         for m in score_strict["mismatched"]
     )
 
@@ -2241,7 +2312,7 @@ def test_opaque_c_extension_guardrails(mocker: Any) -> None:
     assert "Valid API call with warning" in res_named["reason"]
 
 
-def test_framework_agnostic_dtype_validation(mocker: Any) -> None:
+def test_framework_agnostic_dtype_validation(mocker: pytest_mock.MockerFixture) -> None:
     """Test framework-agnostic dtype normalization and parameter validation.
 
     Args:
@@ -2568,7 +2639,9 @@ def test_translate_concept_arguments() -> None:
     assert res_comb["mnemonic_exists"] is True
 
 
-def test_check_hallucination_parameter_allowed_values_error(mocker: Any) -> None:
+def test_check_hallucination_parameter_allowed_values_error(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test check_hallucination flags invalid values for parameters with allowed_values.
 
     Args:
@@ -2612,7 +2685,7 @@ def test_check_hallucination_parameter_allowed_values_error(mocker: Any) -> None
 
 
 def test_hallucination_accepted_kwargs_bounded_vs_unconstrained(
-    mocker: Any,
+    mocker: pytest_mock.MockerFixture,
 ) -> None:
     """Verify that bounded accepted_kwargs prevent false-positive hallucination errors and reject illegal kwargs.
 

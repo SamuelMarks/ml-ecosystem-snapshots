@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import json
-from typing import Any, Dict
+import typing
 
 from ml_ecosystem_snapshots.introspection import (
     GhostInspector,
@@ -24,7 +24,7 @@ from ml_ecosystem_snapshots.mcp import (
     run_stdio_loop,
 )
 from ml_ecosystem_snapshots.mcp.tools import (
-    CONCEPT_ARG_MAPPINGS,
+    CONCEPT_ALIAS_MAP,
     check_code_block,
     check_hallucination,
     check_mlir_op,
@@ -37,9 +37,9 @@ from ml_ecosystem_snapshots.mcp.tools import (
     search_apis,
     translate_concept_arguments,
 )
+from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.serialization import (
     hydrate_ghost_ref,
-    migrate_ghost_ref_v2,
 )
 
 
@@ -66,7 +66,7 @@ def test_mcp_protocol_models_and_stdio_loop() -> None:
     )
     out_buf = io.StringIO()
 
-    def handler(msg: Dict[str, Any]) -> Dict[str, Any]:
+    def handler(msg: typing.Mapping[str, object]) -> dict[str, object]:
         """Handle test JSON-RPC request.
 
         Args:
@@ -86,7 +86,7 @@ def test_mcp_protocol_models_and_stdio_loop() -> None:
 
 def test_mcp_cache_snapshot_repository() -> None:
     """Verify SnapshotRepository preload, get, and clear operations."""
-    backing: Dict[str, Dict[str, Any]] = {}
+    backing: dict[str, dict[str, JsonValue]] = {}
     repo = SnapshotRepository(backing_store=backing)
     repo.preload("custom_fw", {"categories": {"UTIL": []}}, version="1.0")
     assert "custom_fw@1.0" in backing
@@ -101,12 +101,14 @@ def test_mcp_cache_snapshot_repository() -> None:
 def test_mcp_registry_and_tools_reexports() -> None:
     """Verify dispatch_tool_call and mcp.tools re-exports operate deterministically."""
     unknown_resp = dispatch_tool_call(99, "nonexistent_tool", {})
-    assert unknown_resp["error"]["code"] == -32601
+    err_obj: object = unknown_resp["error"]
+    assert isinstance(err_obj, dict)
+    assert err_obj["code"] == -32601
 
     valid_resp = dispatch_tool_call(100, "check_sass_instruction", {"mnemonic": "FFMA"})
     assert "result" in valid_resp
 
-    assert isinstance(CONCEPT_ARG_MAPPINGS, dict)
+    assert isinstance(CONCEPT_ALIAS_MAP, dict)
     assert callable(check_code_block)
     assert callable(check_hallucination)
     assert callable(check_mlir_op)
@@ -123,7 +125,7 @@ def test_mcp_registry_and_tools_reexports() -> None:
 def test_introspection_and_serialization_subpackages() -> None:
     """Verify introspection and serialization subpackage helpers."""
 
-    def sample_kw(**kwargs: Any) -> Any:
+    def sample_kw(**kwargs: object) -> object:
         """Sample function accessing kwargs['alpha'].
 
         Args:
@@ -141,8 +143,12 @@ def test_introspection_and_serialization_subpackages() -> None:
     preload_griffe_cache(frameworks=[])
     assert GhostInspector is not None
 
-    raw = {"name": "op", "api_path": "pkg.op", "kind": "function", "params": []}
+    raw: dict[str, JsonValue] = {
+        "name": "op",
+        "api_path": "pkg.op",
+        "kind": "function",
+        "params": [],
+    }
     hydrated = hydrate_ghost_ref(raw)
     assert hydrated.api_path == "pkg.op"
-    migrated = migrate_ghost_ref_v2(raw)
-    assert migrated.schema_version == "2.0.0"
+    assert hydrated.schema_version == "2.0.0"

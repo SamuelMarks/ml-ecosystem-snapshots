@@ -1,11 +1,15 @@
 """Tests for the AMD RDNA scraper script."""
 
+from __future__ import annotations
+
 import json
 import os
+from pathlib import Path
 import tempfile
 import urllib.request
 from unittest import mock
-import typing
+import pytest
+import pytest_mock
 
 from ml_ecosystem_snapshots.tools import scrape_amd_rdna
 
@@ -22,7 +26,7 @@ def test_fetch_td_file_success() -> None:
         assert "defm V_ADD_F32" in content
 
 
-def test_fetch_td_file_cache(tmp_path: typing.Any, monkeypatch: typing.Any) -> None:
+def test_fetch_td_file_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test fetch_td_file with disk cache hit and write.
 
     Args:
@@ -54,7 +58,7 @@ def test_fetch_td_file_cache(tmp_path: typing.Any, monkeypatch: typing.Any) -> N
 
 
 def test_fetch_td_file_cache_exceptions(
-    tmp_path: typing.Any, monkeypatch: typing.Any
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Test fetch_td_file handling of read/write cache exceptions and empty content.
 
@@ -128,9 +132,7 @@ def S_MOV_B32 : SOP1_32 <"s_mov_b32">;
             "ml_ecosystem_snapshots.tools.scrape_amd_rdna.fetch_td_file"
         ) as mock_fetch:
 
-            def fetch_side_effect(
-                filename: str, local_dir: typing.Optional[str] = None
-            ) -> str:
+            def fetch_side_effect(filename: str, local_dir: str | None = None) -> str:
                 """Mock fetch_td_file side effect.
 
                 Args:
@@ -152,21 +154,27 @@ def S_MOV_B32 : SOP1_32 <"s_mov_b32">;
                 original_open = open
 
                 def open_side_effect(
-                    path: str, *args: typing.Any, **kwargs: typing.Any
-                ) -> typing.Any:
+                    path: str,
+                    mode: str = "r",
+                    encoding: str | None = None,
+                    newline: str | None = None,
+                ) -> object:
                     """Mock open side effect.
 
                     Args:
                         path: The file path.
-                        *args: Additional args.
-                        **kwargs: Additional kwargs.
+                        mode: File open mode.
+                        encoding: File encoding.
+                        newline: Newline mode.
 
                     Returns:
                         The mocked file object.
                     """
                     if "amd_rdna_exhaustive.json" in path:
-                        return original_open(output_path, *args, **kwargs)
-                    return original_open(path, *args, **kwargs)
+                        return original_open(
+                            output_path, mode, encoding=encoding, newline=newline
+                        )
+                    return original_open(path, mode, encoding=encoding, newline=newline)
 
                 mock_open.side_effect = open_side_effect
 
@@ -378,7 +386,7 @@ def test_parse_llvm_tblgen_json() -> None:
     assert res_map["v_nop"]["architecture"] == "GFX10.3/RDNA2"
 
 
-def test_scrape_amd_rdna_with_tblgen_json(tmp_path: typing.Any) -> None:
+def test_scrape_amd_rdna_with_tblgen_json(tmp_path: Path) -> None:
     """Test scrape_amd_rdna reading from a TableGen JSON export file.
 
     Args:
@@ -440,7 +448,7 @@ def test_parse_llvm_tblgen_json_operand_and_encoding_fallbacks() -> None:
     assert res_map["s_mov_sop1"]["modifiers"] == []
 
 
-def test_scrape_amd_rdna_duplicate_operand_signatures(tmp_path: typing.Any) -> None:
+def test_scrape_amd_rdna_duplicate_operand_signatures(tmp_path: Path) -> None:
     """Test scrape_amd_rdna when multiple records produce duplicate operand signatures.
 
     Args:
@@ -472,7 +480,7 @@ def test_scrape_amd_rdna_duplicate_operand_signatures(tmp_path: typing.Any) -> N
     assert len(result[0]["operands"]) == 1
 
 
-def test_fetch_td_file_local_dir(tmp_path: typing.Any) -> None:
+def test_fetch_td_file_local_dir(tmp_path: Path) -> None:
     """Test fetching TableGen file from local checkout directory.
 
     Args:
@@ -494,7 +502,7 @@ def test_fetch_td_file_local_dir(tmp_path: typing.Any) -> None:
     assert isinstance(res, list)
 
 
-def test_scrape_amd_rdna_main_entrypoint(mocker: typing.Any) -> None:
+def test_scrape_amd_rdna_main_entrypoint(mocker: pytest_mock.MockerFixture) -> None:
     """Test running scrape_amd_rdna as __main__ writes output file.
 
     Args:
@@ -503,7 +511,7 @@ def test_scrape_amd_rdna_main_entrypoint(mocker: typing.Any) -> None:
     import runpy
 
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("ml_ecosystem_snapshots.utils.fetch_url", return_value="")
+    mocker.patch("ml_ecosystem_snapshots.network_env.fetch_url", return_value="")
     res = runpy.run_path(scrape_amd_rdna.__file__, run_name="__main__")
     assert "main" in res
     assert mock_open.called

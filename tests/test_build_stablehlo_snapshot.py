@@ -1,5 +1,7 @@
 """Tests for build_stablehlo_snapshot.py."""
 
+from __future__ import annotations
+
 from unittest import mock
 
 from ml_ecosystem_snapshots.tools import build_stablehlo_snapshot
@@ -15,7 +17,7 @@ def test_is_attribute() -> None:
     assert not build_stablehlo_snapshot.is_attribute("tensor or quantized tensor")
 
 
-@mock.patch("ml_ecosystem_snapshots.utils.fetch_url")
+@mock.patch("ml_ecosystem_snapshots.network_env.fetch_url")
 def test_extract_ops(mock_urlopen: mock.MagicMock) -> None:
     """Test extract ops.
 
@@ -128,7 +130,7 @@ def test_main(mock_open: mock.MagicMock, mock_extract: mock.MagicMock) -> None:
     assert "fake_op" in written_content
 
 
-@mock.patch("ml_ecosystem_snapshots.utils.fetch_url")
+@mock.patch("ml_ecosystem_snapshots.network_env.fetch_url")
 def test_extract_ops_empty_op(mock_urlopen: mock.MagicMock) -> None:
     """Test extract ops empty op.
 
@@ -150,7 +152,7 @@ Empty op.
     assert len(ghost_refs) == 0
 
 
-@mock.patch("ml_ecosystem_snapshots.utils.fetch_url")
+@mock.patch("ml_ecosystem_snapshots.network_env.fetch_url")
 def test_extract_ops_missing_semantics(mock_urlopen: mock.MagicMock) -> None:
     """Test extract ops missing semantics.
 
@@ -176,7 +178,7 @@ def test_extract_ops_missing_semantics(mock_urlopen: mock.MagicMock) -> None:
     assert ghost_refs[0]["docstring"] is None
 
 
-@mock.patch("ml_ecosystem_snapshots.utils.fetch_url")
+@mock.patch("ml_ecosystem_snapshots.network_env.fetch_url")
 def test_extract_ops_multi_output(mock_urlopen: mock.MagicMock) -> None:
     """Test extract ops multi output.
 
@@ -208,7 +210,7 @@ def test_extract_ops_multi_output(mock_urlopen: mock.MagicMock) -> None:
     assert ghost_refs[0]["returns_type"] == "tuple[tensor, tensor]"
 
 
-@mock.patch("ml_ecosystem_snapshots.utils.fetch_url")
+@mock.patch("ml_ecosystem_snapshots.network_env.fetch_url")
 def test_extract_ops_ignore_unnamed_columns(mock_urlopen: mock.MagicMock) -> None:
     """Test extract ops ignore unnamed columns.
 
@@ -239,7 +241,7 @@ def test_extract_ops_ignore_unnamed_columns(mock_urlopen: mock.MagicMock) -> Non
     assert ghost_refs[0]["returns_type"] in ["tensor", "", "`res`", None]
 
 
-@mock.patch("ml_ecosystem_snapshots.utils.fetch_url")
+@mock.patch("ml_ecosystem_snapshots.network_env.fetch_url")
 def test_extract_ops_missing_type_column_outputs(mock_urlopen: mock.MagicMock) -> None:
     """Test extract ops missing type column outputs.
 
@@ -269,7 +271,7 @@ def test_extract_ops_missing_type_column_outputs(mock_urlopen: mock.MagicMock) -
     assert ghost_refs[0]["returns_type"] in ["tensor", "", "`res`", None]
 
 
-@mock.patch("ml_ecosystem_snapshots.utils.fetch_url")
+@mock.patch("ml_ecosystem_snapshots.network_env.fetch_url")
 def test_extract_ops_unmatched_lines(mock_urlopen: mock.MagicMock) -> None:
     """Test extract_ops handling of unmatched lines and HTTP error fallbacks.
 
@@ -795,8 +797,8 @@ def test_parse_stablehlo_llvm_tblgen_json_edge_branches() -> None:
     assert len(none_op["results"]) == 0
 
 
-def test_parse_stablehlo_tblgen_json_dump_alias() -> None:
-    """Test parse_tblgen_json_dump alias in build_stablehlo_snapshot.
+def test_parse_stablehlo_llvm_tblgen_json_subtract() -> None:
+    """Test parse_stablehlo_llvm_tblgen_json in build_stablehlo_snapshot.
 
     Returns:
         None.
@@ -815,7 +817,7 @@ def test_parse_stablehlo_tblgen_json_dump_alias() -> None:
             "traits": ["SameOperandsAndResultType"],
         },
     }
-    refs = build_stablehlo_snapshot.parse_tblgen_json_dump(raw_json)
+    refs = build_stablehlo_snapshot.parse_stablehlo_llvm_tblgen_json(raw_json)
     assert len(refs) == 1
     assert refs[0]["name"] == "subtract"
     assert refs[0]["api_path"] == "stablehlo.subtract"
@@ -851,7 +853,7 @@ def test_extract_ops_tablegen_failure_fallback(mocker: mock.MagicMock) -> None:
         mocker: Pytest mocker fixture.
     """
     mock_urlopen = mocker.patch(
-        "ml_ecosystem_snapshots.utils.fetch_url",
+        "ml_ecosystem_snapshots.network_env.fetch_url",
         side_effect=[
             None,
             (
@@ -874,7 +876,7 @@ def test_main_entrypoint(mocker: mock.MagicMock) -> None:
     import runpy
 
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("ml_ecosystem_snapshots.utils.fetch_url", return_value="")
+    mocker.patch("ml_ecosystem_snapshots.network_env.fetch_url", return_value="")
     res = runpy.run_path(
         build_stablehlo_snapshot.__file__,
         run_name="__main__",

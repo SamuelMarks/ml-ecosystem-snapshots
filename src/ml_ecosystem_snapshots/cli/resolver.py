@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from typing import List
 
 from ml_ecosystem_snapshots.exceptions import SnapshotNotFoundError
 
@@ -23,7 +22,7 @@ def resolve_snapshot_path(path: str, must_exist: bool = False) -> str:
     """
     import ml_ecosystem_snapshots.cli as cli_pkg
     from ml_ecosystem_snapshots.index import get_cache_dir
-    from ml_ecosystem_snapshots.utils import get_custom_snapshots_paths
+    from ml_ecosystem_snapshots.network_env import get_custom_snapshots_paths
 
     if os.path.exists(path):
         return path
@@ -39,7 +38,7 @@ def resolve_snapshot_path(path: str, must_exist: bool = False) -> str:
         pkg_dir = os.path.dirname(cli_file)
     repo_root = os.path.dirname(os.path.dirname(pkg_dir))
 
-    search_dirs: List[str] = get_custom_snapshots_paths() + [
+    search_dirs: list[str] = get_custom_snapshots_paths() + [
         os.path.join(pkg_dir, "snapshots"),
         os.path.join(pkg_dir, "frameworks"),
         os.path.join(repo_root, "snapshots"),
@@ -48,7 +47,7 @@ def resolve_snapshot_path(path: str, must_exist: bool = False) -> str:
     ]
 
     seen_dirs = set()
-    candidate_dirs: List[str] = []
+    candidate_dirs: list[str] = []
     for d in search_dirs:
         norm_d = os.path.normpath(d)
         if norm_d not in seen_dirs and os.path.isdir(norm_d):
@@ -65,7 +64,7 @@ def resolve_snapshot_path(path: str, must_exist: bool = False) -> str:
 
     import glob
 
-    all_matches: List[str] = []
+    all_matches: list[str] = []
     for d in candidate_dirs:
         matches = glob.glob(os.path.join(d, f"{basename}*.json"))
         if matches:

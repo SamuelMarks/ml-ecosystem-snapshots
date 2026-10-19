@@ -90,7 +90,7 @@ python -m ml_ecosystem_snapshots.tools.build_stablehlo_snapshot
 
 `ml-ecosystem-snapshots` resolves snapshot references across a multi-tier search cascade:
 1. Exact file paths (`./snapshots/torch_v2.4.0.json`)
-2. Custom paths defined in `$ML_SNAPSHOTS_PATH` or `$ML_FRAMEWORK_SNAPSHOTS_PATH`
+2. Custom paths defined in `$ML_SNAPSHOTS_PATH`
 3. Local user cache directory (`~/.cache/ml_ecosystem_snapshots/snapshots/`)
 4. Project root `snapshots/`
 5. Package-bundled offline snapshots (`src/ml_ecosystem_snapshots/snapshots/` and `frameworks/`)
@@ -138,7 +138,7 @@ ml_ecosystem_snapshots index --status
 ml_ecosystem_snapshots index --rebuild
 
 # Clear the index database
-ml_ecosystem_snapshots index --clean
+ml_ecosystem_snapshots index --clear
 ```
 
 ---

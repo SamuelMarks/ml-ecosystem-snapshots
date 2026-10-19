@@ -1,6 +1,7 @@
 """Tests for Intel Data Parallel Extension for NumPy (DPNP) snapshot extractor."""
 
-from typing import Any
+from __future__ import annotations
+
 import pytest
 
 from ml_ecosystem_snapshots.frameworks.dpnp import (
@@ -42,7 +43,7 @@ def test_collect_api_dpnp_live(monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock DPNP module."""
 
         @staticmethod
-        def array(obj: Any) -> Any:
+        def array(obj: object) -> object:
             """Mock array creation.
 
             Args:
@@ -51,7 +52,7 @@ def test_collect_api_dpnp_live(monkeypatch: pytest.MonkeyPatch) -> None:
             return obj
 
         @staticmethod
-        def empty(shape: Any) -> Any:
+        def empty(shape: object) -> object:
             """Mock empty creation.
 
             Args:
@@ -97,9 +98,9 @@ def test_get_dpnp_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     import builtins
 
-    real_import = builtins.__import__
+    real_import = getattr(builtins, "__import__")
 
-    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+    def mock_import(name: str, *args: object, **kwargs: object) -> object:
         """Mock import function.
 
         Args:
@@ -134,16 +135,7 @@ def test_collect_api_dpnp_inspection_exception(monkeypatch: pytest.MonkeyPatch) 
         "ml_ecosystem_snapshots.frameworks.dpnp._get_dpnp", lambda: FlakyDPNP()
     )
 
-    def mock_inspect(*args: Any, **kwargs: Any) -> Any:
-        """Mock inspect function.
-
-        Args:
-            *args: Variable arguments.
-            **kwargs: Variable arguments.
-
-        Returns:
-            A mocked GhostRef.
-        """
+    def mock_inspect(*args: object, **kwargs: object) -> object:
         """Mock inspect function.
 
         Args:

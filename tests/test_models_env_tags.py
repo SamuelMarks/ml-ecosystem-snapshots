@@ -1,10 +1,12 @@
 """Tests for GhostRef and GhostInspector environment_tags without host environment leakage."""
 
-from typing import Any
+from __future__ import annotations
 
-from ml_ecosystem_snapshots.models import (
-    GhostInspector,
+from ml_ecosystem_snapshots.introspection.inspector import (
     FRAMEWORK_CAPABILITIES,
+    GhostInspector,
+)
+from ml_ecosystem_snapshots.models import (
     OperandDirection,
     IRParameterRole,
     GhostResult,
@@ -34,7 +36,7 @@ def test_ghostref_env_tags() -> None:
 def test_ghostinspector_env_tags_deterministic() -> None:
     """Test that GhostInspector derives deterministic capabilities and does not leak sys.platform."""
 
-    def dummy() -> Any:
+    def dummy() -> None:
         """Dummy function for inspection."""
         pass
 
@@ -58,7 +60,7 @@ def test_ghostinspector_env_tags_deterministic() -> None:
 def test_ghostinspector_env_tags_explicit_override() -> None:
     """Test that passing explicit environment_tags overrides default capabilities."""
 
-    def dummy() -> Any:
+    def dummy() -> None:
         """Dummy function for inspection."""
         pass
 

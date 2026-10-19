@@ -4,20 +4,17 @@ Adjusts process file descriptor limits for concurrent test executions and
 configures environment defaults.
 """
 
-from typing import Any
+from __future__ import annotations
 
-from ml_ecosystem_snapshots._alias import register_alias_finder
-
-register_alias_finder()
+import pytest
 
 
-def pytest_configure(config: Any) -> None:
+def pytest_configure(config: pytest.Config) -> None:
     """Configure test environment and raise open file limits if possible.
 
     Args:
         config: Pytest configuration object.
     """
-    register_alias_finder()
     try:
         import resource
 
@@ -27,3 +24,35 @@ def pytest_configure(config: Any) -> None:
             resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
     except (ImportError, OSError, ValueError):
         pass
+
+    import griffe
+    from ml_ecosystem_snapshots.introspection.static_parsers import _GRIFFE_CACHE
+
+    _GRIFFE_CACHE["__loader__"] = griffe.load
+    for pkg in (
+        "torch",
+        "scipy",
+        "awkward",
+        "numba",
+        "pyarrow",
+        "tensorflow",
+        "jax",
+        "flax",
+        "optax",
+        "orbax",
+        "keras",
+        "dask",
+        "cupy",
+        "sparse",
+        "dpnp",
+        "bohrium",
+        "safetensors",
+        "torchvision",
+        "torchaudio",
+        "transformers",
+        "deepspeed",
+        "onnx",
+        "onnxruntime",
+        "triton",
+    ):
+        _GRIFFE_CACHE.setdefault(pkg, None)

@@ -1,8 +1,10 @@
 """Unit tests and verification suite for api aliases."""
 
+from __future__ import annotations
+
 from unittest.mock import patch
 from ml_ecosystem_snapshots.api import _consolidate_aliases, get_pkg_version
-from ml_ecosystem_snapshots.frameworks.optax_shim import collect_api
+from ml_ecosystem_snapshots.frameworks.optax import collect_api
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
     GhostRef,
@@ -46,7 +48,7 @@ def test_consolidate_aliases() -> None:
 def test_get_pkg_version_aliases() -> None:
     """Test get_pkg_version aliases."""
     with patch("importlib.metadata.version", return_value="1.0.0") as mock_ver:
-        assert get_pkg_version("optax_shim") == "1.0.0"
+        assert get_pkg_version("optax") == "1.0.0"
         mock_ver.assert_called_with("optax")
 
         assert get_pkg_version("huggingface") == "1.0.0"
@@ -59,20 +61,20 @@ def test_get_pkg_version_aliases() -> None:
         mock_ver.assert_called_with("orbax-checkpoint")
 
 
-def test_optax_shim_collect_api() -> None:
-    """Test optax_shim.collect_api."""
+def test_optax_collect_api() -> None:
+    """Test optax.collect_api."""
     with patch(
-        "ml_ecosystem_snapshots.frameworks.optax_shim.OptaxScanner.scan_optimizers",
+        "ml_ecosystem_snapshots.frameworks.optax.OptaxScanner.scan_optimizers",
         return_value=[],
     ):
         assert collect_api(SemanticTier.OPTIMIZER, False) == []
     with patch(
-        "ml_ecosystem_snapshots.frameworks.optax_shim.OptaxScanner.scan_losses",
+        "ml_ecosystem_snapshots.frameworks.optax.OptaxScanner.scan_losses",
         return_value=[],
     ):
         assert collect_api(SemanticTier.LOSS, False) == []
     with patch(
-        "ml_ecosystem_snapshots.frameworks.optax_shim.OptaxScanner.scan_schedulers",
+        "ml_ecosystem_snapshots.frameworks.optax.OptaxScanner.scan_schedulers",
         return_value=[],
     ):
         assert collect_api(SemanticTier.SCHEDULER, False) == []
@@ -102,8 +104,8 @@ def test_consolidate_aliases_extended_params_and_metadata() -> None:
                 kind=ParameterKind.POSITIONAL_ONLY,
                 direction=OperandDirection.WRITE,
                 role=IRParameterRole.OPERAND,
-                dtypes=["float32"],
-                rank=1,
+                allowed_dtypes=["float32"],
+                rank_constraint="1",
             )
         ],
         docstring="Move instruction write",
@@ -118,8 +120,8 @@ def test_consolidate_aliases_extended_params_and_metadata() -> None:
                 kind=ParameterKind.POSITIONAL_ONLY,
                 direction=OperandDirection.READ,
                 role=IRParameterRole.OPERAND,
-                dtypes=["float32"],
-                rank=1,
+                allowed_dtypes=["float32"],
+                rank_constraint="1",
             )
         ],
         docstring="Move instruction write",
@@ -136,7 +138,7 @@ def test_consolidate_aliases_extended_params_and_metadata() -> None:
         domain_metadata={
             "arch": "sm_80",
             "features": ["tensor_core"],
-            "tags": {"fast"},
+            "tags": ["fast"],
         },
         docstring="MMA",
     )
@@ -145,7 +147,7 @@ def test_consolidate_aliases_extended_params_and_metadata() -> None:
         api_path="isa.inst.MMA_sm90",
         kind="instruction",
         params=[GhostParam(name="op0", kind=ParameterKind.POSITIONAL_ONLY)],
-        domain_metadata={"arch": "sm_90", "features": ["wgmma"], "tags": {"fast"}},
+        domain_metadata={"arch": "sm_90", "features": ["wgmma"], "tags": ["fast"]},
         docstring="MMA",
     )
     res_arch = _consolidate_aliases([inst_sm80, inst_sm90])

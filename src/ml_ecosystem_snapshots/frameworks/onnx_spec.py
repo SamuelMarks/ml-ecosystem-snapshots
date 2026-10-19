@@ -4,259 +4,281 @@ Extracts official ONNX operator schemas, SSA operands, attribute constraints,
 and type signatures from the ONNX operator specification definitions.
 """
 
-from typing import Any, Dict, List
+from __future__ import annotations
+
+import types
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     OperandDirection,
     SemanticTier,
 )
+import pydantic
+
+from ml_ecosystem_snapshots.frameworks._base import (
+    CanonicalSsaAttrSpec,
+    CanonicalSsaOpSpec,
+)
 
 
-CANONICAL_ONNX_OPS: List[Dict[str, Any]] = [
-    {
-        "name": "Add",
-        "domain": "",
-        "since_version": 14,
-        "inputs": ["A", "B"],
-        "outputs": ["C"],
-        "attributes": [],
-        "description": "Element-wise addition of two tensors with broadcasting support.",
-    },
-    {
-        "name": "Sub",
-        "domain": "",
-        "since_version": 14,
-        "inputs": ["A", "B"],
-        "outputs": ["C"],
-        "attributes": [],
-        "description": "Element-wise subtraction of two tensors with broadcasting support.",
-    },
-    {
-        "name": "Mul",
-        "domain": "",
-        "since_version": 14,
-        "inputs": ["A", "B"],
-        "outputs": ["C"],
-        "attributes": [],
-        "description": "Element-wise multiplication of two tensors with broadcasting support.",
-    },
-    {
-        "name": "Div",
-        "domain": "",
-        "since_version": 14,
-        "inputs": ["A", "B"],
-        "outputs": ["C"],
-        "attributes": [],
-        "description": "Element-wise division of two tensors with broadcasting support.",
-    },
-    {
-        "name": "Relu",
-        "domain": "",
-        "since_version": 14,
-        "inputs": ["X"],
-        "outputs": ["Y"],
-        "attributes": [],
-        "description": "Rectified Linear Unit activation: max(0, x).",
-    },
-    {
-        "name": "MatMul",
-        "domain": "",
-        "since_version": 13,
-        "inputs": ["A", "B"],
-        "outputs": ["Y"],
-        "attributes": [],
-        "description": "Matrix product of two tensors with standard batched broadcasting rules.",
-    },
-    {
-        "name": "Gemm",
-        "domain": "",
-        "since_version": 13,
-        "inputs": ["A", "B", "C"],
-        "outputs": ["Y"],
-        "attributes": [
-            {
-                "name": "alpha",
-                "type": "float",
-                "required": False,
-                "default": "1.0",
-                "description": "Scalar multiplier for product of inputs A and B.",
-            },
-            {
-                "name": "beta",
-                "type": "float",
-                "required": False,
-                "default": "1.0",
-                "description": "Scalar multiplier for input C.",
-            },
-            {
-                "name": "transA",
-                "type": "int",
-                "required": False,
-                "default": "0",
-                "description": "Whether A should be transposed before multiplying.",
-            },
-            {
-                "name": "transB",
-                "type": "int",
-                "required": False,
-                "default": "0",
-                "description": "Whether B should be transposed before multiplying.",
-            },
-        ],
-        "description": "General Matrix Multiplication: alpha * A' * B' + beta * C.",
-    },
-    {
-        "name": "Conv",
-        "domain": "",
-        "since_version": 11,
-        "inputs": ["X", "W", "B"],
-        "outputs": ["Y"],
-        "attributes": [
-            {
-                "name": "auto_pad",
-                "type": "str",
-                "required": False,
-                "default": "NOTSET",
-                "description": "Auto padding mode string.",
-            },
-            {
-                "name": "dilations",
-                "type": "list[int]",
-                "required": False,
-                "default": "None",
-                "description": "Dilation value along each spatial axis.",
-            },
-            {
-                "name": "group",
-                "type": "int",
-                "required": False,
-                "default": "1",
-                "description": "Number of groups input channels and output channels are divided into.",
-            },
-            {
-                "name": "kernel_shape",
-                "type": "list[int]",
-                "required": False,
-                "default": "None",
-                "description": "The shape of the convolution kernel.",
-            },
-            {
-                "name": "pads",
-                "type": "list[int]",
-                "required": False,
-                "default": "None",
-                "description": "Padding for the beginning and ending along each spatial axis.",
-            },
-            {
-                "name": "strides",
-                "type": "list[int]",
-                "required": False,
-                "default": "None",
-                "description": "Stride along each spatial axis.",
-            },
-        ],
-        "description": "Standard multi-dimensional spatial convolution.",
-    },
-    {
-        "name": "Reshape",
-        "domain": "",
-        "since_version": 14,
-        "inputs": ["data", "shape"],
-        "outputs": ["reshaped"],
-        "attributes": [
-            {
-                "name": "allowzero",
-                "type": "int",
-                "required": False,
-                "default": "0",
-                "description": "Whether zero values in shape are kept as zero or copied.",
-            }
-        ],
-        "description": "Reshape the input tensor similar to numpy.reshape.",
-    },
-    {
-        "name": "Softmax",
-        "domain": "",
-        "since_version": 13,
-        "inputs": ["input"],
-        "outputs": ["output"],
-        "attributes": [
-            {
-                "name": "axis",
-                "type": "int",
-                "required": False,
-                "default": "-1",
-                "description": "The axis along which to compute the softmax.",
-            }
-        ],
-        "description": "The operator computes the softmax normalized exponential values.",
-    },
-]
+CANONICAL_ONNX_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(
+    list[CanonicalSsaOpSpec]
+).validate_python(
+    [
+        {
+            "name": "Add",
+            "domain": "",
+            "since_version": 14,
+            "inputs": ["A", "B"],
+            "outputs": ["C"],
+            "attributes": [],
+            "description": "Element-wise addition of two tensors with broadcasting support.",
+        },
+        {
+            "name": "Sub",
+            "domain": "",
+            "since_version": 14,
+            "inputs": ["A", "B"],
+            "outputs": ["C"],
+            "attributes": [],
+            "description": "Element-wise subtraction of two tensors with broadcasting support.",
+        },
+        {
+            "name": "Mul",
+            "domain": "",
+            "since_version": 14,
+            "inputs": ["A", "B"],
+            "outputs": ["C"],
+            "attributes": [],
+            "description": "Element-wise multiplication of two tensors with broadcasting support.",
+        },
+        {
+            "name": "Div",
+            "domain": "",
+            "since_version": 14,
+            "inputs": ["A", "B"],
+            "outputs": ["C"],
+            "attributes": [],
+            "description": "Element-wise division of two tensors with broadcasting support.",
+        },
+        {
+            "name": "Relu",
+            "domain": "",
+            "since_version": 14,
+            "inputs": ["X"],
+            "outputs": ["Y"],
+            "attributes": [],
+            "description": "Rectified Linear Unit activation: max(0, x).",
+        },
+        {
+            "name": "MatMul",
+            "domain": "",
+            "since_version": 13,
+            "inputs": ["A", "B"],
+            "outputs": ["Y"],
+            "attributes": [],
+            "description": "Matrix product of two tensors with standard batched broadcasting rules.",
+        },
+        {
+            "name": "Gemm",
+            "domain": "",
+            "since_version": 13,
+            "inputs": ["A", "B", "C"],
+            "outputs": ["Y"],
+            "attributes": [
+                {
+                    "name": "alpha",
+                    "type": "float",
+                    "required": False,
+                    "default": "1.0",
+                    "description": "Scalar multiplier for product of inputs A and B.",
+                },
+                {
+                    "name": "beta",
+                    "type": "float",
+                    "required": False,
+                    "default": "1.0",
+                    "description": "Scalar multiplier for input C.",
+                },
+                {
+                    "name": "transA",
+                    "type": "int",
+                    "required": False,
+                    "default": "0",
+                    "description": "Whether A should be transposed before multiplying.",
+                },
+                {
+                    "name": "transB",
+                    "type": "int",
+                    "required": False,
+                    "default": "0",
+                    "description": "Whether B should be transposed before multiplying.",
+                },
+            ],
+            "description": "General Matrix Multiplication: alpha * A' * B' + beta * C.",
+        },
+        {
+            "name": "Conv",
+            "domain": "",
+            "since_version": 11,
+            "inputs": ["X", "W", "B"],
+            "outputs": ["Y"],
+            "attributes": [
+                {
+                    "name": "auto_pad",
+                    "type": "str",
+                    "required": False,
+                    "default": "NOTSET",
+                    "description": "Auto padding mode string.",
+                },
+                {
+                    "name": "dilations",
+                    "type": "list[int]",
+                    "required": False,
+                    "default": "None",
+                    "description": "Dilation value along each spatial axis.",
+                },
+                {
+                    "name": "group",
+                    "type": "int",
+                    "required": False,
+                    "default": "1",
+                    "description": "Number of groups input channels and output channels are divided into.",
+                },
+                {
+                    "name": "kernel_shape",
+                    "type": "list[int]",
+                    "required": False,
+                    "default": "None",
+                    "description": "The shape of the convolution kernel.",
+                },
+                {
+                    "name": "pads",
+                    "type": "list[int]",
+                    "required": False,
+                    "default": "None",
+                    "description": "Padding for the beginning and ending along each spatial axis.",
+                },
+                {
+                    "name": "strides",
+                    "type": "list[int]",
+                    "required": False,
+                    "default": "None",
+                    "description": "Stride along each spatial axis.",
+                },
+            ],
+            "description": "Standard multi-dimensional spatial convolution.",
+        },
+        {
+            "name": "Reshape",
+            "domain": "",
+            "since_version": 14,
+            "inputs": ["data", "shape"],
+            "outputs": ["reshaped"],
+            "attributes": [
+                {
+                    "name": "allowzero",
+                    "type": "int",
+                    "required": False,
+                    "default": "0",
+                    "description": "Whether zero values in shape are kept as zero or copied.",
+                }
+            ],
+            "description": "Reshape the input tensor similar to numpy.reshape.",
+        },
+        {
+            "name": "Softmax",
+            "domain": "",
+            "since_version": 13,
+            "inputs": ["input"],
+            "outputs": ["output"],
+            "attributes": [
+                {
+                    "name": "axis",
+                    "type": "int",
+                    "required": False,
+                    "default": "-1",
+                    "description": "The axis along which to compute the softmax.",
+                }
+            ],
+            "description": "The operator computes the softmax normalized exponential values.",
+        },
+    ]
+)
 
 
-def _get_onnx_defs() -> Any:
+def _get_onnx_defs() -> types.ModuleType | object | None:
     """Lazily load the onnx.defs module to prevent unnecessary import overhead.
 
     Returns:
         The onnx.defs module or None if not installed.
     """
     try:
-        import onnx.defs as defs
+        import onnx.defs
 
+        defs: types.ModuleType = onnx.defs
         return defs
     except Exception:
         return None
 
 
-def _load_onnx_ops() -> List[Dict[str, Any]]:
+def _load_onnx_ops() -> list[CanonicalSsaOpSpec]:
     """Load ONNX operator definitions from onnx.defs or canonical fallback.
 
     Returns:
-        List of ONNX operator schema dictionaries.
+        List of ONNX operator specifications.
     """
     defs = _get_onnx_defs()
     if defs is None:
         return CANONICAL_ONNX_OPS
 
     try:
-        schemas = defs.get_all_schemas_with_history()
-        # Keep latest version per (domain, name)
-        latest_map: Dict[tuple[str, str], Any] = {}
+        schemas = getattr(defs, "get_all_schemas_with_history")()
+        latest_map: dict[tuple[str, str], object] = {}
         for s in schemas:
-            key = (s.domain, s.name)
-            if key not in latest_map or s.since_version > latest_map[key].since_version:
+            key = (str(getattr(s, "domain", "")), str(getattr(s, "name", "")))
+            s_ver = int(getattr(s, "since_version", 1))
+            if key not in latest_map or s_ver > int(
+                getattr(latest_map[key], "since_version", 1)
+            ):
                 latest_map[key] = s
 
-        ops: List[Dict[str, Any]] = []
+        ops: list[CanonicalSsaOpSpec] = []
         for (domain, name), s in sorted(
             latest_map.items(), key=lambda x: (x[0][0], x[0][1])
         ):
-            inputs = [inp.name for inp in s.inputs]
-            outputs = [out.name for out in s.outputs]
-            attributes = []
-            for attr_name, attr in s.attributes.items():
+            inputs = [str(inp.name) for inp in getattr(s, "inputs", ())]
+            outputs = [str(out.name) for out in getattr(s, "outputs", ())]
+            attributes: list[CanonicalSsaAttrSpec] = []
+            raw_attrs = getattr(s, "attributes", {})
+            assert isinstance(raw_attrs, dict)
+            for attr_name, attr in raw_attrs.items():
                 attributes.append(
-                    {
-                        "name": attr_name,
-                        "type": str(attr.type).replace("AttrType.", "").lower(),
-                        "required": bool(attr.required),
-                        "default": str(attr.default_value)
-                        if hasattr(attr, "default_value") and attr.default_value
-                        else None,
-                        "description": getattr(attr, "description", "") or "",
-                    }
+                    CanonicalSsaAttrSpec(
+                        name=str(attr_name),
+                        type=str(getattr(attr, "type", "any"))
+                        .replace("AttrType.", "")
+                        .lower(),
+                        required=bool(getattr(attr, "required", False)),
+                        default=(
+                            str(getattr(attr, "default_value"))
+                            if hasattr(attr, "default_value")
+                            and getattr(attr, "default_value")
+                            else None
+                        ),
+                        description=str(getattr(attr, "description", "") or ""),
+                    )
                 )
             ops.append(
-                {
-                    "name": name,
-                    "domain": domain,
-                    "since_version": s.since_version,
-                    "inputs": inputs,
-                    "outputs": outputs,
-                    "attributes": attributes,
-                    "description": getattr(s, "doc", "") or f"ONNX {name} operator.",
-                }
+                CanonicalSsaOpSpec(
+                    name=name,
+                    domain=domain,
+                    since_version=int(getattr(s, "since_version", 1)),
+                    inputs=inputs,
+                    outputs=outputs,
+                    attributes=attributes,
+                    description=str(getattr(s, "doc", "") or f"ONNX {name} operator."),
+                )
             )
         if ops:
             return ops
@@ -266,9 +288,12 @@ def _load_onnx_ops() -> List[Dict[str, Any]]:
     return CANONICAL_ONNX_OPS
 
 
+_get_canonical_onnx_ops = _load_onnx_ops
+
+
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect ONNX operator definitions for the specified semantic tier.
 
     Args:

@@ -7,7 +7,6 @@ and live/fallback introspection with 100% coverage.
 from __future__ import annotations
 
 import argparse
-from typing import Any
 from unittest.mock import MagicMock, patch
 import pytest
 
@@ -69,6 +68,7 @@ def test_extract_snapshot_nccl() -> None:
     snap = extract_snapshot("nccl")
     assert snap.get("target") == "nccl"
     cats = snap.get("categories", {})
+    assert isinstance(cats, dict)
     assert "array" in cats or "util" in cats
 
 
@@ -108,7 +108,7 @@ def test_check_nccl_op_mcp() -> None:
     assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw["errors"][0]
 
 
-def test_cmd_check_nccl_cli_valid(capsys: Any) -> None:
+def test_cmd_check_nccl_cli_valid(capsys: pytest.CaptureFixture[str]) -> None:
     """Verify CLI command execution on valid NCCL collective operation.
 
     Args:
@@ -125,7 +125,7 @@ def test_cmd_check_nccl_cli_valid(capsys: Any) -> None:
     assert "Inputs:     3" in captured.out
 
 
-def test_cmd_check_nccl_cli_invalid_exits(capsys: Any) -> None:
+def test_cmd_check_nccl_cli_invalid_exits(capsys: pytest.CaptureFixture[str]) -> None:
     """Verify CLI command exits with non-zero code on invalid operator.
 
     Args:

@@ -1,8 +1,9 @@
 """Tests for Bohrium heterogeneous runtime snapshot extractor."""
 
+from __future__ import annotations
+
 import sys
 import types
-from typing import Any
 import pytest
 
 from ml_ecosystem_snapshots.frameworks.bohrium import (
@@ -44,7 +45,7 @@ def test_collect_api_bohrium_live(monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock Bohrium module."""
 
         @staticmethod
-        def array(obj: Any) -> Any:
+        def array(obj: object) -> object:
             """Mock array creation.
 
             Args:
@@ -92,9 +93,9 @@ def test_get_bohrium_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     import builtins
 
-    real_import = builtins.__import__
+    real_import = getattr(builtins, "__import__")
 
-    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+    def mock_import(name: str, *args: object, **kwargs: object) -> object:
         """Mock import function.
 
         Args:
@@ -131,16 +132,7 @@ def test_collect_api_bohrium_inspection_exception(
         "ml_ecosystem_snapshots.frameworks.bohrium._get_bohrium", lambda: FlakyBohrium()
     )
 
-    def mock_inspect(*args: Any, **kwargs: Any) -> Any:
-        """Mock inspect function.
-
-        Args:
-            *args: Variable arguments.
-            **kwargs: Variable arguments.
-
-        Returns:
-            A mocked GhostRef.
-        """
+    def mock_inspect(*args: object, **kwargs: object) -> object:
         """Mock inspect function.
 
         Args:

@@ -1,9 +1,12 @@
 """Tests for ONNX operator specification extractor, MCP server verification, and CLI."""
 
+from __future__ import annotations
+
 import argparse
 import sys
 import types
-from typing import Any
+import typing
+
 import pytest
 
 from ml_ecosystem_snapshots.frameworks.onnx_spec import (
@@ -175,7 +178,7 @@ def test_load_onnx_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
     class BrokenDefs:
         """Mock defs raising exception."""
 
-        def get_all_schemas_with_history(self) -> Any:
+        def get_all_schemas_with_history(self) -> list[object]:
             """Raise simulation error."""
             raise RuntimeError("Corrupt schema defs")
 
@@ -197,23 +200,21 @@ def test_get_onnx_defs_exception(monkeypatch: pytest.MonkeyPatch) -> None:
 
     real_import = builtins.__import__
 
-    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        """Mock import function.
-
-        Args:
-            name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            The imported module or raises.
-        """
+    def mock_import(
+        name: str,
+        globals: typing.Mapping[str, object] | None = None,
+        locals: typing.Mapping[str, object] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> object:
         """Mock import raising ImportError on onnx.
 
         Args:
             name: Module name.
-            *args: Positional args.
-            **kwargs: Keyword args.
+            globals: Globals dict.
+            locals: Locals dict.
+            fromlist: Import fromlist.
+            level: Relative import level.
 
         Returns:
             Imported module.
@@ -223,7 +224,7 @@ def test_get_onnx_defs_exception(monkeypatch: pytest.MonkeyPatch) -> None:
         """
         if "onnx" in name:
             raise ImportError("Simulated onnx import error")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", mock_import)
     assert _get_onnx_defs() is None
@@ -253,7 +254,7 @@ def test_onnx_schema_attributes_with_defaults(monkeypatch: pytest.MonkeyPatch) -
     class FakeAttribute:
         """Mock Schema attribute with type and default value."""
 
-        def __init__(self, typ: str, required: bool, default_val: Any) -> None:
+        def __init__(self, typ: str, required: bool, default_val: object) -> None:
             """Initialize fake attribute.
 
             Args:
@@ -273,8 +274,8 @@ def test_onnx_schema_attributes_with_defaults(monkeypatch: pytest.MonkeyPatch) -
             self.name = "AttrOp"
             self.domain = ""
             self.since_version = 1
-            self.inputs: list[Any] = []
-            self.outputs: list[Any] = []
+            self.inputs: list[object] = []
+            self.outputs: list[object] = []
             self.attributes = {
                 "alpha": FakeAttribute("FLOAT", False, 1.5),
                 "beta": FakeAttribute("INT", False, None),
@@ -284,7 +285,7 @@ def test_onnx_schema_attributes_with_defaults(monkeypatch: pytest.MonkeyPatch) -
     class MockDefsWithAttrs:
         """Mock Defs provider returning schemas with attributes."""
 
-        def get_all_schemas_with_history(self) -> Any:
+        def get_all_schemas_with_history(self) -> list[FakeSchemaWithAttr]:
             """Return schemas with attributes.
 
             Returns:
@@ -380,15 +381,15 @@ def test_onnx_schema_older_version_skipped(monkeypatch: pytest.MonkeyPatch) -> N
             self.name = name
             self.domain = domain
             self.since_version = since_version
-            self.inputs: list[Any] = []
-            self.outputs: list[Any] = []
-            self.attributes: dict[str, Any] = {}
+            self.inputs: list[object] = []
+            self.outputs: list[object] = []
+            self.attributes: dict[str, object] = {}
             self.doc = "Fake schema"
 
     class MockDefs:
         """Mock Defs object."""
 
-        def get_all_schemas_with_history(self) -> Any:
+        def get_all_schemas_with_history(self) -> list[FakeSchema]:
             """Return schema versions."""
             return [
                 FakeSchema("TestOp", "", 10),
@@ -414,7 +415,7 @@ def test_onnx_load_empty_schemas(monkeypatch: pytest.MonkeyPatch) -> None:
     class EmptyDefs:
         """Mock defs returning empty list."""
 
-        def get_all_schemas_with_history(self) -> Any:
+        def get_all_schemas_with_history(self) -> list[object]:
             """Return empty schema list."""
             return []
 

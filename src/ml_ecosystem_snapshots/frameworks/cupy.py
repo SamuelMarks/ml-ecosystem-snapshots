@@ -1,22 +1,25 @@
 """CuPy API Snapshot Extractor."""
 
-from typing import List
+from __future__ import annotations
+
+import types
+
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
-from ml_ecosystem_snapshots.models import GhostInspector
 
-import typing
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
+cp: types.ModuleType | None = None
 try:
     import cupy as _cp
 
-    cp: typing.Any = _cp
+    cp = _cp
 except Exception:
     cp = None
 
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect cupy API.
 
     Args:
@@ -26,7 +29,7 @@ def collect_api(
     Returns:
         List of gathered API references.
     """
-    results: List[GhostRef] = []
+    results: list[GhostRef] = []
     if not cp:
         return results
 

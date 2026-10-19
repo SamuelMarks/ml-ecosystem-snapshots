@@ -1,9 +1,11 @@
 """Tests for compliance verification, assembly checking (MLIR, SASS, RDNA), and shape validation."""
 
-from pathlib import Path
-import os
+from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
+import pytest
+import pytest_mock
+import os
 
 
 def test_align_namespace_exact_mapping() -> None:
@@ -88,11 +90,8 @@ def test_score_compliance_sig_tuple_edge_cases() -> None:
 
 
 def test_score_compliance_varargs_fallback_special_cases() -> None:
-    """Test compliance scoring with strict default vs explicit allow_signature_len_match_prefixes."""
-    from ml_ecosystem_snapshots.compliance import (
-        DEFAULT_LEN_MATCH_PREFIXES,
-        score_compliance,
-    )
+    """Test compliance scoring enforces strict parameter comparison."""
+    from ml_ecosystem_snapshots.compliance import score_compliance
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     ref_snap = {
@@ -239,7 +238,7 @@ def test_score_compliance_varargs_fallback_special_cases() -> None:
         ),
     ]
 
-    # Strict default rejects mismatched parameter names/types even when len(params) == len(params)
+    # Strict parameter comparison rejects mismatched parameter names/types even when len(params) == len(params)
     strict_res = score_compliance(ref_snap, target_refs)
     assert strict_res["matched"] == []
     mismatched_paths = {m["api_path"] for m in strict_res["mismatched"]}
@@ -250,22 +249,9 @@ def test_score_compliance_varargs_fallback_special_cases() -> None:
         "flax.nnx.Linear",
     }
 
-    # Explicit len-match prefixes allow arity-based matching for those namespaces
-    len_match_res = score_compliance(
-        ref_snap,
-        target_refs,
-        allow_signature_len_match_prefixes=DEFAULT_LEN_MATCH_PREFIXES,
-    )
-    assert set(len_match_res["matched"]) == {
-        "chex.assert_shape",
-        "jax.nn.relu",
-        "optax.adam",
-        "flax.nnx.Linear",
-    }
-
 
 def test_extract_target_refs_single_sys_path_and_logging(
-    tmp_path: Any, capsys: Any, caplog: Any
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
 ) -> None:
     """Verify extract_target_refs_single restores sys.path cleanly and logs warnings instead of printing.
 
@@ -299,7 +285,7 @@ def test_extract_target_refs_single_sys_path_and_logging(
     )
 
 
-def test_extract_target_refs_string_path(tmp_path: Any) -> None:
+def test_extract_target_refs_string_path(tmp_path: Path) -> None:
     """Verify extract target refs string path behavior.
 
     Args:
@@ -318,7 +304,7 @@ def test_extract_target_refs_string_path(tmp_path: Any) -> None:
     assert refs[0].api_path == "ref.my_func"
 
 
-def test_get_module_info_from_path_no_src_dir(tmp_path: Any) -> None:
+def test_get_module_info_from_path_no_src_dir(tmp_path: Path) -> None:
     """Verify get module info from path no src dir behavior.
 
     Args:
@@ -332,7 +318,7 @@ def test_get_module_info_from_path_no_src_dir(tmp_path: Any) -> None:
     assert mod == "my_pkg"
 
 
-def test_extract_target_refs_list_path(tmp_path: Any) -> None:
+def test_extract_target_refs_list_path(tmp_path: Path) -> None:
     """Verify extract target refs list path behavior.
 
     Args:
@@ -568,7 +554,7 @@ def test_validate_broadcast_and_matmul_shapes() -> None:
     assert "Batch dimension broadcasting error" in (err_bm or "")
 
 
-def test_compliance_edge_branches(tmp_path: Any) -> None:
+def test_compliance_edge_branches(tmp_path: Path) -> None:
     """Test edge branches in align_namespace and extract_target_refs_single.
 
     Args:
@@ -653,7 +639,9 @@ def test_score_compliance_opaque_c_extensions() -> None:
     assert any(m["api_path"] == "test.opaque" for m in res_strict["mismatched"])
 
 
-def test_extract_target_refs_single_root_function(tmp_path: Any, mocker: Any) -> None:
+def test_extract_target_refs_single_root_function(
+    tmp_path: Path, mocker: pytest_mock.MockerFixture
+) -> None:
     """Test extract_target_refs_single when root node is a Function.
 
     Args:

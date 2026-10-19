@@ -40,7 +40,6 @@ from ml_ecosystem_snapshots.mcp.tools.search import search_apis
 from ml_ecosystem_snapshots.mcp.tools.signature import get_api_signature
 from ml_ecosystem_snapshots.mcp.tools.translation import (
     CONCEPT_ALIAS_MAP,
-    CONCEPT_ARG_MAPPINGS,
     DEFAULT_CONCEPT_MAP,
     load_concept_map,
     translate_concept_arguments,
@@ -48,7 +47,6 @@ from ml_ecosystem_snapshots.mcp.tools.translation import (
 
 __all__ = [
     "CONCEPT_ALIAS_MAP",
-    "CONCEPT_ARG_MAPPINGS",
     "DEFAULT_CONCEPT_MAP",
     "DOMAIN_OP_CONFIGS",
     "DTYPE_CANONICAL_ALIASES",

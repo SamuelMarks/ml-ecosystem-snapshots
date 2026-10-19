@@ -10,24 +10,30 @@ Capabilities:
 3.  Filters internal utilities to provide clean Abstract Standard candidates.
 """
 
+from __future__ import annotations
+
 import inspect
-from ml_ecosystem_snapshots.utils import get_all_members
-from typing import List
+import types
 
-try:
-    import optax
-except Exception:
-    optax = None
-
-from ml_ecosystem_snapshots.models import GhostInspector
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.utils import get_all_members
+
+optax: types.ModuleType | None = None
+try:
+    import optax as _optax_mod
+
+    optax = _optax_mod
+except Exception:
+    pass
 
 
 class OptaxScanner:
     """Helper to inspect Optax APIs for the discovery system."""
 
     @staticmethod
-    def scan_optimizers(include_nonpublic: bool = False) -> List[GhostRef]:
+    def scan_optimizers(include_nonpublic: bool = False) -> list[GhostRef]:
         """Scan the Optax public API for optimizer functions.
 
         Optax optimizers are typically factory functions (e.g., `adam`, `sgd`)
@@ -43,7 +49,7 @@ class OptaxScanner:
         if not optax:
             return []
 
-        results: List[GhostRef] = []
+        results: list[GhostRef] = []
         known_optimizers = {
             "adam",
             "adamw",
@@ -87,7 +93,7 @@ class OptaxScanner:
         return results
 
     @staticmethod
-    def scan_losses(include_nonpublic: bool = False) -> List[GhostRef]:
+    def scan_losses(include_nonpublic: bool = False) -> list[GhostRef]:
         """Scan `optax.losses` for loss functions.
 
         Args:
@@ -100,7 +106,7 @@ class OptaxScanner:
         if not optax or not hasattr(optax, "losses"):
             return []
 
-        results: List[GhostRef] = []
+        results: list[GhostRef] = []
 
         for name, obj in get_all_members(optax.losses):
             if not include_nonpublic and name.startswith("_"):
@@ -133,7 +139,7 @@ class OptaxScanner:
         return results
 
     @staticmethod
-    def scan_schedulers(include_nonpublic: bool = False) -> List[GhostRef]:
+    def scan_schedulers(include_nonpublic: bool = False) -> list[GhostRef]:
         """Scan `optax.schedules` for scheduler functions.
 
         Args:
@@ -146,7 +152,7 @@ class OptaxScanner:
         if not optax or not hasattr(optax, "schedules"):
             return []
 
-        results: List[GhostRef] = []
+        results: list[GhostRef] = []
         for name, obj in get_all_members(optax.schedules):
             if not include_nonpublic and name.startswith("_"):
                 continue
@@ -174,7 +180,7 @@ class OptaxScanner:
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect optax APIs.
 
     Args:

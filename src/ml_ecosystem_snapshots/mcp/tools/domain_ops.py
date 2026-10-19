@@ -2,26 +2,42 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+import typing
+from typing_extensions import TypeAlias
 
+import pydantic
+
+from ml_ecosystem_snapshots.frameworks._base import (
+    CanonicalPythonOpSpec,
+    CanonicalSsaOpSpec,
+    CanonicalSubmoduleOpSpec,
+)
 from ml_ecosystem_snapshots.mcp.models import DomainOpCheckResult
+from ml_ecosystem_snapshots.models import JsonValue
+
+DomainOpRecord: TypeAlias = typing.Union[
+    CanonicalSsaOpSpec,
+    CanonicalPythonOpSpec,
+    CanonicalSubmoduleOpSpec,
+    dict[str, JsonValue],
+]
 
 
-@dataclass(frozen=True)
-class DomainOpCheckConfig:
+class DomainOpCheckConfig(pydantic.BaseModel):
     """Declarative configuration for a domain-specific operation verifier."""
+
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
     tool_name: str
     display_name: str
     op_label: str
     unknown_label: str
     key_field: str
-    prefixes: Tuple[str, ...]
+    prefixes: tuple[str, ...]
     split_last_dot: bool
     lowercase: bool
     is_python_params: bool
-    loader_fn: Callable[[], List[Dict[str, Any]]]
+    loader_fn: typing.Callable[[], typing.Sequence[DomainOpRecord]]
     tool_description: str
     op_arg_name: str = "op_name"
     op_arg_description: str = "Operation name."
@@ -33,10 +49,10 @@ class DomainOpCheckConfig:
 def check_domain_op_generic(
     config: DomainOpCheckConfig,
     op_name: str,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
-    domain: Optional[str] = None,
-    address_space: Optional[str] = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
+    domain: str | None = None,
+    address_space: str | None = None,
 ) -> DomainOpCheckResult:
     """Execute unified validation against a domain operation specification.
 
@@ -49,7 +65,7 @@ def check_domain_op_generic(
         address_space: Optional memory address space (used by Apple Metal).
 
     Returns:
-        Validation report dictionary with `is_valid`, `op_exists`, `expected_inputs`,
+        Validation report model with `is_valid`, `op_exists`, `expected_inputs`,
         `expected_attributes`, and `errors`.
     """
     clean_name = op_name.strip()
@@ -68,8 +84,11 @@ def check_domain_op_generic(
 
     ops = config.loader_fn()
 
+    matched: DomainOpRecord | None = None
     if domain is not None:
-        op_map_dom = {(op.get("domain", ""), op[config.key_field]): op for op in ops}
+        op_map_dom = {
+            (str(op.get("domain") or ""), str(op[config.key_field])): op for op in ops
+        }
         matched = op_map_dom.get((domain, clean_name))
         if matched is None and domain == "":
             for (_d, n), op in op_map_dom.items():
@@ -77,48 +96,59 @@ def check_domain_op_generic(
                     matched = op
                     break
         if matched is None:
-            return {
-                "is_valid": False,
-                "op_exists": False,
-                "expected_inputs": [],
-                "expected_attributes": [],
-                "errors": [
+            return DomainOpCheckResult(
+                is_valid=False,
+                op_exists=False,
+                expected_inputs=[],
+                expected_attributes=[],
+                errors=[
                     f"Unknown {config.unknown_label}: '{op_name}' in domain '{domain}'"
                 ],
-            }
+            )
     else:
-        op_map = {op[config.key_field]: op for op in ops}
+        op_map = {str(op[config.key_field]): op for op in ops}
         if clean_name not in op_map:
-            return {
-                "is_valid": False,
-                "op_exists": False,
-                "expected_inputs": [],
-                "expected_attributes": [],
-                "errors": [f"Unknown {config.unknown_label}: '{op_name}'"],
-            }
+            return DomainOpCheckResult(
+                is_valid=False,
+                op_exists=False,
+                expected_inputs=[],
+                expected_attributes=[],
+                errors=[f"Unknown {config.unknown_label}: '{op_name}'"],
+            )
         matched = op_map[clean_name]
 
+    exp_inputs: list[str] = []
+    exp_attrs: list[str] = []
     if config.is_python_params:
-        params = matched.get("params", [])
+        assert isinstance(matched, CanonicalPythonOpSpec)
         exp_inputs = [
-            p["name"]
-            for p in params
-            if p.get("kind") in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
+            p.name
+            for p in matched.params
+            if p.kind in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
         ]
         exp_attrs = [
-            p["name"]
-            for p in params
-            if p.get("kind") in ("KEYWORD_ONLY", "POSITIONAL_OR_KEYWORD")
+            p.name
+            for p in matched.params
+            if p.kind in ("KEYWORD_ONLY", "POSITIONAL_OR_KEYWORD")
         ]
     else:
-        exp_inputs = matched.get("inputs", [])
-        exp_attrs = [
-            a.get("name")
-            for a in matched.get("attributes", [])
-            if isinstance(a, dict) and a.get("name")
-        ]
+        if isinstance(matched, CanonicalSsaOpSpec):
+            exp_inputs = list(matched.inputs)
+            exp_attrs = [a.name for a in matched.attributes if a.name]
+        else:
+            assert isinstance(matched, dict)
+            raw_inputs = matched.get("inputs")
+            assert isinstance(raw_inputs, list)
+            exp_inputs = [str(i) for i in raw_inputs]
+            raw_attrs = matched.get("attributes")
+            assert isinstance(raw_attrs, list)
+            exp_attrs = [
+                str(a.get("name"))
+                for a in raw_attrs
+                if isinstance(a, dict) and a.get("name")
+            ]
 
-    errors: List[str] = []
+    errors: list[str] = []
     if inputs_count is not None and inputs_count != len(exp_inputs):
         if config.is_python_params:
             errors.append(
@@ -129,9 +159,10 @@ def check_domain_op_generic(
                 f"{config.op_label} '{clean_name}' expects {len(exp_inputs)} inputs, but got {inputs_count}."
             )
 
-    if address_space is not None and matched.get("address_space") != address_space:
+    matched_addr = matched.get("address_space")
+    if address_space is not None and matched_addr != address_space:
         errors.append(
-            f"Operation '{clean_name}' operates in '{matched.get('address_space')}' address space, expected '{address_space}'."
+            f"Operation '{clean_name}' operates in '{matched_addr}' address space, expected '{address_space}'."
         )
 
     if attributes:
@@ -150,16 +181,16 @@ def check_domain_op_generic(
                         f"Attribute '{attr}' is not valid for {config.op_label.lower()} '{clean_name}'."
                     )
 
-    return {
-        "is_valid": len(errors) == 0,
-        "op_exists": True,
-        "expected_inputs": exp_inputs,
-        "expected_attributes": exp_attrs,
-        "errors": errors,
-    }
+    return DomainOpCheckResult(
+        is_valid=len(errors) == 0,
+        op_exists=True,
+        expected_inputs=exp_inputs,
+        expected_attributes=exp_attrs,
+        errors=errors,
+    )
 
 
-def _load_wgsl() -> List[Dict[str, Any]]:
+def _load_wgsl() -> typing.Sequence[DomainOpRecord]:
     """Load canonical WGSL operations.
 
     Returns:
@@ -170,7 +201,7 @@ def _load_wgsl() -> List[Dict[str, Any]]:
     return _load_wgsl_ops()
 
 
-def _load_onnx() -> List[Dict[str, Any]]:
+def _load_onnx() -> typing.Sequence[DomainOpRecord]:
     """Load canonical ONNX operations.
 
     Returns:
@@ -181,7 +212,7 @@ def _load_onnx() -> List[Dict[str, Any]]:
     return _load_onnx_ops()
 
 
-def _load_metal() -> List[Dict[str, Any]]:
+def _load_metal() -> typing.Sequence[DomainOpRecord]:
     """Load canonical Apple Metal operations.
 
     Returns:
@@ -192,7 +223,7 @@ def _load_metal() -> List[Dict[str, Any]]:
     return _load_metal_ops()
 
 
-def _load_wasm() -> List[Dict[str, Any]]:
+def _load_wasm() -> typing.Sequence[DomainOpRecord]:
     """Load canonical WebAssembly SIMD operations.
 
     Returns:
@@ -203,7 +234,7 @@ def _load_wasm() -> List[Dict[str, Any]]:
     return _load_wasm_simd_ops()
 
 
-def _load_webgl() -> List[Dict[str, Any]]:
+def _load_webgl() -> typing.Sequence[DomainOpRecord]:
     """Load canonical WebGL operations.
 
     Returns:
@@ -214,7 +245,7 @@ def _load_webgl() -> List[Dict[str, Any]]:
     return _load_webgl_ops()
 
 
-def _load_cpp() -> List[Dict[str, Any]]:
+def _load_cpp() -> typing.Sequence[DomainOpRecord]:
     """Load canonical C++ runtime operations.
 
     Returns:
@@ -225,7 +256,7 @@ def _load_cpp() -> List[Dict[str, Any]]:
     return _load_cpp_runtime_ops()
 
 
-def _load_array_api() -> List[Dict[str, Any]]:
+def _load_array_api() -> typing.Sequence[DomainOpRecord]:
     """Load canonical Array API operations.
 
     Returns:
@@ -236,7 +267,7 @@ def _load_array_api() -> List[Dict[str, Any]]:
     return list(CANONICAL_ARRAY_API_OPS)
 
 
-def _load_scipy() -> List[Dict[str, Any]]:
+def _load_scipy() -> typing.Sequence[DomainOpRecord]:
     """Load canonical SciPy operations.
 
     Returns:
@@ -247,7 +278,7 @@ def _load_scipy() -> List[Dict[str, Any]]:
     return list(CANONICAL_SCIPY_OPS)
 
 
-def _load_torchvision() -> List[Dict[str, Any]]:
+def _load_torchvision() -> typing.Sequence[DomainOpRecord]:
     """Load canonical TorchVision operations.
 
     Returns:
@@ -258,7 +289,7 @@ def _load_torchvision() -> List[Dict[str, Any]]:
     return list(CANONICAL_TORCHVISION_OPS)
 
 
-def _load_torchaudio() -> List[Dict[str, Any]]:
+def _load_torchaudio() -> typing.Sequence[DomainOpRecord]:
     """Load canonical TorchAudio operations.
 
     Returns:
@@ -269,7 +300,7 @@ def _load_torchaudio() -> List[Dict[str, Any]]:
     return list(CANONICAL_TORCHAUDIO_OPS)
 
 
-def _load_safetensors() -> List[Dict[str, Any]]:
+def _load_safetensors() -> typing.Sequence[DomainOpRecord]:
     """Load canonical SafeTensors operations.
 
     Returns:
@@ -280,7 +311,7 @@ def _load_safetensors() -> List[Dict[str, Any]]:
     return list(CANONICAL_SAFETENSORS_OPS)
 
 
-def _load_aten() -> List[Dict[str, Any]]:
+def _load_aten() -> typing.Sequence[DomainOpRecord]:
     """Load canonical ATen operations.
 
     Returns:
@@ -291,7 +322,7 @@ def _load_aten() -> List[Dict[str, Any]]:
     return list(CANONICAL_ATEN_OPS)
 
 
-def _load_nccl() -> List[Dict[str, Any]]:
+def _load_nccl() -> typing.Sequence[DomainOpRecord]:
     """Load canonical NCCL operations.
 
     Returns:
@@ -302,7 +333,7 @@ def _load_nccl() -> List[Dict[str, Any]]:
     return list(CANONICAL_NCCL_OPS)
 
 
-def _load_flash_attn() -> List[Dict[str, Any]]:
+def _load_flash_attn() -> typing.Sequence[DomainOpRecord]:
     """Load canonical FlashAttention operations.
 
     Returns:
@@ -315,7 +346,7 @@ def _load_flash_attn() -> List[Dict[str, Any]]:
     return list(CANONICAL_FLASH_ATTN_OPS)
 
 
-DOMAIN_OP_CONFIGS: Dict[str, DomainOpCheckConfig] = {
+DOMAIN_OP_CONFIGS: dict[str, DomainOpCheckConfig] = {
     "wgsl": DomainOpCheckConfig(
         tool_name="check_wgsl_op",
         display_name="WGSL",
@@ -547,8 +578,8 @@ DOMAIN_OP_CONFIGS: Dict[str, DomainOpCheckConfig] = {
 
 def check_wgsl_op(
     op_name: str,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
 ) -> DomainOpCheckResult:
     """Validate a WebGPU WGSL operation against grounded schema specifications.
 
@@ -571,8 +602,8 @@ def check_wgsl_op(
 def check_onnx_op(
     op_name: str,
     domain: str = "",
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
 ) -> DomainOpCheckResult:
     """Validate an ONNX operation against grounded operator specification.
 
@@ -596,9 +627,9 @@ def check_onnx_op(
 
 def check_metal_op(
     op_name: str,
-    address_space: Optional[str] = None,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
+    address_space: str | None = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
 ) -> DomainOpCheckResult:
     """Validate an Apple Metal MSL compute operation against grounded specification.
 
@@ -622,8 +653,8 @@ def check_metal_op(
 
 def check_wasm_instruction(
     mnemonic: str,
-    operands_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
+    operands_count: int | None = None,
+    attributes: list[str] | None = None,
 ) -> DomainOpCheckResult:
     """Validate a WebAssembly 2.0 / SIMD instruction against grounded specification.
 
@@ -645,8 +676,8 @@ def check_wasm_instruction(
 
 def check_webgl_op(
     op_name: str,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
 ) -> DomainOpCheckResult:
     """Validate a WebGL 2.0 / GLSL ES 3.00 operation against grounded specification.
 
@@ -668,8 +699,8 @@ def check_webgl_op(
 
 def check_cpp_op(
     op_name: str,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
 ) -> DomainOpCheckResult:
     """Validate a C++17 / PyBind11 operation against grounded specification.
 
@@ -691,8 +722,8 @@ def check_cpp_op(
 
 def check_array_api_op(
     op_name: str,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
 ) -> DomainOpCheckResult:
     """Validate a Python Array API Standard operation against grounded specification.
 
@@ -714,8 +745,8 @@ def check_array_api_op(
 
 def check_scipy_op(
     op_name: str,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
 ) -> DomainOpCheckResult:
     """Validate a SciPy operation against grounded specification.
 
@@ -737,8 +768,8 @@ def check_scipy_op(
 
 def check_torchvision_op(
     op_name: str,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
 ) -> DomainOpCheckResult:
     """Validate a TorchVision operation against grounded specification.
 
@@ -760,8 +791,8 @@ def check_torchvision_op(
 
 def check_torchaudio_op(
     op_name: str,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
 ) -> DomainOpCheckResult:
     """Validate a TorchAudio operation against grounded specification.
 
@@ -783,8 +814,8 @@ def check_torchaudio_op(
 
 def check_safetensors_op(
     op_name: str,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
 ) -> DomainOpCheckResult:
     """Validate a SafeTensors operation against grounded specification.
 
@@ -806,8 +837,8 @@ def check_safetensors_op(
 
 def check_aten_op(
     op_name: str,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
 ) -> DomainOpCheckResult:
     """Validate an ATen operator against grounded specification.
 
@@ -829,8 +860,8 @@ def check_aten_op(
 
 def check_nccl_op(
     op_name: str,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
 ) -> DomainOpCheckResult:
     """Validate an NCCL / RCCL collective operation against grounded specification.
 
@@ -852,8 +883,8 @@ def check_nccl_op(
 
 def check_flash_attention_op(
     op_name: str,
-    inputs_count: Optional[int] = None,
-    attributes: Optional[List[str]] = None,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
 ) -> DomainOpCheckResult:
     """Validate a FlashAttention / PagedAttention operation against grounded specification.
 
@@ -873,15 +904,15 @@ def check_flash_attention_op(
     )
 
 
-def build_domain_op_tool_schemas() -> List[Dict[str, Any]]:
+def build_domain_op_tool_schemas() -> list[dict[str, JsonValue]]:
     """Generate MCP JSON Schema tool definitions for all registered domain op verifiers.
 
     Returns:
         List of MCP tool schema dictionaries.
     """
-    schemas: List[Dict[str, Any]] = []
+    schemas: list[dict[str, JsonValue]] = []
     for key, cfg in DOMAIN_OP_CONFIGS.items():
-        props: Dict[str, Any] = {
+        props: dict[str, JsonValue] = {
             cfg.op_arg_name: {
                 "type": "string",
                 "description": cfg.op_arg_description,
@@ -923,6 +954,7 @@ def build_domain_op_tool_schemas() -> List[Dict[str, Any]]:
 __all__ = [
     "DOMAIN_OP_CONFIGS",
     "DomainOpCheckConfig",
+    "DomainOpRecord",
     "build_domain_op_tool_schemas",
     "check_array_api_op",
     "check_aten_op",

@@ -4,39 +4,98 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, Callable, Dict, Optional, TextIO, Union
-from pydantic import BaseModel, Field
+import typing
+
+import pydantic
+
+from ml_ecosystem_snapshots.models import JsonValue
 
 
-class JsonRpcError(BaseModel):
+class JsonRpcError(pydantic.BaseModel):
     """Typed JSON-RPC 2.0 error payload."""
 
     code: int
     message: str
 
 
-class JsonRpcRequest(BaseModel):
+class JsonRpcRequest(pydantic.BaseModel):
     """Typed JSON-RPC 2.0 request envelope."""
 
     jsonrpc: str = "2.0"
-    id: Optional[Union[int, str]] = None
+    id: int | str | None = None
     method: str = ""
-    params: Dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, JsonValue] = pydantic.Field(default_factory=dict)
 
 
-class JsonRpcResponse(BaseModel):
+class JsonRpcResponse(pydantic.BaseModel):
     """Typed JSON-RPC 2.0 response envelope."""
 
     jsonrpc: str = "2.0"
-    id: Optional[Union[int, str]] = None
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[JsonRpcError] = None
+    id: int | str | None = None
+    result: dict[str, JsonValue] | None = None
+    error: JsonRpcError | None = None
+
+
+class JsonRpcResultDict(dict[str, object]):
+    """Typed dictionary wrapper for JSON-RPC 2.0 result payloads."""
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["tools"]) -> list[dict[str, str]]: ...
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["content"]) -> list[dict[str, str]]: ...
+
+    @typing.overload
+    def __getitem__(self, key: str) -> object: ...
+
+    def __getitem__(self, key: str) -> object:
+        """Retrieve a JSON-RPC result field by dictionary key.
+
+        Args:
+            key: Field name.
+
+        Returns:
+            Field value.
+        """
+        return super().__getitem__(key)
+
+
+class JsonRpcResponseDict(dict[str, object]):
+    """Typed dictionary wrapper for JSON-RPC 2.0 responses."""
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["result"]) -> JsonRpcResultDict: ...
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["error"]) -> dict[str, str]: ...
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["jsonrpc"]) -> str: ...
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["id"]) -> str | int | None: ...
+
+    @typing.overload
+    def __getitem__(self, key: str) -> object: ...
+
+    def __getitem__(self, key: str) -> object:
+        """Retrieve a JSON-RPC response field by dictionary key.
+
+        Args:
+            key: Field name.
+
+        Returns:
+            Field value.
+        """
+        return super().__getitem__(key)
 
 
 def run_stdio_loop(
-    message_handler: Callable[[Dict[str, Any]], Dict[str, Any]],
-    input_stream: Optional[TextIO] = None,
-    output_stream: Optional[TextIO] = None,
+    message_handler: typing.Callable[
+        [typing.Mapping[str, object]], typing.Mapping[str, object]
+    ],
+    input_stream: typing.TextIO | None = None,
+    output_stream: typing.TextIO | None = None,
 ) -> None:
     """Run the JSON-RPC 2.0 stdio event loop, dispatching parsed requests to `message_handler`.
 
@@ -67,4 +126,11 @@ def run_stdio_loop(
             out_s.flush()
 
 
-__all__ = ["JsonRpcError", "JsonRpcRequest", "JsonRpcResponse", "run_stdio_loop"]
+__all__ = [
+    "JsonRpcError",
+    "JsonRpcRequest",
+    "JsonRpcResponse",
+    "JsonRpcResponseDict",
+    "JsonRpcResultDict",
+    "run_stdio_loop",
+]

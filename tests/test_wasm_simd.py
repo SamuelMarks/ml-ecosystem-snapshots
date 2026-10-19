@@ -1,5 +1,7 @@
 """Tests for WebAssembly 2.0 / Fixed-Width SIMD snapshot extractor, MCP server, and CLI."""
 
+from __future__ import annotations
+
 import argparse
 import pytest
 

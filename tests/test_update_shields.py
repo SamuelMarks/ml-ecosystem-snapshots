@@ -1,8 +1,11 @@
 """Tests for scripts/update_shields.py."""
 
+from __future__ import annotations
+
 import os
+from pathlib import Path
+import pytest_mock
 import sys
-from typing import Any
 import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -10,7 +13,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from scripts.update_shields import get_test_coverage, get_doc_coverage, get_color, main
 
 
-def test_get_test_coverage_success(mocker: Any) -> None:
+def test_get_test_coverage_success(mocker: pytest_mock.MockerFixture) -> None:
     """Test get_test_coverage when pytest returns output with TOTAL.
 
     Args:
@@ -22,7 +25,7 @@ def test_get_test_coverage_success(mocker: Any) -> None:
     assert get_test_coverage() == "100"
 
 
-def test_get_test_coverage_fail(mocker: Any) -> None:
+def test_get_test_coverage_fail(mocker: pytest_mock.MockerFixture) -> None:
     """Test get_test_coverage when pytest output fails.
 
     Args:
@@ -33,7 +36,7 @@ def test_get_test_coverage_fail(mocker: Any) -> None:
     assert get_test_coverage() == "unknown"
 
 
-def test_get_test_coverage_no_coverage_file(mocker: Any) -> None:
+def test_get_test_coverage_no_coverage_file(mocker: pytest_mock.MockerFixture) -> None:
     """Test get_test_coverage when .coverage file does not exist (branch 17->35).
 
     Args:
@@ -45,7 +48,9 @@ def test_get_test_coverage_no_coverage_file(mocker: Any) -> None:
     assert get_test_coverage() == "100"
 
 
-def test_get_test_coverage_coverage_report_exception(mocker: Any) -> None:
+def test_get_test_coverage_coverage_report_exception(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test get_test_coverage when coverage report raises exception (lines 32-33).
 
     Args:
@@ -60,7 +65,9 @@ def test_get_test_coverage_coverage_report_exception(mocker: Any) -> None:
     assert get_test_coverage() == "95"
 
 
-def test_get_test_coverage_coverage_report_no_match(mocker: Any) -> None:
+def test_get_test_coverage_coverage_report_no_match(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test get_test_coverage when coverage report output has no match (branch 30->35).
 
     Args:
@@ -75,7 +82,7 @@ def test_get_test_coverage_coverage_report_no_match(mocker: Any) -> None:
     assert get_test_coverage() == "88"
 
 
-def test_get_test_coverage_fallback_no_match(mocker: Any) -> None:
+def test_get_test_coverage_fallback_no_match(mocker: pytest_mock.MockerFixture) -> None:
     """Test get_test_coverage when fallback pytest output has no match (line 48).
 
     Args:
@@ -87,7 +94,7 @@ def test_get_test_coverage_fallback_no_match(mocker: Any) -> None:
     assert get_test_coverage() == "unknown"
 
 
-def test_get_doc_coverage_success(mocker: Any) -> None:
+def test_get_doc_coverage_success(mocker: pytest_mock.MockerFixture) -> None:
     """Test get_doc_coverage when interrogate returns success.
 
     Args:
@@ -98,7 +105,7 @@ def test_get_doc_coverage_success(mocker: Any) -> None:
     assert get_doc_coverage() == "95.5"
 
 
-def test_get_doc_coverage_fail(mocker: Any) -> None:
+def test_get_doc_coverage_fail(mocker: pytest_mock.MockerFixture) -> None:
     """Test get_doc_coverage when interrogate fails to match.
 
     Args:
@@ -109,7 +116,7 @@ def test_get_doc_coverage_fail(mocker: Any) -> None:
     assert get_doc_coverage() == "unknown"
 
 
-def test_get_doc_coverage_file_not_found(mocker: Any) -> None:
+def test_get_doc_coverage_file_not_found(mocker: pytest_mock.MockerFixture) -> None:
     """Test get_doc_coverage when interrogate is missing.
 
     Args:
@@ -135,7 +142,7 @@ def test_get_doc_coverage_file_not_found(mocker: Any) -> None:
         (None, "lightgrey"),
     ],
 )
-def test_get_color(cov: Any, expected: str) -> None:
+def test_get_color(cov: str | float | int, expected: str) -> None:
     """Test get_color with various inputs.
 
     Args:
@@ -145,7 +152,7 @@ def test_get_color(cov: Any, expected: str) -> None:
     assert get_color(cov) == expected
 
 
-def test_main(mocker: Any, tmp_path: Any) -> None:
+def test_main(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
     """Test main function updates README.
 
     Args:
@@ -170,7 +177,9 @@ def test_main(mocker: Any, tmp_path: Any) -> None:
         os.chdir(orig_cwd)
 
 
-def test_main_replace_existing(mocker: Any, tmp_path: Any) -> None:
+def test_main_replace_existing(
+    mocker: pytest_mock.MockerFixture, tmp_path: Path
+) -> None:
     """Test main function replaces existing badges.
 
     Args:
@@ -198,7 +207,9 @@ def test_main_replace_existing(mocker: Any, tmp_path: Any) -> None:
         os.chdir(orig_cwd)
 
 
-def test_update_shields_main_entrypoint(mocker: Any, tmp_path: Any) -> None:
+def test_update_shields_main_entrypoint(
+    mocker: pytest_mock.MockerFixture, tmp_path: Path
+) -> None:
     """Test running scripts/update_shields.py as __main__.
 
     Args:

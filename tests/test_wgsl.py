@@ -1,9 +1,10 @@
 """Unit tests for WebGPU WGSL dialect extractor, compliance checker, and CLI."""
 
+from __future__ import annotations
+
 import argparse
 import os
 import tempfile
-from typing import Any, Dict, List
 import pytest
 
 from ml_switcheroo_ir.schema.ghost import (
@@ -23,7 +24,7 @@ from ml_ecosystem_snapshots.mcp_server import check_wgsl_op
 def test_collect_api_wgsl_categories() -> None:
     """Test collect_api returns WGSL operations for supported tiers and empty for others."""
     for tier in (SemanticTier.ARRAY_API, SemanticTier.NEURAL, SemanticTier.UTIL):
-        refs: List[GhostRef] = collect_api(tier)
+        refs: list[GhostRef] = collect_api(tier)
         assert len(refs) >= 7
         names = {r.name for r in refs}
         assert "storageStore" in names
@@ -42,12 +43,12 @@ def test_wgsl_op_properties_and_roles() -> None:
     from ml_ecosystem_snapshots.models import ExtendedGhostParam
 
     refs = collect_api(SemanticTier.ARRAY_API)
-    by_name: Dict[str, GhostRef] = {r.name: r for r in refs}
+    by_name: dict[str, GhostRef] = {r.name: r for r in refs}
 
     # storageStore: value operand has WRITE direction
     store_ref = by_name["storageStore"]
     assert store_ref.kind == "function"
-    store_params: Dict[str, ExtendedGhostParam] = {
+    store_params: dict[str, ExtendedGhostParam] = {
         p.name: p for p in store_ref.params if isinstance(p, ExtendedGhostParam)
     }
     assert store_params["buffer"].direction == OperandDirection.READ
@@ -57,7 +58,7 @@ def test_wgsl_op_properties_and_roles() -> None:
 
     # atomicAdd: atomic_ptr and value
     add_ref = by_name["atomicAdd"]
-    add_params: Dict[str, ExtendedGhostParam] = {
+    add_params: dict[str, ExtendedGhostParam] = {
         p.name: p for p in add_ref.params if isinstance(p, ExtendedGhostParam)
     }
     assert add_params["atomic_ptr"].direction == OperandDirection.READ
@@ -66,10 +67,12 @@ def test_wgsl_op_properties_and_roles() -> None:
 
 def test_extract_snapshot_wgsl_envelope() -> None:
     """Test end-to-end WGSL snapshot extraction and envelope validation."""
-    snap: Dict[str, Any] = extract_snapshot("wgsl")
+    snap = extract_snapshot("wgsl")
     assert snap.get("version") == "draft-2024"
     assert "categories" in snap
-    assert "neural" in snap["categories"]
+    cats = snap["categories"]
+    assert isinstance(cats, dict)
+    assert "neural" in cats
 
     env = validate_snapshot_envelope(snap)
     assert isinstance(env, SnapshotEnvelope)
@@ -254,7 +257,7 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ops_empty == CANONICAL_WGSL_OPS
 
     # Case 3: Outer import failure
-    def mock_files_raise(_: Any) -> Any:
+    def mock_files_raise(_: object) -> object:
         """Mock failure in files resource resolution.
 
         Args:
@@ -278,7 +281,9 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_schema_res_valid.joinpath.return_value = mock_file_valid
     monkeypatch.setattr("importlib.resources.files", lambda _: mock_schema_res_valid)
     ops_valid = _load_wgsl_ops()
-    assert ops_valid == [{"name": "mockOp", "domain": "wgsl"}]
+    assert len(ops_valid) == 1
+    assert ops_valid[0]["name"] == "mockOp"
+    assert ops_valid[0]["domain"] == "wgsl"
 
 
 def test_wgsl_roundtrip_serialization() -> None:

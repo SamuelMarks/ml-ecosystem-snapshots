@@ -30,7 +30,7 @@ jobs:
           - dask
           - flax_nnx
           - deepspeed
-          - optax_shim
+          - optax
           - orbax_checkpoint
           - huggingface
           - diffusers
@@ -123,7 +123,7 @@ jobs:
             dask) PKGS="dask" ;;
             flax_nnx) PKGS="flax jax[cpu]" ;;
             deepspeed) PKGS="deepspeed torch numpy<2.0.0 --extra-index-url https://download.pytorch.org/whl/cpu" ;;
-            optax_shim) PKGS="optax jax[cpu]" ;;
+            optax) PKGS="optax jax[cpu]" ;;
             orbax_checkpoint) PKGS="orbax-checkpoint jax[cpu]" ;;
             huggingface) PKGS="transformers" ;;
             diffusers) PKGS="diffusers torch numpy<2.0.0 --extra-index-url https://download.pytorch.org/whl/cpu" ;;

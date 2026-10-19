@@ -7,21 +7,23 @@ Validates that all generated snapshot JSON files adhere strictly to:
 - Non-empty parameter and operand integrity
 """
 
+from __future__ import annotations
+
 import json
 import os
-from typing import Any, Dict, List, cast
 
-from ml_ecosystem_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.models import JsonValue
 
 
-def _get_all_json_snapshots() -> List[str]:
+def _get_all_json_snapshots() -> list[str]:
     """Retrieve absolute file paths of all JSON snapshot files in the repository.
 
     Returns:
         List of absolute file paths.
     """
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    json_paths: List[str] = []
+    json_paths: list[str] = []
 
     target_dirs = [
         os.path.join(repo_root, "src", "ml_ecosystem_snapshots", "frameworks"),
@@ -37,7 +39,7 @@ def _get_all_json_snapshots() -> List[str]:
     return sorted(json_paths)
 
 
-def _load_snapshot_items(path: str) -> List[Dict[str, Any]]:
+def _load_snapshot_items(path: str) -> list[dict[str, JsonValue]]:
     """Load flat list of items from JSON snapshot file or envelope.
 
     Args:
@@ -49,18 +51,18 @@ def _load_snapshot_items(path: str) -> List[Dict[str, Any]]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     if isinstance(data, dict):
-        if "categories" in data:
-            items: List[Dict[str, Any]] = []
+        if "categories" in data and isinstance(data["categories"], dict):
+            items: list[dict[str, JsonValue]] = []
             for cat in data["categories"].values():
                 if isinstance(cat, list):
-                    items.extend(cat)
+                    items.extend(it for it in cat if isinstance(it, dict))
             return items
-        if "operations" in data:
-            return cast(List[Dict[str, Any]], data["operations"])
-        if "ops" in data:
-            return cast(List[Dict[str, Any]], data["ops"])
+        if "operations" in data and isinstance(data["operations"], list):
+            return [it for it in data["operations"] if isinstance(it, dict)]
+        if "ops" in data and isinstance(data["ops"], list):
+            return [it for it in data["ops"] if isinstance(it, dict)]
     if isinstance(data, list):
-        return data
+        return [it for it in data if isinstance(it, dict)]
     return []
 
 
@@ -84,11 +86,12 @@ def test_no_raw_unparsed_tokens() -> None:
 
         # Ensure <class ' does not leak into types, parameter annotations, or defaults
         for item in _load_snapshot_items(json_path):
-            if isinstance(item, dict):
-                assert (
-                    "<class '" not in str(item.get("returns_type", ""))
-                ), f"Leaked type representation in returns_type of {item.get('api_path')}"
-                for p in item.get("params", []):
+            assert "<class '" not in str(
+                item.get("returns_type", "")
+            ), f"Leaked type representation in returns_type of {item.get('api_path')}"
+            raw_params = item.get("params", [])
+            if isinstance(raw_params, list):
+                for p in raw_params:
                     if isinstance(p, dict):
                         assert (
                             "<class '" not in str(p.get("annotation", ""))
@@ -115,7 +118,7 @@ def test_no_uniform_duplicate_operands_rdna() -> None:
     data = _load_snapshot_items(rdna_path)
 
     assert len(data) >= 14, f"AMD RDNA dump is too small: {len(data)}"
-    encodings = {item.get("encoding") for item in data}
+    encodings = {str(item.get("encoding")) for item in data}
     assert (
         "Unknown" not in encodings or len(encodings) > 5
     ), f"RDNA dump has insufficient encodings: {encodings}"
@@ -156,17 +159,23 @@ def test_stablehlo_operand_attribute_separation() -> None:
     assert has_attributes, "StableHLO dump missing attributes separation"
     assert has_operands, "StableHLO dump missing operands separation"
 
-    op_map = {item["api_path"]: item for item in data if "api_path" in item}
+    op_map = {str(item["api_path"]): item for item in data if "api_path" in item}
     assert "stablehlo.dot_general" in op_map
     dot_gen = op_map["stablehlo.dot_general"]
-    dot_gen_attrs = [a["name"] for a in dot_gen.get("attributes", [])]
+    raw_attrs = dot_gen.get("attributes", [])
+    assert isinstance(raw_attrs, list)
+    dot_gen_attrs = [a["name"] for a in raw_attrs if isinstance(a, dict)]
     assert "dot_dimension_numbers" in dot_gen_attrs
 
     assert "stablehlo.dot" in op_map
-    assert len(op_map["stablehlo.dot"].get("operands", [])) >= 2
+    dot_operands = op_map["stablehlo.dot"].get("operands", [])
+    assert isinstance(dot_operands, list)
+    assert len(dot_operands) >= 2
 
     assert "stablehlo.add" in op_map
-    assert len(op_map["stablehlo.add"].get("operands", [])) >= 2
+    add_operands = op_map["stablehlo.add"].get("operands", [])
+    assert isinstance(add_operands, list)
+    assert len(add_operands) >= 2
 
 
 def test_mlir_operand_attribute_integrity() -> None:
@@ -191,11 +200,12 @@ def test_mlir_operand_attribute_integrity() -> None:
         ops_with_operands / len(data) >= 0.70
     ), f"Too many MLIR operations have empty operands: {ops_with_operands} / {len(data)}"
 
-    op_map = {item["api_path"]: item for item in data if "api_path" in item}
+    op_map = {str(item["api_path"]): item for item in data if "api_path" in item}
 
     # Verify arith.addf has operands
     assert "arith.addf" in op_map
     addf_ops = op_map["arith.addf"].get("operands", [])
+    assert isinstance(addf_ops, list)
     assert len(addf_ops) >= 2
     op_names = [op["name"] if isinstance(op, dict) else op for op in addf_ops]
     assert "lhs" in op_names
@@ -204,10 +214,11 @@ def test_mlir_operand_attribute_integrity() -> None:
     # Verify linalg.matmul has operands and attributes
     if "linalg.matmul" in op_map:
         matmul = op_map["linalg.matmul"]
-        assert len(matmul.get("operands", [])) >= 2
+        matmul_operands = matmul.get("operands", [])
+        assert isinstance(matmul_operands, list)
+        assert len(matmul_operands) >= 2
         matmul_op_names = [
-            op["name"] if isinstance(op, dict) else op
-            for op in matmul.get("operands", [])
+            op["name"] if isinstance(op, dict) else op for op in matmul_operands
         ]
         assert "inputs" in matmul_op_names
         assert "outputs" in matmul_op_names
@@ -219,12 +230,17 @@ def test_schema_validity_all_snapshots() -> None:
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        items_to_validate: List[Dict[str, Any]] = []
+        items_to_validate: list[dict[str, JsonValue]] = []
         if isinstance(data, dict):
-            for _cat, cat_items in data.get("categories", {}).items():
-                items_to_validate.extend(cat_items)
+            categories = data.get("categories", {})
+            if isinstance(categories, dict):
+                for _cat, cat_items in categories.items():
+                    if isinstance(cat_items, list):
+                        items_to_validate.extend(
+                            it for it in cat_items if isinstance(it, dict)
+                        )
         elif isinstance(data, list):
-            items_to_validate.extend(data)
+            items_to_validate.extend(it for it in data if isinstance(it, dict))
 
         # Validate each item adheres to GhostRef or ExtendedGhostRef
         for item in items_to_validate[:20]:  # Sample validation

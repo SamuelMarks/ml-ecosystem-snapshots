@@ -1,7 +1,9 @@
 """Unit tests and verification suite for models forwardref."""
 
+from __future__ import annotations
+
 import sys
-from ml_ecosystem_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
 
 class TensorRef:

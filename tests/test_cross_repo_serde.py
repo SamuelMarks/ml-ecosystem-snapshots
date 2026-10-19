@@ -1,5 +1,7 @@
 """Tests for Ghost Protocol v2 contract synchronization and bidirectional SerDe."""
 
+from __future__ import annotations
+
 import json
 import os
 
@@ -13,8 +15,8 @@ from ml_ecosystem_snapshots.models import (
     IRParameterRole,
     OperandDirection,
     SnapshotEnvelope,
-    migrate_ghost_ref_v2,
 )
+from ml_ecosystem_snapshots.serialization.hydration import hydrate_ghost_ref
 
 
 def test_ghost_protocol_v2_models_instantiation() -> None:
@@ -27,8 +29,8 @@ def test_ghost_protocol_v2_models_instantiation() -> None:
         kind=ParameterKind.POSITIONAL_ONLY,
         direction=OperandDirection.READ,
         role=IRParameterRole.OPERAND,
-        dtypes=["float32", "bfloat16"],
-        rank=2,
+        allowed_dtypes=["float32", "bfloat16"],
+        rank_constraint="2",
     )
     assert param.direction == OperandDirection.READ
     assert param.role == IRParameterRole.OPERAND
@@ -63,27 +65,28 @@ def test_ghost_protocol_v2_models_instantiation() -> None:
     assert envelope.schema_version == "2.0.0"
 
 
-def test_migrate_ghost_ref_v2_roundtrip() -> None:
-    """Verify migrate_ghost_ref_v2 upgrades legacy structures with zero information loss."""
-    legacy_dict = {
+def test_hydrate_ghost_ref_v2_roundtrip() -> None:
+    """Verify hydrate_ghost_ref validates v2.0.0 structures with zero information loss."""
+    v2_dict = {
         "name": "relu",
         "api_path": "torch.nn.functional.relu",
         "kind": "function",
-        "schema_version": "1.2",
+        "schema_version": "2.0.0",
         "params": [
             {"name": "input", "kind": "POSITIONAL_OR_KEYWORD"},
             {"name": "inplace", "kind": "KEYWORD_ONLY", "default": "False"},
         ],
     }
 
-    upgraded = migrate_ghost_ref_v2(legacy_dict)
+    upgraded = hydrate_ghost_ref(v2_dict)
     assert isinstance(upgraded, ExtendedGhostRef)
     assert upgraded.name == "relu"
     assert upgraded.api_path == "torch.nn.functional.relu"
+    assert upgraded.schema_version == "2.0.0"
 
     # Test roundtrip serialization to JSON and back
     json_str = upgraded.model_dump_json()
-    re_parsed = migrate_ghost_ref_v2(json.loads(json_str))
+    re_parsed = hydrate_ghost_ref(json.loads(json_str))
     assert re_parsed.name == upgraded.name
     assert len(re_parsed.params) == len(upgraded.params)
 
@@ -126,7 +129,7 @@ def test_exhaustive_snapshot_loading_serde() -> None:
         assert len(records) > 0, f"Snapshot {fname} is empty"
 
         for raw_item in records[:10]:
-            ref = migrate_ghost_ref_v2(raw_item)
+            ref = hydrate_ghost_ref(raw_item)
             assert ref.name or getattr(ref, "mnemonic", None)
             # Re-serialize to verify schema integrity
             dumped = ref.model_dump()

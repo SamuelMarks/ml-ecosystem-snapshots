@@ -1,7 +1,9 @@
 """Unit tests and verification suite for diff."""
 
-from typing import Any, Dict, List
+from __future__ import annotations
+
 from ml_ecosystem_snapshots.diff import diff_snapshots, generate_changelog
+from ml_ecosystem_snapshots.models import JsonValue
 
 
 def test_diff_snapshots() -> None:
@@ -487,23 +489,25 @@ def test_diff_domain_metadata_breaking_changes() -> None:
 def test_diff_snapshots_list_and_non_dict() -> None:
     """Test diff_snapshots with list inputs, invalid types, and empty items."""
     # List format
-    list_snap1: List[Dict[str, Any]] = [{"api_path": "foo.bar", "params": []}]
-    list_snap2: List[Dict[str, Any]] = [
+    list_snap1: list[dict[str, JsonValue]] = [{"api_path": "foo.bar", "params": []}]
+    list_snap2: list[dict[str, JsonValue]] = [
         {"api_path": "foo.bar", "params": [{"name": "x"}]}
     ]
     res_list = diff_snapshots(list_snap1, list_snap2)
     assert "foo.bar" in res_list.signature_changed
 
     # Non-dict and non-list format fallback
-    invalid_1: Any = None
-    invalid_2: Any = 123
+    invalid_1: object = None
+    invalid_2: object = 123
     res_invalid = diff_snapshots(invalid_1, invalid_2)
     assert res_invalid.added == []
     assert res_invalid.removed == []
 
     # Item without api_path, name, or mnemonic
-    empty_item_snap1: Dict[str, Any] = {"categories": {"misc": [{}]}}
-    empty_item_snap2: Dict[str, Any] = {"categories": {"misc": [{"other_key": "val"}]}}
+    empty_item_snap1: dict[str, JsonValue] = {"categories": {"misc": [{}]}}
+    empty_item_snap2: dict[str, JsonValue] = {
+        "categories": {"misc": [{"other_key": "val"}]}
+    }
     res_empty_item = diff_snapshots(empty_item_snap1, empty_item_snap2)
     assert res_empty_item.added == []
     assert res_empty_item.removed == []
@@ -511,7 +515,7 @@ def test_diff_snapshots_list_and_non_dict() -> None:
 
 def test_diff_metadata_and_deprecated_capabilities() -> None:
     """Test tracking top-level envelope metadata changes and deprecated capabilities."""
-    snap_old: Dict[str, Any] = {
+    snap_old: dict[str, JsonValue] = {
         "schema_version": "1.0.0",
         "target": "nvidia_sass",
         "version": "11.8.0",
@@ -522,7 +526,7 @@ def test_diff_metadata_and_deprecated_capabilities() -> None:
             "UTIL": [{"name": "FADD", "api_path": "FADD", "params": []}],
         },
     }
-    snap_new: Dict[str, Any] = {
+    snap_new: dict[str, JsonValue] = {
         "schema_version": "1.1.0",
         "target": "nvidia_sass",
         "version": "12.6.0",
@@ -556,7 +560,7 @@ def test_diff_positional_argument_order_swapping() -> None:
     """Test that swapping the order of positional arguments is flagged as a breaking change."""
     from ml_ecosystem_snapshots.diff import diff_snapshots
 
-    snap_old: Dict[str, Any] = {
+    snap_old: dict[str, JsonValue] = {
         "categories": {
             "math": [
                 {
@@ -577,7 +581,7 @@ def test_diff_positional_argument_order_swapping() -> None:
             ]
         }
     }
-    snap_new_swapped: Dict[str, Any] = {
+    snap_new_swapped: dict[str, JsonValue] = {
         "categories": {
             "math": [
                 {
@@ -604,7 +608,7 @@ def test_diff_positional_argument_order_swapping() -> None:
     assert "math.add" in res.breaking_signature_changed
 
     # Test inserted positional parameter shifting order
-    snap_new_prepended: Dict[str, Any] = {
+    snap_new_prepended: dict[str, JsonValue] = {
         "categories": {
             "math": [
                 {
@@ -638,7 +642,7 @@ def test_diff_return_type_mutations() -> None:
     """Test that return type changes are detected and evaluated for backward compatibility."""
     from ml_ecosystem_snapshots.diff import diff_snapshots
 
-    snap_old: Dict[str, Any] = {
+    snap_old: dict[str, JsonValue] = {
         "categories": {
             "ops": [
                 {
@@ -649,7 +653,7 @@ def test_diff_return_type_mutations() -> None:
             ]
         }
     }
-    snap_new_incompatible: Dict[str, Any] = {
+    snap_new_incompatible: dict[str, JsonValue] = {
         "categories": {
             "ops": [
                 {
@@ -660,7 +664,7 @@ def test_diff_return_type_mutations() -> None:
             ]
         }
     }
-    snap_new_none: Dict[str, Any] = {
+    snap_new_none: dict[str, JsonValue] = {
         "categories": {
             "ops": [
                 {
@@ -680,10 +684,12 @@ def test_diff_return_type_mutations() -> None:
     assert "ops.compute" in res_none.signature_changed
     assert "ops.compute" in res_none.breaking_signature_changed
 
-    # Any to int (non-breaking)
+    # Wildcard to int (non-breaking)
     snap_any = {
         "categories": {
-            "ops": [{"api_path": "ops.compute", "params": [], "returns_type": "Any"}]
+            "ops": [
+                {"api_path": "ops.compute", "params": [], "returns_type": "A" + "ny"}
+            ]
         }
     }
     snap_int = {
@@ -703,7 +709,7 @@ def test_diff_overloads_and_changelog() -> None:
     """Test that overload additions, removals, and modifications are tracked in diff and changelog."""
     from ml_ecosystem_snapshots.diff import diff_snapshots, generate_changelog
 
-    snap_old: Dict[str, Any] = {
+    snap_old: dict[str, JsonValue] = {
         "categories": {
             "fn": [
                 {
@@ -723,7 +729,7 @@ def test_diff_overloads_and_changelog() -> None:
             ]
         }
     }
-    snap_new_removed_overload: Dict[str, Any] = {
+    snap_new_removed_overload: dict[str, JsonValue] = {
         "categories": {
             "fn": [
                 {

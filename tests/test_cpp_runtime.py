@@ -1,5 +1,7 @@
 """Tests for C++17 and PyBind11 tensor runtime snapshot extractor, MCP server, and CLI."""
 
+from __future__ import annotations
+
 import argparse
 import pytest
 

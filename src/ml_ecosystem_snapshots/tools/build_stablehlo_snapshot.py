@@ -11,21 +11,21 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+import sys
+import typing
 
 _src_dir = str(Path(__file__).resolve().parent.parent.parent)
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
+from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel  # noqa: E402
 from ml_ecosystem_snapshots.tools.stablehlo_tablegen import (  # noqa: E402
     TableGenASTParser,
     build_verification_and_region_metadata,
     is_attribute,
     parse_stablehlo_llvm_tblgen_json,
     parse_stablehlo_tablegen,
-    parse_tblgen_json_dump,
     strip_tablegen_comments,
 )
 from ml_ecosystem_snapshots.utils import extract_tablegen_traits  # noqa: E402
@@ -35,8 +35,8 @@ TABLEGEN_URL = "https://raw.githubusercontent.com/openxla/stablehlo/main/stableh
 
 
 def extract_ops(
-    source_content: Optional[Union[str, Dict[str, Any]]] = None,
-) -> List[Dict[str, Any]]:
+    source_content: str | typing.Mapping[str, object] | None = None,
+) -> list[TableGenRecordModel]:
     """Download and parse StableHLO TableGen or spec.md to extract ops.
 
     Args:
@@ -48,7 +48,7 @@ def extract_ops(
     nl = chr(10)
     content = source_content
     if content is None:
-        from ml_ecosystem_snapshots.utils import fetch_url
+        from ml_ecosystem_snapshots.network_env import fetch_url
 
         content = fetch_url(TABLEGEN_URL, timeout=10)
         if content is None:
@@ -58,7 +58,7 @@ def extract_ops(
 
     assert content is not None
 
-    if isinstance(content, dict):
+    if isinstance(content, typing.Mapping):
         return parse_stablehlo_llvm_tblgen_json(content)
 
     stripped = content.strip()
@@ -70,16 +70,20 @@ def extract_ops(
     if "StableHLO_" in content:
         return parse_stablehlo_tablegen(content)
 
-    ops: Dict[str, Dict[str, Any]] = {}
-    current_op = None
-    current_section = None
+    ops_inputs: dict[str, list[tuple[str, str]]] = {}
+    ops_outputs: dict[str, list[tuple[str, str]]] = {}
+    ops_semantics: dict[str, list[str]] = {}
+    current_op: str | None = None
+    current_section: str | None = None
 
     for line in content.split(nl):
         if line.startswith("### "):
             op_name = line.strip()[4:]
             if op_name.replace("_", "").isalnum():
                 current_op = op_name
-                ops[current_op] = {"inputs": [], "outputs": [], "semantics": []}
+                ops_inputs[current_op] = []
+                ops_outputs[current_op] = []
+                ops_semantics[current_op] = []
                 current_section = None
 
         elif line.startswith("#### "):
@@ -90,7 +94,7 @@ def extract_ops(
                 current_section = None
         elif current_op and current_section == "semantics":
             if line.strip() and not line.startswith("####"):
-                ops[current_op]["semantics"].append(line)
+                ops_semantics[current_op].append(line)
         elif (
             line.startswith("|")
             and current_section in ("inputs", "outputs")
@@ -116,16 +120,22 @@ def extract_ops(
 
                 name = name.replace("`", "")
                 if name:
-                    ops[current_op][current_section].append((name, type_str))
+                    if current_section == "inputs":
+                        ops_inputs[current_op].append((name, type_str))
+                    else:
+                        ops_outputs[current_op].append((name, type_str))
 
-    ghost_refs = []
+    ghost_refs: list[TableGenRecordModel] = []
 
-    for op_name, data in ops.items():
-        if not data["inputs"] and not data["outputs"]:
+    for op_name in ops_inputs:
+        in_list = ops_inputs[op_name]
+        out_list = ops_outputs[op_name]
+        sem_list = ops_semantics[op_name]
+        if not in_list and not out_list:
             continue
 
-        params = []
-        for name, type_str in data["inputs"]:
+        params: list[JsonValue] = []
+        for name, type_str in in_list:
             kind = "KEYWORD_ONLY" if is_attribute(type_str) else "POSITIONAL_OR_KEYWORD"
             params.append(
                 {
@@ -138,36 +148,38 @@ def extract_ops(
                 }
             )
 
-        returns_type = None
-        if data["outputs"]:
-            returns_type = ", ".join(t for _, t in data["outputs"] if t)
-            if len(data["outputs"]) > 1:
+        returns_type: str | None = None
+        if out_list:
+            returns_type = ", ".join(t for _, t in out_list if t)
+            if len(out_list) > 1:
                 returns_type = f"tuple[{returns_type}]"
 
-        docstring = nl.join(data["semantics"]).strip()
+        docstring = nl.join(sem_list).strip()
 
         ghost_refs.append(
-            {
-                "api_path": f"stablehlo.{op_name}",
-                "name": op_name,
-                "kind": "function",
-                "is_public": True,
-                "has_varargs": False,
-                "environment_tags": [],
-                "aliases": [],
-                "overloads": [],
-                "params": params,
-                "returns_type": returns_type,
-                "returns_description": None,
-                "raises": [],
-                "docstring": docstring if docstring else None,
-            }
+            TableGenRecordModel(
+                {
+                    "api_path": f"stablehlo.{op_name}",
+                    "name": op_name,
+                    "kind": "function",
+                    "is_public": True,
+                    "has_varargs": False,
+                    "environment_tags": [],
+                    "aliases": [],
+                    "overloads": [],
+                    "params": params,
+                    "returns_type": returns_type,
+                    "returns_description": None,
+                    "raises": [],
+                    "docstring": docstring if docstring else None,
+                }
+            )
         )
 
     return ghost_refs
 
 
-def main(argv: Optional[List[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     """Main entrypoint for StableHLO snapshot generation.
 
     Args:
@@ -258,7 +270,6 @@ __all__ = [
     "main",
     "parse_stablehlo_llvm_tblgen_json",
     "parse_stablehlo_tablegen",
-    "parse_tblgen_json_dump",
     "strip_tablegen_comments",
 ]
 

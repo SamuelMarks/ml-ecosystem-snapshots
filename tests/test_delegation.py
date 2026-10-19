@@ -1,15 +1,14 @@
 """Unit tests and verification suite for delegation."""
 
-from typing import Any
+from __future__ import annotations
 
-
-from ml_ecosystem_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
 
 class BaseLayer:
     """Mock or helper class BaseLayer for unit testing."""
 
-    def __init__(self, hidden_dim: int = 256, dropout: float = 0.1) -> None:
+    def __init__(self, hidden_dim: int = 256, dropout: int = 0) -> None:
         """Execute helper init  .
 
         Args:
@@ -22,7 +21,7 @@ class BaseLayer:
 class SubLayer(BaseLayer):
     """Mock or helper class SubLayer for unit testing."""
 
-    def __init__(self, name: str, **kwargs: Any) -> None:
+    def __init__(self, name: str, **kwargs: int) -> None:
         """Execute helper init  .
 
         Args:

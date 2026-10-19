@@ -4,28 +4,166 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+import types
+import typing
 
-from ml_ecosystem_snapshots.c_extension_sig import (
-    CExtensionSignature,
-    ParsedParamTuple,
-    _normalize_c_sig_args,
-    _parse_c_extension_sig_str,
-    extract_c_extension_signature,
-)
-from ml_ecosystem_snapshots.network_env import (
-    fetch_url,
-    get_custom_snapshots_paths,
-    is_offline_mode,
-    load_json_data,
-    stream_snapshot_items,
-)
+import griffe
+import pydantic
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def get_all_members(module: Any) -> List[Tuple[str, Any]]:
-    """Safely extracts all members from a module, bypassing __getattr__ obfuscation.
+class DocstringParamMeta(pydantic.BaseModel):
+    """Extracted parameter metadata from a parsed docstring."""
+
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    doc: str = ""
+    typ: str | None = None
+    default: str | None = None
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["doc"]) -> str: ...
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["typ", "default"]) -> str | None: ...
+
+    @typing.overload
+    def __getitem__(self, key: str) -> str | None: ...
+
+    def __getitem__(self, key: str) -> str | None:
+        """Retrieve a docstring parameter field by key.
+
+        Args:
+            key: Field name ('doc', 'typ', or 'default').
+
+        Returns:
+            Field value.
+        """
+        val: str | None = getattr(self, key)
+        return val
+
+
+class DocstringReturnMeta(pydantic.BaseModel):
+    """Extracted return metadata from a parsed docstring."""
+
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    doc: str = ""
+    typ: str | None = None
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["doc"]) -> str: ...
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["typ"]) -> str | None: ...
+
+    @typing.overload
+    def __getitem__(self, key: str) -> str | None: ...
+
+    def __getitem__(self, key: str) -> str | None:
+        """Retrieve a docstring return field by key.
+
+        Args:
+            key: Field name ('doc' or 'typ').
+
+        Returns:
+            Field value.
+        """
+        val: str | None = getattr(self, key)
+        return val
+
+
+class DocstringMetadata(pydantic.BaseModel):
+    """Structured metadata extracted from a docstring via Griffe."""
+
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    params: dict[str, DocstringParamMeta] = pydantic.Field(default_factory=dict)
+    returns: DocstringReturnMeta | None = None
+    raises: list[str] = pydantic.Field(default_factory=list)
+
+    @typing.overload
+    def __getitem__(
+        self, key: typing.Literal["params"]
+    ) -> dict[str, DocstringParamMeta]: ...
+
+    @typing.overload
+    def __getitem__(
+        self, key: typing.Literal["returns"]
+    ) -> DocstringReturnMeta | None: ...
+
+    @typing.overload
+    def __getitem__(self, key: typing.Literal["raises"]) -> list[str]: ...
+
+    @typing.overload
+    def __getitem__(
+        self, key: str
+    ) -> dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None: ...
+
+    def __getitem__(
+        self, key: str
+    ) -> dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None:
+        """Retrieve a docstring metadata field by key.
+
+        Args:
+            key: Field name ('params', 'returns', or 'raises').
+
+        Returns:
+            Field value.
+        """
+        val: dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None = (
+            getattr(self, key)
+        )
+        return val
+
+    @typing.overload
+    def get(
+        self,
+        key: typing.Literal["params"],
+        default: dict[str, DocstringParamMeta] | None = None,
+    ) -> dict[str, DocstringParamMeta]: ...
+
+    @typing.overload
+    def get(
+        self,
+        key: typing.Literal["returns"],
+        default: DocstringReturnMeta | None = None,
+    ) -> DocstringReturnMeta | None: ...
+
+    @typing.overload
+    def get(
+        self,
+        key: typing.Literal["raises"],
+        default: list[str] | None = None,
+    ) -> list[str]: ...
+
+    def get(
+        self,
+        key: str,
+        default: (
+            dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None
+        ) = None,
+    ) -> dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None:
+        """Retrieve a docstring metadata field by key with default.
+
+        Args:
+            key: Field name.
+            default: Default value when absent.
+
+        Returns:
+            Field value or `default`.
+        """
+        val: dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None = (
+            getattr(self, key, default)
+        )
+        return val
+
+
+def get_all_members(
+    module: types.ModuleType | type | object,
+) -> list[tuple[str, object]]:
+    """Safely extract all members from a module, bypassing __getattr__ obfuscation.
 
     Many modern ML frameworks use lazy-loading modules that define __getattr__
     and __all__ but do not correctly implement __dir__. This function combines
@@ -37,7 +175,7 @@ def get_all_members(module: Any) -> List[Tuple[str, Any]]:
     Returns:
         A list of (name, object) tuples.
     """
-    members: Dict[str, Any] = {}
+    members: dict[str, object] = {}
 
     for name in dir(module):
         try:
@@ -46,7 +184,7 @@ def get_all_members(module: Any) -> List[Tuple[str, Any]]:
             _LOGGER.debug("Skipping inaccessible member %s: %s", name, exc)
 
     if hasattr(module, "__all__"):
-        for name in module.__all__:
+        for name in getattr(module, "__all__"):
             if name not in members:
                 try:
                     members[name] = getattr(module, name)
@@ -59,7 +197,7 @@ def get_all_members(module: Any) -> List[Tuple[str, Any]]:
 
 
 def get_framework_docstring_parser(
-    framework_name: str, docstring: Optional[str] = None
+    framework_name: str, docstring: str | None = None
 ) -> str:
     """Determine the most appropriate docstring parser for a framework.
 
@@ -100,7 +238,7 @@ def get_framework_docstring_parser(
     return "rest"
 
 
-def resolve_griffe_parser(parser_name: str) -> Any:
+def resolve_griffe_parser(parser_name: str) -> griffe.Parser | None:
     """Resolve a parser identifier into a valid Griffe Parser instance.
 
     Args:
@@ -110,18 +248,21 @@ def resolve_griffe_parser(parser_name: str) -> Any:
         A Griffe Parser instance or None.
     """
     try:
-        import griffe
+        import griffe as _griffe_mod
 
         if parser_name == "rest":
-            return getattr(griffe.Parser, "rest", griffe.Parser.sphinx)
-        return griffe.Parser(parser_name)
+            rest_parser: griffe.Parser = getattr(
+                _griffe_mod.Parser, "rest", _griffe_mod.Parser.sphinx
+            )
+            return rest_parser
+        return _griffe_mod.Parser(parser_name)
     except Exception:
         return None
 
 
 def parse_docstring_with_griffe(
-    docstring: str, parser_name: Optional[str] = None
-) -> List[Any]:
+    docstring: str, parser_name: str | None = None
+) -> list[griffe.DocstringSection]:
     """Parse a docstring using Griffe with dynamic fallback across conventions.
 
     Args:
@@ -132,7 +273,7 @@ def parse_docstring_with_griffe(
         A list of parsed Griffe DocstringSection objects.
     """
     try:
-        import griffe
+        import griffe as _griffe_mod
     except ImportError:
         return []
 
@@ -142,15 +283,17 @@ def parse_docstring_with_griffe(
         if alt not in candidates:
             candidates.append(alt)
 
-    best_sections: List[Any] = []
+    best_sections: list[griffe.DocstringSection] = []
 
     for candidate in candidates:
         resolved = resolve_griffe_parser(candidate)
         if not resolved:
             continue
         try:
-            doc_obj = griffe.Docstring(docstring)
-            sections: List[Any] = griffe.parse(doc_obj, resolved)
+            doc_obj = _griffe_mod.Docstring(docstring)
+            sections: list[griffe.DocstringSection] = _griffe_mod.parse(
+                doc_obj, resolved
+            )
             has_structured = any(
                 getattr(s.kind, "value", str(s.kind))
                 in ("parameters", "returns", "raises")
@@ -166,7 +309,7 @@ def parse_docstring_with_griffe(
     return best_sections
 
 
-def strip_sphinx_roles(text: Optional[str]) -> Optional[str]:
+def strip_sphinx_roles(text: str | None) -> str | None:
     """Strip Sphinx cross-referencing roles from text.
 
     Args:
@@ -183,8 +326,8 @@ def strip_sphinx_roles(text: Optional[str]) -> Optional[str]:
 
 
 def extract_griffe_docstring_metadata(
-    docstring: str, parser_name: Optional[str] = None
-) -> Dict[str, Any]:
+    docstring: str, parser_name: str | None = None
+) -> DocstringMetadata:
     """Extract structured parameters, return types, and exceptions from a docstring.
 
     Args:
@@ -192,13 +335,13 @@ def extract_griffe_docstring_metadata(
         parser_name: Optional parser name to prioritize.
 
     Returns:
-        A dictionary containing 'params', 'returns', and 'raises'.
+        A `DocstringMetadata` instance containing `params`, `returns`, and `raises`.
     """
     sections = parse_docstring_with_griffe(docstring, parser_name=parser_name)
 
-    params: Dict[str, Dict[str, Optional[str]]] = {}
-    returns: Optional[Dict[str, Optional[str]]] = None
-    raises: List[str] = []
+    params: dict[str, DocstringParamMeta] = {}
+    returns: DocstringReturnMeta | None = None
+    raises: list[str] = []
 
     for section in sections:
         kind_name = getattr(section.kind, "value", str(section.kind))
@@ -218,11 +361,11 @@ def extract_griffe_docstring_metadata(
                         if annotation is not None
                         else None
                     )
-                    params[p_name] = {
-                        "doc": str(desc) if desc else "",
-                        "typ": cleaned_typ,
-                        "default": str(value) if value is not None else None,
-                    }
+                    params[str(p_name)] = DocstringParamMeta(
+                        doc=str(desc) if desc else "",
+                        typ=cleaned_typ,
+                        default=str(value) if value is not None else None,
+                    )
         elif (
             kind_name == "returns"
             and hasattr(section, "value")
@@ -236,10 +379,10 @@ def extract_griffe_docstring_metadata(
                     if annotation is not None
                     else None
                 )
-                returns = {
-                    "doc": str(desc) if desc else "",
-                    "typ": cleaned_typ,
-                }
+                returns = DocstringReturnMeta(
+                    doc=str(desc) if desc else "",
+                    typ=cleaned_typ,
+                )
         elif (
             kind_name == "raises"
             and hasattr(section, "value")
@@ -262,13 +405,13 @@ def extract_griffe_docstring_metadata(
         if exc not in raises:
             raises.append(exc)
 
-    return {"params": params, "returns": returns, "raises": raises}
+    return DocstringMetadata(params=params, returns=returns, raises=raises)
 
 
 _BACKSLASH = chr(92)
 
 
-def split_tablegen_list(raw_list_str: str) -> List[str]:
+def split_tablegen_list(raw_list_str: str) -> list[str]:
     """Split a comma-separated TableGen list while respecting nested brackets, angles, parens, and quotes.
 
     Args:
@@ -277,8 +420,8 @@ def split_tablegen_list(raw_list_str: str) -> List[str]:
     Returns:
         List of trimmed TableGen element strings.
     """
-    elements: List[str] = []
-    current: List[str] = []
+    elements: list[str] = []
+    current: list[str] = []
     depth_bracket = 0
     depth_angle = 0
     depth_paren = 0
@@ -340,7 +483,7 @@ def split_tablegen_list(raw_list_str: str) -> List[str]:
     return elements
 
 
-def extract_tablegen_traits(text: str) -> List[str]:
+def extract_tablegen_traits(text: str) -> list[str]:
     """Extract and parse TableGen traits from a definition or arguments string.
 
     Args:
@@ -395,7 +538,7 @@ def extract_tablegen_traits(text: str) -> List[str]:
     if end != -1:
         inner = text[start + 1 : end]
         raw_elems = split_tablegen_list(inner)
-        traits: List[str] = []
+        traits: list[str] = []
         for elem in raw_elems:
             cleaned = elem.strip()
             if cleaned.startswith("//"):
@@ -416,7 +559,9 @@ def extract_tablegen_traits(text: str) -> List[str]:
 
 
 __all__ = [
-    # --- Core Module & Docstring Inspection Utilities ---
+    "DocstringMetadata",
+    "DocstringParamMeta",
+    "DocstringReturnMeta",
     "extract_griffe_docstring_metadata",
     "extract_tablegen_traits",
     "get_all_members",
@@ -425,15 +570,4 @@ __all__ = [
     "resolve_griffe_parser",
     "split_tablegen_list",
     "strip_sphinx_roles",
-    # --- Backward-Compatibility Re-Exports ---
-    "CExtensionSignature",
-    "ParsedParamTuple",
-    "_normalize_c_sig_args",
-    "_parse_c_extension_sig_str",
-    "extract_c_extension_signature",
-    "fetch_url",
-    "get_custom_snapshots_paths",
-    "is_offline_mode",
-    "load_json_data",
-    "stream_snapshot_items",
 ]

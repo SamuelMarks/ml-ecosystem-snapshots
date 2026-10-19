@@ -1,11 +1,12 @@
 """Golden equivalence tests asserting exact operation presence and scraper cleanliness."""
 
+from __future__ import annotations
+
 import json
 import os
-from typing import Any, Dict, List
 
 
-def _load_dataset_or_canonical(fw_dir: str, filename: str) -> List[Dict[str, Any]]:
+def _load_dataset_or_canonical(fw_dir: str, filename: str) -> list[dict[str, object]]:
     """Load an exhaustive JSON file if present on disk, or fall back to canonical framework records.
 
     Args:
@@ -101,7 +102,7 @@ def test_golden_symbol_counts_and_mandatory_ops() -> None:
     sass_data = _load_dataset_or_canonical(fw_dir, "nvidia_sass_exhaustive.json")
     assert len(sass_data) >= 10, f"SASS golden count too low: {len(sass_data)}"
     sass_mnemonics = {
-        (op.get("mnemonic") or op.get("name") or "").upper() for op in sass_data
+        str(op.get("mnemonic") or op.get("name") or "").upper() for op in sass_data
     }
     for req in ["FFMA", "HMMA", "WGMMA", "LDG", "STG", "BRA", "EXIT"]:
         assert req in sass_mnemonics, f"Mandatory SASS instruction missing: {req}"
@@ -110,7 +111,7 @@ def test_golden_symbol_counts_and_mandatory_ops() -> None:
     ptx_data = _load_dataset_or_canonical(fw_dir, "nvidia_ptx_exhaustive.json")
     assert len(ptx_data) >= 10, f"PTX golden count too low: {len(ptx_data)}"
     ptx_names = {
-        (op.get("mnemonic") or op.get("name") or "").lower().split(".")[0]
+        str(op.get("mnemonic") or op.get("name") or "").lower().split(".")[0]
         for op in ptx_data
     }
     for req in ["add", "sub", "mul", "atom", "and", "ret"]:
@@ -120,7 +121,7 @@ def test_golden_symbol_counts_and_mandatory_ops() -> None:
     rdna_data = _load_dataset_or_canonical(fw_dir, "amd_rdna_exhaustive.json")
     assert len(rdna_data) >= 10, f"RDNA golden count too low: {len(rdna_data)}"
     rdna_names = {
-        (op.get("mnemonic") or op.get("name") or "").upper() for op in rdna_data
+        str(op.get("mnemonic") or op.get("name") or "").upper() for op in rdna_data
     }
     for req in ["V_ADD_F32", "V_FMAC_F32", "V_MUL_F32"]:
         assert req in rdna_names, f"Mandatory RDNA instruction missing: {req}"

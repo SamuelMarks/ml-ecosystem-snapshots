@@ -1,19 +1,25 @@
 """Orbax Checkpoint API Snapshot Extractor."""
 
-import inspect
-from typing import List
+from __future__ import annotations
 
-from ml_ecosystem_snapshots.models import GhostInspector
-from ml_ecosystem_snapshots.utils import get_all_members
+import inspect
+import types
+
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.utils import get_all_members
+
+ocp: types.ModuleType | None = None
 try:
-    import orbax.checkpoint as ocp
+    import orbax.checkpoint as _ocp_mod
+
+    ocp = _ocp_mod
 except Exception:
-    ocp = None
+    pass
 
 
-def _scan_orbax_checkpoint(include_nonpublic: bool) -> List[GhostRef]:
+def _scan_orbax_checkpoint(include_nonpublic: bool) -> list[GhostRef]:
     """Dynamically scans orbax.checkpoint.
 
     Args:
@@ -25,7 +31,7 @@ def _scan_orbax_checkpoint(include_nonpublic: bool) -> List[GhostRef]:
     if not ocp:
         return []
 
-    found: List[GhostRef] = []
+    found: list[GhostRef] = []
     try:
         for name, obj in get_all_members(ocp):
             if inspect.isclass(obj) or inspect.isfunction(obj):
@@ -45,7 +51,7 @@ def _scan_orbax_checkpoint(include_nonpublic: bool) -> List[GhostRef]:
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Entrypoint to collect the Orbax Checkpoint API signature.
 
     Args:

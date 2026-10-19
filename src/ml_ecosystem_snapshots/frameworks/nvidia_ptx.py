@@ -6,11 +6,12 @@ Provides ground-truth verification against LLM hallucinations when generating
 CUDA C++, Triton, or TVM compiled kernels.
 """
 
+from __future__ import annotations
+
 from enum import Enum
 import json
 import os
 import re
-from typing import Any, Dict, List, Optional, Set, cast
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -21,6 +22,7 @@ from ml_switcheroo_ir.schema.ghost import (
 from ..models import (
     ExtendedGhostParam,
     IRParameterRole,
+    JsonValue,
 )
 
 
@@ -101,13 +103,13 @@ class PTXInstructionCategory(str, Enum):
     TENSOR = "tensor"
 
 
-ALL_PTX_TYPES: Set[str] = {t.value for t in PTXType}
-ALL_PTX_STATE_SPACES: Set[str] = {s.value for s in PTXStateSpace}
-ALL_PTX_SCOPES: Set[str] = {s.value for s in PTXScope}
-ALL_PTX_VECTOR_WIDTHS: Set[str] = {v.value for v in PTXVectorWidth}
+ALL_PTX_TYPES: set[str] = {t.value for t in PTXType}
+ALL_PTX_STATE_SPACES: set[str] = {s.value for s in PTXStateSpace}
+ALL_PTX_SCOPES: set[str] = {s.value for s in PTXScope}
+ALL_PTX_VECTOR_WIDTHS: set[str] = {v.value for v in PTXVectorWidth}
 
 
-def validate_ptx_type(type_str: str) -> List[str]:
+def validate_ptx_type(type_str: str) -> list[str]:
     """Validate whether a given type string is a legal PTX data type.
 
     Args:
@@ -125,7 +127,7 @@ def validate_ptx_type(type_str: str) -> List[str]:
     return []
 
 
-def validate_ptx_state_space(space_str: str) -> List[str]:
+def validate_ptx_state_space(space_str: str) -> list[str]:
     """Validate whether a given memory space qualifier is a legal PTX state space.
 
     Args:
@@ -143,7 +145,7 @@ def validate_ptx_state_space(space_str: str) -> List[str]:
     return []
 
 
-def validate_ptx_scope(scope_str: str) -> List[str]:
+def validate_ptx_scope(scope_str: str) -> list[str]:
     """Validate whether a given memory scope qualifier is a legal PTX scope.
 
     Args:
@@ -161,7 +163,7 @@ def validate_ptx_scope(scope_str: str) -> List[str]:
     return []
 
 
-def validate_ptx_vector_width(width_str: str) -> List[str]:
+def validate_ptx_vector_width(width_str: str) -> list[str]:
     """Validate whether a given vector width qualifier is a legal PTX vector width.
 
     Args:
@@ -179,7 +181,7 @@ def validate_ptx_vector_width(width_str: str) -> List[str]:
     return []
 
 
-def validate_ptx_register(operand: str) -> List[str]:
+def validate_ptx_register(operand: str) -> list[str]:
     """Validate a PTX register operand specification.
 
     Checks:
@@ -194,7 +196,7 @@ def validate_ptx_register(operand: str) -> List[str]:
     Returns:
         List of register validation errors.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     cleaned = operand.strip()
 
     # Memory dereference: [%reg + offset]
@@ -261,13 +263,13 @@ def validate_ptx_register(operand: str) -> List[str]:
 
 def validate_ptx_instruction(
     mnemonic: str,
-    types: Optional[List[str]] = None,
-    operands: Optional[List[str]] = None,
-    state_space: Optional[str] = None,
-    scope: Optional[str] = None,
-    vector_width: Optional[str] = None,
-    sm_arch: Optional[str] = None,
-) -> List[str]:
+    types: list[str] | None = None,
+    operands: list[str] | None = None,
+    state_space: str | None = None,
+    scope: str | None = None,
+    vector_width: str | None = None,
+    sm_arch: str | None = None,
+) -> list[str]:
     """Validate a complete PTX instruction invocation against ISA constraints.
 
     Args:
@@ -282,10 +284,10 @@ def validate_ptx_instruction(
     Returns:
         List of instruction verification error messages.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     clean_mnem = mnemonic.strip().lower()
 
-    ptx_db = {inst["mnemonic"]: inst for inst in _load_exhaustive_ptx()}
+    ptx_db = {str(inst["mnemonic"]): inst for inst in _load_exhaustive_ptx()}
     if clean_mnem not in ptx_db:
         errors.append(f"Unknown PTX instruction mnemonic '{mnemonic}'.")
         return errors
@@ -295,7 +297,10 @@ def validate_ptx_instruction(
     # Validate state space
     if state_space:
         errors.extend(validate_ptx_state_space(state_space))
-        allowed_spaces = inst_meta.get("state_spaces", [])
+        raw_spaces = inst_meta.get("state_spaces", [])
+        allowed_spaces = [
+            str(s) for s in (raw_spaces if isinstance(raw_spaces, list) else [])
+        ]
         norm_space = state_space if state_space.startswith(".") else f".{state_space}"
         if not allowed_spaces:
             errors.append(
@@ -318,7 +323,10 @@ def validate_ptx_instruction(
     # Validate vector width
     if vector_width:
         errors.extend(validate_ptx_vector_width(vector_width))
-        allowed_widths = inst_meta.get("vector_widths", [])
+        raw_widths = inst_meta.get("vector_widths", [])
+        allowed_widths = [
+            str(w) for w in (raw_widths if isinstance(raw_widths, list) else [])
+        ]
         norm_vw = vector_width if vector_width.startswith(".") else f".{vector_width}"
         if not allowed_widths:
             errors.append(
@@ -334,7 +342,11 @@ def validate_ptx_instruction(
         for t in types:
             errors.extend(validate_ptx_type(t))
             norm_t = t if t.startswith(".") else f".{t}"
-            supported = inst_meta.get("supported_types", [])
+            raw_supported = inst_meta.get("supported_types", [])
+            supported = [
+                str(st)
+                for st in (raw_supported if isinstance(raw_supported, list) else [])
+            ]
             if supported and norm_t not in supported:
                 errors.append(
                     f"Type '{t}' is not supported for PTX instruction '{mnemonic}' (supported: {supported})."
@@ -342,7 +354,8 @@ def validate_ptx_instruction(
 
     # Validate operands count and registers
     if operands is not None:
-        expected_ops = inst_meta.get("operands", [])
+        raw_expected = inst_meta.get("operands", [])
+        expected_ops = raw_expected if isinstance(raw_expected, list) else []
         if len(operands) != len(expected_ops):
             errors.append(
                 f"PTX instruction '{mnemonic}' expects {len(expected_ops)} operands, got {len(operands)}."
@@ -352,7 +365,7 @@ def validate_ptx_instruction(
 
     # Architecture requirement
     if sm_arch:
-        min_sm = inst_meta.get("min_sm", "sm_50")
+        min_sm = str(inst_meta.get("min_sm") or "sm_50")
         min_num = int(re.sub(r"\D", "", min_sm) or "0")
         target_num = int(re.sub(r"\D", "", sm_arch) or "0")
         if target_num < min_num:
@@ -363,7 +376,7 @@ def validate_ptx_instruction(
     return errors
 
 
-def _get_canonical_fallback_ptx() -> List[Dict[str, Any]]:
+def _get_canonical_fallback_ptx() -> list[dict[str, JsonValue]]:
     """Return canonical baseline PTX instructions for offline operation when unbuilt.
 
     Returns:
@@ -568,7 +581,7 @@ def _get_canonical_fallback_ptx() -> List[Dict[str, Any]]:
     ]
 
 
-def _load_exhaustive_ptx() -> List[Dict[str, Any]]:
+def _load_exhaustive_ptx() -> list[dict[str, JsonValue]]:
     """Load the exhaustive NVIDIA PTX JSON database or fallback to canonical records.
 
     Returns:
@@ -580,27 +593,37 @@ def _load_exhaustive_ptx() -> List[Dict[str, Any]]:
             return []
         return _get_canonical_fallback_ptx()
     with open(json_path, "r", encoding="utf-8") as f:
-        data: Any = json.load(f)
+        data: JsonValue = json.load(f)
         if isinstance(data, dict):
-            if "categories" in data:
-                all_ops: List[Dict[str, Any]] = []
+            if "categories" in data and isinstance(data["categories"], dict):
+                all_ops: list[dict[str, JsonValue]] = []
                 for cat_ops in data["categories"].values():
                     if isinstance(cat_ops, list):
-                        all_ops.extend(cat_ops)
+                        all_ops.extend(
+                            item for item in cat_ops if isinstance(item, dict)
+                        )
                 return all_ops
-            return cast(
-                List[Dict[str, Any]],
+            raw_cand = (
                 data.get("instructions")
                 or data.get("operations")
                 or data.get("items")
-                or [],
+                or []
             )
-        return cast(List[Dict[str, Any]], data)
+            return [
+                item
+                for item in (raw_cand if isinstance(raw_cand, list) else [])
+                if isinstance(item, dict)
+            ]
+        return [
+            item
+            for item in (data if isinstance(data, list) else [])
+            if isinstance(item, dict)
+        ]
 
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Collect NVIDIA PTX ISA definitions into standard GhostRef representations.
 
     Args:
@@ -614,14 +637,16 @@ def collect_api(
         return []
 
     instructions = _load_exhaustive_ptx()
-    refs: List[GhostRef] = []
+    refs: list[GhostRef] = []
 
     for inst in instructions:
-        mnem = inst["mnemonic"]
-        desc = inst.get("description", f"PTX {mnem} instruction.")
-        params: List[GhostParam] = []
+        mnem = str(inst["mnemonic"])
+        desc = str(inst.get("description", f"PTX {mnem} instruction."))
+        params: list[GhostParam] = []
 
-        for idx, op in enumerate(inst.get("operands", [])):
+        raw_ops = inst.get("operands", [])
+        for idx, op in enumerate(raw_ops if isinstance(raw_ops, list) else []):
+            assert isinstance(op, dict)
             role = (
                 IRParameterRole.RESULT
                 if op.get("role") == "dst"
@@ -629,12 +654,12 @@ def collect_api(
             )
             params.append(
                 ExtendedGhostParam(
-                    name=op.get("name", f"op{idx}"),
+                    name=str(op.get("name", f"op{idx}")),
                     annotation="PTXOperand",
                     default=None,
                     kind=ParameterKind.POSITIONAL_ONLY,
-                    standardized_name=op.get("role", "operand"),
-                    description=op.get("description", "PTX instruction operand"),
+                    standardized_name=str(op.get("role", "operand")),
+                    description=str(op.get("description", "PTX instruction operand")),
                     role=role,
                 )
             )
@@ -646,7 +671,11 @@ def collect_api(
                 kind="function",
                 is_public=True,
                 has_varargs=False,
-                environment_tags=["cuda", "ptx", inst.get("min_sm", "sm_50")],
+                environment_tags=[
+                    "cuda",
+                    "ptx",
+                    str(inst.get("min_sm") or "sm_50"),
+                ],
                 aliases=[],
                 overloads=[],
                 params=params,

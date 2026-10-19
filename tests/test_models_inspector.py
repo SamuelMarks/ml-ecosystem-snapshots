@@ -1,9 +1,13 @@
 """Unit tests and verification suite for models inspector."""
 
-from typing import Any
+from __future__ import annotations
+
+import pytest_mock
 
 
-from ml_ecosystem_snapshots.models import GhostInspector
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.models import ExtendedGhostParam
+from ml_switcheroo_ir.schema.ghost import GhostRef
 
 
 def dummy_func_with_docstring(x: int) -> str:
@@ -25,7 +29,7 @@ def dummy_func_with_docstring(x: int) -> str:
     return "test"
 
 
-def dummy_func_sphinx_docstring(y: Any) -> None:
+def dummy_func_sphinx_docstring(y: object) -> None:
     """Sphinx doc.
 
     :param y: The y value.
@@ -67,7 +71,7 @@ def test_griffe_parsing() -> None:
     assert ref.has_arg("url")
 
 
-def test_cdd_exception_handling(mocker: Any) -> None:
+def test_cdd_exception_handling(mocker: pytest_mock.MockerFixture) -> None:
     """Verify cdd exception handling behavior.
 
     Args:
@@ -80,7 +84,7 @@ def test_cdd_exception_handling(mocker: Any) -> None:
     assert ref.name == "dummy_func_with_docstring"
 
 
-def test_cdd_direct_raises(mocker: Any) -> None:
+def test_cdd_direct_raises(mocker: pytest_mock.MockerFixture) -> None:
     """Verify cdd direct raises behavior.
 
     Args:
@@ -107,7 +111,7 @@ def test_inspect_annotation_fallback() -> None:
         # A class that lacks __name__ but is passed as annotation
         pass
 
-    def func_annotated(a: Any) -> None:
+    def func_annotated(a: object) -> None:
         """Execute helper func annotated.
 
         Args:
@@ -129,7 +133,7 @@ def test_griffe_self_skip() -> None:
     class A:
         """Mock or helper class A for unit testing."""
 
-        def m(self, x: Any) -> Any:
+        def m(self, x: object) -> None:
             """Execute helper m.
 
             Args:
@@ -155,7 +159,7 @@ def test_griffe_varargs() -> None:
     assert ref.has_varargs
 
 
-def test_models_raises_no_typ(mocker: Any) -> None:
+def test_models_raises_no_typ(mocker: pytest_mock.MockerFixture) -> None:
     """Verify models raises no typ behavior.
 
     Args:
@@ -175,13 +179,15 @@ def test_models_raises_no_typ(mocker: Any) -> None:
     assert not ref.raises
 
 
-def test_ghost_inspector_aten_overload_and_factory_default(mocker: Any) -> None:
+def test_ghost_inspector_aten_overload_and_factory_default(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test GhostInspector when c_ext_params already has overloads and overload has factory default.
 
     Args:
         mocker: Pytest mocker fixture.
     """
-    from ml_ecosystem_snapshots.utils import CExtensionSignature
+    from ml_ecosystem_snapshots.c_extension_sig import CExtensionSignature
 
     existing_overload = CExtensionSignature(
         params=[
@@ -221,10 +227,14 @@ def test_ghost_inspector_aten_overload_and_factory_default(mocker: Any) -> None:
     ref = GhostInspector.inspect(dummy_torch_fn, "torch.dummy_torch_fn")
     assert ref.overloads is not None
     assert len(ref.overloads) == 1
-    assert ref.overloads[0].params[0].default_factory == "<factory_default>"
+    ov0 = ref.overloads[0]
+    assert isinstance(ov0, GhostRef)
+    p0 = ov0.params[0]
+    assert isinstance(p0, ExtendedGhostParam)
+    assert p0.default_factory == "<factory_default>"
 
 
-def test_ghost_inspector_aten_none(mocker: Any) -> None:
+def test_ghost_inspector_aten_none(mocker: pytest_mock.MockerFixture) -> None:
     """Test GhostInspector when extract_aten_c_extension_signature returns None.
 
     Args:
@@ -252,13 +262,14 @@ def test_ghost_inspector_aten_none(mocker: Any) -> None:
 
 def test_ghost_inspector_hydrate_variations() -> None:
     """Test GhostInspector.hydrate handles missing kind and pre-hydrated parameters."""
-    from ml_switcheroo_ir.schema.ghost import ExtendedGhostParam, ParameterKind
+    from ml_switcheroo_ir.schema.ghost import ParameterKind
 
     data = {
         "name": "op_test",
         "api_path": "custom.op_test",
+        "kind": "function",
         "params": [
-            {"name": "x"},
+            {"name": "x", "kind": "POSITIONAL_OR_KEYWORD"},
             ExtendedGhostParam(name="y", kind=ParameterKind.POSITIONAL_ONLY),
         ],
     }

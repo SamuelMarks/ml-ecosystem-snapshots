@@ -22,7 +22,7 @@ def cmd_index(args: argparse.Namespace) -> None:
 
     db_path = get_index_db_path()
 
-    if getattr(args, "clear", False) or getattr(args, "clean", False):
+    if getattr(args, "clear", False):
         if clear_index():
             print(f"Cleared index database at {db_path}")
         else:
@@ -55,6 +55,4 @@ def cmd_index(args: argparse.Namespace) -> None:
     print(f"  Database size:     {size} bytes")
 
 
-cmd_index_cache = cmd_index
-
-__all__ = ["cmd_index", "cmd_index_cache"]
+__all__ = ["cmd_index"]

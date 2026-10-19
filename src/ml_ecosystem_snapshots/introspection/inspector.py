@@ -7,17 +7,25 @@ import contextlib
 import inspect
 import io
 import re
+import types
 import typing
-from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple, Union
+from typing_extensions import TypeAlias
 
+import griffe
 from ml_switcheroo_ir.schema.ghost import (
     ExtendedGhostParam,
     ExtendedGhostRef,
     GhostParam,
     GhostPythonRef,
+    GhostRef,
     ParameterKind,
 )
+import pydantic
 
+from ml_ecosystem_snapshots.c_extension_sig import (
+    CExtensionSignature,
+    extract_c_extension_signature,
+)
 from ml_ecosystem_snapshots.introspection.ast_kwargs import (
     extract_accepted_kwargs_from_ast,
 )
@@ -25,18 +33,58 @@ from ml_ecosystem_snapshots.introspection.sanitize import (
     sanitize_param_default,
     sanitize_type_str,
 )
-from ml_ecosystem_snapshots.introspection.static_parsers import _GRIFFE_CACHE
+from ml_ecosystem_snapshots.introspection.static_parsers import (
+    GriffeCacheEntry,
+    _GRIFFE_CACHE,
+)
 from ml_ecosystem_snapshots.introspection.unwrap import unwrap_decorated_target
+from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.serialization.hydration import hydrate_ghost_ref
 from ml_ecosystem_snapshots.utils import (
-    extract_c_extension_signature,
+    DocstringMetadata,
     extract_griffe_docstring_metadata,
     get_framework_docstring_parser,
     resolve_griffe_parser,
 )
 
+RawParamTuple: TypeAlias = tuple[str, str, typing.Optional[str], typing.Optional[str]]
 
-def to_parameter_kind(val: Any) -> ParameterKind:
+
+class ExtractedParamRecord(pydantic.BaseModel):
+    """Intermediate extracted parameter metadata from CDD or Griffe docstrings/AST."""
+
+    model_config = pydantic.ConfigDict(extra="allow")
+
+    doc: str | None = None
+    typ: str | None = None
+    default: object = None
+
+    def get(self, key: str, default: str | None = None) -> str | None:
+        """Retrieve a string field (`doc`, `typ`, or `default`) by key.
+
+        Args:
+            key: Field name.
+            default: Default value when field is None or absent.
+
+        Returns:
+            String representation or `default`.
+        """
+        val: object = getattr(self, key, None)
+        return str(val) if val is not None else default
+
+
+class DocstringIrResult(pydantic.BaseModel):
+    """Structured result returned by `_extract_docstring_ir`."""
+
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    cdd_params: dict[str, ExtractedParamRecord] = pydantic.Field(default_factory=dict)
+    returns_type: str | None = None
+    returns_description: str | None = None
+    raises: list[str] = pydantic.Field(default_factory=list)
+
+
+def to_parameter_kind(val: object) -> ParameterKind:
     """Normalize a parameter kind string or enum to `ParameterKind`.
 
     Args:
@@ -54,7 +102,7 @@ def to_parameter_kind(val: Any) -> ParameterKind:
         return ParameterKind.POSITIONAL_OR_KEYWORD
 
 
-STANDARD_ARG_MAP: Dict[str, str] = {
+STANDARD_ARG_MAP: dict[str, str] = {
     "x": "input",
     "inputs": "input",
     "input_tensor": "input",
@@ -67,7 +115,7 @@ STANDARD_ARG_MAP: Dict[str, str] = {
     "keepdims": "keepdims",
 }
 
-FRAMEWORK_CAPABILITIES: Dict[str, List[str]] = {
+FRAMEWORK_CAPABILITIES: dict[str, list[str]] = {
     "torch": ["cpu", "cuda", "rocm", "metal"],
     "tensorflow": ["cpu", "cuda", "rocm", "tpu", "metal"],
     "tf": ["cpu", "cuda", "rocm", "tpu", "metal"],
@@ -89,7 +137,7 @@ FRAMEWORK_CAPABILITIES: Dict[str, List[str]] = {
     "wgsl": ["webgpu"],
 }
 
-STANDARD_ENUM_MAP: Dict[str, List[str]] = {
+STANDARD_ENUM_MAP: dict[str, list[str]] = {
     "reduction": ["none", "mean", "sum"],
     "mode": [
         "nearest",
@@ -112,12 +160,40 @@ STANDARD_ENUM_MAP: Dict[str, List[str]] = {
 }
 
 
+def _coerce_param_record(val: object) -> ExtractedParamRecord:
+    """Coerce a raw parameter dict or model into `ExtractedParamRecord`.
+
+    Args:
+        val: Raw dictionary or `ExtractedParamRecord` object.
+
+    Returns:
+        Populated `ExtractedParamRecord` instance.
+    """
+    if isinstance(val, dict):
+        raw_doc = val.get("doc")
+        raw_typ = val.get("typ")
+        return ExtractedParamRecord(
+            doc=str(raw_doc) if raw_doc is not None else None,
+            typ=str(raw_typ) if raw_typ is not None else None,
+            default=val.get("default"),
+        )
+    raw_doc_attr = getattr(val, "doc", None)
+    raw_typ_attr = getattr(val, "typ", None)
+    return ExtractedParamRecord(
+        doc=str(raw_doc_attr) if raw_doc_attr is not None else None,
+        typ=str(raw_typ_attr) if raw_typ_attr is not None else None,
+        default=getattr(val, "default", None),
+    )
+
+
 def _extract_docstring_ir(
-    doc: Optional[str],
+    doc: str | None,
     docstring_parser_name: str,
-    active_sanitize_type_str: Callable[[Optional[str]], Optional[str]],
-    active_extract_griffe_meta: Callable[..., Dict[str, Any]],
-) -> Tuple[Dict[str, Any], Optional[str], Optional[str], List[str]]:
+    active_sanitize_type_str: typing.Callable[[str | None], str | None],
+    active_extract_griffe_meta: typing.Callable[
+        [str, str], DocstringMetadata | dict[str, object]
+    ],
+) -> tuple[dict[str, ExtractedParamRecord], str | None, str | None, list[str]]:
     """Extract parameter descriptions, return types, and raised exceptions from docstrings.
 
     Args:
@@ -134,10 +210,10 @@ def _extract_docstring_ir(
     except (ImportError, AttributeError):
         cdd_docstring_parsers = None
 
-    cdd_params: Dict[str, Any] = {}
-    returns_type: Optional[str] = None
-    returns_description: Optional[str] = None
-    raises: List[str] = []
+    cdd_params: dict[str, ExtractedParamRecord] = {}
+    returns_type: str | None = None
+    returns_description: str | None = None
+    raises: list[str] = []
 
     if doc and cdd_docstring_parsers is not None:
         try:
@@ -153,7 +229,7 @@ def _extract_docstring_ir(
                     if "Exception" in p_name or "Error" in p_name:
                         raises.append(p_name)
                     else:
-                        cdd_params[p_name] = p_val
+                        cdd_params[p_name] = _coerce_param_record(p_val)
 
             if cdd_ir.get("raises"):
                 for exc_dict in cdd_ir["raises"]:
@@ -163,30 +239,44 @@ def _extract_docstring_ir(
             pass
 
         try:
-            griffe_meta = active_extract_griffe_meta(
-                doc, parser_name=docstring_parser_name
-            )
-            if griffe_meta.get("returns"):
-                ret_meta = griffe_meta["returns"]
-                if ret_meta.get("typ") and not returns_type:
-                    returns_type = active_sanitize_type_str(ret_meta["typ"])
-                if ret_meta.get("doc") and not returns_description:
-                    returns_description = ret_meta["doc"]
+            griffe_meta = active_extract_griffe_meta(doc, docstring_parser_name)
+            ret_meta = griffe_meta.get("returns")
+            if ret_meta:
+                ret_typ = (
+                    ret_meta.get("typ")
+                    if isinstance(ret_meta, dict)
+                    else getattr(ret_meta, "typ", None)
+                )
+                ret_doc = (
+                    ret_meta.get("doc")
+                    if isinstance(ret_meta, dict)
+                    else getattr(ret_meta, "doc", None)
+                )
+                if ret_typ and not returns_type:
+                    returns_type = active_sanitize_type_str(str(ret_typ))
+                if ret_doc and not returns_description:
+                    returns_description = str(ret_doc)
 
-            for exc in griffe_meta.get("raises", []):
-                if exc not in raises:
-                    raises.append(exc)
-                if exc in cdd_params:
-                    del cdd_params[exc]
+            raw_raises = griffe_meta.get("raises", [])
+            assert isinstance(raw_raises, list)
+            for exc in raw_raises:
+                exc_str = str(exc)
+                if exc_str not in raises:
+                    raises.append(exc_str)
+                if exc_str in cdd_params:
+                    del cdd_params[exc_str]
 
-            for p_name, p_data in griffe_meta.get("params", {}).items():
+            raw_g_params = griffe_meta.get("params", {})
+            assert isinstance(raw_g_params, dict)
+            for p_name, p_data in raw_g_params.items():
+                rec = _coerce_param_record(p_data)
                 if p_name not in cdd_params:
-                    cdd_params[p_name] = p_data
+                    cdd_params[p_name] = rec
                 else:
-                    if p_data.get("doc") and not cdd_params[p_name].get("doc"):
-                        cdd_params[p_name]["doc"] = p_data["doc"]
-                    if p_data.get("typ") and not cdd_params[p_name].get("typ"):
-                        cdd_params[p_name]["typ"] = p_data["typ"]
+                    if rec.doc and not cdd_params[p_name].doc:
+                        cdd_params[p_name].doc = rec.doc
+                    if rec.typ and not cdd_params[p_name].typ:
+                        cdd_params[p_name].typ = rec.typ
         except Exception:
             pass
 
@@ -194,15 +284,19 @@ def _extract_docstring_ir(
 
 
 def _extract_ast_and_griffe_node(
-    obj: Any,
+    obj: object,
     kind: str,
     api_path: str,
     docstring_parser_name: str,
-    griffe_node: Optional[Any],
-    cdd_params: Dict[str, Any],
-    active_ast_mod: Any,
-    active_griffe_cache: Dict[str, Any],
-) -> Tuple[Dict[str, Any], bool, Optional[Any]]:
+    griffe_node: griffe.Module | griffe.Object | griffe.Alias | object | None,
+    cdd_params: typing.Mapping[str, ExtractedParamRecord],
+    active_ast_mod: types.ModuleType,
+    active_griffe_cache: dict[str, GriffeCacheEntry],
+) -> tuple[
+    dict[str, ExtractedParamRecord],
+    bool,
+    griffe.Module | griffe.Object | griffe.Alias | object | None,
+]:
     """Extract CDD AST parameter definitions, `super().__init__(**kwargs)` usage, and Griffe node.
 
     Args:
@@ -218,11 +312,12 @@ def _extract_ast_and_griffe_node(
     Returns:
         Tuple of (cdd_ast_params, has_super_kwargs_call, griffe_node).
     """
-    cdd_ast_params: Dict[str, Any] = {}
+    cdd_ast_params: dict[str, ExtractedParamRecord] = {}
     has_super_kwargs_call = False
 
     try:
-        source = inspect.getsource(obj)
+        getsource_fn: typing.Callable[[object], str] = getattr(inspect, "getsource")
+        source = getsource_fn(obj)
         parsed_ast = active_ast_mod.parse(source).body[0]
 
         if kind == "class":
@@ -257,13 +352,14 @@ def _extract_ast_and_griffe_node(
 
         if cdd_parsed_ir and "params" in cdd_parsed_ir:
             for p_name, p_val in cdd_parsed_ir["params"].items():
-                cdd_ast_params[p_name] = p_val
-                if p_name in cdd_params and "doc" in cdd_params[p_name]:
-                    cdd_ast_params[p_name]["doc"] = cdd_params[p_name]["doc"]
+                rec = _coerce_param_record(p_val)
+                if p_name in cdd_params and cdd_params[p_name].doc:
+                    rec.doc = cdd_params[p_name].doc
+                cdd_ast_params[p_name] = rec
     except Exception:
         pass
 
-    griffe_mod: Optional[Any]
+    griffe_mod: types.ModuleType | None
     try:
         import griffe as _griffe_mod
 
@@ -274,7 +370,7 @@ def _extract_ast_and_griffe_node(
     if griffe_node is None and griffe_mod is not None:
         try:
             resolved_parser = resolve_griffe_parser(docstring_parser_name)
-            loader_fn = griffe_mod.load
+            loader_fn = getattr(griffe_mod, "load")
             if active_griffe_cache.get("__loader__") is not loader_fn:
                 active_griffe_cache.clear()
                 active_griffe_cache["__loader__"] = loader_fn
@@ -285,10 +381,10 @@ def _extract_ast_and_griffe_node(
                 )
 
             parts = api_path.split(".")
-            current = active_griffe_cache[top_level]
+            current: object = active_griffe_cache[top_level]
             if len(parts) > 1 and hasattr(current, "members"):
                 for part in parts[1:]:
-                    current = current.members[part]
+                    current = getattr(current, "members")[part]
             griffe_node = current
         except Exception:
             pass
@@ -297,27 +393,29 @@ def _extract_ast_and_griffe_node(
 
 
 def _extract_raw_parameters(
-    obj: Any,
-    target: Any,
+    obj: object,
+    target: object,
     name: str,
     kind: str,
     api_path: str,
-    cdd_ast_params: Dict[str, Any],
-    griffe_node: Optional[Any],
-    resolved_hints: Dict[str, Any],
-    returns_type: Optional[str],
-    environment_tags: Optional[List[str]],
-    active_ast_mod: Any,
-    active_sanitize_type_str: Callable[[Optional[str]], Optional[str]],
-    active_extract_c_ext_sig: Callable[..., Any],
-) -> Tuple[
-    List[Tuple[str, str, Optional[str], Optional[str]]],
-    Any,
+    cdd_ast_params: typing.Mapping[str, ExtractedParamRecord],
+    griffe_node: griffe.Module | griffe.Object | griffe.Alias | object | None,
+    resolved_hints: typing.Mapping[str, object],
+    returns_type: str | None,
+    environment_tags: list[str] | None,
+    active_ast_mod: types.ModuleType,
+    active_sanitize_type_str: typing.Callable[[str | None], str | None],
+    active_extract_c_ext_sig: typing.Callable[
+        [object, str], CExtensionSignature | None
+    ],
+) -> tuple[
+    list[RawParamTuple],
+    CExtensionSignature | None,
     bool,
     bool,
-    Literal["exact", "heuristic", "opaque"],
-    Optional[str],
-    Optional[List[str]],
+    typing.Literal["exact", "heuristic", "opaque"],
+    str | None,
+    list[str] | None,
 ]:
     """Run the 4-stage parameter fallback cascade (CDD AST -> Griffe -> inspect -> C-Ext/ATen).
 
@@ -340,11 +438,11 @@ def _extract_raw_parameters(
         Tuple of (extracted_params, c_ext_params, has_varargs, is_c_ext,
         sig_completeness, returns_type, environment_tags).
     """
-    extracted_params: List[Tuple[str, str, Optional[str], Optional[str]]] = []
-    c_ext_params: Any = None
+    extracted_params: list[RawParamTuple] = []
+    c_ext_params: CExtensionSignature | None = None
     has_varargs = False
     is_c_ext = False
-    sig_completeness: Literal["exact", "heuristic", "opaque"] = "exact"
+    sig_completeness: typing.Literal["exact", "heuristic", "opaque"] = "exact"
 
     griffe_params = None
     has_griffe_params = False
@@ -368,18 +466,19 @@ def _extract_raw_parameters(
             p_kind_str = "POSITIONAL_OR_KEYWORD"
 
             default_val = None
-            if "default" in p_info and p_info["default"] is not None:
+            raw_def = p_info.default
+            if raw_def is not None:
                 try:
-                    if isinstance(p_info["default"], ast.AST):
-                        default_val = active_ast_mod.unparse(p_info["default"])
-                    elif isinstance(p_info["default"], str):
-                        default_val = repr(p_info["default"])
+                    if isinstance(raw_def, ast.AST):
+                        default_val = str(active_ast_mod.unparse(raw_def))
+                    elif isinstance(raw_def, str):
+                        default_val = repr(raw_def)
                     else:
-                        default_val = str(p_info["default"])
+                        default_val = str(raw_def)
                 except Exception:
-                    default_val = str(p_info["default"])
+                    default_val = str(raw_def)
 
-            anno_val = p_info.get("typ")
+            anno_val = p_info.typ
             if not anno_val and p_name in resolved_hints:
                 anno_val = active_sanitize_type_str(str(resolved_hints[p_name]))
             else:
@@ -423,7 +522,10 @@ def _extract_raw_parameters(
                             extracted_params[i] = (pn, p_kind_str, pd, pa)
         else:
             try:
-                sig = inspect.signature(target)
+                sig_fn1: typing.Callable[[object], inspect.Signature] = getattr(
+                    inspect, "signature"
+                )
+                sig = sig_fn1(target)
                 for param in sig.parameters.values():
                     if param.name == "self":
                         continue
@@ -475,7 +577,10 @@ def _extract_raw_parameters(
             extracted_params.append((param.name, p_kind_str, default_val, anno_val))
     else:
         try:
-            sig = inspect.signature(target)
+            sig_fn2: typing.Callable[[object], inspect.Signature] = getattr(
+                inspect, "signature"
+            )
+            sig = sig_fn2(target)
 
             for param in sig.parameters.values():
                 if param.name == "self":
@@ -527,10 +632,7 @@ def _extract_raw_parameters(
                     aten_sig = extract_aten_c_extension_signature(
                         target,
                         name,
-                        is_method=(
-                            kind == "method"
-                            or (name is not None and ".Tensor." in name)
-                        ),
+                        is_method=(kind == "method" or ".Tensor." in name),
                     )
                     if aten_sig is not None:
                         if c_ext_params is None:
@@ -551,7 +653,12 @@ def _extract_raw_parameters(
                     c_ext_params, "returns_type", None
                 ):
                     returns_type = active_sanitize_type_str(c_ext_params.returns_type)
-                for pn, pk, pd, pa in c_ext_params:
+                for idx in range(len(c_ext_params)):
+                    p_item = c_ext_params[idx]
+                    pn = str(p_item[0])
+                    pk = str(p_item[1])
+                    pd = p_item[2]
+                    pa = p_item[3]
                     if pk == "VAR_POSITIONAL":
                         has_varargs = True
 
@@ -581,9 +688,9 @@ def _extract_raw_parameters(
 
 
 def _merge_mro_super_kwargs(
-    obj: Any,
-    extracted_params: List[Tuple[str, str, Optional[str], Optional[str]]],
-    active_sanitize_type_str: Callable[[Optional[str]], Optional[str]],
+    obj: object,
+    extracted_params: list[RawParamTuple],
+    active_sanitize_type_str: typing.Callable[[str | None], str | None],
 ) -> None:
     """Merge parent `__init__` parameters across MRO when `super().__init__(**kwargs)` is used.
 
@@ -627,10 +734,10 @@ def _merge_mro_super_kwargs(
 
 
 def _promote_documented_var_kwargs(
-    extracted_params: List[Tuple[str, str, Optional[str], Optional[str]]],
-    cdd_params: Dict[str, Any],
-    active_sanitize_type_str: Callable[[Optional[str]], Optional[str]],
-) -> List[Tuple[str, str, Optional[str], Optional[str]]]:
+    extracted_params: list[RawParamTuple],
+    cdd_params: typing.Mapping[str, ExtractedParamRecord],
+    active_sanitize_type_str: typing.Callable[[str | None], str | None],
+) -> list[RawParamTuple]:
     """Promote documented `**kwargs` entries into formal `KEYWORD_ONLY` parameter tuples.
 
     Args:
@@ -647,18 +754,15 @@ def _promote_documented_var_kwargs(
         var_kw_idx = next(
             i for i, ep in enumerate(extracted_params) if ep[1] == "VAR_KEYWORD"
         )
-        promoted_params = []
+        promoted_params: list[RawParamTuple] = []
         for p_name, p_data in cdd_params.items():
             if (
                 p_name not in existing_names
                 and p_name not in ("kwargs", "args", "self")
                 and not p_name.startswith("_")
             ):
-                p_typ = (
-                    active_sanitize_type_str(p_data.get("typ"))
-                    if p_data.get("typ")
-                    else None
-                )
+                raw_typ = p_data.get("typ")
+                p_typ = active_sanitize_type_str(raw_typ) if raw_typ else None
                 p_def = p_data.get("default")
                 promoted_params.append((p_name, "KEYWORD_ONLY", p_def, p_typ))
                 existing_names.add(p_name)
@@ -673,13 +777,13 @@ def _promote_documented_var_kwargs(
 
 
 def _build_extended_params(
-    extracted_params: Sequence[Tuple[str, str, Optional[str], Optional[str]]],
-    cdd_params: Dict[str, Any],
-    cdd_ast_params: Dict[str, Any],
+    extracted_params: typing.Sequence[RawParamTuple],
+    cdd_params: typing.Mapping[str, ExtractedParamRecord],
+    cdd_ast_params: typing.Mapping[str, ExtractedParamRecord],
     is_torch_target: bool,
     name: str,
-    active_sanitize_type_str: Callable[[Optional[str]], Optional[str]],
-) -> List[GhostParam]:
+    active_sanitize_type_str: typing.Callable[[str | None], str | None],
+) -> list[GhostParam]:
     """Construct `ExtendedGhostParam` objects from raw parameter tuples.
 
     Args:
@@ -693,7 +797,7 @@ def _build_extended_params(
     Returns:
         List of constructed `ExtendedGhostParam` objects.
     """
-    params: List[GhostParam] = []
+    params: list[GhostParam] = []
     for p_name, p_kind, p_default, p_anno in extracted_params:
         p_desc = None
         if p_name in cdd_params and cdd_params[p_name].get("doc"):
@@ -701,13 +805,14 @@ def _build_extended_params(
         elif p_name in cdd_ast_params and cdd_ast_params[p_name].get("doc"):
             p_desc = cdd_ast_params[p_name].get("doc")
 
-        if not p_anno or p_anno == "Any":
+        if not p_anno or p_anno in ("Any", "object"):
             if p_name in cdd_params and cdd_params[p_name].get("typ"):
-                p_anno = active_sanitize_type_str(cdd_params[p_name]["typ"])
+                p_anno = active_sanitize_type_str(cdd_params[p_name].get("typ"))
             elif p_name in cdd_ast_params and cdd_ast_params[p_name].get("typ"):
-                p_anno = active_sanitize_type_str(cdd_ast_params[p_name]["typ"])
+                p_anno = active_sanitize_type_str(cdd_ast_params[p_name].get("typ"))
 
-        p_dtypes, p_rank = None, None
+        p_dtypes: list[str] | None = None
+        p_rank: str | None = None
         if is_torch_target:
             try:
                 from ml_ecosystem_snapshots.frameworks.torch import (
@@ -749,16 +854,16 @@ def _build_extended_params(
 
 
 def _extract_overloads(
-    griffe_node: Optional[Any],
-    c_ext_params: Any,
+    griffe_node: griffe.Module | griffe.Object | griffe.Alias | object | None,
+    c_ext_params: CExtensionSignature | None,
     name: str,
     api_path: str,
     kind: str,
     determined_is_public: bool,
-    env_tags: List[str],
+    env_tags: list[str],
     is_torch_target: bool,
-    active_sanitize_type_str: Callable[[Optional[str]], Optional[str]],
-) -> List[ExtendedGhostRef]:
+    active_sanitize_type_str: typing.Callable[[str | None], str | None],
+) -> list[ExtendedGhostRef]:
     """Extract function/method overloads from Griffe AST nodes or C-extension docstrings.
 
     Args:
@@ -775,7 +880,7 @@ def _extract_overloads(
     Returns:
         List of `ExtendedGhostRef` overload objects.
     """
-    overloads_refs: List[ExtendedGhostRef] = []
+    overloads_refs: list[ExtendedGhostRef] = []
     has_griffe_overloads = False
     griffe_overloads = None
     try:
@@ -793,7 +898,7 @@ def _extract_overloads(
         for overload in griffe_overloads:
             if isinstance(overload, str):
                 continue
-            ov_raw_tuples: List[Tuple[str, str, Optional[str], Optional[str]]] = []
+            ov_raw_tuples: list[RawParamTuple] = []
             overload_has_varargs = False
             if hasattr(overload, "parameters"):
                 for param in overload.parameters:
@@ -853,7 +958,12 @@ def _extract_overloads(
         for ov in c_ext_params.overloads:
             ov_raw_tuples = []
             ov_has_varargs = False
-            for pn, pk, pd, pa in ov:
+            for idx in range(len(ov)):
+                p_item = ov[idx]
+                pn = str(p_item[0])
+                pk = str(p_item[1])
+                pd = p_item[2]
+                pa = p_item[3]
                 if pk == "VAR_POSITIONAL":
                     ov_has_varargs = True
                 sanitized_pa = active_sanitize_type_str(pa) if pa else None
@@ -901,11 +1011,11 @@ class GhostInspector:
 
     @staticmethod
     def inspect(
-        obj: Union[Any, Callable[..., Any]],
+        obj: object,
         api_path: str,
-        is_public: Optional[bool] = None,
-        environment_tags: Optional[List[str]] = None,
-        kind: Optional[str] = None,
+        is_public: bool | None = None,
+        environment_tags: list[str] | None = None,
+        kind: str | None = None,
     ) -> GhostPythonRef:
         """Create a GhostRef from a live Python object.
 
@@ -925,7 +1035,7 @@ class GhostInspector:
 
         is_griffe_node = hasattr(obj, "is_class") and hasattr(obj, "is_function")
         if is_griffe_node:
-            name = getattr(obj, "name", api_path.split(".")[-1])
+            name = str(getattr(obj, "name", api_path.split(".")[-1]))
             determined_kind = (
                 kind
                 if kind is not None
@@ -937,9 +1047,11 @@ class GhostInspector:
                 if doc_obj and hasattr(doc_obj, "value")
                 else (str(doc_obj) if doc_obj else None)
             )
-            griffe_node = obj
+            griffe_node: (
+                griffe.Module | griffe.Object | griffe.Alias | object | None
+            ) = obj
         else:
-            name = getattr(obj, "__name__", api_path.split(".")[-1])
+            name = str(getattr(obj, "__name__", api_path.split(".")[-1]))
             if name == "<lambda>":
                 name = api_path.split(".")[-1]
             determined_kind = (
@@ -985,11 +1097,11 @@ class GhostInspector:
         if is_public is not None:
             determined_is_public = is_public
         elif griffe_node is not None and hasattr(griffe_node, "is_public"):
-            determined_is_public = bool(griffe_node.is_public)
+            determined_is_public = bool(getattr(griffe_node, "is_public"))
         else:
             determined_is_public = not name.startswith("_")
 
-        resolved_hints: Dict[str, Any] = {}
+        resolved_hints: dict[str, object] = {}
         if not is_griffe_node:
             try:
                 resolved_hints = typing.get_type_hints(target)
@@ -1085,6 +1197,7 @@ class GhostInspector:
             extract_accepted_kwargs_from_ast(target) if has_var_kwargs else None
         )
 
+        overloads_list: list[dict[str, JsonValue] | GhostRef] = list(overloads_refs)
         return GhostPythonRef(
             name=name,
             api_path=api_path,
@@ -1098,14 +1211,16 @@ class GhostInspector:
             returns_description=returns_description,
             raises=raises,
             environment_tags=env_tags,
-            overloads=overloads_refs,
+            overloads=overloads_list,
             signature_completeness=sig_completeness,
             is_c_extension=is_c_ext,
             accepted_kwargs=discovered_kwargs,
         )
 
     @staticmethod
-    def hydrate(data: Dict[str, Any]) -> ExtendedGhostRef:
+    def hydrate(
+        data: typing.Mapping[str, JsonValue] | object,
+    ) -> ExtendedGhostRef:
         """Create a GhostRef from a dictionary (JSON snapshot).
 
         Args:
@@ -1118,8 +1233,11 @@ class GhostInspector:
 
 
 __all__ = [
+    "DocstringIrResult",
+    "ExtractedParamRecord",
     "FRAMEWORK_CAPABILITIES",
     "GhostInspector",
+    "RawParamTuple",
     "STANDARD_ARG_MAP",
     "STANDARD_ENUM_MAP",
     "_build_extended_params",

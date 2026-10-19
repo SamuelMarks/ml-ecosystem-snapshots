@@ -5,10 +5,12 @@ and CLI commands operate with complete network isolation (socket disabled)
 and that zero database files are stored within the repository or package tree.
 """
 
+from __future__ import annotations
+
 import json
+from pathlib import Path
 import os
 import socket
-from typing import Any
 import pytest
 
 from ml_ecosystem_snapshots.mcp_server import (
@@ -23,14 +25,14 @@ from ml_ecosystem_snapshots.index import get_index_db_path
 
 
 @pytest.fixture(autouse=True)
-def block_network(monkeypatch: Any) -> None:
+def block_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """Enforce strict network isolation across all offline tests.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
 
-    def guarded_socket(*args: Any, **kwargs: Any) -> Any:
+    def guarded_socket(*args: object, **kwargs: object) -> None:
         """Prevent socket creation during offline testing.
 
         Args:
@@ -50,7 +52,9 @@ def test_offline_bundled_isa_and_dialects() -> None:
     for fw in ["nvidia_sass", "amd_rdna", "mlir", "stablehlo"]:
         snap = get_framework_snapshot(fw)
         assert "categories" in snap
-        assert len(snap["categories"]) > 0
+        cats = snap["categories"]
+        assert isinstance(cats, (dict, list))
+        assert len(cats) > 0
 
 
 def test_offline_mcp_validation_tools() -> None:
@@ -98,20 +102,22 @@ def test_zero_db_files_in_repo() -> None:
                 ), f"Forbidden database file detected in repo: {os.path.join(dirpath, fname)}"
 
 
-def test_index_db_stored_in_cache_dir_only(tmp_path: Any, monkeypatch: Any) -> None:
+def test_index_db_stored_in_cache_dir_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Verify that index database is strictly placed in local user cache directory.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
         tmp_path: Pytest temporary directory fixture.
     """
-    monkeypatch.setenv("ML_FRAMEWORK_SNAPSHOTS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", str(tmp_path))
     db_path = get_index_db_path()
     assert str(tmp_path) in db_path
     assert "src/ml_ecosystem_snapshots" not in db_path
 
 
-def test_wheel_package_contents_and_no_db(tmp_path: Any) -> None:
+def test_wheel_package_contents_and_no_db(tmp_path: Path) -> None:
     """Verify built wheel packages all snapshot JSONs and excludes database files.
 
     Args:
@@ -159,7 +165,7 @@ def test_wheel_package_contents_and_no_db(tmp_path: Any) -> None:
         assert len(unpacked_dbs) == 0
 
 
-def test_offline_cli_execution(tmp_path: Any, monkeypatch: Any) -> None:
+def test_offline_cli_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify CLI commands execute 100% offline with zero network calls.
 
     Args:
@@ -275,7 +281,7 @@ def test_offline_cli_execution(tmp_path: Any, monkeypatch: Any) -> None:
 
 
 def test_offline_mode_env_vars_and_custom_paths(
-    tmp_path: Any, monkeypatch: Any
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Verify is_offline_mode and get_custom_snapshots_paths detection.
 
@@ -283,7 +289,7 @@ def test_offline_mode_env_vars_and_custom_paths(
         tmp_path: Pytest temporary directory fixture.
         monkeypatch: Pytest monkeypatch fixture.
     """
-    from ml_ecosystem_snapshots.utils import (
+    from ml_ecosystem_snapshots.network_env import (
         get_custom_snapshots_paths,
         is_offline_mode,
     )
@@ -291,15 +297,13 @@ def test_offline_mode_env_vars_and_custom_paths(
 
     # Test offline mode detection
     monkeypatch.delenv("ML_SNAPSHOTS_OFFLINE", raising=False)
-    monkeypatch.delenv("ML_FRAMEWORK_SNAPSHOTS_OFFLINE", raising=False)
     assert is_offline_mode() is False
 
     monkeypatch.setenv("ML_SNAPSHOTS_OFFLINE", "1")
     assert is_offline_mode() is True
 
     monkeypatch.setenv("ML_SNAPSHOTS_OFFLINE", "0")
-    monkeypatch.setenv("ML_FRAMEWORK_SNAPSHOTS_OFFLINE", "true")
-    assert is_offline_mode() is True
+    assert is_offline_mode() is False
 
     # Test custom snapshot path resolution
     custom_dir = tmp_path / "custom_snaps"
@@ -312,11 +316,13 @@ def test_offline_mode_env_vars_and_custom_paths(
     assert str(custom_dir) in paths
 
     snap = get_framework_snapshot("customfw", "1.0.0")
-    assert "CUSTOM" in snap.get("categories", {})
+    cats = snap.get("categories", {})
+    assert isinstance(cats, dict)
+    assert "CUSTOM" in cats
     assert snap.get("_snapshot_source") == "custom_path"
 
 
-def test_offline_cli_pull_forbidden(monkeypatch: Any) -> None:
+def test_offline_cli_pull_forbidden(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that CLI pull subcommand is forbidden in offline mode.
 
     Args:
@@ -337,7 +343,7 @@ def test_offline_cli_pull_forbidden(monkeypatch: Any) -> None:
 
 
 def test_cli_import_and_list_snapshots_without_rich(
-    tmp_path: Any, monkeypatch: Any, capsys: Any
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Verify CLI imports and executes list-snapshots without optional rich package installed.
 

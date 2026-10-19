@@ -4,11 +4,13 @@ Provides a static snapshot of AMD RDNA instructions with TableGen-derived encodi
 register classes, operand directionality, and GFX architecture targeting.
 """
 
+from __future__ import annotations
+
 from enum import Enum
 import json
 import os
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple
+import typing
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -22,10 +24,11 @@ from ..models import (
     ExtendedGhostRef,
     GhostIsaRef,
     IRParameterRole,
+    JsonValue,
     OperandDirection,
 )
 
-ALL_GFX_ARCHITECTURES: List[str] = [
+ALL_GFX_ARCHITECTURES: list[str] = [
     "GFX9/CDNA",
     "GFX10/RDNA1",
     "GFX10.3/RDNA2",
@@ -69,7 +72,7 @@ class RDNARegisterClass(str, Enum):
     AReg_32 = "AReg_32"
 
 
-RDNA_SOURCE_MODIFIERS: Set[str] = {
+RDNA_SOURCE_MODIFIERS: set[str] = {
     "-src",
     "|src|",
     "clamp",
@@ -78,7 +81,7 @@ RDNA_SOURCE_MODIFIERS: Set[str] = {
     "neg_hi",
 }
 
-RDNA_OUTPUT_MODIFIERS: Set[str] = {
+RDNA_OUTPUT_MODIFIERS: set[str] = {
     "omod",
     "omod:2",
     "omod:4",
@@ -86,7 +89,7 @@ RDNA_OUTPUT_MODIFIERS: Set[str] = {
 }
 
 
-def validate_rdna_register(operand: str, gfx_arch: Optional[str] = None) -> List[str]:
+def validate_rdna_register(operand: str, gfx_arch: str | None = None) -> list[str]:
     """Validate a single AMD RDNA/CDNA register specification against alignment and bounds.
 
     Validates:
@@ -102,7 +105,7 @@ def validate_rdna_register(operand: str, gfx_arch: Optional[str] = None) -> List
     Returns:
         List of register validation errors.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     cleaned = operand.strip()
 
     # Memory wrapper handling: e.g. [v0, s[0:1]]
@@ -205,10 +208,10 @@ def validate_rdna_register(operand: str, gfx_arch: Optional[str] = None) -> List
 
 
 def validate_rdna_constant_bus(
-    operands: List[str],
-    encoding: Optional[str] = None,
-    gfx_arch: Optional[str] = None,
-) -> List[str]:
+    operands: list[str],
+    encoding: str | None = None,
+    gfx_arch: str | None = None,
+) -> list[str]:
     """Validate AMD hardware constant bus limitation on pre-RDNA architectures (GFX9/CDNA).
 
     Pre-RDNA architectures cannot read more than one SGPR or literal constant
@@ -222,7 +225,7 @@ def validate_rdna_constant_bus(
     Returns:
         List of constant bus limitation violation errors.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     if not operands or len(operands) <= 1:
         return errors
 
@@ -261,7 +264,7 @@ def validate_rdna_constant_bus(
     return errors
 
 
-VOPD_VALID_OPCODES: Set[str] = {
+VOPD_VALID_OPCODES: set[str] = {
     "v_dual_fmac_f32",
     "v_dual_fma_f32",
     "v_dual_add_f32",
@@ -275,8 +278,10 @@ VOPD_VALID_OPCODES: Set[str] = {
 
 
 def validate_vopd_pairing(
-    opx: Dict[str, Any], opy: Dict[str, Any], gfx_arch: Optional[str] = None
-) -> List[str]:
+    opx: typing.Mapping[str, JsonValue],
+    opy: typing.Mapping[str, JsonValue],
+    gfx_arch: str | None = None,
+) -> list[str]:
     """Validate dual-issue VOPD instruction pairing rules for RDNA3/GFX11.
 
     Rules:
@@ -292,15 +297,15 @@ def validate_vopd_pairing(
     Returns:
         List of VOPD pairing error messages.
     """
-    errors: List[str] = []
+    errors: list[str] = []
 
     if gfx_arch and "GFX11" not in gfx_arch and "RDNA3" not in gfx_arch:
         errors.append(
             f"VOPD dual-issue encoding is only supported on GFX11/RDNA3, got '{gfx_arch}'."
         )
 
-    mnem_x = opx.get("mnemonic", "").lower()
-    mnem_y = opy.get("mnemonic", "").lower()
+    mnem_x = str(opx.get("mnemonic", "")).lower()
+    mnem_y = str(opy.get("mnemonic", "")).lower()
 
     if mnem_x not in VOPD_VALID_OPCODES:
         errors.append(f"Instruction '{mnem_x}' is not a valid VOPD OpX opcode.")
@@ -319,8 +324,8 @@ def validate_vopd_pairing(
 
 
 def validate_rdna_modifiers(
-    modifiers: List[str], encoding: Optional[str] = None
-) -> List[str]:
+    modifiers: list[str], encoding: str | None = None
+) -> list[str]:
     """Validate source and output modifier legality against the instruction encoding.
 
     Args:
@@ -330,7 +335,7 @@ def validate_rdna_modifiers(
     Returns:
         List of modifier validation error messages.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     enc = (encoding or "").upper()
 
     for mod in modifiers:
@@ -355,9 +360,9 @@ def validate_rdna_modifiers(
 
 def validate_rdna_microarchitecture(
     mnemonic: str,
-    gfx_arch: Optional[str] = None,
-    wave_size: Optional[int] = None,
-) -> List[str]:
+    gfx_arch: str | None = None,
+    wave_size: int | None = None,
+) -> list[str]:
     """Validate microarchitecture and wave-size execution constraints for RDNA/CDNA instructions.
 
     Args:
@@ -368,7 +373,7 @@ def validate_rdna_microarchitecture(
     Returns:
         List of microarchitecture error messages.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     m = mnemonic.lower().strip()
 
     # Guard dual-issue instructions strictly to GFX11/RDNA3 and GFX12/RDNA4
@@ -399,7 +404,7 @@ def validate_rdna_microarchitecture(
     return errors
 
 
-def resolve_gfx_architectures(arch_spec: Optional[str]) -> List[str]:
+def resolve_gfx_architectures(arch_spec: JsonValue) -> list[str]:
     """Resolve an architecture specification into discrete targeted GFX microarchitectures.
 
     Args:
@@ -447,7 +452,7 @@ def resolve_gfx_architectures(arch_spec: Optional[str]) -> List[str]:
 
 def tokenize_rdna_line(
     line: str,
-) -> Tuple[str, List[str], Optional[str], List[str]]:
+) -> tuple[str, list[str], str | None, list[str]]:
     """Tokenize an AMD RDNA assembly line into mnemonic, operands, encoding suffix, and modifiers.
 
     Args:
@@ -476,8 +481,8 @@ def tokenize_rdna_line(
 
     # Parse operands and trailing modifiers
     raw_parts = [p.strip() for p in rest.split(",") if p.strip()]
-    operands: List[str] = []
-    modifiers: List[str] = []
+    operands: list[str] = []
+    modifiers: list[str] = []
 
     known_mod_prefixes = (
         "clamp",
@@ -511,7 +516,7 @@ def tokenize_rdna_line(
     return base_mnemonic, operands, encoding_suffix, modifiers
 
 
-def _get_canonical_fallback_rdna() -> List[Dict[str, Any]]:
+def _get_canonical_fallback_rdna() -> list[dict[str, JsonValue]]:
     """Generate canonical baseline AMD RDNA instructions for offline operation when unbuilt.
 
     Returns:
@@ -672,7 +677,7 @@ def _get_canonical_fallback_rdna() -> List[Dict[str, Any]]:
     ]
 
 
-def _load_exhaustive_rdna() -> List[Dict[str, Any]]:
+def _load_exhaustive_rdna() -> list[dict[str, JsonValue]]:
     """Load the exhaustive AMD RDNA JSON instructions file or fallback to canonical records.
 
     Returns:
@@ -682,28 +687,37 @@ def _load_exhaustive_rdna() -> List[Dict[str, Any]]:
     if not os.path.exists(json_path):
         return _get_canonical_fallback_rdna()
     with open(json_path, "r", encoding="utf-8") as f:
-        data: Any = json.load(f)
+        data: JsonValue = json.load(f)
         if isinstance(data, dict):
-            if "categories" in data:
-                all_ops: List[Dict[str, Any]] = []
+            if "categories" in data and isinstance(data["categories"], dict):
+                all_ops: list[dict[str, JsonValue]] = []
                 for cat_ops in data["categories"].values():
                     if isinstance(cat_ops, list):
-                        all_ops.extend(cat_ops)
+                        all_ops.extend(
+                            item for item in cat_ops if isinstance(item, dict)
+                        )
                 return all_ops
-            extracted_items: List[Dict[str, Any]] = (
+            raw_cand = (
                 data.get("instructions")
                 or data.get("operations")
                 or data.get("items")
                 or []
             )
-            return extracted_items
-        raw_items: List[Dict[str, Any]] = data
-        return raw_items
+            return [
+                item
+                for item in (raw_cand if isinstance(raw_cand, list) else [])
+                if isinstance(item, dict)
+            ]
+        return [
+            item
+            for item in (data if isinstance(data, list) else [])
+            if isinstance(item, dict)
+        ]
 
 
 def collect_api(
     category: SemanticTier, include_nonpublic: bool = False
-) -> List[GhostRef]:
+) -> list[GhostRef]:
     """Entrypoint to collect the AMD RDNA API signature.
 
     Args:
@@ -716,7 +730,7 @@ def collect_api(
     if category != SemanticTier.UTIL:
         return []
 
-    refs: List[GhostRef] = []
+    refs: list[GhostRef] = []
 
     rdna_data = _load_exhaustive_rdna()
 
@@ -726,7 +740,10 @@ def collect_api(
         base_desc = str(
             inst_data.get("description", f"AMD RDNA {mnemonic} instruction.")
         )
-        modifiers = inst_data.get("modifiers", [])
+        raw_mods = inst_data.get("modifiers", [])
+        modifiers: list[str] = [
+            str(m) for m in (raw_mods if isinstance(raw_mods, list) else [])
+        ]
         arch = inst_data.get("architecture")
         valid_archs = resolve_gfx_architectures(arch)
         env_tags = ["rocm"] + valid_archs
@@ -739,15 +756,20 @@ def collect_api(
             f"Target Architectures: {', '.join(valid_archs)}"
         )
 
-        operands_list: List[List[str]] = inst_data.get("operands", [])
+        raw_operands = inst_data.get("operands", [])
+        operands_list: list[list[str]] = [
+            [str(op) for op in sig]
+            for sig in (raw_operands if isinstance(raw_operands, list) else [])
+            if isinstance(sig, list)
+        ]
 
         # Find the maximum length signature
-        max_sig: List[str] = []
+        max_sig: list[str] = []
         for sig in operands_list:
             if len(sig) > len(max_sig):
                 max_sig = sig
 
-        params: List[GhostParam] = []
+        params: list[GhostParam] = []
         for i, op_type in enumerate(max_sig):
             if op_type in ("VCC", "SCC"):
                 role = "condition"
@@ -771,18 +793,18 @@ def collect_api(
                 )
             )
 
-        domain_metadata = {
+        domain_metadata: dict[str, JsonValue] = {
             "encoding": encoding,
             "architecture": arch,
-            "valid_architectures": valid_archs,
-            "modifiers": modifiers,
-            "operand_signatures": operands_list,
+            "valid_architectures": list(valid_archs),
+            "modifiers": list(modifiers),
+            "operand_signatures": [list(s) for s in operands_list],
         }
 
         # Build overloads for all operand variations
-        overloads: List[ExtendedGhostRef] = []
+        overloads: list[dict[str, JsonValue] | GhostRef] = []
         for sig_idx, sig in enumerate(operands_list):
-            overload_params: List[GhostParam] = []
+            overload_params: list[GhostParam] = []
             for i, op_type in enumerate(sig):
                 if op_type in ("VCC", "SCC"):
                     role = "condition"

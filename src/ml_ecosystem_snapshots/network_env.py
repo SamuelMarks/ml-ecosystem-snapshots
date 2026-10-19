@@ -5,57 +5,54 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Union
-
+import typing
 
 from ml_ecosystem_snapshots.exceptions import OfflineModeNetworkError
+from ml_ecosystem_snapshots.models import JsonValue
 
 
 def is_offline_mode() -> bool:
     """Check if offline mode is explicitly enabled via environment variable.
 
     Returns:
-        True if ML_SNAPSHOTS_OFFLINE or ML_FRAMEWORK_SNAPSHOTS_OFFLINE is set to a truthy value.
+        True if ML_SNAPSHOTS_OFFLINE is set to a truthy value.
     """
-    for var in ("ML_SNAPSHOTS_OFFLINE", "ML_FRAMEWORK_SNAPSHOTS_OFFLINE"):
-        val = os.environ.get(var, "").strip().lower()
-        if val in ("1", "true", "yes", "on", "enable", "enabled"):
-            return True
-    return False
+    val = os.environ.get("ML_SNAPSHOTS_OFFLINE", "").strip().lower()
+    return val in ("1", "true", "yes", "on", "enable", "enabled")
 
 
-def get_custom_snapshots_paths() -> List[str]:
+def get_custom_snapshots_paths() -> list[str]:
     """Retrieve custom snapshot directory paths configured via environment variables.
 
     Returns:
-        List of directory paths specified in ML_SNAPSHOTS_PATH or ML_FRAMEWORK_SNAPSHOTS_PATH.
+        List of directory paths specified in ML_SNAPSHOTS_PATH.
     """
-    paths: List[str] = []
-    for var in ("ML_SNAPSHOTS_PATH", "ML_FRAMEWORK_SNAPSHOTS_PATH"):
-        raw = os.environ.get(var)
-        if raw:
-            for p in raw.split(os.pathsep):
-                p_clean = p.strip()
-                if p_clean and os.path.isdir(p_clean) and p_clean not in paths:
-                    paths.append(p_clean)
+    paths: list[str] = []
+    raw = os.environ.get("ML_SNAPSHOTS_PATH")
+    if raw:
+        for p in raw.split(os.pathsep):
+            p_clean = p.strip()
+            if p_clean and os.path.isdir(p_clean) and p_clean not in paths:
+                paths.append(p_clean)
     return paths
 
 
-def load_json_data(file_path: Union[str, Path]) -> Any:
+def load_json_data(file_path: str | Path) -> JsonValue:
     """Load JSON data from a plain .json, compressed .json.gz, or .json.zst file.
 
     Args:
         file_path: Absolute or relative path to the snapshot file.
 
     Returns:
-        Deserialized JSON object (dict or list).
+        Deserialized JSON object (dict, list, or primitive).
     """
     path_str = str(file_path)
     if path_str.endswith(".gz"):
         import gzip
 
         with gzip.open(path_str, "rt", encoding="utf-8") as f:
-            return json.load(f)
+            res_gz: JsonValue = json.load(f)
+            return res_gz
     elif path_str.endswith(".zst"):
         import importlib
 
@@ -64,16 +61,21 @@ def load_json_data(file_path: Union[str, Path]) -> Any:
             dctx = getattr(zstd, "ZstdDecompressor")()
             with open(path_str, "rb") as bf:
                 decompressed: bytes = dctx.decompress(bf.read())
-            return json.loads(decompressed.decode("utf-8"))
+            res_zst: JsonValue = json.loads(decompressed.decode("utf-8"))
+            return res_zst
         except Exception:
             with open(path_str, "rb") as bf:
-                return json.loads(bf.read().decode("utf-8"))
+                res_fallback: JsonValue = json.loads(bf.read().decode("utf-8"))
+                return res_fallback
     else:
         with open(path_str, "r", encoding="utf-8") as f:
-            return json.load(f)
+            res_plain: JsonValue = json.load(f)
+            return res_plain
 
 
-def stream_snapshot_items(file_path: Union[str, Path]) -> Iterator[Dict[str, Any]]:
+def stream_snapshot_items(
+    file_path: str | Path,
+) -> typing.Iterator[dict[str, JsonValue]]:
     """Iteratively yield items from a snapshot manifest to minimize memory overhead.
 
     Args:
@@ -102,9 +104,7 @@ def stream_snapshot_items(file_path: Union[str, Path]) -> Iterator[Dict[str, Any
                     yield item
 
 
-def fetch_url(
-    url: str, timeout: int = 10, strict_offline: bool = False
-) -> Optional[str]:
+def fetch_url(url: str, timeout: int = 10, strict_offline: bool = False) -> str | None:
     """Fetch content from a URL with timeout.
 
     Args:

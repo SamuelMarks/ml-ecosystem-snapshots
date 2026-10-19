@@ -7,14 +7,16 @@ Enforces:
 4. Complete separation of SSA operands from buildable attributes in MLIR/StableHLO.
 """
 
+from __future__ import annotations
+
 import json
+from pathlib import Path
 import os
-from typing import Any, List, Set
 
 import pytest
 
 
-def get_bundled_json(filename: str) -> Any:
+def get_bundled_json(filename: str) -> list[dict[str, object]]:
     """Load bundled JSON file from frameworks directory.
 
     Args:
@@ -56,12 +58,18 @@ def get_bundled_json(filename: str) -> Any:
         else:
             data = []
     if isinstance(data, dict) and "categories" in data:
-        items: List[Any] = []
-        for cat_items in data["categories"].values():
-            if isinstance(cat_items, list):
-                items.extend(cat_items)
+        items: list[dict[str, object]] = []
+        categories = data["categories"]
+        if isinstance(categories, dict):
+            for cat_items in categories.values():
+                if isinstance(cat_items, list):
+                    for item in cat_items:
+                        if isinstance(item, dict):
+                            items.append(item)
         return items
-    return data
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    return []
 
 
 def test_zero_unparsed_regex_tokens_in_bundled_snapshots() -> None:
@@ -88,7 +96,7 @@ def test_no_decay_to_varargs_for_top_pytorch_ops() -> None:
     from torch_mock import ensure_torch
 
     torch = ensure_torch()
-    from ml_ecosystem_snapshots.models import GhostInspector
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
     top_ops = [
         (torch.relu, "torch.relu"),
@@ -119,6 +127,7 @@ def test_zero_duplicate_placeholder_operand_signatures() -> None:
     sass_data = get_bundled_json("nvidia_sass_exhaustive.json")
     for item in sass_data:
         op_sigs = item.get("operand_signatures", [])
+        assert isinstance(op_sigs, list)
         sig_tuples = [tuple(sig) for sig in op_sigs if isinstance(sig, list)]
         # No duplicate operand signatures for the same instruction
         assert len(sig_tuples) == len(
@@ -129,6 +138,7 @@ def test_zero_duplicate_placeholder_operand_signatures() -> None:
     rdna_data = get_bundled_json("amd_rdna_exhaustive.json")
     for item in rdna_data:
         op_sigs = item.get("operand_signatures", [])
+        assert isinstance(op_sigs, list)
         sig_tuples = [tuple(sig) for sig in op_sigs if isinstance(sig, list)]
         assert len(sig_tuples) == len(
             set(sig_tuples)
@@ -138,20 +148,17 @@ def test_zero_duplicate_placeholder_operand_signatures() -> None:
 def test_separation_of_ssa_operands_from_attributes_in_dialects() -> None:
     """Verify complete separation of SSA operands from buildable attributes in MLIR and StableHLO."""
     # 1. MLIR
-    mlir_data = get_bundled_json("mlir_exhaustive.json")
-    mlir_ops = (
-        mlir_data
-        if isinstance(mlir_data, list)
-        else [op for items in mlir_data.get("categories", {}).values() for op in items]
-    )
+    mlir_ops = get_bundled_json("mlir_exhaustive.json")
     for op in mlir_ops:
-        operands: List[Any] = op.get("operands", [])
-        attributes: List[Any] = op.get("attributes", [])
+        operands = op.get("operands", [])
+        attributes = op.get("attributes", [])
+        assert isinstance(operands, list)
+        assert isinstance(attributes, list)
 
-        op_names: Set[str] = {
+        op_names: set[str] = {
             str(o.get("name") if isinstance(o, dict) else o) for o in operands
         }
-        attr_names: Set[str] = {
+        attr_names: set[str] = {
             str(a.get("name") if isinstance(a, dict) else a) for a in attributes
         }
 
@@ -162,15 +169,12 @@ def test_separation_of_ssa_operands_from_attributes_in_dialects() -> None:
         ), f"Overlap between SSA operands and attributes in MLIR op {op.get('name')}: {overlap}"
 
     # 2. StableHLO
-    hlo_data = get_bundled_json("stablehlo_exhaustive.json")
-    hlo_ops = (
-        hlo_data
-        if isinstance(hlo_data, list)
-        else [op for items in hlo_data.get("categories", {}).values() for op in items]
-    )
+    hlo_ops = get_bundled_json("stablehlo_exhaustive.json")
     for op in hlo_ops:
         operands = op.get("operands", [])
         attributes = op.get("attributes", [])
+        assert isinstance(operands, list)
+        assert isinstance(attributes, list)
 
         op_names = {str(o.get("name") if isinstance(o, dict) else o) for o in operands}
         attr_names = {
@@ -196,7 +200,7 @@ def test_dask_minimum_symbol_threshold() -> None:
     fake_fft = types.ModuleType("dask.array.fft")
     fake_top = types.ModuleType("dask")
 
-    def sample_array_op(x: Any, axis: int = 0, keepdims: bool = False) -> Any:
+    def sample_array_op(x: object, axis: int = 0, keepdims: bool = False) -> object:
         """Compute array reduction along axis.
 
         Args:
@@ -260,7 +264,7 @@ def test_dask_minimum_symbol_threshold() -> None:
     assert any(p.name == "axis" for p in first_ref.params)
 
 
-def test_all_new_snapshots_exist_and_nonempty(tmp_path: Any) -> None:
+def test_all_new_snapshots_exist_and_nonempty(tmp_path: Path) -> None:
     """Verify that all target snapshots can be extracted or loaded as valid non-empty JSON envelopes.
 
     Args:
@@ -288,7 +292,7 @@ def test_all_new_snapshots_exist_and_nonempty(tmp_path: Any) -> None:
     ]
 
     for prefix in expected_prefixes:
-        matching: List[str] = []
+        matching: list[str] = []
         if os.path.isdir(snap_dir):
             matching = [
                 os.path.join(snap_dir, f)
