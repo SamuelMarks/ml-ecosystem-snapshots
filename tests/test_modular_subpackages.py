@@ -66,7 +66,7 @@ def test_mcp_protocol_models_and_stdio_loop() -> None:
     )
     out_buf = io.StringIO()
 
-    def handler(msg: typing.Mapping[str, object]) -> dict[str, object]:
+    def handler(msg: typing.Mapping[str, JsonValue]) -> dict[str, JsonValue]:
         """Handle test JSON-RPC request.
 
         Args:
@@ -101,7 +101,7 @@ def test_mcp_cache_snapshot_repository() -> None:
 def test_mcp_registry_and_tools_reexports() -> None:
     """Verify dispatch_tool_call and mcp.tools re-exports operate deterministically."""
     unknown_resp = dispatch_tool_call(99, "nonexistent_tool", {})
-    err_obj: object = unknown_resp["error"]
+    err_obj = unknown_resp["error"]
     assert isinstance(err_obj, dict)
     assert err_obj["code"] == -32601
 

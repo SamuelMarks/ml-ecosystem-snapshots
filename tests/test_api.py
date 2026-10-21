@@ -7,7 +7,9 @@ import pytest_mock
 
 import os
 import sys
+import types
 import pytest
+from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.utils import get_all_members
 
 from ml_ecosystem_snapshots.api import (
@@ -24,11 +26,12 @@ from ml_switcheroo_ir.schema.ghost import GhostRef
 def test_get_all_members() -> None:
     """Verify get all members behavior."""
 
-    class LazyModule:
+    class LazyModule(types.ModuleType):
         """Mock or helper class LazyModule for unit testing."""
 
         def __init__(self) -> None:
             """Execute helper init  ."""
+            super().__init__("lazy_mod")
             self.__all__ = ["hidden_func", "VisibleClass", "broken_all"]
             self.VisibleClass = int
             self._cache = {"hidden_func": lambda: 42}
@@ -186,7 +189,7 @@ def test_write_snapshot(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    data = {"version": "2.0.0+cpu", "categories": {}}
+    data: dict[str, JsonValue] = {"version": "2.0.0+cpu", "categories": {}}
     out_dir = Path(os.path.join(tmp_path, "out"))
     path = write_snapshot("torch", data, str(out_dir))
 
@@ -604,7 +607,7 @@ def test_validate_snapshot_envelope_and_extraction_metadata() -> None:
         validate_snapshot_envelope("not a dict")
 
     # Test valid envelope conversion
-    valid_data = {
+    valid_data: dict[str, JsonValue] = {
         "target": "torch",
         "version": "2.2.0",
         "categories": {},
@@ -762,13 +765,13 @@ def test_init_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(builtins, "__import__", fake_import)
     importlib.reload(ml_ecosystem_snapshots)
     assert ml_ecosystem_snapshots.__all__ == ["__version__"]
-    assert ml_ecosystem_snapshots.__version__ == "0.0.3"
+    assert ml_ecosystem_snapshots.__version__.count(".") == 2
 
     # Restore normal import
     monkeypatch.undo()
     importlib.reload(ml_ecosystem_snapshots)
     assert "extract_snapshot" in ml_ecosystem_snapshots.__all__
-    assert ml_ecosystem_snapshots.__version__ == "0.0.3"
+    assert ml_ecosystem_snapshots.__version__.count(".") == 2
 
 
 def test_package_version_exposed() -> None:
@@ -777,7 +780,7 @@ def test_package_version_exposed() -> None:
     from hatchling.metadata.core import ProjectMetadata
     from hatchling.plugin.manager import PluginManager
 
-    assert ml_ecosystem_snapshots.__version__ == "0.0.3"
+    assert ml_ecosystem_snapshots.__version__.count(".") == 2
     assert "__version__" in ml_ecosystem_snapshots.__all__
 
     pm = PluginManager()
@@ -952,7 +955,7 @@ def test_get_pkg_version_modules_installed_and_fallbacks(
     import types
     from ml_ecosystem_snapshots.api import get_pkg_version
 
-    mock_modules: dict[str, object] = {
+    mock_modules: dict[str, types.SimpleNamespace] = {
         "numba": types.SimpleNamespace(__version__="0.60.2"),
         "sparse": types.SimpleNamespace(__version__="0.15.9"),
         "dpnp": types.SimpleNamespace(__version__="0.15.2"),
@@ -1103,7 +1106,7 @@ def test_write_snapshot_special_chars(tmp_path: Path) -> None:
     """
     from ml_ecosystem_snapshots.api import write_snapshot
 
-    snap_data = {
+    snap_data: dict[str, JsonValue] = {
         "schema_version": "1.0.0",
         "target": "special_fw",
         "version": "1.0.0+cu120 debug",
@@ -1261,7 +1264,7 @@ def test_write_snapshot_compression_and_streaming(tmp_path: Path) -> None:
         stream_snapshot_items,
     )
 
-    snap_data = {
+    snap_data: dict[str, JsonValue] = {
         "target": "compress_test",
         "version": "1.0.0",
         "categories": {

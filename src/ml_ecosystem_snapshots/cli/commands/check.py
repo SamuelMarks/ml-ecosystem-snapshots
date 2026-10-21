@@ -8,14 +8,110 @@ import json
 import os
 import sys
 import typing
+import typing_extensions
 
 from ml_ecosystem_snapshots.mcp.models import DomainOpCheckResult
 from ml_ecosystem_snapshots.models import JsonValue
 
 
+class _DomainOpNameCheckProto(typing.Protocol):
+    """Protocol for MCP domain op check functions keyed by `op_name`."""
+
+    def __call__(
+        self,
+        op_name: str,
+        inputs_count: int | None = None,
+        attributes: list[str] | None = None,
+    ) -> DomainOpCheckResult | typing.Mapping[str, JsonValue]:
+        """Validate a domain operation by `op_name`.
+
+        Args:
+            op_name: Operation name.
+            inputs_count: Optional expected input count.
+            attributes: Optional list of attribute names.
+
+        Returns:
+            Check result model or dictionary.
+        """
+        ...
+
+
+class _DomainMnemonicCheckProto(typing.Protocol):
+    """Protocol for MCP domain op check functions keyed by `mnemonic`."""
+
+    def __call__(
+        self,
+        mnemonic: str,
+        operands_count: int | None = None,
+        attributes: list[str] | None = None,
+    ) -> DomainOpCheckResult | typing.Mapping[str, JsonValue]:
+        """Validate a domain instruction by `mnemonic`.
+
+        Args:
+            mnemonic: Instruction mnemonic.
+            operands_count: Optional expected operand count.
+            attributes: Optional list of attribute names.
+
+        Returns:
+            Check result model or dictionary.
+        """
+        ...
+
+
+class _DomainOnnxCheckProto(typing.Protocol):
+    """Protocol for ONNX domain op check function."""
+
+    def __call__(
+        self,
+        op_name: str,
+        domain: str = "",
+        inputs_count: int | None = None,
+        attributes: list[str] | None = None,
+    ) -> DomainOpCheckResult | typing.Mapping[str, JsonValue]:
+        """Validate an ONNX operation.
+
+        Args:
+            op_name: Operation name.
+            domain: Operator domain.
+            inputs_count: Optional expected input count.
+            attributes: Optional list of attribute names.
+
+        Returns:
+            Check result model or dictionary.
+        """
+        ...
+
+
+class _DomainMetalCheckProto(typing.Protocol):
+    """Protocol for Metal domain op check function."""
+
+    def __call__(
+        self,
+        op_name: str,
+        address_space: str | None = None,
+        inputs_count: int | None = None,
+        attributes: list[str] | None = None,
+    ) -> DomainOpCheckResult | typing.Mapping[str, JsonValue]:
+        """Validate a Metal operation.
+
+        Args:
+            op_name: Operation name.
+            address_space: Optional address space.
+            inputs_count: Optional expected input count.
+            attributes: Optional list of attribute names.
+
+        Returns:
+            Check result model or dictionary.
+        """
+        ...
+
+
+DomainCheckCallable: typing_extensions.TypeAlias = "_DomainOpNameCheckProto | _DomainMnemonicCheckProto | _DomainOnnxCheckProto | _DomainMetalCheckProto"
+
+
 def _run_domain_op_check_cli(
     args: argparse.Namespace,
-    check_fn: object,
+    check_fn: DomainCheckCallable,
     label: str,
     op_attr: str = "op_name",
     count_attr: str = "inputs_count",
@@ -36,20 +132,44 @@ def _run_domain_op_check_cli(
         extra_kwargs: Optional additional keyword arguments to forward to `check_fn`.
     """
     raw_attrs = getattr(args, "attributes", None)
-    attrs: list[JsonValue] | None = (
+    attrs: list[str] | None = (
         [a.strip() for a in raw_attrs.split(",") if a.strip()] if raw_attrs else None
     )
     target = str(getattr(args, op_attr))
-    call_kwargs: dict[str, JsonValue] = {
-        op_attr: target,
-        count_param: getattr(args, count_attr, None),
-        "attributes": attrs,
-    }
-    if extra_kwargs:
-        call_kwargs.update(extra_kwargs)
+    count_val: int | None = getattr(args, count_attr, None)
 
-    assert callable(check_fn)
-    res: DomainOpCheckResult | typing.Mapping[str, JsonValue] = check_fn(**call_kwargs)
+    res: DomainOpCheckResult | typing.Mapping[str, JsonValue]
+    if extra_kwargs and "domain" in extra_kwargs:
+        onnx_fn: _DomainOnnxCheckProto = getattr(check_fn, "__call__")
+        res = onnx_fn(
+            op_name=target,
+            domain=str(extra_kwargs["domain"] or ""),
+            inputs_count=count_val,
+            attributes=attrs,
+        )
+    elif extra_kwargs and "address_space" in extra_kwargs:
+        metal_fn: _DomainMetalCheckProto = getattr(check_fn, "__call__")
+        addr_val = extra_kwargs["address_space"]
+        res = metal_fn(
+            op_name=target,
+            address_space=str(addr_val) if addr_val is not None else None,
+            inputs_count=count_val,
+            attributes=attrs,
+        )
+    elif op_attr == "mnemonic":
+        wasm_fn: _DomainMnemonicCheckProto = getattr(check_fn, "__call__")
+        res = wasm_fn(
+            mnemonic=target,
+            operands_count=count_val,
+            attributes=attrs,
+        )
+    else:
+        std_fn: _DomainOpNameCheckProto = getattr(check_fn, "__call__")
+        res = std_fn(
+            op_name=target,
+            inputs_count=count_val,
+            attributes=attrs,
+        )
     is_valid = (
         res.is_valid
         if isinstance(res, DomainOpCheckResult)

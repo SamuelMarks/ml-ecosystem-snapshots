@@ -336,7 +336,7 @@ def load_concept_map(
         if os.path.exists(custom_path):
             try:
                 with open(custom_path, "r", encoding="utf-8") as f:
-                    data: object = json.load(f)
+                    data: JsonValue = json.load(f)
                     if isinstance(data, dict):
                         loaded_custom: dict[str, JsonValue] = dict(data)
                         return loaded_custom
@@ -351,7 +351,7 @@ def load_concept_map(
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
-                data_bundled: object = json.load(f)
+                data_bundled: JsonValue = json.load(f)
                 if isinstance(data_bundled, dict):
                     loaded_bundled: dict[str, JsonValue] = dict(data_bundled)
                     return loaded_bundled
@@ -395,7 +395,9 @@ def translate_concept_arguments(
     s_fw = source_framework.lower().strip()
     t_fw = target_framework.lower().strip()
 
-    raw_pt = active_alias_map.get("_parameter_translations", {})
+    raw_pt = active_alias_map.get("_parameter_translations")
+    if not isinstance(raw_pt, dict):
+        raw_pt = DEFAULT_CONCEPT_MAP.get("_parameter_translations", {})
     param_translations: dict[str, JsonValue] = (
         dict(raw_pt) if isinstance(raw_pt, dict) else {}
     )

@@ -121,7 +121,7 @@ def parse_nvdisasm_binary_info(raw_text: str) -> list[IsaInstructionRecordModel]
 
 
 def parse_cuda_binary_utilities(
-    data: typing.Mapping[str, object],
+    data: typing.Mapping[str, JsonValue],
 ) -> list[IsaInstructionRecordModel]:
     """Parse CUDA Binary Utilities JSON dictionary into structured SASS instruction records.
 
@@ -717,7 +717,7 @@ def scrape_sass(
         else exhaustive_list
     )
 
-    exhaustive_data: dict[str, object] = {
+    exhaustive_data: dict[str, JsonValue] = {
         "schema_version": "2.0.0",
         "target": "nvidia_sass",
         "version": cuda_version,
@@ -733,7 +733,7 @@ def scrape_sass(
             "sm_90",
             "sm_100",
         ],
-        "instructions": list(final_records),
+        "instructions": [dict(r) for r in final_records],
     }
 
     with open(resolved_output, "w", encoding="utf-8", newline="\n") as f:

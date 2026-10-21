@@ -562,7 +562,9 @@ def test_parse_stablehlo_tablegen_verification_rules() -> None:
 
 def test_parse_stablehlo_llvm_tblgen_json() -> None:
     """Test parse_stablehlo_llvm_tblgen_json parsing DAG and list records."""
-    mock_json = {
+    from ml_ecosystem_snapshots.models import JsonValue
+
+    mock_json: dict[str, JsonValue] = {
         "!instanceof": {
             "Op": ["StableHLO_DotGeneralOp", "StableHLO_ReduceOp", "StableHLO_WhileOp"]
         },
@@ -656,6 +658,8 @@ def test_parse_stablehlo_llvm_tblgen_json() -> None:
 
 def test_parse_stablehlo_llvm_tblgen_json_all_rules() -> None:
     """Test parse_stablehlo_llvm_tblgen_json with all verification rules, list args/results, and nameless records."""
+    from ml_ecosystem_snapshots.models import JsonValue
+
     assert (
         build_stablehlo_snapshot.strip_tablegen_comments(
             "/* block */ int x = 1; // comment\n"
@@ -663,7 +667,7 @@ def test_parse_stablehlo_llvm_tblgen_json_all_rules() -> None:
         == "int x = 1;"
     )
 
-    mock_json = {
+    mock_json: dict[str, JsonValue] = {
         "!meta": "some_metadata",
         "non_dict_key": 42,
         "StableHLO_ConvolutionOp": {
@@ -744,7 +748,9 @@ def test_parse_stablehlo_llvm_tblgen_json_all_rules() -> None:
 
 def test_parse_stablehlo_llvm_tblgen_json_edge_branches() -> None:
     """Test parse_stablehlo_llvm_tblgen_json with malformed dag entries, empty traits, and None values."""
-    mock_json = {
+    from ml_ecosystem_snapshots.models import JsonValue
+
+    mock_json: dict[str, JsonValue] = {
         "!instanceof": {
             "Op": ["StableHLO_MalformedOp", "StableHLO_NoneOp"],
         },
@@ -803,7 +809,9 @@ def test_parse_stablehlo_llvm_tblgen_json_subtract() -> None:
     Returns:
         None.
     """
-    raw_json = {
+    from ml_ecosystem_snapshots.models import JsonValue
+
+    raw_json: dict[str, JsonValue] = {
         "!instanceof": {"StableHLO_Op": ["StableHLO_SubtractOp"]},
         "StableHLO_SubtractOp": {
             "!name": "StableHLO_SubtractOp",

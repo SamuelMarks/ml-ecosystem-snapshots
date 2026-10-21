@@ -28,7 +28,7 @@ except ImportError:
 
 
 def _scan_module(
-    module: types.ModuleType | object | None,
+    module: types.ModuleType | None,
     prefix: str,
     kind: str = "class",
     block_list: set[str] | None = None,

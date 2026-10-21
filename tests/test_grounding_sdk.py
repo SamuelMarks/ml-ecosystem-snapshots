@@ -8,7 +8,7 @@ import pytest
 import json
 import os
 
-from ml_ecosystem_snapshots.models import GhostRef
+from ml_ecosystem_snapshots.models import GhostRef, JsonValue
 from ml_ecosystem_snapshots.grounding import (
     DiagnosticSeverity,
     GroundingDiagnostic,
@@ -740,7 +740,7 @@ def test_grounding_engine_edge_branches(
 
     orig_hydrate = GhostInspector.hydrate
 
-    def bad_hydrate(d: dict[str, object]) -> GhostRef:
+    def bad_hydrate(d: dict[str, JsonValue]) -> GhostRef:
         """Simulate failure during GhostInspector.hydrate.
 
         Args:
@@ -789,7 +789,7 @@ def test_grounding_engine_collector_fallback(
     # 3. Exception during extract_snapshot returns empty dict
     import ml_ecosystem_snapshots.api as api_mod
 
-    def mock_extract_fail(target: str) -> dict[str, object]:
+    def mock_extract_fail(target: str) -> dict[str, JsonValue]:
         """Simulate extraction failure.
 
         Args:
@@ -805,7 +805,7 @@ def test_grounding_engine_collector_fallback(
     assert eng_fail.load_target("tikz") == {}
 
     # 4. Fallback with malformed items and hydrate exception
-    def mock_extract_malformed(target: str) -> dict[str, object]:
+    def mock_extract_malformed(target: str) -> dict[str, JsonValue]:
         """Return snapshot with malformed items for coverage.
 
         Args:
@@ -844,7 +844,7 @@ def test_grounding_engine_collector_fallback(
 
     orig_hydrate = GhostInspector.hydrate
 
-    def bad_hydrate(d: dict[str, object]) -> GhostRef:
+    def bad_hydrate(d: dict[str, JsonValue]) -> GhostRef:
         """Simulate hydrate error for item named fail.
 
         Args:

@@ -36,7 +36,7 @@ def _get_tf() -> types.ModuleType | None:
 
 
 def _collect_tf_submodules(
-    tf_mod: types.ModuleType | object,
+    tf_mod: types.ModuleType,
     submodule_names: list[str],
     include_nonpublic: bool,
     allow_classes: bool = False,

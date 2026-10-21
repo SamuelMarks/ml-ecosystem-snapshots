@@ -53,20 +53,26 @@ class CddIrModel(pydantic.BaseModel):
         val: str | dict[str, dict[str, str]] | JsonValue = getattr(self, key)
         return val
 
-    def to_cdd_dict(self) -> dict[str, object]:
+    def to_cdd_dict(self) -> dict[str, JsonValue]:
         """Convert to a mutable dictionary with `OrderedDict` params/returns for `cdd-python`.
 
         Returns:
             Dictionary suitable for `cdd-python` emitters.
         """
+        params_od: dict[str, JsonValue] = OrderedDict(
+            (k, dict(v)) for k, v in self.params.items()
+        )
+        returns_od: dict[str, JsonValue] | None = (
+            OrderedDict((k, dict(v)) for k, v in self.returns.items())
+            if self.returns is not None
+            else None
+        )
         return {
             "name": self.name,
             "type": self.type,
             "doc": self.doc,
-            "params": OrderedDict(self.params),
-            "returns": (
-                OrderedDict(self.returns) if self.returns is not None else None
-            ),
+            "params": params_od,
+            "returns": returns_od,
         }
 
 
@@ -88,7 +94,7 @@ def _ghost_to_cdd_ir(ref: GhostRef) -> CddIrModel:
         if param.description:
             p_dict["doc"] = param.description
         if param.default is not None:
-            p_dict["default"] = param.default
+            p_dict["default"] = str(param.default)
         params_map[param.name] = p_dict
 
     returns_map: dict[str, dict[str, str]] | None = None
@@ -161,20 +167,20 @@ def to_openapi(refs: typing.Sequence[GhostRef]) -> dict[str, JsonValue]:
 def to_pydantic(ref: GhostRef, validate_varargs: bool = False) -> str:
     """Convert a GhostRef into a Pydantic V2 class definition string.
 
-    Supports overloaded signatures by generating a typing.Union of Pydantic models,
-    variable positional arguments as validated Tuple fields, and parameter descriptions
-    in Field(description=...) for OpenAPI/schema generation.
+    Supports overloaded signatures by generating a PEP 604 union of Pydantic models,
+    variable positional arguments as validated tuple fields, and parameter descriptions
+    in pydantic.Field(description=...) for OpenAPI/schema generation.
 
     Args:
         ref: The GhostRef to convert.
-        validate_varargs: Whether to represent *args as validated Tuple fields instead of skipping.
+        validate_varargs: Whether to represent *args as validated tuple fields instead of skipping.
 
     Returns:
         A string containing the Python source for the Pydantic model.
     """
     header_lines = [
-        "from pydantic import BaseModel, Field",
-        "from typing import Any, Optional, Union, List, Dict, Tuple",
+        "import typing",
+        "import pydantic",
         "",
         "",
     ]
@@ -194,11 +200,13 @@ def to_pydantic(ref: GhostRef, validate_varargs: bool = False) -> str:
         Returns:
             List of Python source code lines for the class.
         """
-        m_lines = [f"class {name}(BaseModel):"]
+        m_lines = [f"class {name}(pydantic.BaseModel):"]
         if doc:
             m_lines.append(f'    """{doc}"""')
         else:
             m_lines.append('    """Generated Pydantic model."""')
+        m_lines.append("")
+        m_lines.append('    model_config = pydantic.ConfigDict(extra="forbid")')
 
         valid_params = []
         for p in params:
@@ -207,41 +215,43 @@ def to_pydantic(ref: GhostRef, validate_varargs: bool = False) -> str:
             valid_params.append(p)
 
         if not valid_params:
-            m_lines.append("    pass")
             return m_lines
 
         for param in valid_params:
-            typ = param.annotation if param.annotation else "Any"
+            raw_typ = param.annotation if param.annotation else "object"
+            typ = "object" if raw_typ == "Any" else raw_typ
             desc = param.description.replace('"', "'") if param.description else ""
             default_val = param.default
 
             if param.kind == "VAR_POSITIONAL":
-                typ = f"Tuple[{typ}, ...]" if typ != "Any" else "Tuple[Any, ...]"
+                typ = f"tuple[{typ}, ...]"
                 field_def = (
-                    f'Field(default=(), description="{desc}")'
+                    f'pydantic.Field(default=(), description="{desc}")'
                     if desc
-                    else "Field(default=())"
+                    else "pydantic.Field(default=())"
                 )
                 m_lines.append(f"    {param.name}: {typ} = {field_def}")
                 continue
             if param.kind == "VAR_KEYWORD":
-                typ = f"Dict[str, {typ}]" if typ != "Any" else "Dict[str, Any]"
+                typ = f"dict[str, {typ}]"
                 field_def = (
-                    f'Field(default_factory=dict, description="{desc}")'
+                    f'pydantic.Field(default_factory=dict, description="{desc}")'
                     if desc
-                    else "Field(default_factory=dict)"
+                    else "pydantic.Field(default_factory=dict)"
                 )
                 m_lines.append(f"    {param.name}: {typ} = {field_def}")
                 continue
 
             if default_val is None:
                 field_def = (
-                    f'Field(..., description="{desc}")' if desc else "Field(...)"
+                    f'pydantic.Field(..., description="{desc}")'
+                    if desc
+                    else "pydantic.Field(...)"
                 )
                 m_lines.append(f"    {param.name}: {typ} = {field_def}")
             else:
                 field_def = (
-                    f'Field(default={default_val}, description="{desc}")'
+                    f'pydantic.Field(default={default_val}, description="{desc}")'
                     if desc
                     else f"{default_val}"
                 )
@@ -263,7 +273,7 @@ def to_pydantic(ref: GhostRef, validate_varargs: bool = False) -> str:
             )
             all_models.append("")
 
-        all_models.append(f"{ref.name} = Union[{', '.join(variant_names)}]")
+        all_models.append(f"{ref.name} = {' | '.join(variant_names)}")
     else:
         all_models.extend(_render_single_model(ref.name, ref.docstring, ref.params))
 

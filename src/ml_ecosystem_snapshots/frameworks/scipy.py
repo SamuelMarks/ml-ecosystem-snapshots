@@ -660,7 +660,7 @@ def collect_api(
         return []
 
     target_submodules = ["special", "linalg", "signal", "ndimage", "stats"]
-    loaded_submods: dict[str, types.ModuleType | object] = {}
+    loaded_submods: dict[str, types.ModuleType] = {}
     for sub in target_submodules:
         mod = _get_scipy_submodule(sub)
         if mod is not None:

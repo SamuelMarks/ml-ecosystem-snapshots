@@ -528,13 +528,14 @@ def test_handle_mcp_message_dtypes_and_ranks() -> None:
         }
     }
 
+    from ml_ecosystem_snapshots.models import JsonValue
     from unittest.mock import patch
 
     with patch(
         "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     ):
-        msg = {
+        msg: dict[str, JsonValue] = {
             "jsonrpc": "2.0",
             "id": 42,
             "method": "tools/call",

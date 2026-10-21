@@ -11,6 +11,7 @@ from unittest import mock
 import pytest
 import pytest_mock
 
+from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.tools import scrape_amd_rdna
 
 
@@ -304,7 +305,7 @@ def test_parse_td_content_multiclass() -> None:
 
 def test_parse_llvm_tblgen_json() -> None:
     """Test parse_llvm_tblgen_json extracting register classes, encodings, and modifiers."""
-    mock_tblgen = {
+    mock_tblgen: dict[str, JsonValue] = {
         "!tablegen_json_version": 1,
         "!instanceof": {"VOP1Inst": ["V_MOV_B32_e32"]},
         "ignore_str": "not_a_dict",
@@ -414,7 +415,7 @@ def test_scrape_amd_rdna_with_tblgen_json(tmp_path: Path) -> None:
 
 def test_parse_llvm_tblgen_json_operand_and_encoding_fallbacks() -> None:
     """Test TableGen JSON parsing edge cases for operand lists, unknown encoding, and non-VOPD."""
-    mock_tblgen = {
+    mock_tblgen: dict[str, JsonValue] = {
         # 1. Unknown encoding profile with empty operands -> covers 305->327, 332->339, 339->345, 349->350, line 350
         "CUSTOM_NOP": {
             "!superclasses": ["SomeCustomClass"],

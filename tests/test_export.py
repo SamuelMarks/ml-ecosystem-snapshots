@@ -145,16 +145,20 @@ def test_to_pydantic(sample_ghost_ref: GhostRef) -> None:
         sample_ghost_ref: Sample GhostRef fixture for export testing.
     """
     code = to_pydantic(sample_ghost_ref)
-    assert "class Linear(BaseModel):" in code
+    assert "import typing" in code
+    assert "import pydantic" in code
+    assert "class Linear(pydantic.BaseModel):" in code
+    assert 'model_config = pydantic.ConfigDict(extra="forbid")' in code
     assert (
-        'in_features: int = Field(..., description="size of each input sample")' in code
-    )
-    assert (
-        'out_features: int = Field(..., description="size of each output sample")'
+        'in_features: int = pydantic.Field(..., description="size of each input sample")'
         in code
     )
     assert (
-        "bias: bool = Field(default=True, description=\"If set to 'False', the layer will not learn an additive bias.\")"
+        'out_features: int = pydantic.Field(..., description="size of each output sample")'
+        in code
+    )
+    assert (
+        "bias: bool = pydantic.Field(default=True, description=\"If set to 'False', the layer will not learn an additive bias.\")"
         in code
     )
     assert "args" not in code  # VAR_POSITIONAL skipped
@@ -164,8 +168,8 @@ def test_to_pydantic_empty() -> None:
     """Verify to pydantic empty behavior."""
     ref = GhostRef(name="Empty", api_path="a.Empty", kind="class", params=[])
     code = to_pydantic(ref)
-    assert "class Empty(BaseModel):" in code
-    assert "pass" in code
+    assert "class Empty(pydantic.BaseModel):" in code
+    assert 'model_config = pydantic.ConfigDict(extra="forbid")' in code
 
 
 def test_to_protobuf(sample_ghost_ref: GhostRef) -> None:
@@ -788,7 +792,7 @@ def test_export_coverage_hardening() -> None:
     pyd_code = to_pydantic(main_ref, validate_varargs=True)
     assert "FnWithVarsVariant0" in pyd_code
     assert "FnWithVarsVariant1" in pyd_code
-    assert "FnWithVars = Union[FnWithVarsVariant0, FnWithVarsVariant1]" in pyd_code
+    assert "FnWithVars = FnWithVarsVariant0 | FnWithVarsVariant1" in pyd_code
 
     # 2. _py_type_to_proto edge cases
     assert _py_type_to_proto(None) == "string"

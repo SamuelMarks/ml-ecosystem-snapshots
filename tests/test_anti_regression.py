@@ -15,8 +15,10 @@ import os
 
 import pytest
 
+from ml_ecosystem_snapshots.models import JsonValue
 
-def get_bundled_json(filename: str) -> list[dict[str, object]]:
+
+def get_bundled_json(filename: str) -> list[dict[str, JsonValue]]:
     """Load bundled JSON file from frameworks directory.
 
     Args:
@@ -58,7 +60,7 @@ def get_bundled_json(filename: str) -> list[dict[str, object]]:
         else:
             data = []
     if isinstance(data, dict) and "categories" in data:
-        items: list[dict[str, object]] = []
+        items: list[dict[str, JsonValue]] = []
         categories = data["categories"]
         if isinstance(categories, dict):
             for cat_items in categories.values():
@@ -68,7 +70,7 @@ def get_bundled_json(filename: str) -> list[dict[str, object]]:
                             items.append(item)
         return items
     if isinstance(data, list):
-        return [item for item in data if isinstance(item, dict)]
+        return [dict(item) for item in data if isinstance(item, dict)]
     return []
 
 
@@ -326,6 +328,18 @@ def test_no_mock_introspection_or_type_ignores_in_src() -> None:
         "MagicMock",
         "unittest.mock",
         "type: ignore",
+        "@dataclass",
+        "TypedDict",
+        "NamedTuple",
+        "from typing",
+        "Mapping[str, object]",
+        "dict[str, object]",
+        "list[object]",
+        "Sequence[object]",
+        "typing.Optional",
+        "typing.Union",
+        "typing.Any",
+        "typing.cast",
     ]
     for fpath in src_files:
         with open(fpath, "r", encoding="utf-8") as fp:

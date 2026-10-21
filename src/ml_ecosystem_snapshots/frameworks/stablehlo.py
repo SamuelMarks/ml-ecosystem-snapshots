@@ -165,7 +165,7 @@ STRUCTURED_REGION_SIGNATURES: dict[str, dict[str, JsonValue]] = {
 }
 
 
-def _to_int_list(val: object) -> list[int]:
+def _to_int_list(val: JsonValue) -> list[int]:
     """Extract a list of integers from a JSON value list.
 
     Args:
@@ -178,7 +178,7 @@ def _to_int_list(val: object) -> list[int]:
 
 
 def validate_dot_dimension_numbers(
-    dim_numbers: typing.Mapping[str, object],
+    dim_numbers: typing.Mapping[str, JsonValue],
     lhs_rank: int | None = None,
     rhs_rank: int | None = None,
 ) -> list[str]:
@@ -251,7 +251,7 @@ def validate_dot_dimension_numbers(
 
 
 def validate_conv_dimension_numbers(
-    dim_numbers: typing.Mapping[str, object],
+    dim_numbers: typing.Mapping[str, JsonValue],
     input_rank: int | None = None,
     kernel_rank: int | None = None,
     output_rank: int | None = None,
@@ -327,7 +327,7 @@ def validate_conv_dimension_numbers(
 
 
 def validate_scatter_dimension_numbers(
-    dim_numbers: typing.Mapping[str, object],
+    dim_numbers: typing.Mapping[str, JsonValue],
 ) -> list[str]:
     """Validate ScatterDimensionNumbersAttr disjointness and mappings.
 
@@ -350,7 +350,7 @@ def validate_scatter_dimension_numbers(
 
 
 def validate_gather_dimension_numbers(
-    dim_numbers: typing.Mapping[str, object],
+    dim_numbers: typing.Mapping[str, JsonValue],
 ) -> list[str]:
     """Validate GatherDimensionNumbersAttr disjointness and mappings.
 
@@ -527,9 +527,9 @@ def validate_binary_broadcast(
 
 def validate_stablehlo_op(
     op_name: str,
-    operands: typing.Sequence[typing.Mapping[str, object]] | None = None,
-    attributes: typing.Mapping[str, object] | None = None,
-    regions: typing.Mapping[str, object] | None = None,
+    operands: typing.Sequence[typing.Mapping[str, JsonValue]] | None = None,
+    attributes: typing.Mapping[str, JsonValue] | None = None,
+    regions: typing.Mapping[str, JsonValue] | None = None,
     operand_ranks: list[int] | None = None,
 ) -> list[str]:
     """Validate a StableHLO operation against dimension numbers, regions, and operand ranks.

@@ -581,7 +581,7 @@ def parse_mlir_tablegen(content: str, dialect_name: str) -> list[TableGenRecordM
 
 
 def parse_llvm_tblgen_json(
-    json_data: str | typing.Mapping[str, object], dialect_name: str
+    json_data: str | typing.Mapping[str, JsonValue], dialect_name: str
 ) -> list[TableGenRecordModel]:
     """Parse JSON dump from llvm-tblgen -dump-json into structured MLIR operations.
 
@@ -593,7 +593,7 @@ def parse_llvm_tblgen_json(
         List of structured operation dictionaries conforming to snapshot schema.
     """
     if isinstance(json_data, str):
-        data: typing.Mapping[str, object] = json.loads(json_data)
+        data: typing.Mapping[str, JsonValue] = json.loads(json_data)
     else:
         data = json_data
 
@@ -794,7 +794,7 @@ def dump_ast_via_llvm_tooling(
 
 
 def validate_dialect_ops_ods(
-    ops: typing.Sequence[typing.Mapping[str, object]], dialect_name: str
+    ops: typing.Sequence[typing.Mapping[str, JsonValue]], dialect_name: str
 ) -> list[str]:
     """Validate extracted dialect operations against official ODS structural rules.
 

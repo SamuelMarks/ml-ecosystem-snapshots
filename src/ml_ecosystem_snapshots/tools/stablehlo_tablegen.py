@@ -425,7 +425,7 @@ def parse_stablehlo_tablegen(content: str) -> list[TableGenRecordModel]:
 
 
 def parse_stablehlo_llvm_tblgen_json(
-    json_data: str | typing.Mapping[str, object],
+    json_data: str | typing.Mapping[str, JsonValue],
 ) -> list[TableGenRecordModel]:
     """Parse JSON dump from llvm-tblgen -dump-json for StableHLO into structured GhostRef operations.
 
@@ -436,7 +436,7 @@ def parse_stablehlo_llvm_tblgen_json(
         List of structured GhostRef operation dictionaries.
     """
     if isinstance(json_data, str):
-        data: typing.Mapping[str, object] = json.loads(json_data)
+        data: typing.Mapping[str, JsonValue] = json.loads(json_data)
     else:
         data = json_data
 

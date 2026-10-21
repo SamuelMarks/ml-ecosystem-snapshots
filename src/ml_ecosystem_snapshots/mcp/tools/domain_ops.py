@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import typing
-from typing_extensions import TypeAlias
+import typing_extensions
 
 import pydantic
 
@@ -15,12 +15,7 @@ from ml_ecosystem_snapshots.frameworks._base import (
 from ml_ecosystem_snapshots.mcp.models import DomainOpCheckResult
 from ml_ecosystem_snapshots.models import JsonValue
 
-DomainOpRecord: TypeAlias = typing.Union[
-    CanonicalSsaOpSpec,
-    CanonicalPythonOpSpec,
-    CanonicalSubmoduleOpSpec,
-    dict[str, JsonValue],
-]
+DomainOpRecord: typing_extensions.TypeAlias = "CanonicalSsaOpSpec | CanonicalPythonOpSpec | CanonicalSubmoduleOpSpec | dict[str, JsonValue]"
 
 
 class DomainOpCheckConfig(pydantic.BaseModel):
@@ -37,7 +32,15 @@ class DomainOpCheckConfig(pydantic.BaseModel):
     split_last_dot: bool
     lowercase: bool
     is_python_params: bool
-    loader_fn: typing.Callable[[], typing.Sequence[DomainOpRecord]]
+    loader_fn: typing.Callable[
+        [],
+        typing.Sequence[
+            CanonicalSsaOpSpec
+            | CanonicalPythonOpSpec
+            | CanonicalSubmoduleOpSpec
+            | dict[str, JsonValue]
+        ],
+    ]
     tool_description: str
     op_arg_name: str = "op_name"
     op_arg_description: str = "Operation name."

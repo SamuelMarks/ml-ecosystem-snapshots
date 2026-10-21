@@ -242,7 +242,7 @@ def collect_api(
         return []
 
     target_submodules = ["functional", "transforms"]
-    loaded_submods: dict[str, types.ModuleType | object] = {}
+    loaded_submods: dict[str, types.ModuleType] = {}
     for sub in target_submodules:
         mod = _get_torchaudio_submodule(sub)
         if mod is not None:

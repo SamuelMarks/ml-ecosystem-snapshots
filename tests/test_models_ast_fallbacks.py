@@ -485,7 +485,8 @@ def test_ghost_inspector_overload_without_parameters() -> None:
 
         is_class = False
         is_function = True
-        parameters: list[object] = []
+        is_public = True
+        parameters: list[str] = []
         docstring = None
         overloads = [BareOverload()]
 

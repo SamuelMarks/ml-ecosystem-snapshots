@@ -14,15 +14,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v7
 
-      - name: Checkout ml-switcheroo-ir
-        uses: actions/checkout@v7
-        with:
-          repository: SamuelMarks/ml-switcheroo-ir
-          path: ml-switcheroo-ir
-
-      - name: Move ml-switcheroo-ir
-        run: mv ml-switcheroo-ir ../ml-switcheroo-ir
-
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
@@ -36,7 +27,6 @@ jobs:
 
       - name: Install dependencies and generate snapshots
         run: |
-          uv pip install --system -e ../ml-switcheroo-ir
           uv pip install --system -e ".[generate]"
           for fw in torch jax tensorflow keras flax numpy; do
             uv pip install --system "$fw" || echo "Failed to install $fw, skipping."

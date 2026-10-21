@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import os
 
+from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.stubs import generate_stubs
 
 
@@ -14,7 +15,7 @@ def test_generate_stubs(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    snap = {
+    snap: dict[str, JsonValue] = {
         "categories": {
             "layer": [
                 {
@@ -92,13 +93,14 @@ def test_generate_stubs(tmp_path: Path) -> None:
     assert nn_init.exists()
 
     content = nn_init.read_text()
+    assert "import typing" in content
     assert "class Linear:" in content
     assert (
         "def __init__(self, in_features: int, out_features: int) -> None: ..."
         in content
     )
     assert "class EmptyClass:" in content
-    assert "def __init__(self) -> Any: ..." in content
+    assert "def __init__(self) -> object: ..." in content
 
     func_init = Path(
         os.path.join(
@@ -109,7 +111,7 @@ def test_generate_stubs(tmp_path: Path) -> None:
     assert func_init.exists()
     content = func_init.read_text()
     assert "def relu(x: Tensor, *args, **kwargs) -> Tensor: ..." in content
-    assert "def varargs_func(x: Any, *args: Any) -> Any: ..." in content
+    assert "def varargs_func(x: object, *args: object) -> object: ..." in content
 
 
 def test_generate_stubs_empty(tmp_path: Path) -> None:
@@ -129,7 +131,7 @@ def test_generate_stubs_default_vals(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    snap = {
+    snap: dict[str, JsonValue] = {
         "categories": {
             "layer": [
                 {
@@ -157,7 +159,7 @@ def test_generate_stubs_default_vals(tmp_path: Path) -> None:
         )
     )
     content = nn_init.read_text()
-    assert "def __init__(self, in_features: int = 10) -> Any: ..." in content
+    assert "def __init__(self, in_features: int = 10) -> object: ..." in content
 
 
 def test_generate_stubs_no_module(tmp_path: Path) -> None:
@@ -166,7 +168,7 @@ def test_generate_stubs_no_module(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    data = {
+    data: dict[str, JsonValue] = {
         "categories": {
             "losses": [
                 {
@@ -190,7 +192,7 @@ def test_generate_stubs_include_nonpublic(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    snap = {
+    snap: dict[str, JsonValue] = {
         "categories": {
             "layer": [
                 {
@@ -231,7 +233,7 @@ def test_generate_stubs_list_and_non_dict(tmp_path: Path) -> None:
     from ml_ecosystem_snapshots.stubs import validate_pyi_stub
 
     # Test snapshot_data as list
-    list_data = [
+    list_data: list[dict[str, JsonValue]] = [
         {
             "api_path": "list_fw.mod.helper",
             "kind": "function",
@@ -242,11 +244,11 @@ def test_generate_stubs_list_and_non_dict(tmp_path: Path) -> None:
     generate_stubs(list_data, str(list_out_dir))
     helper_init = Path(os.path.join(list_out_dir, "list_fw", "mod", "__init__.pyi"))
     assert helper_init.exists()
-    assert "def helper(x: Any) -> Any: ..." in helper_init.read_text()
+    assert "def helper(x: object) -> object: ..." in helper_init.read_text()
 
     # Test snapshot_data as unsupported non-dict non-list type (e.g. tuple)
     invalid_out_dir = Path(os.path.join(tmp_path, "stubs_invalid"))
-    invalid_data: tuple[dict[str, object], ...] = ()
+    invalid_data: tuple[dict[str, JsonValue], ...] = ()
     generate_stubs(invalid_data, str(invalid_out_dir))
     assert not list(invalid_out_dir.glob("**/*.pyi"))
 
@@ -261,7 +263,7 @@ def test_generate_stubs_overloads_and_dsl(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    snap = {
+    snap: dict[str, JsonValue] = {
         "categories": {
             "ops": [
                 {
@@ -371,7 +373,7 @@ def test_generate_stubs_overloads_and_dsl(tmp_path: Path) -> None:
     math_pyi = Path(os.path.join(out_dir, "dsl_fw", "math", "__init__.pyi"))
     assert math_pyi.exists()
     math_text = math_pyi.read_text()
-    assert "@overload" in math_text
+    assert "@typing.overload" in math_text
     assert "def add(x: int, y: int) -> int: ..." in math_text
     assert "def add(x: float, y: float) -> float: ..." in math_text
     assert "def add(x: Tensor, y: Tensor) -> Tensor: ..." in math_text
@@ -380,7 +382,7 @@ def test_generate_stubs_overloads_and_dsl(tmp_path: Path) -> None:
     ops_pyi = Path(os.path.join(out_dir, "dsl_fw", "ops", "__init__.pyi"))
     assert ops_pyi.exists()
     ops_text = ops_pyi.read_text()
-    assert "@overload" in ops_text
+    assert "@typing.overload" in ops_text
     assert (
         "def __init__(self, units: int, activation: str = 'relu') -> None: ..."
         in ops_text
@@ -390,7 +392,7 @@ def test_generate_stubs_overloads_and_dsl(tmp_path: Path) -> None:
     sass_pyi = Path(os.path.join(out_dir, "nvidia_sass", "__init__.pyi"))
     assert sass_pyi.exists()
     sass_text = sass_pyi.read_text()
-    assert "def HMMA16816(d: str) -> Any: ..." in sass_text
+    assert "def HMMA16816(d: str) -> object: ..." in sass_text
 
 
 def test_generate_stubs_class_methods(tmp_path: Path) -> None:
@@ -399,7 +401,7 @@ def test_generate_stubs_class_methods(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory fixture.
     """
-    snap = {
+    snap: dict[str, JsonValue] = {
         "categories": {
             "tensor": [
                 {
@@ -482,7 +484,7 @@ def test_generate_stubs_class_methods(tmp_path: Path) -> None:
 
     assert "class Tensor:" in content
     assert "    def __init__(self) -> Tensor: ..." in content
-    assert "    @overload" in content
+    assert "    @typing.overload" in content
     assert "    def add(self, other: int) -> Tensor: ..." in content
     assert "    def add(self, other: Tensor) -> Tensor: ..." in content
     assert "    def dim(self) -> int: ..." in content

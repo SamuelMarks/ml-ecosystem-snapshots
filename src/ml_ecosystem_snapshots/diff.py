@@ -12,7 +12,7 @@ from ml_switcheroo_ir.schema.ghost import SnapshotEnvelope
 import pydantic
 
 from ml_ecosystem_snapshots.compliance import ParamSignatureTuple
-from ml_ecosystem_snapshots.models import JsonValue
+from ml_ecosystem_snapshots.models import JsonValue, ScalarValue
 
 
 class DiffResult(pydantic.BaseModel):
@@ -166,13 +166,13 @@ def diff_snapshots(
         SnapshotEnvelope
         | typing.Mapping[str, JsonValue]
         | typing.Sequence[typing.Mapping[str, JsonValue]]
-        | object
+        | ScalarValue
     ),
     snap2: (
         SnapshotEnvelope
         | typing.Mapping[str, JsonValue]
         | typing.Sequence[typing.Mapping[str, JsonValue]]
-        | object
+        | ScalarValue
     ),
 ) -> DiffResult:
     """Diff two snapshots to find changes.
@@ -185,11 +185,18 @@ def diff_snapshots(
         A DiffResult containing the differences.
     """
 
-    def _flatten(snap: object) -> dict[str, dict[str, JsonValue]]:
+    def _flatten(
+        snap: (
+            SnapshotEnvelope
+            | typing.Mapping[str, JsonValue]
+            | typing.Sequence[typing.Mapping[str, JsonValue]]
+            | ScalarValue
+        ),
+    ) -> dict[str, dict[str, JsonValue]]:
         """Flatten a snapshot dictionary or list into a mapping of API paths to items.
 
         Args:
-            snap: The snapshot dictionary or list.
+            snap: The snapshot dictionary, envelope, or list.
 
         Returns:
             The flattened dict.

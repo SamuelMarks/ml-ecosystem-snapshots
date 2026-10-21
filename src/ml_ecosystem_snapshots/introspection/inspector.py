@@ -9,7 +9,7 @@ import io
 import re
 import types
 import typing
-from typing_extensions import TypeAlias
+import typing_extensions
 
 import griffe
 from ml_switcheroo_ir.schema.ghost import (
@@ -35,29 +35,31 @@ from ml_ecosystem_snapshots.introspection.sanitize import (
 )
 from ml_ecosystem_snapshots.introspection.static_parsers import (
     GriffeCacheEntry,
+    GriffeNodeProtocol,
     _GRIFFE_CACHE,
 )
 from ml_ecosystem_snapshots.introspection.unwrap import unwrap_decorated_target
-from ml_ecosystem_snapshots.models import JsonValue
+from ml_ecosystem_snapshots.models import JsonValue, ScalarValue
 from ml_ecosystem_snapshots.serialization.hydration import hydrate_ghost_ref
 from ml_ecosystem_snapshots.utils import (
     DocstringMetadata,
+    DocstringParamMeta,
     extract_griffe_docstring_metadata,
     get_framework_docstring_parser,
     resolve_griffe_parser,
 )
 
-RawParamTuple: TypeAlias = tuple[str, str, typing.Optional[str], typing.Optional[str]]
+RawParamTuple: typing_extensions.TypeAlias = tuple[str, str, "str | None", "str | None"]
 
 
 class ExtractedParamRecord(pydantic.BaseModel):
     """Intermediate extracted parameter metadata from CDD or Griffe docstrings/AST."""
 
-    model_config = pydantic.ConfigDict(extra="allow")
+    model_config = pydantic.ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
     doc: str | None = None
     typ: str | None = None
-    default: object = None
+    default: JsonValue | ast.AST | None = None
 
     def get(self, key: str, default: str | None = None) -> str | None:
         """Retrieve a string field (`doc`, `typ`, or `default`) by key.
@@ -69,7 +71,7 @@ class ExtractedParamRecord(pydantic.BaseModel):
         Returns:
             String representation or `default`.
         """
-        val: object = getattr(self, key, None)
+        val: JsonValue | ast.AST | None = getattr(self, key, None)
         return str(val) if val is not None else default
 
 
@@ -84,7 +86,9 @@ class DocstringIrResult(pydantic.BaseModel):
     raises: list[str] = pydantic.Field(default_factory=list)
 
 
-def to_parameter_kind(val: object) -> ParameterKind:
+def to_parameter_kind(
+    val: ParameterKind | inspect._ParameterKind | str,
+) -> ParameterKind:
     """Normalize a parameter kind string or enum to `ParameterKind`.
 
     Args:
@@ -160,7 +164,14 @@ STANDARD_ENUM_MAP: dict[str, list[str]] = {
 }
 
 
-def _coerce_param_record(val: object) -> ExtractedParamRecord:
+def _coerce_param_record(
+    val: (
+        ExtractedParamRecord
+        | DocstringParamMeta
+        | typing.Mapping[str, JsonValue | ast.AST]
+        | JsonValue
+    ),
+) -> ExtractedParamRecord:
     """Coerce a raw parameter dict or model into `ExtractedParamRecord`.
 
     Args:
@@ -191,7 +202,7 @@ def _extract_docstring_ir(
     docstring_parser_name: str,
     active_sanitize_type_str: typing.Callable[[str | None], str | None],
     active_extract_griffe_meta: typing.Callable[
-        [str, str], DocstringMetadata | dict[str, object]
+        [str, str], DocstringMetadata | typing.Mapping[str, JsonValue]
     ],
 ) -> tuple[dict[str, ExtractedParamRecord], str | None, str | None, list[str]]:
     """Extract parameter descriptions, return types, and raised exceptions from docstrings.
@@ -288,14 +299,18 @@ def _extract_ast_and_griffe_node(
     kind: str,
     api_path: str,
     docstring_parser_name: str,
-    griffe_node: griffe.Module | griffe.Object | griffe.Alias | object | None,
+    griffe_node: griffe.Module
+    | griffe.Object
+    | griffe.Alias
+    | GriffeNodeProtocol
+    | None,
     cdd_params: typing.Mapping[str, ExtractedParamRecord],
     active_ast_mod: types.ModuleType,
     active_griffe_cache: dict[str, GriffeCacheEntry],
 ) -> tuple[
     dict[str, ExtractedParamRecord],
     bool,
-    griffe.Module | griffe.Object | griffe.Alias | object | None,
+    griffe.Module | griffe.Object | griffe.Alias | GriffeNodeProtocol | None,
 ]:
     """Extract CDD AST parameter definitions, `super().__init__(**kwargs)` usage, and Griffe node.
 
@@ -381,11 +396,15 @@ def _extract_ast_and_griffe_node(
                 )
 
             parts = api_path.split(".")
-            current: object = active_griffe_cache[top_level]
+            current = active_griffe_cache[top_level]
             if len(parts) > 1 and hasattr(current, "members"):
                 for part in parts[1:]:
                     current = getattr(current, "members")[part]
-            griffe_node = current
+            if isinstance(
+                current,
+                (griffe.Module, griffe.Object, griffe.Alias, GriffeNodeProtocol),
+            ):
+                griffe_node = current
         except Exception:
             pass
 
@@ -399,8 +418,12 @@ def _extract_raw_parameters(
     kind: str,
     api_path: str,
     cdd_ast_params: typing.Mapping[str, ExtractedParamRecord],
-    griffe_node: griffe.Module | griffe.Object | griffe.Alias | object | None,
-    resolved_hints: typing.Mapping[str, object],
+    griffe_node: griffe.Module
+    | griffe.Object
+    | griffe.Alias
+    | GriffeNodeProtocol
+    | None,
+    resolved_hints: typing.Mapping[str, type | types.GenericAlias | str],
     returns_type: str | None,
     environment_tags: list[str] | None,
     active_ast_mod: types.ModuleType,
@@ -447,15 +470,13 @@ def _extract_raw_parameters(
     griffe_params = None
     has_griffe_params = False
     try:
-        if griffe_node is not None:
-            griffe_params = getattr(griffe_node, "parameters", None)
-            if griffe_params is None and getattr(griffe_node, "is_class", False):
-                members = getattr(griffe_node, "members", {})
-                init_node = members.get("__init__") or members.get("__new__")
-                if init_node:
-                    griffe_params = getattr(init_node, "parameters", None)
-            if griffe_params and len(griffe_params) > 0:
-                has_griffe_params = True
+        griffe_params = getattr(griffe_node, "parameters", None)
+        if griffe_params is None and getattr(griffe_node, "is_class", False):
+            members = getattr(griffe_node, "members", {})
+            init_node = members.get("__init__") or members.get("__new__")
+            griffe_params = getattr(init_node, "parameters", None)
+        if griffe_params and len(griffe_params) > 0:
+            has_griffe_params = True
     except Exception:
         pass
 
@@ -854,7 +875,11 @@ def _build_extended_params(
 
 
 def _extract_overloads(
-    griffe_node: griffe.Module | griffe.Object | griffe.Alias | object | None,
+    griffe_node: griffe.Module
+    | griffe.Object
+    | griffe.Alias
+    | GriffeNodeProtocol
+    | None,
     c_ext_params: CExtensionSignature | None,
     name: str,
     api_path: str,
@@ -1048,8 +1073,15 @@ class GhostInspector:
                 else (str(doc_obj) if doc_obj else None)
             )
             griffe_node: (
-                griffe.Module | griffe.Object | griffe.Alias | object | None
-            ) = obj
+                griffe.Module | griffe.Object | griffe.Alias | GriffeNodeProtocol | None
+            ) = (
+                obj
+                if isinstance(
+                    obj,
+                    (griffe.Module, griffe.Object, griffe.Alias, GriffeNodeProtocol),
+                )
+                else None
+            )
         else:
             name = str(getattr(obj, "__name__", api_path.split(".")[-1]))
             if name == "<lambda>":
@@ -1101,7 +1133,7 @@ class GhostInspector:
         else:
             determined_is_public = not name.startswith("_")
 
-        resolved_hints: dict[str, object] = {}
+        resolved_hints: dict[str, type | types.GenericAlias | str] = {}
         if not is_griffe_node:
             try:
                 resolved_hints = typing.get_type_hints(target)
@@ -1219,7 +1251,10 @@ class GhostInspector:
 
     @staticmethod
     def hydrate(
-        data: typing.Mapping[str, JsonValue] | object,
+        data: (
+            typing.Mapping[str, JsonValue | typing.Sequence[JsonValue | GhostParam]]
+            | ScalarValue
+        ),
     ) -> ExtendedGhostRef:
         """Create a GhostRef from a dictionary (JSON snapshot).
 

@@ -750,7 +750,120 @@ def parse_native_functions_yaml(
     return ops
 
 
-_JIT_SCHEMAS_CACHE: dict[str, list[object]] | None = None
+class _JitTypeProto(typing.Protocol):
+    """Protocol representing a TorchScript JIT type object."""
+
+    def __str__(self) -> str:
+        """Return string representation of the JIT type.
+
+        Returns:
+            String representation.
+        """
+        ...
+
+
+class _JitSchemaArgProto(typing.Protocol):
+    """Protocol representing a TorchScript JIT schema argument."""
+
+    @property
+    def name(self) -> str:
+        """Return argument name.
+
+        Returns:
+            Argument name string.
+        """
+        ...
+
+    @property
+    def kwarg_only(self) -> bool:
+        """Return whether argument is keyword-only.
+
+        Returns:
+            True if keyword-only, False otherwise.
+        """
+        ...
+
+    @property
+    def type(self) -> _JitTypeProto:
+        """Return argument JIT type object.
+
+        Returns:
+            JIT type object.
+        """
+        ...
+
+    @property
+    def is_out(self) -> bool:
+        """Return whether argument is an output tensor.
+
+        Returns:
+            True if output tensor, False otherwise.
+        """
+        ...
+
+    def has_default_value(self) -> bool:
+        """Check whether the argument defines a default value.
+
+        Returns:
+            True if a default value exists, False otherwise.
+        """
+        ...
+
+
+class _JitSchemaReturnProto(typing.Protocol):
+    """Protocol representing a TorchScript JIT schema return entry."""
+
+    @property
+    def type(self) -> _JitTypeProto:
+        """Return return value JIT type object.
+
+        Returns:
+            JIT type object.
+        """
+        ...
+
+
+class _JitSchemaProto(typing.Protocol):
+    """Protocol representing a TorchScript JIT operator schema."""
+
+    @property
+    def name(self) -> str:
+        """Return operator name.
+
+        Returns:
+            Operator name string.
+        """
+        ...
+
+    @property
+    def overload_name(self) -> str:
+        """Return operator overload name.
+
+        Returns:
+            Overload name string.
+        """
+        ...
+
+    @property
+    def arguments(self) -> typing.Sequence[_JitSchemaArgProto]:
+        """Return operator arguments.
+
+        Returns:
+            Sequence of argument objects.
+        """
+        ...
+
+    @property
+    def returns(self) -> typing.Sequence[_JitSchemaReturnProto]:
+        """Return operator return specifications.
+
+        Returns:
+            Sequence of return objects.
+        """
+        ...
+
+
+_JIT_SCHEMAS_CACHE: dict[str, list[_JitSchemaProto]] | None = None
 
 
 def get_jit_schemas_for_op(op_name: str) -> list[AtenOpSchema]:
@@ -774,7 +887,7 @@ def get_jit_schemas_for_op(op_name: str) -> list[AtenOpSchema]:
     clean_op = op_name.split(".")[-1]
 
     if _JIT_SCHEMAS_CACHE is None:
-        cache: dict[str, list[object]] = {}
+        cache: dict[str, list[_JitSchemaProto]] = {}
         for s in torch._C._jit_get_all_schemas():
             s_name = str(getattr(s, "name", ""))
             s_short = s_name.split("::")[-1]
@@ -793,7 +906,7 @@ def get_jit_schemas_for_op(op_name: str) -> list[AtenOpSchema]:
     results: list[AtenOpSchema] = []
     for schema in schemas:
         params: list[AtenSchemaArg] = []
-        raw_arguments: list[object] = list(getattr(schema, "arguments", []))
+        raw_arguments: list[_JitSchemaArgProto] = list(getattr(schema, "arguments", []))
         for arg in raw_arguments:
             p_kind = (
                 "KEYWORD_ONLY"
@@ -828,7 +941,7 @@ def get_jit_schemas_for_op(op_name: str) -> list[AtenOpSchema]:
                 )
             )
 
-        raw_returns: list[object] = list(getattr(schema, "returns", []))
+        raw_returns: list[_JitSchemaReturnProto] = list(getattr(schema, "returns", []))
         ret_type = (
             str(getattr(raw_returns[0], "type", "Tensor")) if raw_returns else "Tensor"
         )

@@ -206,8 +206,10 @@ def test_check_ptx_instruction_mcp() -> None:
     assert res_invalid["is_valid"] is False
     assert res_invalid["mnemonic_exists"] is False
 
+    from ml_ecosystem_snapshots.models import JsonValue
+
     # Test call_tool dispatch
-    msg = {
+    msg: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "tools/call",

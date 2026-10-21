@@ -262,9 +262,11 @@ def test_ghost_inspector_aten_none(mocker: pytest_mock.MockerFixture) -> None:
 
 def test_ghost_inspector_hydrate_variations() -> None:
     """Test GhostInspector.hydrate handles missing kind and pre-hydrated parameters."""
-    from ml_switcheroo_ir.schema.ghost import ParameterKind
+    import typing
+    from ml_switcheroo_ir.schema.ghost import GhostParam, ParameterKind
+    from ml_ecosystem_snapshots.models import JsonValue
 
-    data = {
+    data: dict[str, JsonValue | typing.Sequence[JsonValue | GhostParam]] = {
         "name": "op_test",
         "api_path": "custom.op_test",
         "kind": "function",

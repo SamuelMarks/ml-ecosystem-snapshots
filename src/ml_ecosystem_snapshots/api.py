@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 import sys
 import typing
-from typing_extensions import TypeAlias
+import typing_extensions
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 import pydantic
@@ -21,6 +21,7 @@ import pydantic
 from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
 from ml_ecosystem_snapshots.models import (
     JsonValue,
+    ScalarValue,
     SnapshotEnvelope,
     SnapshotEnvelopeDict,
     SnapshotSymbolDict,
@@ -45,12 +46,9 @@ class CollectorFn(typing.Protocol):
         ...
 
 
-if typing.TYPE_CHECKING:
-    HashableKey: TypeAlias = str | int | float | bool | None | tuple["HashableKey", ...]
-else:
-    HashableKey: TypeAlias = typing.Union[
-        str, int, float, bool, None, tuple[object, ...]
-    ]
+HashableKey: typing_extensions.TypeAlias = (
+    'str | int | float | bool | None | tuple["HashableKey", ...]'
+)
 
 
 class ProvenanceMetadata(pydantic.BaseModel):
@@ -374,7 +372,7 @@ def get_pkg_version(package_name: str) -> str:
         return "unknown"
 
 
-def _domain_meta_to_key(meta: object) -> HashableKey:
+def _domain_meta_to_key(meta: JsonValue) -> HashableKey:
     """Convert domain metadata into a deterministic, hashable key.
 
     Args:
@@ -407,11 +405,11 @@ def _consolidate_aliases(refs: list[GhostRef]) -> list[GhostRef]:
             (
                 p.name,
                 str(p.kind),
-                p.default,
+                str(p.default) if p.default is not None else None,
                 p.annotation,
                 str(getattr(p, "direction", None)),
                 str(getattr(p, "role", None)),
-                tuple(getattr(p, "allowed_dtypes", None) or ()),
+                tuple(str(dt) for dt in (getattr(p, "allowed_dtypes", None) or ())),
                 str(getattr(p, "rank_constraint", None)),
             )
             for p in ref.params
@@ -671,7 +669,7 @@ def extract_snapshot_isolated(
             env=env,
         )
         if proc.returncode == 0 and proc.stdout.strip():
-            parsed_snap: object = json.loads(proc.stdout)
+            parsed_snap: JsonValue = json.loads(proc.stdout)
             assert isinstance(parsed_snap, dict)
             return SnapshotEnvelopeDict(parsed_snap)
     except Exception as e:
@@ -707,7 +705,7 @@ def extract_all_snapshots(
 
 def write_snapshot(
     framework_name: str,
-    snapshot_data: typing.Mapping[str, object],
+    snapshot_data: SnapshotEnvelope | typing.Mapping[str, JsonValue],
     output_dir: str,
     compress: str | None = None,
 ) -> str:
@@ -715,7 +713,7 @@ def write_snapshot(
 
     Args:
         framework_name: The framework identifier.
-        snapshot_data: The snapshot dictionary.
+        snapshot_data: The snapshot dictionary or envelope.
         output_dir: The directory path where the file should be written.
         compress: Optional compression algorithm ('gzip', 'gz', 'zstd').
 
@@ -725,7 +723,12 @@ def write_snapshot(
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    raw_version = snapshot_data.get("version")
+    snap_dict: dict[str, JsonValue] = (
+        snapshot_data.model_dump()
+        if isinstance(snapshot_data, SnapshotEnvelope)
+        else dict(snapshot_data)
+    )
+    raw_version = snap_dict.get("version")
     version = str(raw_version) if raw_version is not None else "unknown"
     safe_ver = version.replace("+", "_").replace(" ", "_")
 
@@ -736,15 +739,14 @@ def write_snapshot(
         import gzip
 
         with gzip.open(file_path, "wt", encoding="utf-8", newline="\n") as f:
-            json.dump(dict(snapshot_data), f, indent=2, sort_keys=True)
+            json.dump(snap_dict, f, indent=2, sort_keys=True)
             f.write("\n")
     elif compress == "zstd":
         file_path = Path(
             os.path.join(out_path, f"{framework_name}_v{safe_ver}.json.zst")
         )
         raw_bytes = (
-            json.dumps(dict(snapshot_data), indent=2, sort_keys=True).encode("utf-8")
-            + b"\n"
+            json.dumps(snap_dict, indent=2, sort_keys=True).encode("utf-8") + b"\n"
         )
         try:
             import importlib
@@ -761,19 +763,19 @@ def write_snapshot(
                 os.path.join(out_path, f"{framework_name}_v{safe_ver}.json.gz")
             )
             with gzip.open(file_path, "wt", encoding="utf-8", newline="\n") as f:
-                json.dump(dict(snapshot_data), f, indent=2, sort_keys=True)
+                json.dump(snap_dict, f, indent=2, sort_keys=True)
                 f.write("\n")
     else:
         file_path = Path(os.path.join(out_path, f"{framework_name}_v{safe_ver}.json"))
         with open(file_path, "w", encoding="utf-8", newline="\n") as f:
-            json.dump(dict(snapshot_data), f, indent=2, sort_keys=True)
+            json.dump(snap_dict, f, indent=2, sort_keys=True)
             f.write("\n")
 
     return str(file_path)
 
 
 def validate_snapshot_envelope(
-    snapshot_dict: typing.Mapping[str, JsonValue] | object,
+    snapshot_dict: typing.Mapping[str, JsonValue] | ScalarValue,
 ) -> SnapshotEnvelope:
     """Validate and normalize a snapshot dictionary into a SnapshotEnvelope.
 

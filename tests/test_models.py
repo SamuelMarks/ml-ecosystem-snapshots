@@ -120,8 +120,9 @@ def test_ghost_inspector_hydrate() -> None:
     """Verify ghost inspector hydrate behavior."""
     import pytest
     from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
+    from ml_ecosystem_snapshots.models import JsonValue
 
-    data: dict[str, object] = {
+    data: dict[str, JsonValue] = {
         "name": "foo",
         "api_path": "foo",
         "kind": "function",
@@ -806,7 +807,7 @@ def test_ghost_inspector_griffe_class_init(mocker: pytest_mock.MockerFixture) ->
         is_class = True
         is_function = False
         is_public = True
-        members: dict[str, object] = {}
+        members: dict[str, str] = {}
 
         @property
         def parameters(self) -> object:
@@ -852,7 +853,9 @@ def test_extended_ghost_param_allowed_values() -> None:
 
 def test_ghost_isa_ref_hydrate_overloads() -> None:
     """Test GhostInspector.hydrate creates overloads for multi-signature instructions."""
-    raw_data = {
+    from ml_ecosystem_snapshots.models import JsonValue
+
+    raw_data: dict[str, JsonValue] = {
         "mnemonic": "AL2P",
         "operands": [["R", "R", "I"], ["R", "I"]],
         "architecture": ["sm_80", "sm_90"],
@@ -938,14 +941,14 @@ def test_ghost_inspector_c_ext_overloads_with_literal_and_standard_enum(
     """
     mocker.patch("inspect.signature", side_effect=ValueError)
 
-    ParamTuple = tuple[str, str, typing.Optional[str], typing.Optional[str]]
+    from ml_ecosystem_snapshots.c_extension_sig import RawParamTuple
 
-    class MockOverloadList(list[ParamTuple]):
+    class MockOverloadList(list[RawParamTuple]):
         """Mock overload list with returns_type."""
 
         returns_type: str = "int"
 
-    class MockCExtSig(list[ParamTuple]):
+    class MockCExtSig(list[RawParamTuple]):
         """Mock C-extension signature list with overloads."""
 
         overloads: list[MockOverloadList] | None = None
@@ -1022,8 +1025,8 @@ def test_extract_accepted_kwargs_from_ast() -> None:
         _ = kwargs.get(var_key)
         _ = kwargs.pop("beta", None)
         _ = kwargs["gamma"]
-        other_dict: dict[str, object] = {}
-        other_val = None
+        other_dict: dict[str, str] = {}
+        other_val: dict[str, str] | None = None
         if "delta" in kwargs:
             pass
         if "delta" not in kwargs:

@@ -325,7 +325,7 @@ def parse_td_content(content: str) -> list[IsaInstructionRecordModel]:
 
 
 def parse_llvm_tblgen_json(
-    tblgen_json: typing.Mapping[str, object],
+    tblgen_json: typing.Mapping[str, JsonValue],
 ) -> list[IsaInstructionRecordModel]:
     """Parse LLVM TableGen JSON export (from llvm-tblgen --dump-json) into structured instruction records.
 
@@ -524,7 +524,7 @@ def scrape_amd_rdna(
 
     if tblgen_json_path and os.path.exists(tblgen_json_path):
         with open(tblgen_json_path, "r", encoding="utf-8") as f:
-            tblgen_json: dict[str, object] = json.load(f)
+            tblgen_json: dict[str, JsonValue] = json.load(f)
         _merge_instrs(parse_llvm_tblgen_json(tblgen_json))
     else:
         for td_file in TD_FILES:
@@ -548,7 +548,7 @@ def scrape_amd_rdna(
             )
         )
 
-    exhaustive_data: dict[str, object] = {
+    exhaustive_data: dict[str, JsonValue] = {
         "schema_version": "2.0.0",
         "target": "amd_rdna",
         "version": llvm_version,
@@ -563,7 +563,7 @@ def scrape_amd_rdna(
             "GFX11.5",
             "GFX12/RDNA4",
         ],
-        "instructions": list(exhaustive_list),
+        "instructions": [dict(r) for r in exhaustive_list],
     }
 
     with open(resolved_output, "w", encoding="utf-8", newline="\n") as f:

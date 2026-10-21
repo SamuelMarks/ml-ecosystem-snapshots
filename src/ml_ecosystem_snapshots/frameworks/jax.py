@@ -117,7 +117,7 @@ def _attach_jax_static_arg_metadata(ref: GhostRef, obj: object) -> GhostRef:
 
 
 def _collect_jax_namespace(
-    ns_obj: types.ModuleType | object,
+    ns_obj: types.ModuleType | type,
     api_prefix: str,
     include_nonpublic: bool,
     attach_static_args: bool = False,

@@ -6,13 +6,13 @@ import ast
 from collections.abc import Iterable, MutableSequence
 import re
 import typing
-from typing_extensions import TypeAlias
+import typing_extensions
 
 import pydantic
 
 from ml_ecosystem_snapshots.exceptions import CExtensionSignatureError
 
-RawParamTuple: TypeAlias = tuple[str, str, typing.Optional[str], typing.Optional[str]]
+RawParamTuple: typing_extensions.TypeAlias = tuple[str, str, "str | None", "str | None"]
 
 
 class IndexSlice(typing.Protocol):

@@ -380,7 +380,7 @@ v_non_existent_rdna_op v0, v1
 
 def test_handle_mcp_message_check_code_block() -> None:
     """Test handle_mcp_message dispatching check_code_block."""
-    msg = {
+    msg: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 100,
         "method": "tools/call",
@@ -807,7 +807,7 @@ v_add_f32 v0, v1, v2
     assert res_mixed["is_valid"]
 
     # 4. JSON-RPC check_stablehlo_op dispatch (lines 1964-1973)
-    req = {
+    req: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 42,
         "method": "tools/call",
@@ -973,7 +973,7 @@ def test_shape_and_dtype_grounding(mocker: pytest_mock.MockerFixture) -> None:
 def test_stablehlo_rank_and_conv_validation() -> None:
     """Test check_mlir_op with inferred operand ranks for DotDimensionNumbersAttr and ConvDimensionNumbersAttr."""
     # DotDimensionNumbersAttr with contracting dim exceeding rank
-    dot_attrs = {
+    dot_attrs: dict[str, JsonValue] = {
         "dot_dimension_numbers": {
             "lhs_batch_dimensions": [],
             "rhs_batch_dimensions": [],
@@ -990,7 +990,7 @@ def test_stablehlo_rank_and_conv_validation() -> None:
     assert any("is out of bounds for rank 2" in err for err in res_dot["errors"])
 
     # ConvDimensionNumbersAttr with spatial dimension mismatch
-    conv_attrs = {
+    conv_attrs: dict[str, JsonValue] = {
         "dimension_numbers": {
             "input_batch_dimension": 0,
             "input_feature_dimension": 1,
@@ -1067,7 +1067,7 @@ def test_explain_anti_pattern_tool(mocker: pytest_mock.MockerFixture) -> None:
     assert "not recognized" in res_unknown["explanation"]
 
     # 6. MCP message dispatch
-    msg = {
+    msg: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 101,
         "method": "tools/call",
@@ -1225,7 +1225,7 @@ def test_mcp_edge_error_handling(mocker: pytest_mock.MockerFixture) -> None:
     assert res_dot_nontensor["is_valid"] is True
 
     # 6. check_mlir_op: conv with non-tensor operand types and valid result_types
-    conv_attr = {
+    conv_attr: dict[str, JsonValue] = {
         "input_batch_dimension": 0,
         "input_feature_dimension": 1,
         "input_spatial_dimensions": [2, 3],
@@ -1664,7 +1664,7 @@ def test_all_14_mcp_tools_dispatch() -> None:
     from ml_ecosystem_snapshots.mcp_server import handle_mcp_message
 
     # Ensure all 25 tools are in tools/list
-    tools_list_msg = {
+    tools_list_msg: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "tools/list",
@@ -1675,7 +1675,7 @@ def test_all_14_mcp_tools_dispatch() -> None:
     assert len(tool_names) == 25
 
     # Test tools/call dispatch for all 14 tools
-    test_calls = [
+    test_calls: list[tuple[str, dict[str, JsonValue]]] = [
         ("check_wgsl_op", {"op_name": "workgroupBarrier"}),
         ("check_onnx_op", {"op_name": "MatMul"}),
         ("check_metal_op", {"op_name": "threadgroup_barrier"}),
@@ -1693,7 +1693,7 @@ def test_all_14_mcp_tools_dispatch() -> None:
     ]
 
     for tool_name, args in test_calls:
-        msg = {
+        msg: dict[str, JsonValue] = {
             "jsonrpc": "2.0",
             "id": 100,
             "method": "tools/call",

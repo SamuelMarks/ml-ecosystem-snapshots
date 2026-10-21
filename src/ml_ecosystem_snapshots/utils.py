@@ -161,7 +161,7 @@ class DocstringMetadata(pydantic.BaseModel):
 
 
 def get_all_members(
-    module: types.ModuleType | type | object,
+    module: types.ModuleType | type,
 ) -> list[tuple[str, object]]:
     """Safely extract all members from a module, bypassing __getattr__ obfuscation.
 
@@ -175,25 +175,28 @@ def get_all_members(
     Returns:
         A list of (name, object) tuples.
     """
-    members: dict[str, object] = {}
+    members: list[tuple[str, object]] = []
+    seen: set[str] = set()
 
     for name in dir(module):
         try:
-            members[name] = getattr(module, name)
+            members.append((name, getattr(module, name)))
+            seen.add(name)
         except Exception as exc:
             _LOGGER.debug("Skipping inaccessible member %s: %s", name, exc)
 
     if hasattr(module, "__all__"):
         for name in getattr(module, "__all__"):
-            if name not in members:
+            if name not in seen:
                 try:
-                    members[name] = getattr(module, name)
+                    members.append((name, getattr(module, name)))
+                    seen.add(name)
                 except Exception as exc:
                     _LOGGER.debug(
                         "Skipping inaccessible __all__ member %s: %s", name, exc
                     )
 
-    return list(members.items())
+    return members
 
 
 def get_framework_docstring_parser(

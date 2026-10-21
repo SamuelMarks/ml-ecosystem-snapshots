@@ -15,6 +15,7 @@ import os
 import re
 import sqlite3
 import tempfile
+import typing
 
 import pydantic
 
@@ -36,7 +37,7 @@ class IndexedSymbolRecord(pydantic.BaseModel):
 
     @classmethod
     def from_raw_dict(
-        cls, raw: dict[str, JsonValue], framework: str = ""
+        cls, raw: typing.Mapping[str, JsonValue], framework: str = ""
     ) -> IndexedSymbolRecord:
         """Construct an `IndexedSymbolRecord` from a raw JSON symbol dictionary.
 
@@ -57,7 +58,7 @@ class IndexedSymbolRecord(pydantic.BaseModel):
             framework=framework,
             kind=kind,
             category=category,
-            data=raw,
+            data=dict(raw),
         )
 
     def __getitem__(self, key: str) -> JsonValue:
@@ -331,7 +332,7 @@ def index_snapshot_file(json_path: str, conn: sqlite3.Connection) -> int:
     try:
         if json_path.endswith(".gz"):
             with gzip.open(json_path, "rt", encoding="utf-8") as gf:
-                data: object = json.load(gf)
+                data: JsonValue = json.load(gf)
         else:
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -528,7 +529,7 @@ def search_index(
         results: list[IndexedSymbolRecord] = []
         for r in rows:
             try:
-                parsed: object = json.loads(r["json_data"])
+                parsed: JsonValue = json.loads(r["json_data"])
                 assert isinstance(parsed, dict)
                 results.append(
                     IndexedSymbolRecord.from_raw_dict(
@@ -579,7 +580,7 @@ def lookup_symbol(
         cur.execute(sql, params)
         row = cur.fetchone()
         if row:
-            parsed_sym: object = json.loads(row["json_data"])
+            parsed_sym: JsonValue = json.loads(row["json_data"])
             assert isinstance(parsed_sym, dict)
             return IndexedSymbolRecord.from_raw_dict(
                 parsed_sym, framework=str(row["framework"] or clean_fw)

@@ -15,6 +15,7 @@ from ml_switcheroo_ir.schema.ghost import (
 import pydantic
 
 from ml_ecosystem_snapshots.frameworks._base import CanonicalSsaOpSpec
+from ml_ecosystem_snapshots.models import JsonValue
 
 
 CANONICAL_WGSL_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(
@@ -123,7 +124,7 @@ def _load_wgsl_ops() -> list[CanonicalSsaOpSpec]:
 
         fpath = pkg_resources.files(ir_schema).joinpath("wgsl_ops.json")
         with fpath.open("r", encoding="utf-8") as f:
-            data: object = json.load(f)
+            data: JsonValue = json.load(f)
             if (
                 isinstance(data, dict)
                 and isinstance(data.get("ops"), list)

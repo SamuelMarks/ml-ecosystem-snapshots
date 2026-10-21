@@ -7,6 +7,7 @@ and type signatures from the ONNX operator specification definitions.
 from __future__ import annotations
 
 import types
+import typing
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
@@ -207,7 +208,34 @@ CANONICAL_ONNX_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(
 )
 
 
-def _get_onnx_defs() -> types.ModuleType | object | None:
+class _OnnxAttrProto(typing.Protocol):
+    """Protocol representing an ONNX OpSchema attribute entry."""
+
+    type: str | int
+    required: bool
+    default_value: str | int | float | bytes | None
+    description: str
+
+
+class _OnnxParamProto(typing.Protocol):
+    """Protocol representing an ONNX OpSchema input/output parameter."""
+
+    name: str
+
+
+class _OnnxOpSchemaProto(typing.Protocol):
+    """Protocol representing an ONNX OpSchema object from `onnx.defs`."""
+
+    domain: str
+    name: str
+    since_version: int
+    inputs: typing.Sequence[_OnnxParamProto]
+    outputs: typing.Sequence[_OnnxParamProto]
+    attributes: dict[str, _OnnxAttrProto]
+    doc: str
+
+
+def _get_onnx_defs() -> types.ModuleType | None:
     """Lazily load the onnx.defs module to prevent unnecessary import overhead.
 
     Returns:
@@ -233,8 +261,10 @@ def _load_onnx_ops() -> list[CanonicalSsaOpSpec]:
         return CANONICAL_ONNX_OPS
 
     try:
-        schemas = getattr(defs, "get_all_schemas_with_history")()
-        latest_map: dict[tuple[str, str], object] = {}
+        schemas: typing.Sequence[_OnnxOpSchemaProto] = getattr(
+            defs, "get_all_schemas_with_history"
+        )()
+        latest_map: dict[tuple[str, str], _OnnxOpSchemaProto] = {}
         for s in schemas:
             key = (str(getattr(s, "domain", "")), str(getattr(s, "name", "")))
             s_ver = int(getattr(s, "since_version", 1))

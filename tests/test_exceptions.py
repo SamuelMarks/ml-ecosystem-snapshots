@@ -78,7 +78,7 @@ def test_schema_and_introspection_domain_errors() -> None:
     from ml_ecosystem_snapshots.introspection.ast_kwargs import _parse_callable_ast
     from ml_ecosystem_snapshots.serialization.hydration import hydrate_ghost_ref
 
-    invalid_payload: object = "not_a_dict"
+    invalid_payload: str = "not_a_dict"
     with pytest.raises(SnapshotSchemaError, match="must be a dictionary"):
         hydrate_ghost_ref(invalid_payload)
 

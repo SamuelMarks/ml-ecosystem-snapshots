@@ -220,7 +220,7 @@ def collect_api(
         return []
 
     target_submodules = ["core", "torch", "flax", "numpy"]
-    loaded_submods: dict[str, types.ModuleType | object] = {}
+    loaded_submods: dict[str, types.ModuleType] = {}
     for sub in target_submodules:
         mod = _get_safetensors_submodule(sub)
         if mod is not None:

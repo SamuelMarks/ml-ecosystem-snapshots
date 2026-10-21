@@ -8,7 +8,7 @@ from ml_ecosystem_snapshots.models import JsonValue
 
 def test_diff_snapshots() -> None:
     """Verify diff snapshots behavior."""
-    snap1 = {
+    snap1: dict[str, JsonValue] = {
         "categories": {
             "layer": [
                 {
@@ -73,7 +73,7 @@ def test_diff_snapshots() -> None:
             ]
         }
     }
-    snap2 = {
+    snap2: dict[str, JsonValue] = {
         "categories": {
             "layer": [
                 {
@@ -199,7 +199,7 @@ def test_diff_empty() -> None:
 
 def test_generate_changelog() -> None:
     """Verify generate changelog behavior."""
-    snap1 = {
+    snap1: dict[str, JsonValue] = {
         "categories": {
             "layer": [
                 {"api_path": "a.removed", "params": []},
@@ -218,7 +218,7 @@ def test_generate_changelog() -> None:
             ]
         }
     }
-    snap2 = {
+    snap2: dict[str, JsonValue] = {
         "categories": {
             "layer": [
                 {"api_path": "a.added", "params": []},
@@ -315,12 +315,12 @@ def test_diff_branches() -> None:
     from ml_ecosystem_snapshots.diff import diff_snapshots
 
     # Hit line 81->87 (_compare_params empty)
-    s1 = {
+    s1: dict[str, JsonValue] = {
         "categories": {
             "MODEL": [{"name": "A", "api_path": "A", "kind": "function", "params": []}]
         }
     }
-    s2 = {
+    s2: dict[str, JsonValue] = {
         "categories": {
             "MODEL": [{"name": "A", "api_path": "A", "kind": "function", "params": []}]
         }
@@ -331,7 +331,7 @@ def test_diff_branches() -> None:
     assert res_empty.signature_changed == []
 
     # Hit branch where kind changed but it's not breaking (e.g. POSITIONAL_ONLY -> POSITIONAL_OR_KEYWORD)
-    s3 = {
+    s3: dict[str, JsonValue] = {
         "categories": {
             "MODEL": [
                 {
@@ -343,7 +343,7 @@ def test_diff_branches() -> None:
             ]
         }
     }
-    s4 = {
+    s4: dict[str, JsonValue] = {
         "categories": {
             "MODEL": [
                 {
@@ -365,7 +365,7 @@ def test_diff_branches_more() -> None:
     """Verify diff_snapshots detects default value modifications as non-breaking signature changes."""
     from ml_ecosystem_snapshots.diff import diff_snapshots
 
-    s1 = {
+    s1: dict[str, JsonValue] = {
         "categories": {
             "MODEL": [
                 {
@@ -384,7 +384,7 @@ def test_diff_branches_more() -> None:
             ]
         }
     }
-    s2 = {
+    s2: dict[str, JsonValue] = {
         "categories": {
             "MODEL": [
                 {
@@ -409,7 +409,7 @@ def test_diff_branches_more() -> None:
 
 def test_diff_domain_metadata_breaking_changes() -> None:
     """Test breaking changes detected when assembly modifiers or architecture support is removed."""
-    s1 = {
+    s1: dict[str, JsonValue] = {
         "categories": {
             "UTIL": [
                 {
@@ -426,7 +426,7 @@ def test_diff_domain_metadata_breaking_changes() -> None:
         }
     }
     # Removed .SAT modifier (breaking)
-    s2 = {
+    s2: dict[str, JsonValue] = {
         "categories": {
             "UTIL": [
                 {
@@ -446,7 +446,7 @@ def test_diff_domain_metadata_breaking_changes() -> None:
     assert "nvidia_sass.inst.FADD" in res.breaking_signature_changed
 
     # Removed sm_70 architecture (breaking)
-    s3 = {
+    s3: dict[str, JsonValue] = {
         "categories": {
             "UTIL": [
                 {
@@ -466,7 +466,7 @@ def test_diff_domain_metadata_breaking_changes() -> None:
     assert "nvidia_sass.inst.FADD" in res_arch.breaking_signature_changed
 
     # Identical metadata with non-breaking parameter addition (covers line 61->64)
-    s4 = {
+    s4: dict[str, JsonValue] = {
         "categories": {
             "UTIL": [
                 {
@@ -497,8 +497,8 @@ def test_diff_snapshots_list_and_non_dict() -> None:
     assert "foo.bar" in res_list.signature_changed
 
     # Non-dict and non-list format fallback
-    invalid_1: object = None
-    invalid_2: object = 123
+    invalid_1: None = None
+    invalid_2: int = 123
     res_invalid = diff_snapshots(invalid_1, invalid_2)
     assert res_invalid.added == []
     assert res_invalid.removed == []
@@ -685,14 +685,14 @@ def test_diff_return_type_mutations() -> None:
     assert "ops.compute" in res_none.breaking_signature_changed
 
     # Wildcard to int (non-breaking)
-    snap_any = {
+    snap_any: dict[str, JsonValue] = {
         "categories": {
             "ops": [
                 {"api_path": "ops.compute", "params": [], "returns_type": "A" + "ny"}
             ]
         }
     }
-    snap_int = {
+    snap_int: dict[str, JsonValue] = {
         "categories": {
             "ops": [{"api_path": "ops.compute", "params": [], "returns_type": "int"}]
         }
@@ -756,12 +756,12 @@ def test_diff_overloads_and_changelog() -> None:
     assert "fn.overloaded" in res_added_ov.non_breaking_signature_changed
 
     # Empty return type string (non-breaking)
-    snap_empty_ret = {
+    snap_empty_ret: dict[str, JsonValue] = {
         "categories": {
             "fn": [{"api_path": "fn.empty", "params": [], "returns_type": ""}]
         }
     }
-    snap_valid_ret = {
+    snap_valid_ret: dict[str, JsonValue] = {
         "categories": {
             "fn": [{"api_path": "fn.empty", "params": [], "returns_type": "int"}]
         }
@@ -778,7 +778,7 @@ def test_diff_parameter_kind_changes() -> None:
     """Test that changing parameter kind (pos-only to kw-only, VAR to non-VAR) is flagged breaking."""
     from ml_ecosystem_snapshots.diff import diff_snapshots
 
-    snap_pos_only = {
+    snap_pos_only: dict[str, JsonValue] = {
         "categories": {
             "math": [
                 {
@@ -788,7 +788,7 @@ def test_diff_parameter_kind_changes() -> None:
             ]
         }
     }
-    snap_kw_only = {
+    snap_kw_only: dict[str, JsonValue] = {
         "categories": {
             "math": [
                 {
@@ -801,7 +801,7 @@ def test_diff_parameter_kind_changes() -> None:
     res_pk = diff_snapshots(snap_pos_only, snap_kw_only)
     assert "math.fn" in res_pk.breaking_signature_changed
 
-    snap_var = {
+    snap_var: dict[str, JsonValue] = {
         "categories": {
             "math": [
                 {
@@ -814,7 +814,7 @@ def test_diff_parameter_kind_changes() -> None:
     res_var = diff_snapshots(snap_pos_only, snap_var)
     assert "math.fn" in res_var.breaking_signature_changed
 
-    snap_kw_single = {
+    snap_kw_single: dict[str, JsonValue] = {
         "categories": {
             "math": [
                 {
@@ -824,7 +824,7 @@ def test_diff_parameter_kind_changes() -> None:
             ]
         }
     }
-    snap_var_kw = {
+    snap_var_kw: dict[str, JsonValue] = {
         "categories": {
             "math": [
                 {

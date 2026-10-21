@@ -116,7 +116,9 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
     p = ExtendedGhostParam.model_validate(param_data)
     assert getattr(p, "custom_ir_tag") == "llvm_lowered"
 
-    ref_data = {
+    from ml_ecosystem_snapshots.models import JsonValue
+
+    ref_data: dict[str, JsonValue] = {
         "name": "op",
         "api_path": "pkg.op",
         "kind": "function",
@@ -129,7 +131,7 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
     assert py_ref.domain_type == "python"
     assert getattr(py_ref, "custom_backend_meta") == {"cost": 10}
 
-    isa_data = {
+    isa_data: dict[str, JsonValue] = {
         "name": "FADD",
         "api_path": "nvidia_sass.inst.FADD",
         "kind": "function",
@@ -145,11 +147,12 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
     assert isa_ref.domain_type == "isa"
     assert isa_ref.predicate_guards == ["@P0", "@!P0"]
     assert isa_ref.register_classes == {"op0": "VGPR_32"}
-    assert isa_ref.control_codes == {"stall_count": 1}
+    assert isa_ref.control_codes is not None
+    assert isa_ref.control_codes.stall_count == 1
     assert isa_ref.instruction_modifiers == [".SAT", ".FTZ"]
     assert isa_ref.supported_architectures == ["sm_80", "sm_90"]
 
-    mlir_data = {
+    mlir_data: dict[str, JsonValue] = {
         "name": "AddFOp",
         "api_path": "arith.addf",
         "kind": "function",
@@ -168,7 +171,7 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
     assert mlir_ref.successors == ["bb1"]
 
     # Default fallback
-    base_data = {
+    base_data: dict[str, JsonValue] = {
         "name": "GenericOp",
         "api_path": "generic.op",
         "kind": "function",
@@ -177,7 +180,7 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
     assert isinstance(base_ref, ExtendedGhostRef)
 
     # 3. Raw dumps hydration synthesis
-    raw_isa_data = {
+    raw_isa_data: dict[str, JsonValue] = {
         "mnemonic": "FADD_RAW",
         "architecture": ["sm_80", "sm_90"],
         "operands": [["R", "R"], ["R"]],
@@ -188,7 +191,7 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
     assert raw_isa_ref.name == "FADD_RAW"
     assert raw_isa_ref.environment_tags == ["sm_80", "sm_90"]
 
-    raw_isa_str = {
+    raw_isa_str: dict[str, JsonValue] = {
         "mnemonic": "FADD_STR",
         "architecture": "sm_70",
         "operands": [["R"]],
@@ -196,12 +199,12 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
     raw_str_ref = GhostInspector.hydrate(raw_isa_str)
     assert raw_str_ref.environment_tags == ["sm_70"]
 
-    raw_isa_no_ops = {"mnemonic": "NOP"}
+    raw_isa_no_ops: dict[str, JsonValue] = {"mnemonic": "NOP"}
     raw_nop_ref = GhostInspector.hydrate(raw_isa_no_ops)
     assert isinstance(raw_nop_ref, GhostIsaRef)
     assert len(raw_nop_ref.params) == 0
 
-    raw_mlir_data = {
+    raw_mlir_data: dict[str, JsonValue] = {
         "api_path": "test.op",
         "operands": ["a"],
         "attributes": ["b"],
@@ -211,7 +214,7 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
     assert isinstance(raw_mlir_ref, GhostMlirRef)
     assert raw_mlir_ref.name == "op"
 
-    raw_mlir_dict_data = {
+    raw_mlir_dict_data: dict[str, JsonValue] = {
         "api_path": "test.op2",
         "operands": [{"name": "x"}],
         "attributes": [{"name": "attr"}],

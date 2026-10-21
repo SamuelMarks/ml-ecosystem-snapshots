@@ -48,7 +48,7 @@ def compute_levenshtein(s1: str, s2: str) -> int:
 
 
 def _extract_raw_items(
-    raw_data: SnapshotEnvelope | JsonValue | object,
+    raw_data: SnapshotEnvelope | JsonValue,
 ) -> list[dict[str, JsonValue]]:
     """Extract raw GhostRef dictionary items from a loaded snapshot structure.
 

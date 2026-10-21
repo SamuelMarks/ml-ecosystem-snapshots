@@ -324,7 +324,7 @@ def collect_api(
         return []
 
     target_submodules = ["ops", "transforms.functional", "utils"]
-    loaded_submods: dict[str, types.ModuleType | object] = {}
+    loaded_submods: dict[str, types.ModuleType] = {}
     for sub in target_submodules:
         mod = _get_torchvision_submodule(sub)
         if mod is not None:

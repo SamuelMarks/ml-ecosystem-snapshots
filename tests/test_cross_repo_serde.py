@@ -67,7 +67,9 @@ def test_ghost_protocol_v2_models_instantiation() -> None:
 
 def test_hydrate_ghost_ref_v2_roundtrip() -> None:
     """Verify hydrate_ghost_ref validates v2.0.0 structures with zero information loss."""
-    v2_dict = {
+    from ml_ecosystem_snapshots.models import JsonValue
+
+    v2_dict: dict[str, JsonValue] = {
         "name": "relu",
         "api_path": "torch.nn.functional.relu",
         "kind": "function",
@@ -89,6 +91,30 @@ def test_hydrate_ghost_ref_v2_roundtrip() -> None:
     re_parsed = hydrate_ghost_ref(json.loads(json_str))
     assert re_parsed.name == upgraded.name
     assert len(re_parsed.params) == len(upgraded.params)
+
+    # Test legacy empty string constraint/type normalization in operands, attributes, returns
+    legacy_op_dict: dict[str, JsonValue] = {
+        "name": "legacy_op",
+        "api_path": "wgsl.legacy_op",
+        "kind": "operation",
+        "schema_version": "2.0.0",
+        "params": [],
+        "operands": [
+            {"name": "a", "constraint": ""},
+            {"name": "b", "constraint": "f32"},
+        ],
+        "attributes": [{"name": "attr", "type": ""}, {"name": "attr2", "type": "i32"}],
+        "returns": [{"name": "res", "type": ""}, {"name": "res2", "type": "f32"}],
+    }
+    hydrated_legacy = hydrate_ghost_ref(legacy_op_dict)
+    assert hydrated_legacy.returns is not None
+    assert hydrated_legacy.returns[0].type == "Any"
+    assert hydrated_legacy.returns[1].type == "f32"
+    dumped_legacy = hydrated_legacy.model_dump()
+    assert dumped_legacy["operands"][0]["constraint"] == "Any"
+    assert dumped_legacy["operands"][1]["constraint"] == "f32"
+    assert dumped_legacy["attributes"][0]["type"] == "Any"
+    assert dumped_legacy["attributes"][1]["type"] == "i32"
 
 
 def test_exhaustive_snapshot_loading_serde() -> None:

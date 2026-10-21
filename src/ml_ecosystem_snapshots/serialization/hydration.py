@@ -21,11 +21,14 @@ from ml_switcheroo_ir.schema.ghost import (
 )
 
 from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
-from ml_ecosystem_snapshots.models import JsonValue
+from ml_ecosystem_snapshots.models import JsonValue, ScalarValue
 
 
 def hydrate_ghost_ref(
-    data: typing.Mapping[str, JsonValue] | object,
+    data: (
+        typing.Mapping[str, JsonValue | typing.Sequence[JsonValue | GhostParam]]
+        | ScalarValue
+    ),
 ) -> ExtendedGhostRef:
     """Hydrate a dictionary payload into a validated `ExtendedGhostRef` or polymorphic subclass.
 
@@ -232,21 +235,50 @@ def hydrate_ghost_ref(
 
     try:
         if "params" in data_copy and isinstance(data_copy["params"], list):
-            hydrated_params: list[GhostParam | object] = []
+            hydrated_params: list[GhostParam] = []
             for p in data_copy["params"]:
                 if isinstance(p, dict):
                     p_dict = dict(p)
-                    if "dtypes" in p_dict or "rank" in p_dict:
+                    if (
+                        "dtypes" in p_dict
+                        and p_dict["dtypes"] is not None
+                        and "allowed_dtypes" not in p_dict
+                    ) or (
+                        "rank" in p_dict
+                        and p_dict["rank"] is not None
+                        and "rank_constraint" not in p_dict
+                    ):
                         raise SnapshotSchemaError(
                             "Legacy v1.x 'dtypes'/'rank' fields are not supported; use 'allowed_dtypes'/'rank_constraint'."
                         )
+                    p_dict.pop("dtypes", None)
+                    p_dict.pop("rank", None)
                     if "default" in p_dict and p_dict["default"] is not None:
                         if not isinstance(p_dict["default"], str):
                             p_dict["default"] = str(p_dict["default"])
                     hydrated_params.append(ExtendedGhostParam.model_validate(p_dict))
                 else:
-                    hydrated_params.append(p)
-            data_copy["params"] = hydrated_params
+                    hydrated_params.append(ExtendedGhostParam.model_validate(p))
+            data_copy["params"] = [
+                hp.model_dump(exclude={"dtypes", "rank"}) for hp in hydrated_params
+            ]
+
+        for list_field, key_field in (
+            ("operands", "constraint"),
+            ("attributes", "type"),
+            ("returns", "type"),
+        ):
+            raw_list = data_copy.get(list_field)
+            if isinstance(raw_list, list):
+                normalized_items: list[JsonValue] = []
+                for item in raw_list:
+                    if isinstance(item, dict) and not item.get(key_field):
+                        item_copy = dict(item)
+                        item_copy[key_field] = "Any"
+                        normalized_items.append(item_copy)
+                    else:
+                        normalized_items.append(item)
+                data_copy[list_field] = normalized_items
 
         validated = ref_cls.model_validate(data_copy)
     except (ValueError, TypeError) as exc:

@@ -14,7 +14,7 @@ from pathlib import Path
 import re
 import sys
 import typing
-from typing_extensions import TypeAlias
+import typing_extensions
 
 import griffe
 from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef
@@ -26,8 +26,8 @@ from ml_ecosystem_snapshots.utils import (
     resolve_griffe_parser,
 )
 
-ParamSignatureTuple: TypeAlias = tuple[
-    str, str, typing.Optional[str], typing.Optional[str]
+ParamSignatureTuple: typing_extensions.TypeAlias = tuple[
+    str, str, "str | None", "str | None"
 ]
 
 
@@ -37,8 +37,12 @@ class ComplianceMismatchEntry(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="forbid")
 
     api_path: str
-    expected: list[ParamSignatureTuple] = pydantic.Field(default_factory=list)
-    actual: list[ParamSignatureTuple] = pydantic.Field(default_factory=list)
+    expected: list[tuple[str, str, str | None, str | None]] = pydantic.Field(
+        default_factory=list
+    )
+    actual: list[tuple[str, str, str | None, str | None]] = pydantic.Field(
+        default_factory=list
+    )
     reason: str | None = None
 
     @typing.overload
@@ -522,7 +526,7 @@ def extract_target_refs_single(
 
 
 def score_compliance(
-    reference_snapshot: SnapshotEnvelope | typing.Mapping[str, object],
+    reference_snapshot: SnapshotEnvelope | typing.Mapping[str, JsonValue],
     target_refs: typing.Sequence[GhostRef],
     strict_c_extensions: bool = False,
 ) -> ComplianceScoreReport:
@@ -537,11 +541,12 @@ def score_compliance(
         A `ComplianceScoreReport` containing compliance metrics.
     """
     reference_map: dict[str, GhostRef] = {}
-    cats_obj: object = (
-        reference_snapshot.categories
+    raw_snap = (
+        reference_snapshot.model_dump()
         if isinstance(reference_snapshot, SnapshotEnvelope)
-        else reference_snapshot.get("categories", {})
+        else reference_snapshot
     )
+    cats_obj: JsonValue = raw_snap.get("categories", {})
     assert isinstance(cats_obj, dict)
     for _cat, items in cats_obj.items():
         assert isinstance(items, list)
@@ -583,7 +588,7 @@ def score_compliance(
         name_val = p.name
         kind_val = str(p.kind)
         ann = p.annotation
-        default = p.default
+        default: str | None = str(p.default) if p.default is not None else None
 
         if isinstance(ann, str) and ann.startswith('"') and ann.endswith('"'):
             ann = ann[1:-1]

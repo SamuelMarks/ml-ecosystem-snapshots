@@ -25,8 +25,9 @@ def test_ghostref_from_obj_griffe_import_error() -> None:
 def test_extended_ghost_ref_dict_with_non_string_default() -> None:
     """Test hydrate method coerces non-string default values to strings."""
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+    from ml_ecosystem_snapshots.models import JsonValue
 
-    data = {
+    data: dict[str, JsonValue] = {
         "name": "foo",
         "api_path": "foo",
         "kind": "function",

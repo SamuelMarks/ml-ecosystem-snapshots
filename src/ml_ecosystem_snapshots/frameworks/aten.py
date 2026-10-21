@@ -705,7 +705,7 @@ def _resolve_torch() -> types.ModuleType | None:
         return None
 
 
-def _get_torch_ops_aten() -> object | None:
+def _get_torch_ops_aten() -> types.ModuleType | None:
     """Safely import PyTorch torch.ops.aten namespace.
 
     Returns:
@@ -714,9 +714,10 @@ def _get_torch_ops_aten() -> object | None:
     try:
         mod = _resolve_torch()
         if mod is not None:
-            ops: object = getattr(mod, "ops", None)
+            ops: types.ModuleType | None = getattr(mod, "ops", None)
             if ops is not None:
-                return getattr(ops, "aten", None)
+                aten_ns: types.ModuleType | None = getattr(ops, "aten", None)
+                return aten_ns
     except Exception:
         pass
     return None

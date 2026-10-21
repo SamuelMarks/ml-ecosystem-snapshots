@@ -337,7 +337,7 @@ class InspectorCallable(typing.Protocol):
 
 
 def collect_from_canonical_or_live(
-    live_module: types.ModuleType | object | None,
+    live_module: types.ModuleType | None,
     module_prefix: str,
     target_names: typing.Sequence[str],
     canonical_ops: typing.Sequence[
@@ -388,7 +388,7 @@ def collect_from_canonical_or_live(
 
 
 def collect_from_submodules_or_canonical(
-    loaded_submods: typing.Mapping[str, types.ModuleType | object],
+    loaded_submods: typing.Mapping[str, types.ModuleType],
     canonical_ops: typing.Sequence[
         CanonicalSubmoduleOpSpec | typing.Mapping[str, JsonValue]
     ],
@@ -569,7 +569,7 @@ def build_ssa_operation_refs(
 
 
 def collect_dir_callables(
-    mod_obj: types.ModuleType | object,
+    mod_obj: types.ModuleType | type,
     api_prefix: str,
     include_nonpublic: bool = False,
     inspector_fn: InspectorCallable | None = None,

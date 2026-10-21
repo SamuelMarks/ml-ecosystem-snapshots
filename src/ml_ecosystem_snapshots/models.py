@@ -11,7 +11,7 @@ requiring heavy libraries (Torch/TensorFlow) to be installed.
 from __future__ import annotations
 
 import typing
-from typing_extensions import TypeAlias
+import typing_extensions
 
 from ml_switcheroo_ir.schema.ghost import (
     ExtendedGhostParam as ExtendedGhostParam,
@@ -29,10 +29,10 @@ from ml_switcheroo_ir.schema.ghost import (
     ParameterKind as ParameterKind,
     SnapshotEnvelope as SnapshotEnvelope,
 )
+from ml_switcheroo_ir.types import JsonScalar as ScalarValue
 import pydantic
 
-ScalarValue: TypeAlias = typing.Union[str, int, float, bool, None]
-JsonValue: TypeAlias = pydantic.JsonValue
+JsonValue: typing_extensions.TypeAlias = pydantic.JsonValue
 
 
 class RawParamSpec(pydantic.BaseModel):
@@ -224,8 +224,10 @@ class IsaInstructionRecordModel(dict[str, JsonValue]):
         return super().__getitem__(key)
 
 
-TableGenRecordModel: TypeAlias = SnapshotSymbolDict
-SnapshotCategoriesDict: TypeAlias = dict[str, list[SnapshotSymbolDict]]
+TableGenRecordModel: typing_extensions.TypeAlias = SnapshotSymbolDict
+SnapshotCategoriesDict: typing_extensions.TypeAlias = dict[
+    str, list[SnapshotSymbolDict]
+]
 
 
 class SnapshotEnvelopeDict(dict[str, JsonValue]):

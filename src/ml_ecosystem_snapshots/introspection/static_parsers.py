@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import typing
-from typing_extensions import TypeAlias
+import typing_extensions
 
 import griffe
 
@@ -13,9 +13,37 @@ from ml_ecosystem_snapshots.utils import (
     resolve_griffe_parser,
 )
 
-GriffeCacheEntry: TypeAlias = typing.Union[
-    griffe.Module, griffe.Object, griffe.Alias, object, None
-]
+
+@typing.runtime_checkable
+class GriffeNodeProtocol(typing.Protocol):
+    """Structural protocol for Griffe AST nodes (Module, Object, Function, Class, Alias)."""
+
+    is_public: bool
+
+
+class GriffeLoaderProto(typing.Protocol):
+    """Protocol for a callable Griffe loader stored in `_GRIFFE_CACHE`."""
+
+    def __call__(
+        self,
+        objspec: str | None = None,
+        /,
+        *,
+        docstring_parser: griffe.Parser | None = None,
+    ) -> griffe.Module | griffe.Object | griffe.Alias | GriffeNodeProtocol:
+        """Load a Griffe module or object.
+
+        Args:
+            objspec: Optional module or package name.
+            docstring_parser: Optional Griffe docstring parser.
+
+        Returns:
+            Loaded Griffe module, object, or alias.
+        """
+        ...
+
+
+GriffeCacheEntry: typing_extensions.TypeAlias = "griffe.Module | griffe.Object | griffe.Alias | GriffeNodeProtocol | GriffeLoaderProto | None"
 
 _GRIFFE_CACHE: dict[str, GriffeCacheEntry] = {}
 

@@ -24,7 +24,7 @@ def _extract_triton_kernel(
     Returns:
         The extracted `GhostRef` with `tl.constexpr` annotations normalized.
     """
-    fn: object = getattr(obj, "fn") if hasattr(obj, "fn") else obj
+    fn = getattr(obj, "fn") if hasattr(obj, "fn") else obj
 
     ref = inspector.inspect(fn, f"{module_name}.{name}")
     if ref is not None:

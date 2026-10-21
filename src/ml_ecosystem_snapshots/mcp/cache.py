@@ -126,7 +126,7 @@ def get_framework_snapshot(
                                     "r",
                                     encoding="utf-8",
                                 ) as f:
-                                    data: object = json.load(f)
+                                    data: JsonValue = json.load(f)
                                     if isinstance(data, dict) and "categories" in data:
                                         loaded_data = dict(data)
                                     elif isinstance(data, dict) and (

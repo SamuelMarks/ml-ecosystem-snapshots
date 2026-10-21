@@ -206,7 +206,7 @@ def validate_mlir_traits(
     operand_types: list[str] | None = None,
     result_types: list[str] | None = None,
     attributes: list[str] | None = None,
-    structured_attributes: typing.Mapping[str, object] | None = None,
+    structured_attributes: typing.Mapping[str, JsonValue] | None = None,
 ) -> list[str]:
     """Validate dialect verification traits for an MLIR operation invocation.
 

@@ -1200,7 +1200,7 @@ def scrape_ptx(
         "nvidia_ptx_exhaustive.json",
     )
 
-    exhaustive_data: dict[str, object] = {
+    exhaustive_data: dict[str, JsonValue] = {
         "schema_version": "2.0.0",
         "target": "nvidia_ptx",
         "version": isa_version,
@@ -1218,7 +1218,7 @@ def scrape_ptx(
             "sm_90",
             "sm_100",
         ],
-        "instructions": list(catalog),
+        "instructions": [dict(r) for r in catalog],
     }
 
     with open(resolved_output, "w", encoding="utf-8") as f:

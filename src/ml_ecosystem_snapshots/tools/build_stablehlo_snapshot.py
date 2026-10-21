@@ -35,7 +35,7 @@ TABLEGEN_URL = "https://raw.githubusercontent.com/openxla/stablehlo/main/stableh
 
 
 def extract_ops(
-    source_content: str | typing.Mapping[str, object] | None = None,
+    source_content: str | typing.Mapping[str, JsonValue] | None = None,
 ) -> list[TableGenRecordModel]:
     """Download and parse StableHLO TableGen or spec.md to extract ops.
 

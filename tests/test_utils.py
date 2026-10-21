@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import types
 import pytest
 
 
@@ -18,11 +19,14 @@ from ml_ecosystem_snapshots.network_env import (
 from ml_ecosystem_snapshots.utils import get_all_members
 
 
-class FaultyModule:
+class FaultyModule(types.ModuleType):
     """Mock or helper class FaultyModule for unit testing."""
 
-    __all__ = ["good", "bad"]
-    good = 1
+    def __init__(self) -> None:
+        """Initialize FaultyModule."""
+        super().__init__("faulty_mod")
+        self.__all__ = ["good", "bad"]
+        self.good = 1
 
     @property
     def bad(self) -> None:
@@ -34,10 +38,13 @@ class FaultyModule:
         raise ValueError("Cannot access")
 
 
-class NoAllModule:
+class NoAllModule(types.ModuleType):
     """Mock or helper class NoAllModule for unit testing."""
 
-    a = 1
+    def __init__(self) -> None:
+        """Initialize NoAllModule."""
+        super().__init__("no_all_mod")
+        self.a = 1
 
 
 def test_get_all_members_exception() -> None:
@@ -46,8 +53,8 @@ def test_get_all_members_exception() -> None:
     assert dict(members)["good"] == 1
     assert "bad" not in dict(members)
 
-    members2 = get_all_members(NoAllModule())
-    assert dict(members2)["a"] == 1
+    members_no_all = get_all_members(NoAllModule())
+    assert dict(members_no_all)["a"] == 1
 
 
 def test_extract_c_extension_signatures() -> None:

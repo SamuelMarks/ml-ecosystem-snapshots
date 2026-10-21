@@ -178,7 +178,7 @@ def test_load_onnx_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
     class BrokenDefs:
         """Mock defs raising exception."""
 
-        def get_all_schemas_with_history(self) -> list[object]:
+        def get_all_schemas_with_history(self) -> list[str]:
             """Raise simulation error."""
             raise RuntimeError("Corrupt schema defs")
 
@@ -274,8 +274,8 @@ def test_onnx_schema_attributes_with_defaults(monkeypatch: pytest.MonkeyPatch) -
             self.name = "AttrOp"
             self.domain = ""
             self.since_version = 1
-            self.inputs: list[object] = []
-            self.outputs: list[object] = []
+            self.inputs: list[str] = []
+            self.outputs: list[str] = []
             self.attributes = {
                 "alpha": FakeAttribute("FLOAT", False, 1.5),
                 "beta": FakeAttribute("INT", False, None),
@@ -381,9 +381,9 @@ def test_onnx_schema_older_version_skipped(monkeypatch: pytest.MonkeyPatch) -> N
             self.name = name
             self.domain = domain
             self.since_version = since_version
-            self.inputs: list[object] = []
-            self.outputs: list[object] = []
-            self.attributes: dict[str, object] = {}
+            self.inputs: list[str] = []
+            self.outputs: list[str] = []
+            self.attributes: dict[str, str] = {}
             self.doc = "Fake schema"
 
     class MockDefs:
@@ -415,7 +415,7 @@ def test_onnx_load_empty_schemas(monkeypatch: pytest.MonkeyPatch) -> None:
     class EmptyDefs:
         """Mock defs returning empty list."""
 
-        def get_all_schemas_with_history(self) -> list[object]:
+        def get_all_schemas_with_history(self) -> list[str]:
             """Return empty schema list."""
             return []
 

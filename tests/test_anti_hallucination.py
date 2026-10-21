@@ -41,7 +41,7 @@ from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
 def test_hallucination_argument_name_discrepancy() -> None:
     """Verify that compliance checking flags argument name discrepancies (dim vs axis)."""
-    ref_snapshot = {
+    ref_snapshot: dict[str, JsonValue] = {
         "categories": {
             "math": [
                 {
@@ -80,7 +80,7 @@ def test_hallucination_argument_name_discrepancy() -> None:
 
 def test_hallucination_nonexistent_kwargs() -> None:
     """Verify that compliance and MCP tool flag non-existent kwargs hallucinated by LLMs."""
-    ref_snapshot = {
+    ref_snapshot: dict[str, JsonValue] = {
         "categories": {
             "loss": [
                 {
@@ -127,7 +127,7 @@ def test_hallucination_nonexistent_kwargs() -> None:
 
 def test_hallucination_deprecated_parameter_diff() -> None:
     """Verify that diff_snapshots flags removed/deprecated parameters as breaking changes."""
-    old_snapshot = {
+    old_snapshot: dict[str, JsonValue] = {
         "categories": {
             "ops": [
                 {
@@ -147,7 +147,7 @@ def test_hallucination_deprecated_parameter_diff() -> None:
         }
     }
 
-    new_snapshot = {
+    new_snapshot: dict[str, JsonValue] = {
         "categories": {
             "ops": [
                 {
@@ -169,7 +169,7 @@ def test_hallucination_deprecated_parameter_diff() -> None:
 
 def test_hallucination_invalid_sass_instructions() -> None:
     """Verify that invalid SASS operands and nonexistent instructions are detected."""
-    sass_snapshot = {
+    sass_snapshot: dict[str, JsonValue] = {
         "categories": {
             "isa": [
                 {
@@ -217,7 +217,7 @@ def test_hallucination_invalid_sass_instructions() -> None:
     assert "nvidia_sass.inst.FADD" in mismatched_paths
 
     # Verify diff_snapshots flags the added hallucinated instruction and changed signature
-    hallucinated_snap = {
+    hallucinated_snap: dict[str, JsonValue] = {
         "categories": {
             "isa": [
                 {
@@ -244,7 +244,7 @@ def test_hallucination_invalid_sass_instructions() -> None:
 
 def test_hallucination_invalid_stablehlo_ops() -> None:
     """Verify that illegal StableHLO ops and wrong operand counts are detected."""
-    stablehlo_snapshot = {
+    stablehlo_snapshot: dict[str, JsonValue] = {
         "categories": {
             "dialect": [
                 {
@@ -294,7 +294,7 @@ def test_hallucination_invalid_stablehlo_ops() -> None:
     assert "stablehlo.add" in mismatched_paths
 
     # Verify diff_snapshots flags the hallucinated op and illegal operand count
-    hallucinated_snap = {
+    hallucinated_snap: dict[str, JsonValue] = {
         "categories": {
             "dialect": [
                 {
@@ -379,7 +379,7 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
         mocker: Pytest mocker fixture.
     """
     # Test tools/list
-    list_req = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+    list_req: dict[str, JsonValue] = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
     list_resp = handle_mcp_message(list_req)
     assert list_resp["id"] == 1
     tools = list_resp["result"]["tools"]
@@ -444,7 +444,7 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
     assert "axis" in invalid_check["invalid_kwargs"]
 
     # Test tools/call JSON-RPC messages
-    call_sig_req = {
+    call_sig_req: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 2,
         "method": "tools/call",
@@ -457,7 +457,7 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
     assert call_sig_resp["id"] == 2
     assert "torch.add" in call_sig_resp["result"]["content"][0]["text"]
 
-    call_search_req = {
+    call_search_req: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 3,
         "method": "tools/call",
@@ -470,7 +470,7 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
     assert call_search_resp["id"] == 3
     assert "torch.add" in call_search_resp["result"]["content"][0]["text"]
 
-    call_check_req = {
+    call_check_req: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 4,
         "method": "tools/call",
@@ -488,7 +488,7 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
     assert "axis" in call_check_resp["result"]["content"][0]["text"]
 
     # Test unknown tool
-    unknown_tool_req = {
+    unknown_tool_req: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 5,
         "method": "tools/call",
@@ -498,7 +498,11 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
     assert "error" in unknown_tool_resp
 
     # Test unknown method
-    unknown_method_req = {"jsonrpc": "2.0", "id": 6, "method": "unknown/method"}
+    unknown_method_req: dict[str, JsonValue] = {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "unknown/method",
+    }
     unknown_method_resp = handle_mcp_message(unknown_method_req)
     assert "error" in unknown_method_resp
 
@@ -754,7 +758,7 @@ def test_check_hallucination_positional_and_strict(
 def test_handle_mcp_message_new_tools() -> None:
     """Test JSON-RPC message handling for new SASS, RDNA, and MLIR tools."""
     # check_sass_instruction call
-    sass_req = {
+    sass_req: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 101,
         "method": "tools/call",
@@ -768,7 +772,7 @@ def test_handle_mcp_message_new_tools() -> None:
     assert sass_resp["id"] == 101
 
     # check_rdna_instruction call
-    rdna_req = {
+    rdna_req: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 102,
         "method": "tools/call",
@@ -781,7 +785,7 @@ def test_handle_mcp_message_new_tools() -> None:
     assert "result" in rdna_resp
 
     # check_mlir_op call
-    mlir_req = {
+    mlir_req: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 103,
         "method": "tools/call",
@@ -1239,7 +1243,7 @@ def test_check_mlir_op_structured_attributes_and_type_constraints(
     )
 
     # 2. Valid DotDimensionNumbersAttr
-    valid_dot_dims = {
+    valid_dot_dims: dict[str, JsonValue] = {
         "lhs_batch_dimensions": [0],
         "rhs_batch_dimensions": [0],
         "lhs_contracting_dimensions": [2],
@@ -1252,7 +1256,7 @@ def test_check_mlir_op_structured_attributes_and_type_constraints(
     assert res_dot_valid["is_valid"] is True
 
     # Missing required field in DotDimensionNumbersAttr
-    invalid_dot_dims = {
+    invalid_dot_dims: dict[str, JsonValue] = {
         "lhs_batch_dimensions": [0],
         "rhs_batch_dimensions": [0],
     }
@@ -1297,7 +1301,7 @@ def test_check_mlir_op_structured_attributes_and_type_constraints(
     assert any("Invalid PrecisionAttr" in err for err in res_prec_invalid["errors"])
 
     # 5. ConvDimensionNumbersAttr valid and invalid
-    valid_conv_dims = {
+    valid_conv_dims: dict[str, JsonValue] = {
         "input_batch_dimension": 0,
         "input_feature_dimension": 1,
         "input_spatial_dimensions": [2, 3],
@@ -1325,7 +1329,7 @@ def test_check_mlir_op_structured_attributes_and_type_constraints(
     )
 
     # 6. ScatterDimensionNumbersAttr and GatherDimensionNumbersAttr
-    valid_scatter_dims = {
+    valid_scatter_dims: dict[str, JsonValue] = {
         "update_window_dims": [1],
         "inserted_window_dims": [0],
         "scatter_dims_to_operand_dims": [0],
@@ -1343,7 +1347,7 @@ def test_check_mlir_op_structured_attributes_and_type_constraints(
     )
     assert res_scatter_invalid["is_valid"] is False
 
-    valid_gather_dims = {
+    valid_gather_dims: dict[str, JsonValue] = {
         "offset_dims": [1],
         "collapsed_slice_dims": [0],
         "start_index_map": [0],
@@ -1572,7 +1576,7 @@ def test_synthetic_hallucination_benchmark_suite(
         check_mlir_op,
     )
 
-    hallucination_cases: list[tuple[object, ...]] = []
+    hallucination_cases: list[tuple[JsonValue, ...]] = []
 
     # Category 1: Argument swapping (dim vs axis, keepdim vs keepdims) (100 cases)
     swap_apis = [
@@ -2136,7 +2140,7 @@ def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert chk["is_hallucinated"] is False
 
     # Test handle_mcp_message with version in tools/call
-    msg_sig = {
+    msg_sig: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "tools/call",
@@ -2152,7 +2156,7 @@ def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     resp_sig = handle_mcp_message(msg_sig)
     assert "sdpa" in resp_sig["result"]["content"][0]["text"]
 
-    msg_search = {
+    msg_search: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 2,
         "method": "tools/call",
@@ -2168,7 +2172,7 @@ def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     resp_search = handle_mcp_message(msg_search)
     assert "scaled_dot_product_attention" in resp_search["result"]["content"][0]["text"]
 
-    msg_chk = {
+    msg_chk: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 3,
         "method": "tools/call",
@@ -2192,7 +2196,7 @@ def test_opaque_c_extension_guardrails(mocker: pytest_mock.MockerFixture) -> Non
     Args:
         mocker: Pytest mocker fixture.
     """
-    mock_snap = {
+    mock_snap: dict[str, JsonValue] = {
         "categories": {
             "ops": [
                 {
@@ -2531,13 +2535,14 @@ def test_translate_concept_arguments() -> None:
         source_framework="torch",
         target_framework="stablehlo",
         source_kwargs={"weight": "gamma", "bias": "beta", "eps": 1e-5},
+        alias_map={"normalization": {"torch": ["torch.nn.LayerNorm"]}},
     )
     assert norm_shlo["translated_kwargs"]["scale"] == "gamma"
     assert norm_shlo["translated_kwargs"]["offset"] == "beta"
     assert norm_shlo["translated_kwargs"]["epsilon"] == 1e-5
 
     # 8. Test MCP JSON-RPC protocol message
-    mcp_msg = {
+    mcp_msg: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 88,
         "method": "tools/call",

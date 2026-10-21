@@ -92,10 +92,10 @@ def _format_param_list(
             p_str = f"**{p_name}"
         else:
             p_str = str(p_name)
-            if p_anno:
+            if p_anno and p_anno != "Any":
                 p_str += f": {p_anno}"
             else:
-                p_str += ": Any"
+                p_str += ": object"
 
             if p_default is not None:
                 sanitized = _sanitize_default(str(p_default))
@@ -106,7 +106,7 @@ def _format_param_list(
     if has_varargs and not any(
         _param_field(p, "kind") == "VAR_POSITIONAL" for p in params
     ):
-        param_strs.append("*args: Any")
+        param_strs.append("*args: object")
 
     return ", ".join(param_strs)
 
@@ -142,8 +142,8 @@ def _extract_overload_dicts(raw_overloads: JsonValue) -> list[dict[str, JsonValu
 def generate_stubs(
     snapshot_data: (
         SnapshotEnvelope
-        | typing.Mapping[str, object]
-        | typing.Sequence[typing.Mapping[str, object]]
+        | typing.Mapping[str, JsonValue]
+        | typing.Sequence[typing.Mapping[str, JsonValue]]
     ),
     output_dir: str,
     include_nonpublic: bool = False,
@@ -234,7 +234,7 @@ def generate_stubs(
         init_file = Path(os.path.join(module_path, "__init__.pyi"))
 
         lines = [
-            "from typing import Any, Optional, Union, Tuple, List, Callable, Dict, overload",
+            "import typing",
             "",
         ]
 
@@ -252,12 +252,13 @@ def generate_stubs(
                     ov_sig = _format_param_list(
                         _extract_param_dicts(ov.get("params")), is_method=True
                     )
+                    ov_ret_val = ov.get("returns_type")
                     ov_ret = (
-                        f" -> {ov.get('returns_type')}"
-                        if ov.get("returns_type")
+                        f" -> {ov_ret_val}"
+                        if ov_ret_val and ov_ret_val != "Any"
                         else " -> None"
                     )
-                    lines.append("    @overload")
+                    lines.append("    @typing.overload")
                     lines.append(f"    def __init__({ov_sig}){ov_ret}: ...")
 
                 init_sig = _format_param_list(
@@ -266,7 +267,11 @@ def generate_stubs(
                     is_method=True,
                 )
                 ret_type = item.get("returns_type")
-                ret_str = f" -> {ret_type}" if ret_type else " -> Any"
+                ret_str = (
+                    f" -> {ret_type}"
+                    if ret_type and ret_type != "Any"
+                    else " -> object"
+                )
                 lines.append(f"    def __init__({init_sig}){ret_str}: ...")
 
                 methods = class_methods.get(module_name, {}).get(obj_name, [])
@@ -275,12 +280,13 @@ def generate_stubs(
                         ov_sig = _format_param_list(
                             _extract_param_dicts(ov.get("params")), is_method=True
                         )
+                        ov_ret_val = ov.get("returns_type")
                         ov_ret = (
-                            f" -> {ov.get('returns_type')}"
-                            if ov.get("returns_type")
-                            else " -> Any"
+                            f" -> {ov_ret_val}"
+                            if ov_ret_val and ov_ret_val != "Any"
+                            else " -> object"
                         )
-                        lines.append("    @overload")
+                        lines.append("    @typing.overload")
                         lines.append(f"    def {m_name}({ov_sig}){ov_ret}: ...")
 
                     m_sig = _format_param_list(
@@ -288,10 +294,11 @@ def generate_stubs(
                         has_varargs=bool(m_item.get("has_varargs", False)),
                         is_method=True,
                     )
+                    m_ret_val = m_item.get("returns_type")
                     m_ret = (
-                        f" -> {m_item.get('returns_type')}"
-                        if m_item.get("returns_type")
-                        else " -> Any"
+                        f" -> {m_ret_val}"
+                        if m_ret_val and m_ret_val != "Any"
+                        else " -> object"
                     )
                     lines.append(f"    def {m_name}({m_sig}){m_ret}: ...")
 
@@ -299,12 +306,13 @@ def generate_stubs(
             else:
                 for ov in _extract_overload_dicts(item.get("overloads")):
                     ov_sig = _format_param_list(_extract_param_dicts(ov.get("params")))
+                    ov_ret_val = ov.get("returns_type")
                     ov_ret = (
-                        f" -> {ov.get('returns_type')}"
-                        if ov.get("returns_type")
-                        else " -> Any"
+                        f" -> {ov_ret_val}"
+                        if ov_ret_val and ov_ret_val != "Any"
+                        else " -> object"
                     )
-                    lines.append("@overload")
+                    lines.append("@typing.overload")
                     lines.append(f"def {obj_name}({ov_sig}){ov_ret}: ...")
 
                 sig = _format_param_list(
@@ -312,7 +320,11 @@ def generate_stubs(
                     has_varargs=bool(item.get("has_varargs", False)),
                 )
                 ret_type = item.get("returns_type")
-                ret_str = f" -> {ret_type}" if ret_type else " -> Any"
+                ret_str = (
+                    f" -> {ret_type}"
+                    if ret_type and ret_type != "Any"
+                    else " -> object"
+                )
                 lines.append(f"def {obj_name}({sig}){ret_str}: ...")
                 lines.append("")
 
@@ -324,12 +336,13 @@ def generate_stubs(
                         ov_sig = _format_param_list(
                             _extract_param_dicts(ov.get("params")), is_method=True
                         )
+                        ov_ret_val = ov.get("returns_type")
                         ov_ret = (
-                            f" -> {ov.get('returns_type')}"
-                            if ov.get("returns_type")
-                            else " -> Any"
+                            f" -> {ov_ret_val}"
+                            if ov_ret_val and ov_ret_val != "Any"
+                            else " -> object"
                         )
-                        lines.append("    @overload")
+                        lines.append("    @typing.overload")
                         lines.append(f"    def {m_name}({ov_sig}){ov_ret}: ...")
 
                     m_sig = _format_param_list(
@@ -337,10 +350,11 @@ def generate_stubs(
                         has_varargs=bool(m_item.get("has_varargs", False)),
                         is_method=True,
                     )
+                    m_ret_val = m_item.get("returns_type")
                     m_ret = (
-                        f" -> {m_item.get('returns_type')}"
-                        if m_item.get("returns_type")
-                        else " -> Any"
+                        f" -> {m_ret_val}"
+                        if m_ret_val and m_ret_val != "Any"
+                        else " -> object"
                     )
                     lines.append(f"    def {m_name}({m_sig}){m_ret}: ...")
                 lines.append("")

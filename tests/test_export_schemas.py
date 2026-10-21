@@ -61,9 +61,9 @@ def test_to_pydantic_overloaded_signatures() -> None:
     )
 
     code = to_pydantic(primary)
-    assert "class addVariant0(BaseModel):" in code
-    assert "class addVariant1(BaseModel):" in code
-    assert "add = Union[addVariant0, addVariant1]" in code
+    assert "class addVariant0(pydantic.BaseModel):" in code
+    assert "class addVariant1(pydantic.BaseModel):" in code
+    assert "add = addVariant0 | addVariant1" in code
     assert 'description="The input tensor."' in code
     assert 'description="The second tensor."' in code
 
@@ -91,9 +91,12 @@ def test_to_pydantic_variable_positional_tuple() -> None:
     )
 
     code = to_pydantic(ref, validate_varargs=True)
-    assert "class VarOp(BaseModel):" in code
-    assert "args: Tuple[int, ...] = Field(default=(), description=" in code
-    assert "kwargs: Dict[str, Any] = Field(default_factory=dict, description=" in code
+    assert "class VarOp(pydantic.BaseModel):" in code
+    assert "args: tuple[int, ...] = pydantic.Field(default=(), description=" in code
+    assert (
+        "kwargs: dict[str, object] = pydantic.Field(default_factory=dict, description="
+        in code
+    )
 
 
 def test_to_protobuf_structured_types_and_enums() -> None:

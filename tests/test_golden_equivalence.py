@@ -5,8 +5,12 @@ from __future__ import annotations
 import json
 import os
 
+from ml_ecosystem_snapshots.models import JsonValue
 
-def _load_dataset_or_canonical(fw_dir: str, filename: str) -> list[dict[str, object]]:
+
+def _load_dataset_or_canonical(
+    fw_dir: str, filename: str
+) -> list[dict[str, JsonValue]]:
     """Load an exhaustive JSON file if present on disk, or fall back to canonical framework records.
 
     Args:

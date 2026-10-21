@@ -175,8 +175,10 @@ def test_stablehlo_regions_and_structured_schemas() -> None:
 
 def test_validate_dot_dimension_numbers() -> None:
     """Test validation of DotDimensionNumbersAttr."""
+    from ml_ecosystem_snapshots.models import JsonValue
+
     # Valid
-    valid_dot = {
+    valid_dot: dict[str, JsonValue] = {
         "lhs_batch_dimensions": [0],
         "rhs_batch_dimensions": [0],
         "lhs_contracting_dimensions": [2],
@@ -188,7 +190,7 @@ def test_validate_dot_dimension_numbers() -> None:
     )
 
     # Count mismatch
-    bad_count = {
+    bad_count: dict[str, JsonValue] = {
         "lhs_batch_dimensions": [0, 1],
         "rhs_batch_dimensions": [0],
         "lhs_contracting_dimensions": [2],
@@ -199,7 +201,7 @@ def test_validate_dot_dimension_numbers() -> None:
     assert any("Contracting dimension count mismatch" in e for e in errs)
 
     # Disjointness overlap
-    overlap_lhs = {
+    overlap_lhs: dict[str, JsonValue] = {
         "lhs_batch_dimensions": [0],
         "rhs_batch_dimensions": [0],
         "lhs_contracting_dimensions": [0],
@@ -211,7 +213,7 @@ def test_validate_dot_dimension_numbers() -> None:
         for e in errs_overlap
     )
 
-    overlap_rhs = {
+    overlap_rhs: dict[str, JsonValue] = {
         "lhs_batch_dimensions": [0],
         "rhs_batch_dimensions": [1],
         "lhs_contracting_dimensions": [1],
@@ -223,7 +225,7 @@ def test_validate_dot_dimension_numbers() -> None:
     )
 
     # Rank bounds
-    out_of_bounds = {
+    out_of_bounds: dict[str, JsonValue] = {
         "lhs_batch_dimensions": [5],
         "rhs_batch_dimensions": [0],
         "lhs_contracting_dimensions": [1],
@@ -238,8 +240,10 @@ def test_validate_dot_dimension_numbers() -> None:
 
 def test_validate_conv_dimension_numbers() -> None:
     """Test validation of ConvDimensionNumbersAttr."""
+    from ml_ecosystem_snapshots.models import JsonValue
+
     # Valid 2D conv
-    valid_conv = {
+    valid_conv: dict[str, JsonValue] = {
         "input_batch_dimension": 0,
         "input_feature_dimension": 1,
         "input_spatial_dimensions": [2, 3],
@@ -258,12 +262,18 @@ def test_validate_conv_dimension_numbers() -> None:
     )
 
     # Spatial count mismatch
-    bad_spatial = dict(valid_conv, input_spatial_dimensions=[2])
+    bad_spatial: dict[str, JsonValue] = {
+        **valid_conv,
+        "input_spatial_dimensions": [2],
+    }
     errs_spatial = stablehlo_fw.validate_conv_dimension_numbers(bad_spatial)
     assert any("Spatial dimensions count mismatch" in e for e in errs_spatial)
 
     # Overlapping input dimensions
-    bad_in = dict(valid_conv, input_feature_dimension=0)
+    bad_in: dict[str, JsonValue] = {
+        **valid_conv,
+        "input_feature_dimension": 0,
+    }
     errs_in = stablehlo_fw.validate_conv_dimension_numbers(bad_in)
     assert any(
         "Input dimensions in ConvDimensionNumbersAttr must be distinct" in e
@@ -271,31 +281,46 @@ def test_validate_conv_dimension_numbers() -> None:
     )
 
     # Input rank out of bounds
-    bad_in_rank = dict(valid_conv, input_batch_dimension=4)
+    bad_in_rank: dict[str, JsonValue] = {
+        **valid_conv,
+        "input_batch_dimension": 4,
+    }
     assert any(
         "exceeds input rank" in e
         for e in stablehlo_fw.validate_conv_dimension_numbers(bad_in_rank, input_rank=4)
     )
 
     # Overlapping kernel dimensions
-    bad_k = dict(valid_conv, kernel_output_feature_dimension=1)
+    bad_k: dict[str, JsonValue] = {
+        **valid_conv,
+        "kernel_output_feature_dimension": 1,
+    }
     assert any(
         "Kernel dimensions in ConvDimensionNumbersAttr must be distinct" in e
         for e in stablehlo_fw.validate_conv_dimension_numbers(bad_k)
     )
-    bad_k_rank = dict(valid_conv, kernel_input_feature_dimension=4)
+    bad_k_rank: dict[str, JsonValue] = {
+        **valid_conv,
+        "kernel_input_feature_dimension": 4,
+    }
     assert any(
         "exceeds kernel rank" in e
         for e in stablehlo_fw.validate_conv_dimension_numbers(bad_k_rank, kernel_rank=4)
     )
 
     # Output disjointness
-    bad_out = dict(valid_conv, output_feature_dimension=0)
+    bad_out: dict[str, JsonValue] = {
+        **valid_conv,
+        "output_feature_dimension": 0,
+    }
     assert any(
         "Output dimensions in ConvDimensionNumbersAttr must be distinct" in e
         for e in stablehlo_fw.validate_conv_dimension_numbers(bad_out)
     )
-    bad_out_rank = dict(valid_conv, output_batch_dimension=4)
+    bad_out_rank: dict[str, JsonValue] = {
+        **valid_conv,
+        "output_batch_dimension": 4,
+    }
     assert any(
         "exceeds output rank" in e
         for e in stablehlo_fw.validate_conv_dimension_numbers(
@@ -309,8 +334,10 @@ def test_validate_conv_dimension_numbers() -> None:
 
 def test_validate_scatter_and_gather_dimension_numbers() -> None:
     """Test Scatter and Gather dimension numbers validation."""
+    from ml_ecosystem_snapshots.models import JsonValue
+
     # Scatter disjointness
-    valid_scatter = {
+    valid_scatter: dict[str, JsonValue] = {
         "update_window_dims": [1, 2],
         "inserted_window_dims": [0],
         "scatter_dims_to_operand_dims": [0],
@@ -318,14 +345,17 @@ def test_validate_scatter_and_gather_dimension_numbers() -> None:
     }
     assert stablehlo_fw.validate_scatter_dimension_numbers(valid_scatter) == []
 
-    overlap_scatter = dict(valid_scatter, inserted_window_dims=[1])
+    overlap_scatter: dict[str, JsonValue] = {
+        **valid_scatter,
+        "inserted_window_dims": [1],
+    }
     assert any(
         "must be disjoint" in e
         for e in stablehlo_fw.validate_scatter_dimension_numbers(overlap_scatter)
     )
 
     # Gather disjointness
-    valid_gather = {
+    valid_gather: dict[str, JsonValue] = {
         "offset_dims": [1, 2],
         "collapsed_slice_dims": [0],
         "start_index_map": [0],
@@ -333,7 +363,10 @@ def test_validate_scatter_and_gather_dimension_numbers() -> None:
     }
     assert stablehlo_fw.validate_gather_dimension_numbers(valid_gather) == []
 
-    overlap_gather = dict(valid_gather, collapsed_slice_dims=[1])
+    overlap_gather: dict[str, JsonValue] = {
+        **valid_gather,
+        "collapsed_slice_dims": [1],
+    }
     assert any(
         "must be disjoint" in e
         for e in stablehlo_fw.validate_gather_dimension_numbers(overlap_gather)
@@ -659,7 +692,9 @@ def test_validate_stablehlo_op_attributes() -> None:
     assert any("GatherDimensionNumbersAttr" in e for e in errs)
 
     # 2. Valid structured attributes
-    valid_attrs = {
+    from ml_ecosystem_snapshots.models import JsonValue
+
+    valid_attrs: dict[str, JsonValue] = {
         "dot_dimension_numbers": {
             "lhs_contracting_dimensions": [1],
             "rhs_contracting_dimensions": [0],
@@ -696,7 +731,7 @@ def test_validate_stablehlo_op_attributes() -> None:
     assert errs_valid == []
 
     # 3. Valid and invalid regions attached to op
-    regions = {
+    regions: dict[str, JsonValue] = {
         "body": {
             "block_arguments": ["index", "tensor<4xf32>"],
             "yield_types": ["tensor<4xf32>"],

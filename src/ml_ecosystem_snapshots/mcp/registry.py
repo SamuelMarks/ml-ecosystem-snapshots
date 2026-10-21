@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import typing
-from typing_extensions import TypeAlias
+import typing_extensions
 
 import pydantic
 
@@ -12,10 +12,12 @@ from ml_ecosystem_snapshots.mcp.tools.domain_ops import build_domain_op_tool_sch
 from ml_ecosystem_snapshots.mcp.protocol import JsonRpcResponseDict, JsonRpcResultDict
 from ml_ecosystem_snapshots.models import JsonValue
 
-ToolHandlerResult: TypeAlias = typing.Union[
-    pydantic.BaseModel, dict[str, JsonValue], list[str], None
-]
-ToolHandlerFn: TypeAlias = typing.Callable[[dict[str, JsonValue]], ToolHandlerResult]
+ToolHandlerResult: typing_extensions.TypeAlias = (
+    "pydantic.BaseModel | dict[str, JsonValue] | list[str] | None"
+)
+ToolHandlerFn: typing_extensions.TypeAlias = (
+    "typing.Callable[[dict[str, JsonValue]], ToolHandlerResult]"
+)
 
 
 class McpToolSpec(pydantic.BaseModel):
@@ -26,7 +28,13 @@ class McpToolSpec(pydantic.BaseModel):
     name: str
     description: str
     input_schema: dict[str, JsonValue]
-    handler: ToolHandlerFn | None = None
+    handler: (
+        typing.Callable[
+            [dict[str, JsonValue]],
+            pydantic.BaseModel | dict[str, JsonValue] | list[str] | None,
+        ]
+        | None
+    ) = None
 
 
 def get_mcp_tools_list() -> list[dict[str, JsonValue]]:
@@ -670,7 +678,7 @@ def dispatch_tool_call(
 
 
 def handle_mcp_message(
-    message: typing.Mapping[str, object],
+    message: typing.Mapping[str, JsonValue],
 ) -> JsonRpcResponseDict:
     """Handle an incoming JSON-RPC / MCP protocol message and generate a response.
 

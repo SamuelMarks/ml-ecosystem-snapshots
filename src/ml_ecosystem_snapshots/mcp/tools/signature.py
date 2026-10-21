@@ -26,7 +26,9 @@ def get_api_signature(
     try:
         from ml_ecosystem_snapshots.index import IndexedSymbolRecord, lookup_symbol
 
-        cached_sym: object = lookup_symbol(framework, api_path, version=version)
+        cached_sym: IndexedSymbolRecord | dict[str, JsonValue] | None = lookup_symbol(
+            framework, api_path, version=version
+        )
         if cached_sym is not None:
             if isinstance(cached_sym, IndexedSymbolRecord):
                 return dict(cached_sym.data)

@@ -25,7 +25,7 @@ def some_function(a: int = 1, b: str = "test", *args: object, **kwargs: object) 
 class SomeClass:
     """Sample class with Sphinx-style docstring for CDD class inspection."""
 
-    def __init__(self, x: float, y: list[object] = []) -> None:
+    def __init__(self, x: float, y: list[int] = []) -> None:
         """:param x: The x coordinate.
 
         :type x: float

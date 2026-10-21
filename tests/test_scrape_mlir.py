@@ -398,7 +398,9 @@ def test_tablegen_ast_parser() -> None:
 
 def test_parse_llvm_tblgen_json() -> None:
     """Test parse_llvm_tblgen_json parsing DAG and list records from llvm-tblgen."""
-    mock_json = {
+    from ml_ecosystem_snapshots.models import JsonValue
+
+    mock_json: dict[str, JsonValue] = {
         "!instanceof": {"Op": ["Arith_AddFOp", "Arith_SubFOp"]},
         "Arith_AddFOp": {
             "!name": "Arith_AddFOp",
@@ -490,7 +492,9 @@ def test_parse_llvm_tblgen_json() -> None:
 
 def test_parse_llvm_tblgen_json_edge_branches() -> None:
     """Test parse_llvm_tblgen_json with malformed dag entries, empty traits, non-dict records, and None values."""
-    mock_json = {
+    from ml_ecosystem_snapshots.models import JsonValue
+
+    mock_json: dict[str, JsonValue] = {
         "non_dict_entry": "just_a_string",
         "NonOpRecord": {
             "!name": "NonOpRecord",
@@ -547,7 +551,9 @@ def test_parse_llvm_tblgen_json_edge_branches() -> None:
 
 def test_validate_dialect_ops_ods() -> None:
     """Test validate_dialect_ops_ods validating compliant and invalid operations."""
-    valid_ops = [
+    from ml_ecosystem_snapshots.models import JsonValue
+
+    valid_ops: list[dict[str, JsonValue]] = [
         {
             "api_path": "arith.addf",
             "class_name": "AddFOp",

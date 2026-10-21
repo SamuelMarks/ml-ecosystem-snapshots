@@ -450,6 +450,7 @@ def test_offline_index_db_in_memory_fallback(monkeypatch: pytest.MonkeyPatch) ->
 
 def test_offline_ghost_isa_structured_modifiers() -> None:
     """Verify GhostIsaRef handles structured modifiers and VOPD profiles."""
+    from ml_switcheroo_ir.schema.ghost import VopdProfileSpec
     from ml_ecosystem_snapshots.models import GhostIsaRef
 
     isa_ref = GhostIsaRef(
@@ -458,9 +459,9 @@ def test_offline_ghost_isa_structured_modifiers() -> None:
         kind="instruction",
         instruction_modifiers=[".SAT", ".RN"],
         structured_modifiers={"rounding": ".RN", "saturation": True},
-        vopd_profile={"supported": False},
+        vopd_profile=VopdProfileSpec.model_validate({"supported": False}),
     )
     assert isa_ref.structured_modifiers is not None
     assert isa_ref.structured_modifiers["rounding"] == ".RN"
     assert isa_ref.vopd_profile is not None
-    assert isa_ref.vopd_profile["supported"] is False
+    assert getattr(isa_ref.vopd_profile, "supported", None) is False

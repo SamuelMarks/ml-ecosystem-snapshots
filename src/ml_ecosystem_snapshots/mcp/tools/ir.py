@@ -116,7 +116,7 @@ def _extract_tensor_rank(type_str: str) -> int | None:
 
 
 def _validate_mlir_structured_attributes(
-    structured_attributes: typing.Mapping[str, object],
+    structured_attributes: typing.Mapping[str, JsonValue],
     operand_types: list[str] | None = None,
     result_types: list[str] | None = None,
 ) -> list[str]:
@@ -286,8 +286,8 @@ def check_mlir_op(
     attributes: list[str] | None = None,
     operand_types: list[str] | None = None,
     result_types: list[str] | None = None,
-    structured_attributes: typing.Mapping[str, object] | None = None,
-    regions: typing.Mapping[str, object] | None = None,
+    structured_attributes: typing.Mapping[str, JsonValue] | None = None,
+    regions: typing.Mapping[str, JsonValue] | None = None,
     repository: SnapshotRepository | None = None,
 ) -> IrCheckResult:
     """Validate whether an MLIR or StableHLO operation exists with expected signature.
@@ -459,8 +459,8 @@ def check_stablehlo_op(
     attributes: list[str] | None = None,
     operand_types: list[str] | None = None,
     result_types: list[str] | None = None,
-    structured_attributes: typing.Mapping[str, object] | None = None,
-    regions: typing.Mapping[str, object] | None = None,
+    structured_attributes: typing.Mapping[str, JsonValue] | None = None,
+    regions: typing.Mapping[str, JsonValue] | None = None,
     repository: SnapshotRepository | None = None,
 ) -> IrCheckResult:
     """Validate a StableHLO operation against formal verification rules and schemas.

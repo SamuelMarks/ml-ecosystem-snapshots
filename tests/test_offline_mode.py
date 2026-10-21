@@ -93,7 +93,13 @@ def test_zero_db_files_in_repo() -> None:
 
     for dirpath, dirnames, filenames in os.walk(root_dir):
         # Skip git directory and temporary test outputs
-        if ".git" in dirpath or ".pytest_cache" in dirpath or "test_out" in dirpath:
+        if (
+            ".git" in dirpath
+            or ".pytest_cache" in dirpath
+            or ".mypy_cache" in dirpath
+            or ".venv" in dirpath
+            or "test_out" in dirpath
+        ):
             continue
         for fname in filenames:
             for ext in forbidden_exts:

@@ -159,7 +159,7 @@ def test_score_compliance_matches() -> None:
     """Test compliance scoring with matches and missing."""
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
-    ref_snap = {
+    ref_snap: dict[str, JsonValue] = {
         "categories": {
             "LAYER": [
                 {
@@ -219,7 +219,7 @@ def test_score_compliance_mismatch() -> None:
     """Test compliance scoring with mismatch and varargs fallback."""
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
-    ref_snap = {
+    ref_snap: dict[str, JsonValue] = {
         "categories": {
             "LAYER": [
                 {
@@ -321,7 +321,7 @@ def test_extract_target_refs_aliases(tmp_path: Path) -> None:
     """
     from ml_switcheroo_ir.schema.ghost import GhostRef
 
-    ref_snap = {
+    ref_snap: dict[str, JsonValue] = {
         "categories": {
             "LAYER": [
                 {

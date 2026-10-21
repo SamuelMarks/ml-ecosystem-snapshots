@@ -15,6 +15,8 @@ import typing
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
     GhostRef,
+    IsaControlCodesSpec,
+    IsaStructuredOperandSpec,
     ParameterKind,
     SemanticTier,
 )
@@ -587,7 +589,9 @@ def tokenize_sass_line(
     return predicate, base_mnemonic, modifiers, operands
 
 
-def resolve_sm_architectures(arch_spec: object) -> list[str]:
+def resolve_sm_architectures(
+    arch_spec: str | typing.Sequence[str] | JsonValue,
+) -> list[str]:
     """Resolve an SM architecture specification into discrete targeted SM architectures.
 
     Args:
@@ -1156,12 +1160,7 @@ def collect_api(
                 )
             )
 
-        from ml_switcheroo_ir.schema.ghost import IsaStructuredOperandSpec
-
         raw_struct_ops = build_structured_sass_operands(max_sig, mnemonic)
-        structured_ops: list[IsaStructuredOperandSpec | dict[str, JsonValue]] = [
-            IsaStructuredOperandSpec.model_validate(item) for item in raw_struct_ops
-        ]
 
         refs.append(
             GhostIsaRef(
@@ -1176,8 +1175,17 @@ def collect_api(
                 predicate_guards=["@P0", "@!P0", "@P1", "@!P1", "@PT"],
                 instruction_modifiers=parsed_modifiers,
                 supported_architectures=valid_archs,
-                control_codes=DEFAULT_SASS_CONTROL_CODE_SCHEMA,
-                structured_operands=structured_ops,
+                control_codes=IsaControlCodesSpec(
+                    latency=4,
+                    stall_count=1,
+                    yield_flag=False,
+                    read_barrier=0,
+                    write_barrier=0,
+                    wait_barrier_mask=0,
+                ),
+                structured_operands=[
+                    IsaStructuredOperandSpec.model_validate(op) for op in raw_struct_ops
+                ],
             )
         )
 
