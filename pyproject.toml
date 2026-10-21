@@ -59,7 +59,6 @@ disable_error_code = ["overload-overlap"]
 init_forbid_extra = true
 init_typed = true
 warn_required_dynamic_aliases = true
-warn_untyped_fields = true
 
 [tool.hatch.build.targets.sdist]
 artifacts = [

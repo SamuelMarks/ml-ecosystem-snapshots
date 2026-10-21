@@ -254,9 +254,9 @@ def resolve_griffe_parser(parser_name: str) -> griffe.Parser | None:
         import griffe as _griffe_mod
 
         if parser_name == "rest":
-            rest_parser: griffe.Parser = getattr(
-                _griffe_mod.Parser, "rest", _griffe_mod.Parser.sphinx
-            )
+            rest_parser: griffe.Parser | None = getattr(
+                _griffe_mod.Parser, "rest", None
+            ) or getattr(_griffe_mod.Parser, "sphinx", None)
             return rest_parser
         return _griffe_mod.Parser(parser_name)
     except Exception:
