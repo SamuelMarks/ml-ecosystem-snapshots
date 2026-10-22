@@ -492,12 +492,17 @@ def test_search_apis_edge_cases(mocker: pytest_mock.MockerFixture) -> None:
     res = search_apis("torch", "some_query", limit=10)
     assert "torch.some_query_op" in res
 
-    # 3. search_index returns results with duplicate or empty path (branches 445->439, 447->452)
+    # 3. search_index returns results with empty path, valid item (< limit), and duplicate (branches 60->58, 62->58)
     mocker.patch(
         "ml_ecosystem_snapshots.index.search_index",
-        return_value=[{"api_path": None, "name": None, "mnemonic": None}],
+        return_value=[
+            {"api_path": None, "name": None, "mnemonic": None},
+            {"api_path": "torch.indexed_query_op", "name": "indexed_query_op"},
+            {"api_path": "torch.indexed_query_op", "name": "indexed_query_op"},
+        ],
     )
     res2 = search_apis("torch", "some_query", limit=10)
+    assert "torch.indexed_query_op" in res2
     assert "torch.some_query_op" in res2
 
 
