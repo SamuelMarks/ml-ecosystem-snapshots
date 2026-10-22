@@ -199,7 +199,7 @@ jobs:
               ('amd_rdna_exhaustive.json', _load_exhaustive_rdna),
               ('nvidia_ptx_exhaustive.json', _load_exhaustive_ptx),
               ('mlir_exhaustive.json', _get_canonical_mlir_records),
-              ('stablehlo_exhaustive.json', _get_canonical_stablehlo_records),
+              ('stablehlo_exhaustive.json', lambda: {'operations': _get_canonical_stablehlo_records()}),
           ]:
               fpath = os.path.join(fw_dir, fname)
               if not os.path.exists(fpath):

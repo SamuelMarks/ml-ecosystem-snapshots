@@ -635,6 +635,7 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
     """
     return [
         {
+            "name": "dot_general",
             "class_name": "DotGeneralOp",
             "api_path": "stablehlo.dot_general",
             "operands": [
@@ -643,13 +644,18 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
             ],
             "results": [{"name": "result", "type": "tensor"}],
             "attributes": [
-                {"name": "dot_dimension_numbers", "type": "DotDimensionNumbersAttr"},
+                {
+                    "name": "dot_dimension_numbers",
+                    "type": "DotDimensionNumbersAttr",
+                    "required": True,
+                },
                 {"name": "precision_config", "type": "PrecisionConfigAttr"},
             ],
             "traits": [],
             "summary": "General dot product of two tensors.",
         },
         {
+            "name": "convolution",
             "class_name": "ConvolutionOp",
             "api_path": "stablehlo.convolution",
             "operands": [
@@ -658,14 +664,23 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
             ],
             "results": [{"name": "result", "type": "tensor"}],
             "attributes": [
-                {"name": "dimension_numbers", "type": "ConvDimensionNumbersAttr"},
+                {
+                    "name": "dimension_numbers",
+                    "type": "ConvDimensionNumbersAttr",
+                    "required": True,
+                },
                 {"name": "window_strides", "type": "DenseIntElementsAttr"},
-                {"name": "padding", "type": "DenseIntElementsAttr"},
+                {
+                    "name": "padding",
+                    "type": "DenseIntElementsAttr",
+                    "required": True,
+                },
             ],
             "traits": [],
             "summary": "Convolution operation.",
         },
         {
+            "name": "add",
             "class_name": "AddOp",
             "api_path": "stablehlo.add",
             "operands": [
@@ -678,6 +693,7 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
             "summary": "Elementwise addition.",
         },
         {
+            "name": "subtract",
             "class_name": "SubtractOp",
             "api_path": "stablehlo.subtract",
             "operands": [
@@ -690,6 +706,7 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
             "summary": "Elementwise subtraction.",
         },
         {
+            "name": "multiply",
             "class_name": "MultiplyOp",
             "api_path": "stablehlo.multiply",
             "operands": [
@@ -702,6 +719,7 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
             "summary": "Elementwise multiplication.",
         },
         {
+            "name": "divide",
             "class_name": "DivideOp",
             "api_path": "stablehlo.divide",
             "operands": [
@@ -714,17 +732,23 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
             "summary": "Elementwise division.",
         },
         {
+            "name": "broadcast_in_dim",
             "class_name": "BroadcastInDimOp",
             "api_path": "stablehlo.broadcast_in_dim",
             "operands": [{"name": "operand", "type": "tensor"}],
             "results": [{"name": "result", "type": "tensor"}],
             "attributes": [
-                {"name": "broadcast_dimensions", "type": "DenseIntElementsAttr"}
+                {
+                    "name": "broadcast_dimensions",
+                    "type": "DenseIntElementsAttr",
+                    "required": True,
+                }
             ],
             "traits": [],
             "summary": "Broadcast an array into a higher-ranked shape.",
         },
         {
+            "name": "reduce",
             "class_name": "ReduceOp",
             "api_path": "stablehlo.reduce",
             "operands": [
@@ -732,11 +756,18 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
                 {"name": "init_values", "type": "tensor"},
             ],
             "results": [{"name": "results", "type": "tensor"}],
-            "attributes": [{"name": "dimensions", "type": "DenseIntElementsAttr"}],
+            "attributes": [
+                {
+                    "name": "dimensions",
+                    "type": "DenseIntElementsAttr",
+                    "required": True,
+                }
+            ],
             "traits": [],
             "summary": "Apply a reduction to multidimensional inputs.",
         },
         {
+            "name": "abs",
             "class_name": "AbsOp",
             "api_path": "stablehlo.abs",
             "operands": [{"name": "operand", "type": "tensor"}],
@@ -746,6 +777,7 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
             "summary": "Elementwise absolute value operation.",
         },
         {
+            "name": "while",
             "class_name": "WhileOp",
             "api_path": "stablehlo.while",
             "operands": [{"name": "operand", "type": "Variadic<tensor>"}],
@@ -756,6 +788,7 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
             "summary": "While loop operation with condition and body regions.",
         },
         {
+            "name": "sort",
             "class_name": "SortOp",
             "api_path": "stablehlo.sort",
             "operands": [{"name": "inputs", "type": "Variadic<tensor>"}],
@@ -766,6 +799,7 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
             "summary": "Sort operation with comparator region.",
         },
         {
+            "name": "scatter",
             "class_name": "ScatterOp",
             "api_path": "stablehlo.scatter",
             "operands": [
@@ -778,6 +812,7 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
                 {
                     "name": "scatter_dimension_numbers",
                     "type": "ScatterDimensionNumbersAttr",
+                    "required": True,
                 },
                 {"name": "indices_are_sorted", "type": "BoolAttr"},
                 {"name": "unique_indices", "type": "BoolAttr"},
@@ -787,6 +822,7 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
             "summary": "Scatter operation.",
         },
         {
+            "name": "gather",
             "class_name": "GatherOp",
             "api_path": "stablehlo.gather",
             "operands": [
@@ -795,7 +831,11 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
             ],
             "results": [{"name": "result", "type": "tensor"}],
             "attributes": [
-                {"name": "dimension_numbers", "type": "GatherDimensionNumbersAttr"},
+                {
+                    "name": "dimension_numbers",
+                    "type": "GatherDimensionNumbersAttr",
+                    "required": True,
+                },
                 {"name": "slice_sizes", "type": "DenseIntElementsAttr"},
                 {"name": "indices_are_sorted", "type": "BoolAttr"},
             ],

@@ -1303,3 +1303,16 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
         result_types=["tensor<4xf32>"],
     )
     assert any(d.field == "traits" for d in mlir_trait_err.diagnostics)
+
+
+def test_grounding_models_cross_repo_identity() -> None:
+    """Verify Grounding models and compute_levenshtein share identity with ml_switcheroo_ir."""
+    from ml_switcheroo_ir.validation import core as ir_core
+    from ml_switcheroo_ir.validation import grounding as ir_grounding
+    from ml_ecosystem_snapshots.grounding import engine as snap_engine
+    from ml_ecosystem_snapshots.grounding import models as snap_models
+
+    assert snap_models.DiagnosticSeverity is ir_grounding.DiagnosticSeverity
+    assert snap_models.GroundingDiagnostic is ir_grounding.GroundingDiagnostic
+    assert snap_models.GroundingReport is ir_grounding.GroundingReport
+    assert snap_engine.compute_levenshtein is ir_core.compute_levenshtein

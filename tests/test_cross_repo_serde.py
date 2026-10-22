@@ -187,3 +187,24 @@ def test_cross_repo_dtype_coverage() -> None:
     dumped = param.model_dump()
     assert dumped["allowed_dtypes"] == all_ir_dtypes
     assert dumped["rank_constraint"] == ">=2"
+
+
+def test_hydrate_ghost_ref_minimal_custom_op_default_kind() -> None:
+    """Verify hydrate_ghost_ref defaults kind to 'function' for minimal custom op entries."""
+    minimal_entry = {
+        "name": "FlashAttention",
+        "api_path": "ml.switcheroo.custom.FlashAttention",
+    }
+    hydrated = hydrate_ghost_ref(minimal_entry)
+    assert isinstance(hydrated, ExtendedGhostRef)
+    assert hydrated.name == "FlashAttention"
+    assert hydrated.api_path == "ml.switcheroo.custom.FlashAttention"
+    assert hydrated.kind == "function"
+
+    ptx_entry = {
+        "mnemonic": "add",
+        "operands": [{"name": "d", "role": "dst"}, "src0"],
+    }
+    hydrated_ptx = hydrate_ghost_ref(ptx_entry)
+    assert isinstance(hydrated_ptx, GhostIsaRef)
+    assert len(hydrated_ptx.params) == 2

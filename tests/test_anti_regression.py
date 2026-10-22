@@ -299,7 +299,9 @@ def test_all_new_snapshots_exist_and_nonempty(tmp_path: Path) -> None:
             matching = [
                 os.path.join(snap_dir, f)
                 for f in os.listdir(snap_dir)
-                if f.startswith(f"{prefix}_") and f.endswith(".json")
+                if f.startswith(f"{prefix}_")
+                and f.endswith(".json")
+                and not f.endswith(("_ops.json", "_exhaustive.json"))
             ]
         if not matching:
             snap = extract_snapshot(prefix)

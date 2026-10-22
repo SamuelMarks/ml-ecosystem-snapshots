@@ -57,10 +57,22 @@ def hydrate_ghost_ref(
         modifiers = [str(m) for m in raw_mods] if isinstance(raw_mods, list) else []
         raw_operands = data.get("operands")
         operands_list: list[list[str]] = []
-        if isinstance(raw_operands, list):
-            for sig in raw_operands:
-                assert isinstance(sig, list)
-                operands_list.append([str(s) for s in sig])
+        if isinstance(raw_operands, list) and raw_operands:
+            if isinstance(raw_operands[0], list):
+                operands_list = [
+                    [str(s) for s in sig]
+                    for sig in raw_operands
+                    if isinstance(sig, list)
+                ]
+            else:
+                operands_list = [
+                    [
+                        str(op.get("type") or op.get("role") or op.get("name") or "op")
+                        if isinstance(op, dict)
+                        else str(op)
+                        for op in raw_operands
+                    ]
+                ]
         max_sig: list[str] = []
         for sig in operands_list:
             if len(sig) > len(max_sig):
@@ -232,6 +244,11 @@ def hydrate_ghost_ref(
 
     data_copy = dict(data)
     data_copy["schema_version"] = "2.0.0"
+    if (
+        isinstance(data_copy.get("name"), str)
+        or isinstance(data_copy.get("api_path"), str)
+    ) and "kind" not in data_copy:
+        data_copy["kind"] = "function"
 
     try:
         if "params" in data_copy and isinstance(data_copy["params"], list):

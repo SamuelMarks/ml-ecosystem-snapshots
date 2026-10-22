@@ -212,6 +212,16 @@ def test_resolve_snapshot_path_from_cwd_snapshots(tmp_path: Path) -> None:
             "ml_ecosystem_snapshots.cli.__file__",
             "/nonexistent/cli.py",
         ),
+        patch(
+            "ml_ecosystem_snapshots.index.get_cache_dir",
+            return_value=str(tmp_path / "empty_cache"),
+        ),
+        patch(
+            "ml_ecosystem_snapshots.network_env.get_custom_snapshots_paths",
+            return_value=[],
+        ),
     ):
         resolved = resolve_snapshot_path("custom_v1.0.0.json")
         assert resolved == str(target_file)
+        resolved_prefix = resolve_snapshot_path("custom")
+        assert resolved_prefix == str(target_file)

@@ -33,7 +33,7 @@ def test_ir_collect_api_all_categories() -> None:
     """Test ir_mod.collect_api across supported and unsupported categories."""
     # Supported categories
     refs_array = ir_mod.collect_api(SemanticTier.ARRAY_API)
-    assert len(refs_array) == 15
+    assert len(refs_array) == 47
     names = {r.name for r in refs_array}
     assert "LogicalGraph" in names
     assert "LogicalNode" in names
@@ -42,10 +42,10 @@ def test_ir_collect_api_all_categories() -> None:
     assert "topological_sort" in names
 
     refs_neural = ir_mod.collect_api(SemanticTier.NEURAL, include_nonpublic=True)
-    assert len(refs_neural) == 15
+    assert len(refs_neural) == 47
 
     refs_util = ir_mod.collect_api(SemanticTier.UTIL)
-    assert len(refs_util) == 15
+    assert len(refs_util) == 47
 
     # Unsupported category triggers empty return
     refs_loss = ir_mod.collect_api(SemanticTier.LOSS)

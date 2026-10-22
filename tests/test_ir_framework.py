@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import inspect
 import pytest
 
+import ml_switcheroo_ir as ir
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier, SnapshotEnvelope
 from ml_ecosystem_snapshots.api import (
     extract_snapshot,
@@ -17,24 +19,59 @@ def test_collect_api_categories() -> None:
     """Test collect_api returns all expected IR symbols for supported semantic tiers."""
     for tier in (SemanticTier.ARRAY_API, SemanticTier.NEURAL, SemanticTier.UTIL):
         refs: list[GhostRef] = collect_api(tier)
-        assert len(refs) == 15
+        assert len(refs) == 47
 
         names = {ref.name for ref in refs}
-        assert "LogicalGraph" in names
-        assert "LogicalNode" in names
-        assert "TensorSpec" in names
-        assert "TensorShape" in names
-        assert "LogicalEdge" in names
-        assert "LogicalMesh" in names
-        assert "LogicalAxis" in names
-        assert "PartitionSpec" in names
-        assert "NodeDict" in names
-        assert "DType" in names
-        assert "eliminate_dead_nodes" in names
-        assert "eliminate_common_subexpressions" in names
-        assert "propagate_shapes_and_constants" in names
-        assert "estimate_graph_communication_volume" in names
-        assert "topological_sort" in names
+        expected_symbols = {
+            "LogicalGraph",
+            "LogicalNode",
+            "TensorSpec",
+            "TensorShape",
+            "LogicalEdge",
+            "LogicalMesh",
+            "LogicalAxis",
+            "PartitionSpec",
+            "NodeDict",
+            "DType",
+            "EdgeList",
+            "ZeroTangent",
+            "NoTangent",
+            "SymInt",
+            "SymVar",
+            "SymConst",
+            "SymBinaryOp",
+            "SymUnaryOp",
+            "SymPiecewise",
+            "WebRTCSignalingTopology",
+            "WebRTCPeerConfig",
+            "PipelineTopologyConfig",
+            "MicrobatchSplittingConfig",
+            "MeshMappingConfig",
+            "StageCommunicationConfig",
+            "DependencyConfig",
+            "PipelineScheduleConfig",
+            "SchedulePhaseConfig",
+            "SymbolicSolver",
+            "SymbolicConstraintTracker",
+            "ShapeTracker",
+            "ParameterTranslationEngine",
+            "eliminate_dead_nodes",
+            "eliminate_common_subexpressions",
+            "propagate_shapes_and_constants",
+            "estimate_communication_volume",
+            "estimate_graph_communication_volume",
+            "topological_sort",
+            "export_to_python",
+            "export_schemas",
+            "get_json_schema",
+            "generate_typescript_definitions",
+            "get_abstract_op",
+            "broadcast_shapes",
+            "broadcast_dimension",
+            "matmul_shape",
+            "normalize_axis",
+        }
+        assert names == expected_symbols
 
 
 def test_collect_api_unsupported_category() -> None:
@@ -62,6 +99,7 @@ def test_ir_symbol_signatures_and_annotations() -> None:
     assert edge_ref.kind == "class"
     edge_params = {p.name: p for p in edge_ref.params}
     assert edge_params["source_idx"].default == "0"
+    assert edge_params["source_idx"].annotation == "int | None"
     assert edge_params["target_idx"].default == "0"
     assert edge_params["value_name"].default == "None"
 
@@ -71,6 +109,30 @@ def test_ir_symbol_signatures_and_annotations() -> None:
     assert topo_ref.returns_type == "list[LogicalNode]"
     topo_params = {p.name: p for p in topo_ref.params}
     assert topo_params["strict"].default == "False"
+
+
+def test_ir_live_signature_reflection_parity() -> None:
+    """Verify every extracted GhostRef in frameworks/ir.py matches live ml_switcheroo_ir signatures."""
+    refs = collect_api(SemanticTier.NEURAL)
+    for ref in refs:
+        assert hasattr(ir, ref.name), f"Missing symbol {ref.name} in ml_switcheroo_ir"
+        obj = getattr(ir, ref.name)
+        if ref.name == "DType":
+            continue
+        sig = inspect.signature(obj)
+        live_params = list(sig.parameters.values())
+        assert [p.name for p in ref.params] == [
+            p.name for p in live_params
+        ], f"Parameter name mismatch for {ref.name}"
+        for ghost_p, live_p in zip(ref.params, live_params):
+            assert (
+                ghost_p.kind.value == live_p.kind.name
+            ), f"Parameter kind mismatch on {ref.name}.{ghost_p.name}"
+            has_live_default = live_p.default is not inspect.Parameter.empty
+            has_ghost_default = ghost_p.default is not None
+            assert (
+                has_ghost_default == has_live_default
+            ), f"Default presence mismatch on {ref.name}.{ghost_p.name}"
 
 
 def test_extract_snapshot_ir_envelope() -> None:

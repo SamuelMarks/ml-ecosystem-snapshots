@@ -754,3 +754,18 @@ def test_validate_stablehlo_op_attributes() -> None:
         regions=non_dict_regions,
     )
     assert isinstance(errs_misc, list)
+
+
+def test_canonical_stablehlo_records_ir_compatibility() -> None:
+    """Verify _get_canonical_stablehlo_records is directly consumable by ml_switcheroo_ir.schema.stablehlo."""
+    from ml_switcheroo_ir.schema.stablehlo import parse_stablehlo_exhaustive_operations
+
+    records = stablehlo_fw._get_canonical_stablehlo_records()
+    parsed = parse_stablehlo_exhaustive_operations(records)
+    assert "dot_general" in parsed
+    assert "convolution" in parsed
+    assert "broadcast_in_dim" in parsed
+    assert "reduce" in parsed
+    conv_schema = parsed["convolution"]
+    assert conv_schema.attributes["dimension_numbers"].required is True
+    assert conv_schema.attributes["padding"].required is True
