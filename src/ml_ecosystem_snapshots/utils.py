@@ -7,8 +7,10 @@ import re
 import types
 import typing
 
-import griffe
 import pydantic
+
+if typing.TYPE_CHECKING:
+    import griffe
 
 _LOGGER = logging.getLogger(__name__)
 

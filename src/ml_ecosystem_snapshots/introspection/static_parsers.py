@@ -6,12 +6,13 @@ import logging
 import typing
 import typing_extensions
 
-import griffe
-
 from ml_ecosystem_snapshots.utils import (
     get_framework_docstring_parser,
     resolve_griffe_parser,
 )
+
+if typing.TYPE_CHECKING:
+    import griffe
 
 
 @typing.runtime_checkable
@@ -65,9 +66,13 @@ def preload_griffe_cache(frameworks: list[str] | None = None) -> None:
     for target in targets:
         if target not in _GRIFFE_CACHE:
             try:
+                import griffe as _griffe_mod
+
                 parser = resolve_griffe_parser(get_framework_docstring_parser(target))
-                loaded = griffe.load(target, docstring_parser=parser)
-                assert isinstance(loaded, (griffe.Module, griffe.Object, griffe.Alias))
+                loaded = _griffe_mod.load(target, docstring_parser=parser)
+                assert isinstance(
+                    loaded, (_griffe_mod.Module, _griffe_mod.Object, _griffe_mod.Alias)
+                )
                 _GRIFFE_CACHE[target] = loaded
             except Exception:
                 pass

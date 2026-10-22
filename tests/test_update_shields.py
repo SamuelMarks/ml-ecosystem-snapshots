@@ -171,7 +171,7 @@ def test_main(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
     try:
         main()
         content = readme_path.read_text()
-        assert "tests-100%25-brightgreen.svg" in content
+        assert "test%20coverage-100%25-brightgreen.svg" in content
         assert "docs-100%25-brightgreen.svg" in content
     finally:
         os.chdir(orig_cwd)
@@ -191,7 +191,7 @@ def test_main_replace_existing(
 
     readme_path = tmp_path / "README.md"
     readme_path.write_text(
-        "[![License](license)]()\n[![Tests](oldtests)]()\n[![Docs](olddocs)]()\n"
+        "[![License](license)]()\n[![Test Coverage](oldtests)]()\n[![Docs](olddocs)]()\n"
     )
 
     orig_cwd = os.getcwd()
@@ -199,7 +199,7 @@ def test_main_replace_existing(
     try:
         main()
         content = readme_path.read_text()
-        assert "tests-90%25-brightgreen.svg" in content
+        assert "test%20coverage-90%25-brightgreen.svg" in content
         assert "docs-85%25-yellow.svg" in content
         assert "oldtests" not in content
         assert "olddocs" not in content
@@ -232,6 +232,6 @@ def test_update_shields_main_entrypoint(
     os.chdir(tmp_path)
     try:
         runpy.run_path(us_mod.__file__, run_name="__main__")
-        assert "tests-100%25-brightgreen.svg" in readme_path.read_text()
+        assert "test%20coverage-100%25-brightgreen.svg" in readme_path.read_text()
     finally:
         os.chdir(orig_cwd)

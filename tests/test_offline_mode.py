@@ -379,3 +379,60 @@ def test_cli_import_and_list_snapshots_without_rich(
         "Available Snapshots:" in captured.out
         or "No snapshot files found." in captured.out
     )
+
+
+def test_offline_smoke_without_griffe_or_cdd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verify CLI, MCP server, and introspection modules import and run without griffe or cdd.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+        capsys: Pytest stdout/stderr capture fixture.
+    """
+    import importlib
+    import sys
+    import ml_ecosystem_snapshots.cli as cli_mod
+    import ml_ecosystem_snapshots.cli.commands.capture as capture_mod
+    import ml_ecosystem_snapshots.introspection.inspector as inspector_mod
+    import ml_ecosystem_snapshots.introspection.static_parsers as static_parsers_mod
+    import ml_ecosystem_snapshots.mcp_server as mcp_server_mod
+    import ml_ecosystem_snapshots.utils as utils_mod
+
+    req_path = Path(__file__).resolve().parent.parent / "requirements.txt"
+    req_text = req_path.read_text(encoding="utf-8")
+    assert "griffe" in req_text
+    assert "cdd" in req_text
+
+    orig_ghost_inspector = inspector_mod.GhostInspector
+    orig_griffe_cache = static_parsers_mod._GRIFFE_CACHE
+    monkeypatch.setitem(sys.modules, "griffe", None)
+    monkeypatch.setitem(sys.modules, "cdd", None)
+
+    try:
+        reloaded_utils = importlib.reload(utils_mod)
+        reloaded_static_parsers = importlib.reload(static_parsers_mod)
+        reloaded_inspector = importlib.reload(inspector_mod)
+        reloaded_cli = importlib.reload(cli_mod)
+        reloaded_mcp = importlib.reload(mcp_server_mod)
+
+        assert reloaded_utils.resolve_griffe_parser("rest") is None
+        assert callable(reloaded_static_parsers.preload_griffe_cache)
+        assert callable(reloaded_inspector.GhostInspector.inspect)
+
+        monkeypatch.setattr(capture_mod, "_get_pkg_dir", lambda: str(tmp_path))
+        monkeypatch.setattr(sys, "argv", ["ml_ecosystem_snapshots", "list-snapshots"])
+        reloaded_cli.main()
+        captured = capsys.readouterr()
+        assert (
+            "Available Snapshots:" in captured.out
+            or "No snapshot files found." in captured.out
+        )
+        assert reloaded_mcp.check_sass_instruction("FADD")["is_valid"]
+        assert reloaded_mcp.check_rdna_instruction("v_add_f32")["is_valid"]
+        assert reloaded_mcp.check_ptx_instruction("add")["is_valid"]
+    finally:
+        setattr(static_parsers_mod, "_GRIFFE_CACHE", orig_griffe_cache)
+        setattr(inspector_mod, "_GRIFFE_CACHE", orig_griffe_cache)
+        setattr(inspector_mod, "GhostInspector", orig_ghost_inspector)

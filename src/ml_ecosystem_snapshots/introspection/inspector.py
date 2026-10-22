@@ -11,7 +11,6 @@ import types
 import typing
 import typing_extensions
 
-import griffe
 from ml_switcheroo_ir.schema.ghost import (
     ExtendedGhostParam,
     ExtendedGhostRef,
@@ -21,6 +20,9 @@ from ml_switcheroo_ir.schema.ghost import (
     ParameterKind,
 )
 import pydantic
+
+if typing.TYPE_CHECKING:
+    import griffe
 
 from ml_ecosystem_snapshots.c_extension_sig import (
     CExtensionSignature,
@@ -400,10 +402,7 @@ def _extract_ast_and_griffe_node(
             if len(parts) > 1 and hasattr(current, "members"):
                 for part in parts[1:]:
                     current = getattr(current, "members")[part]
-            if isinstance(
-                current,
-                (griffe.Module, griffe.Object, griffe.Alias, GriffeNodeProtocol),
-            ):
+            if isinstance(current, GriffeNodeProtocol):
                 griffe_node = current
         except Exception:
             pass
@@ -1074,14 +1073,7 @@ class GhostInspector:
             )
             griffe_node: (
                 griffe.Module | griffe.Object | griffe.Alias | GriffeNodeProtocol | None
-            ) = (
-                obj
-                if isinstance(
-                    obj,
-                    (griffe.Module, griffe.Object, griffe.Alias, GriffeNodeProtocol),
-                )
-                else None
-            )
+            ) = obj if isinstance(obj, GriffeNodeProtocol) else None
         else:
             name = str(getattr(obj, "__name__", api_path.split(".")[-1]))
             if name == "<lambda>":
