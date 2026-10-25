@@ -1077,9 +1077,8 @@ def test_cli_main_entrypoint(
     captured = capsys.readouterr()
     assert isinstance(captured.out, str)
     assert (
-        "Available Snapshots" in captured.out
-        or "No local" in captured.out
-        or captured.out == ""
+        "Available Snapshots:" in captured.out
+        or "No snapshot files found." in captured.out
     )
 
 
