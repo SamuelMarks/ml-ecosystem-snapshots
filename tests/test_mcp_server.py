@@ -1668,7 +1668,7 @@ def test_all_14_mcp_tools_dispatch() -> None:
     """Test JSON-RPC 2.0 tools/call dispatch for all 14 newly registered check tools."""
     from ml_ecosystem_snapshots.mcp_server import handle_mcp_message
 
-    # Ensure all 25 tools are in tools/list
+    # Ensure all 29 tools are in tools/list
     tools_list_msg: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -1677,9 +1677,9 @@ def test_all_14_mcp_tools_dispatch() -> None:
     }
     resp_list = handle_mcp_message(tools_list_msg)
     tool_names = {t["name"] for t in resp_list["result"]["tools"]}
-    assert len(tool_names) == 25
+    assert len(tool_names) == 29
 
-    # Test tools/call dispatch for all 14 tools
+    # Test tools/call dispatch for all domain check tools
     test_calls: list[tuple[str, dict[str, JsonValue]]] = [
         ("check_wgsl_op", {"op_name": "workgroupBarrier"}),
         ("check_onnx_op", {"op_name": "MatMul"}),
@@ -1695,6 +1695,10 @@ def test_all_14_mcp_tools_dispatch() -> None:
         ("check_aten_op", {"op_name": "add"}),
         ("check_nccl_op", {"op_name": "all_reduce"}),
         ("check_flash_attention_op", {"op_name": "flash_attn_func"}),
+        ("check_chex_op", {"op_name": "assert_shape"}),
+        ("check_grain_op", {"op_name": "DataLoader"}),
+        ("check_orbax_op", {"op_name": "CheckpointManager"}),
+        ("check_optax_op", {"op_name": "adam"}),
     ]
 
     for tool_name, args in test_calls:

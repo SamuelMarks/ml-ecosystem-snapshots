@@ -33,6 +33,8 @@ all_frameworks = [
     "dask",
     "flax_nnx",
     "deepspeed",
+    "chex",
+    "grain",
     "optax",
     "orbax_checkpoint",
     "huggingface",

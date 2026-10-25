@@ -349,6 +349,50 @@ def _load_flash_attn() -> typing.Sequence[DomainOpRecord]:
     return list(CANONICAL_FLASH_ATTN_OPS)
 
 
+def _load_chex() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical Chex operations.
+
+    Returns:
+        List of canonical Chex operation specifications.
+    """
+    from ml_ecosystem_snapshots.frameworks.chex import CANONICAL_CHEX_OPS
+
+    return list(CANONICAL_CHEX_OPS)
+
+
+def _load_grain() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical Grain operations.
+
+    Returns:
+        List of canonical Grain operation specifications.
+    """
+    from ml_ecosystem_snapshots.frameworks.grain import CANONICAL_GRAIN_OPS
+
+    return list(CANONICAL_GRAIN_OPS)
+
+
+def _load_orbax() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical Orbax Checkpoint and Export operations.
+
+    Returns:
+        List of canonical Orbax operation specifications.
+    """
+    from ml_ecosystem_snapshots.frameworks.orbax_checkpoint import CANONICAL_ORBAX_OPS
+
+    return list(CANONICAL_ORBAX_OPS)
+
+
+def _load_optax() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical Optax operations.
+
+    Returns:
+        List of canonical Optax operation specifications.
+    """
+    from ml_ecosystem_snapshots.frameworks.optax import CANONICAL_OPTAX_OPS
+
+    return list(CANONICAL_OPTAX_OPS)
+
+
 DOMAIN_OP_CONFIGS: dict[str, DomainOpCheckConfig] = {
     "wgsl": DomainOpCheckConfig(
         tool_name="check_wgsl_op",
@@ -575,6 +619,91 @@ DOMAIN_OP_CONFIGS: dict[str, DomainOpCheckConfig] = {
         op_arg_description="Attention kernel API name (e.g. 'flash_attn_func', 'flash_attn_varlen_func').",
         count_arg_description="Optional positional arguments count.",
         attr_arg_description="Optional keyword arguments.",
+    ),
+    "chex": DomainOpCheckConfig(
+        tool_name="check_chex_op",
+        display_name="Chex",
+        op_label="Operation",
+        unknown_label="Chex operation",
+        key_field="name",
+        prefixes=("chex.",),
+        split_last_dot=True,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_chex,
+        tool_description="Validate Google DeepMind Chex assertion, dataclass, fake context, and test variant APIs.",
+        op_arg_description="Chex API name (e.g. 'assert_shape', 'assert_trees_all_close', 'dataclass').",
+        count_arg_description="Optional positional arguments count.",
+        attr_arg_description="Optional keyword arguments (e.g. ['custom_message', 'rtol', 'atol']).",
+    ),
+    "grain": DomainOpCheckConfig(
+        tool_name="check_grain_op",
+        display_name="Grain",
+        op_label="Operation",
+        unknown_label="Grain operation",
+        key_field="name",
+        prefixes=("grain.python.", "grain.experimental.", "grain."),
+        split_last_dot=True,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_grain,
+        tool_description="Validate Google PyGrain (`grain` / `grain.python`) data loader, dataset, sampler, and transformation APIs.",
+        op_arg_description="Grain API name (e.g. 'DataLoader', 'MapDataset', 'IndexSampler').",
+        count_arg_description="Optional positional arguments count.",
+        attr_arg_description="Optional keyword arguments (e.g. ['data_source', 'sampler', 'worker_count']).",
+    ),
+    "orbax": DomainOpCheckConfig(
+        tool_name="check_orbax_op",
+        display_name="Orbax",
+        op_label="Operation",
+        unknown_label="Orbax operation",
+        key_field="name",
+        prefixes=(
+            "orbax.checkpoint.args.",
+            "orbax.checkpoint.handlers.",
+            "orbax.checkpoint.checkpoint_utils.",
+            "orbax.checkpoint.msgpack_utils.",
+            "orbax.checkpoint.v1.",
+            "orbax.checkpoint.",
+            "orbax.export.",
+            "orbax.",
+            "ocp.args.",
+            "ocp.",
+        ),
+        split_last_dot=True,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_orbax,
+        tool_description="Validate Orbax Checkpoint and Orbax Export manager, handler, and save/restore argument APIs.",
+        op_arg_description="Orbax API name (e.g. 'CheckpointManager', 'PyTreeCheckpointer', 'ExportManager').",
+        count_arg_description="Optional positional arguments count.",
+        attr_arg_description="Optional keyword arguments (e.g. ['directory', 'options', 'max_to_keep']).",
+    ),
+    "optax": DomainOpCheckConfig(
+        tool_name="check_optax_op",
+        display_name="Optax",
+        op_label="Operation",
+        unknown_label="Optax operation",
+        key_field="name",
+        prefixes=(
+            "optax.losses.",
+            "optax.schedules.",
+            "optax.projections.",
+            "optax.tree_utils.",
+            "optax.second_order.",
+            "optax.assignment.",
+            "optax.perturbations.",
+            "optax.contrib.",
+            "optax.",
+        ),
+        split_last_dot=True,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_optax,
+        tool_description="Validate Optax optimizers, gradient transformations, losses, schedules, and update utilities.",
+        op_arg_description="Optax API name (e.g. 'adam', 'adamw', 'chain', 'softmax_cross_entropy', 'apply_updates').",
+        count_arg_description="Optional positional arguments count.",
+        attr_arg_description="Optional keyword arguments (e.g. ['learning_rate', 'b1', 'b2', 'weight_decay']).",
     ),
 }
 
@@ -907,6 +1036,98 @@ def check_flash_attention_op(
     )
 
 
+def check_chex_op(
+    op_name: str,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
+) -> DomainOpCheckResult:
+    """Validate a Chex assertion, dataclass, or testing operation against grounded specification.
+
+    Args:
+        op_name: Name of the Chex operation (e.g. 'assert_shape', 'assert_trees_all_close', 'dataclass').
+        inputs_count: Optional expected number of input operands.
+        attributes: Optional list of keyword parameter names to verify.
+
+    Returns:
+        Validation report model with is_valid, expected_inputs, expected_attributes, and errors.
+    """
+    return check_domain_op_generic(
+        DOMAIN_OP_CONFIGS["chex"],
+        op_name=op_name,
+        inputs_count=inputs_count,
+        attributes=attributes,
+    )
+
+
+def check_grain_op(
+    op_name: str,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
+) -> DomainOpCheckResult:
+    """Validate a Grain (`grain` / `grain.python`) operation against grounded specification.
+
+    Args:
+        op_name: Name of the Grain operation (e.g. 'DataLoader', 'MapDataset', 'IndexSampler').
+        inputs_count: Optional expected number of input operands.
+        attributes: Optional list of keyword parameter names to verify.
+
+    Returns:
+        Validation report model with is_valid, expected_inputs, expected_attributes, and errors.
+    """
+    return check_domain_op_generic(
+        DOMAIN_OP_CONFIGS["grain"],
+        op_name=op_name,
+        inputs_count=inputs_count,
+        attributes=attributes,
+    )
+
+
+def check_orbax_op(
+    op_name: str,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
+) -> DomainOpCheckResult:
+    """Validate an Orbax Checkpoint or Orbax Export operation against grounded specification.
+
+    Args:
+        op_name: Name of the Orbax operation (e.g. 'CheckpointManager', 'PyTreeCheckpointer', 'ExportManager').
+        inputs_count: Optional expected number of input operands.
+        attributes: Optional list of keyword parameter names to verify.
+
+    Returns:
+        Validation report model with is_valid, expected_inputs, expected_attributes, and errors.
+    """
+    return check_domain_op_generic(
+        DOMAIN_OP_CONFIGS["orbax"],
+        op_name=op_name,
+        inputs_count=inputs_count,
+        attributes=attributes,
+    )
+
+
+def check_optax_op(
+    op_name: str,
+    inputs_count: int | None = None,
+    attributes: list[str] | None = None,
+) -> DomainOpCheckResult:
+    """Validate an Optax optimizer, loss, schedule, or utility operation against grounded specification.
+
+    Args:
+        op_name: Name of the Optax operation (e.g. 'adam', 'adamw', 'softmax_cross_entropy', 'apply_updates').
+        inputs_count: Optional expected number of input operands.
+        attributes: Optional list of keyword parameter names to verify.
+
+    Returns:
+        Validation report model with is_valid, expected_inputs, expected_attributes, and errors.
+    """
+    return check_domain_op_generic(
+        DOMAIN_OP_CONFIGS["optax"],
+        op_name=op_name,
+        inputs_count=inputs_count,
+        attributes=attributes,
+    )
+
+
 def build_domain_op_tool_schemas() -> list[dict[str, JsonValue]]:
     """Generate MCP JSON Schema tool definitions for all registered domain op verifiers.
 
@@ -961,12 +1182,16 @@ __all__ = [
     "build_domain_op_tool_schemas",
     "check_array_api_op",
     "check_aten_op",
+    "check_chex_op",
     "check_cpp_op",
     "check_domain_op_generic",
     "check_flash_attention_op",
+    "check_grain_op",
     "check_metal_op",
     "check_nccl_op",
     "check_onnx_op",
+    "check_optax_op",
+    "check_orbax_op",
     "check_safetensors_op",
     "check_scipy_op",
     "check_torchaudio_op",

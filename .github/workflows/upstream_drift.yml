@@ -30,7 +30,7 @@ jobs:
           python3 -c "
           import urllib.request, json
 
-          packages = ['torch', 'jax', 'tensorflow', 'keras', 'mlx', 'triton']
+          packages = ['torch', 'jax', 'tensorflow', 'keras', 'mlx', 'triton', 'chex', 'grain', 'optax', 'orbax-checkpoint']
           latest_versions = {}
           for pkg in packages:
               try:

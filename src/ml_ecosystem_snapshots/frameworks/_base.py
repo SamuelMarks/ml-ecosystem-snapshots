@@ -24,7 +24,35 @@ from ml_switcheroo_ir.schema.ghost import (
 import pydantic
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.static_parsers import (
+    load_griffe_module_safely,
+)
 from ml_ecosystem_snapshots.models import JsonValue, ScalarValue
+
+
+@typing.runtime_checkable
+class GriffeMemberProtocol(typing.Protocol):
+    """Structural protocol for a Griffe AST member node (`Function`, `Class`, `Attribute`, `Alias`)."""
+
+    @property
+    def is_class(self) -> bool:
+        """Return whether the member node represents a class."""
+        ...
+
+    @property
+    def is_function(self) -> bool:
+        """Return whether the member node represents a function."""
+        ...
+
+
+@typing.runtime_checkable
+class GriffeModuleMembersProtocol(typing.Protocol):
+    """Structural protocol for a Griffe `Module` or `Class` node exposing a `members` mapping."""
+
+    @property
+    def members(self) -> typing.Mapping[str, GriffeMemberProtocol]:
+        """Return mapping of member names to Griffe AST member nodes."""
+        ...
 
 
 class CanonicalParamSpec(pydantic.BaseModel):
@@ -599,4 +627,65 @@ def collect_dir_callables(
                 results.append(res)
             except Exception:
                 pass
+    return results
+
+
+def scan_griffe_module_members(
+    module_path: str,
+    api_prefix: str,
+    include_nonpublic: bool = False,
+    allowed_kinds: tuple[str, ...] = ("function", "class"),
+    block_list: set[str] | None = None,
+    environment_tags: tuple[str, ...] = ("cpu",),
+    framework_name: str | None = None,
+    inspector_fn: InspectorCallable | None = None,
+) -> list[GhostRef]:
+    """Statically scan a module via the custom Griffe fork and extract `GhostRef` items.
+
+    Args:
+        module_path: Dotted Python module path to load via Griffe (e.g. 'chex', 'optax.losses').
+        api_prefix: Canonical API prefix for emitted `GhostRef` paths.
+        include_nonpublic: Whether to include underscore-prefixed private members.
+        allowed_kinds: Tuple of allowed symbol kinds ('function', 'class').
+        block_list: Optional set of member names to skip.
+        environment_tags: Environment tags attached to each extracted `GhostRef`.
+        framework_name: Optional framework identifier for docstring parser selection.
+        inspector_fn: Optional custom inspection callable; defaults to `GhostInspector.inspect`.
+
+    Returns:
+        List of statically extracted `GhostRef` records.
+    """
+    loaded = load_griffe_module_safely(module_path, framework_name=framework_name)
+    if not isinstance(loaded, GriffeModuleMembersProtocol):
+        return []
+
+    blocked = block_list if block_list is not None else set()
+    inspect_callable = inspector_fn or GhostInspector.inspect
+    results: list[GhostRef] = []
+
+    for name, member in loaded.members.items():
+        if (not include_nonpublic and name.startswith("_")) or name in blocked:
+            continue
+        try:
+            is_cls = bool(member.is_class)
+            is_fn = bool(member.is_function)
+        except Exception:
+            continue
+
+        if ("class" in allowed_kinds and is_cls) or (
+            "function" in allowed_kinds and is_fn
+        ):
+            try:
+                ref = inspect_callable(
+                    member,
+                    f"{api_prefix}.{name}",
+                    is_public=not name.startswith("_"),
+                )
+                ref.environment_tags = list(ref.environment_tags or ()) + [
+                    t for t in environment_tags if t not in (ref.environment_tags or ())
+                ]
+                results.append(ref)
+            except Exception:
+                pass
+
     return results

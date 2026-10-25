@@ -388,3 +388,7 @@ Resolves snapshot identifiers (e.g. `torch`, `torch_v2.4.0.json`, or custom path
 | `check-rdna` | Validate AMD RDNA assembly instructions, encodings, and GFX generations |
 | `check-mlir` | Validate MLIR dialect operations and traits |
 | `check-stablehlo` | Validate StableHLO operations, dimension numbers, and block regions |
+| `check-chex` | Validate Chex assertions, dataclasses, fake contexts, and test variants |
+| `check-grain` | Validate Grain (`grain` / `grain.python`) datasets, samplers, and loaders |
+| `check-orbax` | Validate Orbax Checkpoint and Orbax Export managers, handlers, and args |
+| `check-optax` | Validate Optax optimizers, gradient transformations, losses, and schedules |

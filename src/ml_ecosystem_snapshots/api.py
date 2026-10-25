@@ -27,6 +27,9 @@ from ml_ecosystem_snapshots.models import (
     SnapshotSymbolDict,
 )
 
+if typing.TYPE_CHECKING:
+    import griffe
+
 
 class CollectorFn(typing.Protocol):
     """Protocol for framework snapshot collector callables."""
@@ -151,7 +154,12 @@ _CANONICAL_COLLECTOR_SPECS: dict[str, tuple[str, str]] = {
     "webgl": ("webgl", "collect_api"),
     "cpp_runtime": ("cpp_runtime", "collect_api"),
     "cpp": ("cpp_runtime", "collect_api"),
+    "chex": ("chex", "collect_api"),
+    "grain": ("grain", "collect_api"),
+    "pygrain": ("grain", "collect_api"),
+    "optax": ("optax", "collect_api"),
     "orbax": ("orbax_checkpoint", "collect_api"),
+    "orbax_checkpoint": ("orbax_checkpoint", "collect_api"),
     "array_api": ("array_api", "collect_api"),
     "scipy": ("scipy", "collect_api"),
     "torchvision": ("torchvision", "collect_api"),
@@ -216,11 +224,100 @@ _PKG_NAME_ALIASES: dict[str, str] = {
     "sklearn": "scikit-learn",
     "pytorch": "torch",
     "pax": "paxml",
+    "chex": "chex",
+    "grain": "grain",
+    "pygrain": "grain",
     "optax": "optax",
     "huggingface": "transformers",
     "orbax_checkpoint": "orbax-checkpoint",
     "orbax": "orbax-checkpoint",
 }
+
+_FALLBACK_PKG_VERSIONS: dict[str, tuple[str, str]] = {
+    "chex": ("chex", "0.1.87"),
+    "grain": ("grain", "0.2.2"),
+    "optax": ("optax", "0.2.3"),
+    "orbax-checkpoint": ("orbax.checkpoint", "0.6.4"),
+}
+
+
+@typing.runtime_checkable
+class _GriffeValueMemberProto(typing.Protocol):
+    """Protocol for a Griffe Attribute node exposing a read-only `value` property."""
+
+    @property
+    def value(self) -> str | int | None:
+        """Return the raw attribute value."""
+        ...
+
+
+@typing.runtime_checkable
+class _GriffeAliasMemberProto(typing.Protocol):
+    """Protocol for a Griffe Alias node exposing a read-only `target` property."""
+
+    @property
+    def target(self) -> _GriffeValueMemberProto | None:
+        """Return the resolved alias target."""
+        ...
+
+
+@typing.runtime_checkable
+class _GriffeVersionModuleProto(typing.Protocol):
+    """Protocol for a Griffe Module node exposing `members` for `__version__` lookup."""
+
+    @property
+    def members(
+        self,
+    ) -> typing.Mapping[
+        str,
+        griffe.Object
+        | griffe.Alias
+        | _GriffeAliasMemberProto
+        | _GriffeValueMemberProto
+        | None,
+    ]:
+        """Return module members mapping."""
+        ...
+
+
+def _extract_version_with_griffe(module_name: str) -> str | None:
+    """Extract `__version__` statically from a module using the custom Griffe fork.
+
+    Args:
+        module_name: Dotted module name to inspect (e.g. 'keras', 'chex', 'optax').
+
+    Returns:
+        Extracted version string with quotes stripped, or `None` if unavailable.
+    """
+    try:
+        import griffe as _griffe_mod
+
+        loaded: (
+            _GriffeVersionModuleProto
+            | griffe.Module
+            | griffe.Object
+            | griffe.Alias
+            | str
+        ) = _griffe_mod.load(module_name)
+        if isinstance(loaded, _GriffeVersionModuleProto):
+            ver = loaded.members.get("__version__")
+            if isinstance(ver, _GriffeAliasMemberProto):
+                target = ver.target
+                val = (
+                    target.value
+                    if isinstance(target, _GriffeValueMemberProto)
+                    else None
+                )
+            elif isinstance(ver, _GriffeValueMemberProto):
+                val = ver.value
+            else:
+                val = None
+            if val is not None:
+                return str(val).strip("'\"")
+    except Exception:
+        pass
+    return None
+
 
 _STATIC_SPEC_VERSIONS: dict[str, str] = {
     "wgsl": "draft-2024",
@@ -302,20 +399,9 @@ def get_pkg_version(package_name: str) -> str:
             try:
                 return importlib.metadata.version("keras")
             except Exception:
-                try:
-                    import griffe
-
-                    k = griffe.load("keras")
-                    ver = k.members.get("__version__")
-                    if ver:
-                        if hasattr(ver, "target"):
-                            val = getattr(getattr(ver, "target", None), "value", None)
-                        else:
-                            val = getattr(ver, "value", None)
-                        if val is not None:
-                            return str(val).strip("'\"")
-                except Exception:
-                    pass
+                griffe_ver = _extract_version_with_griffe("keras")
+                if griffe_ver is not None:
+                    return griffe_ver
         elif package_name == "cupy":
             try:
                 import cupy
@@ -369,6 +455,10 @@ def get_pkg_version(package_name: str) -> str:
 
         return importlib.metadata.version(package_name)
     except Exception:
+        if package_name in _FALLBACK_PKG_VERSIONS:
+            griffe_mod, fallback_ver = _FALLBACK_PKG_VERSIONS[package_name]
+            extracted = _extract_version_with_griffe(griffe_mod)
+            return extracted if extracted is not None else fallback_ver
         return "unknown"
 
 

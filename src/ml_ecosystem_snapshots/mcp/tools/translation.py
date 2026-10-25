@@ -213,6 +213,20 @@ DEFAULT_CONCEPT_MAP: dict[str, JsonValue] = {
         "jax": ["jax.nn.softmax"],
         "tensorflow": ["tf.nn.softmax"],
     },
+    "adam_optimizer": {
+        "torch": ["torch.optim.Adam", "torch.optim.AdamW"],
+        "optax": ["optax.adam", "optax.adamw"],
+        "keras": ["keras.optimizers.Adam", "keras.optimizers.AdamW"],
+    },
+    "assert_allclose": {
+        "torch": ["torch.testing.assert_close"],
+        "chex": ["chex.assert_trees_all_close"],
+        "numpy": ["numpy.testing.assert_allclose"],
+    },
+    "data_loader": {
+        "torch": ["torch.utils.data.DataLoader"],
+        "grain": ["grain.DataLoader", "grain.python.DataLoader"],
+    },
     "_parameter_translations": {
         "matmul": {
             "roles": {
@@ -314,6 +328,60 @@ DEFAULT_CONCEPT_MAP: dict[str, JsonValue] = {
                     "tensorflow": ["epsilon"],
                     "tf": ["epsilon"],
                     "stablehlo": ["epsilon"],
+                },
+            },
+        },
+        "adam_optimizer": {
+            "roles": {
+                "learning_rate": {
+                    "torch": ["lr"],
+                    "optax": ["learning_rate"],
+                    "keras": ["learning_rate"],
+                },
+                "epsilon": {
+                    "torch": ["eps"],
+                    "optax": ["eps"],
+                    "keras": ["epsilon"],
+                },
+                "weight_decay": {
+                    "torch": ["weight_decay"],
+                    "optax": ["weight_decay"],
+                    "keras": ["weight_decay"],
+                },
+            },
+        },
+        "assert_allclose": {
+            "roles": {
+                "rtol": {
+                    "torch": ["rtol"],
+                    "chex": ["rtol"],
+                    "numpy": ["rtol"],
+                },
+                "atol": {
+                    "torch": ["atol"],
+                    "chex": ["atol"],
+                    "numpy": ["atol"],
+                },
+                "message": {
+                    "torch": ["msg"],
+                    "chex": ["custom_message"],
+                    "numpy": ["err_msg"],
+                },
+            },
+        },
+        "data_loader": {
+            "roles": {
+                "data_source": {
+                    "torch": ["dataset"],
+                    "grain": ["data_source"],
+                },
+                "sampler": {
+                    "torch": ["sampler"],
+                    "grain": ["sampler"],
+                },
+                "workers": {
+                    "torch": ["num_workers"],
+                    "grain": ["worker_count"],
                 },
             },
         },

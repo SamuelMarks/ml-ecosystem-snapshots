@@ -834,6 +834,64 @@ def explain_anti_pattern(
                 "example": f"{api_path}(..., keepdims=True)",
             },
         },
+        "optax": {
+            "lr": {
+                "canonical": "learning_rate",
+                "explanation": "Optax optimizers standardize the step size parameter as 'learning_rate' rather than PyTorch's 'lr'.",
+                "example": f"{api_path}(learning_rate=1e-3)",
+            },
+            "betas": {
+                "canonical": "b1, b2",
+                "explanation": "Optax momentum optimizers accept separate scalar arguments 'b1' and 'b2' instead of PyTorch's 'betas=(b1, b2)' tuple.",
+                "example": f"{api_path}(learning_rate=1e-3, b1=0.9, b2=0.999)",
+            },
+            "epsilon": {
+                "canonical": "eps",
+                "explanation": "Optax optimizers use 'eps' for numerical stability rather than 'epsilon'.",
+                "example": f"{api_path}(learning_rate=1e-3, eps=1e-8)",
+            },
+        },
+        "chex": {
+            "msg": {
+                "canonical": "custom_message",
+                "explanation": "Chex assertions accept 'custom_message' (keyword-only) rather than 'msg' or 'err_msg'.",
+                "example": f"{api_path}(..., custom_message='Shape mismatch')",
+            },
+            "message": {
+                "canonical": "custom_message",
+                "explanation": "Chex assertions accept 'custom_message' (keyword-only) rather than 'message'.",
+                "example": f"{api_path}(..., custom_message='Assertion failed')",
+            },
+            "shapes": {
+                "canonical": "expected_shapes",
+                "explanation": "chex.assert_shape uses 'expected_shapes' rather than 'shapes' or 'shape'.",
+                "example": f"{api_path}(inputs, expected_shapes=(2, 3))",
+            },
+        },
+        "grain": {
+            "dataset": {
+                "canonical": "data_source",
+                "explanation": "grain.DataLoader takes 'data_source' (a RandomAccessDataSource) and 'sampler' as keyword-only arguments rather than PyTorch's 'dataset'.",
+                "example": f"{api_path}(data_source=source, sampler=sampler, worker_count=4)",
+            },
+            "num_workers": {
+                "canonical": "worker_count",
+                "explanation": "grain.DataLoader uses 'worker_count' rather than PyTorch's 'num_workers'.",
+                "example": f"{api_path}(data_source=source, sampler=sampler, worker_count=4)",
+            },
+        },
+        "orbax": {
+            "max_checkpoints": {
+                "canonical": "max_to_keep",
+                "explanation": "orbax.checkpoint.CheckpointManagerOptions uses 'max_to_keep' rather than 'max_checkpoints' or 'keep_last_n'.",
+                "example": f"{api_path}(max_to_keep=5, save_interval_steps=100)",
+            },
+            "keep_last_n": {
+                "canonical": "max_to_keep",
+                "explanation": "orbax.checkpoint.CheckpointManagerOptions uses 'max_to_keep' to control checkpoint retention.",
+                "example": f"{api_path}(max_to_keep=5)",
+            },
+        },
     }
 
     fw_rules = known_migrations.get(clean_fw, {})
@@ -993,6 +1051,17 @@ def check_code_block(
                         api_name = f"torch.{api_name}"
                     elif api_name.startswith("stablehlo."):
                         fw = "stablehlo"
+                    elif api_name.startswith("chex."):
+                        fw = "chex"
+                    elif api_name.startswith("grain."):
+                        fw = "grain"
+                    elif api_name.startswith("orbax."):
+                        fw = "orbax"
+                    elif api_name.startswith("ocp."):
+                        fw = "orbax"
+                        api_name = f"orbax.checkpoint.{api_name[len('ocp.') :]}"
+                    elif api_name.startswith("optax."):
+                        fw = "optax"
 
                 if not fw:
                     continue

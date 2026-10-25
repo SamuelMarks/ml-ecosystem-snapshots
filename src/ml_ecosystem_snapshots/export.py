@@ -685,6 +685,21 @@ COMMON_HALLUCINATION_GUARDS: dict[str, list[str]] = {
         "Verify DotDimensionNumbers contracting dimensions against input operand ranks.",
         "Broadcast dimensions length in 'stablehlo.broadcast_in_dim' must equal input rank.",
     ],
+    "chex": [
+        "Pass 'custom_message' (keyword-only) rather than 'msg' or 'message' to Chex assertions.",
+        "Pass 'expected_shapes' to 'chex.assert_shape' and 'expected_ranks' to 'chex.assert_rank'.",
+    ],
+    "grain": [
+        "Pass 'data_source', 'sampler', and 'worker_count' as keyword arguments to 'grain.DataLoader' rather than PyTorch's 'dataset' or 'num_workers'.",
+    ],
+    "orbax": [
+        "Use 'max_to_keep' in 'orbax.checkpoint.CheckpointManagerOptions' rather than 'max_checkpoints' or 'keep_last_n'.",
+        "Wrap saved/restored PyTrees in 'orbax.checkpoint.args.StandardSave' / 'StandardRestore' or 'PyTreeSave' / 'PyTreeRestore'.",
+    ],
+    "optax": [
+        "Pass 'learning_rate' rather than 'lr' to Optax optimizers ('optax.adam', 'optax.adamw', 'optax.sgd').",
+        "Pass separate 'b1' and 'b2' scalars rather than 'betas=(b1, b2)' to Optax momentum optimizers.",
+    ],
 }
 
 

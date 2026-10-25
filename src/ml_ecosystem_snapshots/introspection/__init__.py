@@ -19,7 +19,10 @@ from ml_ecosystem_snapshots.introspection.sanitize import (
     sanitize_param_default,
     sanitize_type_str,
 )
-from ml_ecosystem_snapshots.introspection.static_parsers import preload_griffe_cache
+from ml_ecosystem_snapshots.introspection.static_parsers import (
+    load_griffe_module_safely,
+    preload_griffe_cache,
+)
 from ml_ecosystem_snapshots.introspection.unwrap import unwrap_decorated_target
 
 __all__ = [
@@ -27,6 +30,7 @@ __all__ = [
     "GhostInspector",
     "extract_accepted_kwargs_from_ast",
     "extract_c_extension_signature",
+    "load_griffe_module_safely",
     "preload_griffe_cache",
     "sanitize_param_default",
     "sanitize_type_str",

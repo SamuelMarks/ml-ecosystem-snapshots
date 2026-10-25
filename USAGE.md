@@ -61,6 +61,9 @@ ml_ecosystem_snapshots capture stablehlo --out-dir ./snapshots
 
 # Capture Core MLIR dialects
 ml_ecosystem_snapshots capture mlir --out-dir ./snapshots
+
+# Capture JAX ecosystem libraries (Chex, Grain, Orbax, Optax)
+ml_ecosystem_snapshots capture chex grain orbax optax --out-dir ./snapshots
 ```
 
 ### Regenerating Exhaustive Target Catalogs

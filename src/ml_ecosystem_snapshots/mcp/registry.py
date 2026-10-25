@@ -628,6 +628,26 @@ def _build_dispatch_table() -> dict[str, ToolHandlerFn]:
             inputs_count=_as_int_or_none(a.get("inputs_count")),
             attributes=_as_str_list(a.get("attributes")),
         ),
+        "check_chex_op": lambda a: ms.check_chex_op(
+            str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
+        ),
+        "check_grain_op": lambda a: ms.check_grain_op(
+            str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
+        ),
+        "check_orbax_op": lambda a: ms.check_orbax_op(
+            str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
+        ),
+        "check_optax_op": lambda a: ms.check_optax_op(
+            str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
+        ),
     }
 
 

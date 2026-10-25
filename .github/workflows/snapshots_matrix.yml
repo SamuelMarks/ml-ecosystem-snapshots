@@ -22,6 +22,8 @@ jobs:
           - dask
           - flax_nnx
           - deepspeed
+          - chex
+          - grain
           - optax
           - orbax_checkpoint
           - huggingface
@@ -107,6 +109,8 @@ jobs:
           dask) PKGS="dask" ;;
           flax_nnx) PKGS="flax jax[cpu]" ;;
           deepspeed) PKGS="deepspeed torch numpy<2.0.0 --extra-index-url https://download.pytorch.org/whl/cpu" ;;
+          chex) PKGS="chex jax[cpu]" ;;
+          grain) PKGS="grain jax[cpu]" ;;
           optax) PKGS="optax jax[cpu]" ;;
           orbax_checkpoint) PKGS="orbax-checkpoint jax[cpu]" ;;
           huggingface) PKGS="transformers" ;;

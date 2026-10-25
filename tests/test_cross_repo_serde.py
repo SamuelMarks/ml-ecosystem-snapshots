@@ -201,7 +201,9 @@ def test_hydrate_ghost_ref_minimal_custom_op_default_kind() -> None:
     assert hydrated.api_path == "ml.switcheroo.custom.FlashAttention"
     assert hydrated.kind == "function"
 
-    ptx_entry = {
+    from ml_ecosystem_snapshots.models import JsonValue
+
+    ptx_entry: dict[str, JsonValue] = {
         "mnemonic": "add",
         "operands": [{"name": "d", "role": "dst"}, "src0"],
     }

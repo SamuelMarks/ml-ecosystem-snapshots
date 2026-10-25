@@ -237,7 +237,19 @@ def get_framework_docstring_parser(
         return "rest"
     if name_clean in ("numpy", "np"):
         return "numpy"
-    if name_clean in ("jax", "flax", "keras", "transformers", "huggingface"):
+    if name_clean in (
+        "jax",
+        "flax",
+        "keras",
+        "transformers",
+        "huggingface",
+        "chex",
+        "grain",
+        "pygrain",
+        "orbax",
+        "orbax_checkpoint",
+        "optax",
+    ):
         return "google"
 
     return "rest"

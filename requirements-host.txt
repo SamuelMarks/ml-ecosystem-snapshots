@@ -1,3 +1,5 @@
+chex
+grain
 optax
 orbax-checkpoint
 transformers

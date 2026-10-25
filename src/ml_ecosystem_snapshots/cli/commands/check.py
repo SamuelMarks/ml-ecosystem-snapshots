@@ -876,17 +876,85 @@ def cmd_check_flash_attention(args: argparse.Namespace) -> None:
     )
 
 
+def cmd_check_chex(args: argparse.Namespace) -> None:
+    """Validate Chex assertion, dataclass, or testing operation against specification.
+
+    Args:
+        args: Parsed command line arguments.
+    """
+    from ml_ecosystem_snapshots.mcp_server import check_chex_op
+
+    _run_domain_op_check_cli(
+        args,
+        check_chex_op,
+        "Chex Operation",
+        invalid_format="is invalid:",
+    )
+
+
+def cmd_check_grain(args: argparse.Namespace) -> None:
+    """Validate Grain (`grain` / `grain.python`) operation against specification.
+
+    Args:
+        args: Parsed command line arguments.
+    """
+    from ml_ecosystem_snapshots.mcp_server import check_grain_op
+
+    _run_domain_op_check_cli(
+        args,
+        check_grain_op,
+        "Grain Operation",
+        invalid_format="is invalid:",
+    )
+
+
+def cmd_check_orbax(args: argparse.Namespace) -> None:
+    """Validate Orbax Checkpoint or Export operation against specification.
+
+    Args:
+        args: Parsed command line arguments.
+    """
+    from ml_ecosystem_snapshots.mcp_server import check_orbax_op
+
+    _run_domain_op_check_cli(
+        args,
+        check_orbax_op,
+        "Orbax Operation",
+        invalid_format="is invalid:",
+    )
+
+
+def cmd_check_optax(args: argparse.Namespace) -> None:
+    """Validate Optax optimizer, loss, schedule, or utility operation against specification.
+
+    Args:
+        args: Parsed command line arguments.
+    """
+    from ml_ecosystem_snapshots.mcp_server import check_optax_op
+
+    _run_domain_op_check_cli(
+        args,
+        check_optax_op,
+        "Optax Operation",
+        invalid_format="is invalid:",
+    )
+
+
 __all__ = [
     "_run_domain_op_check_cli",
     "cmd_check",
     "cmd_check_array_api",
     "cmd_check_aten",
+    "cmd_check_chex",
     "cmd_check_cpp",
     "cmd_check_flash_attention",
+    "cmd_check_grain",
     "cmd_check_metal",
     "cmd_check_mlir",
     "cmd_check_nccl",
     "cmd_check_onnx",
+    "cmd_check_optax",
+    "cmd_check_orbax",
     "cmd_check_ptx",
     "cmd_check_rdna",
     "cmd_check_safetensors",
