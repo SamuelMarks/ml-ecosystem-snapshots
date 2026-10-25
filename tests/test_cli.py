@@ -52,7 +52,6 @@ def test_cli_capture(
 
     captured = capsys.readouterr()
     assert "Saved snapshot to test_out/torch_v1.0.json" in captured.out
-    assert "Saved snapshot to test_out/torch_v1.0.json" in captured.out
     assert "Skipping jax, not installed" in captured.out
 
 
@@ -1076,7 +1075,12 @@ def test_cli_main_entrypoint(
     res = runpy.run_path(cli.__file__, run_name="__main__")
     assert "main" in res
     captured = capsys.readouterr()
-    assert len(captured.out) >= 0
+    assert isinstance(captured.out, str)
+    assert (
+        "Available Snapshots" in captured.out
+        or "No local" in captured.out
+        or captured.out == ""
+    )
 
 
 def test_cli_check_ptx_and_new_export_formats(

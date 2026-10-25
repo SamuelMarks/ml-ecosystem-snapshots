@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, MutableSequence
 import re
 import typing
 import typing_extensions
@@ -11,39 +10,12 @@ import typing_extensions
 import pydantic
 
 from ml_ecosystem_snapshots.exceptions import CExtensionSignatureError
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    InspectableTarget,
+    read_runtime_attr,
+)
 
 RawParamTuple: typing_extensions.TypeAlias = tuple[str, str, "str | None", "str | None"]
-
-
-class IndexSlice(typing.Protocol):
-    """Structural protocol representing a slice index without generic Any variance."""
-
-    @property
-    def start(self) -> int | None:
-        """Return slice start index.
-
-        Returns:
-            Start index or None.
-        """
-        ...
-
-    @property
-    def stop(self) -> int | None:
-        """Return slice stop index.
-
-        Returns:
-            Stop index or None.
-        """
-        ...
-
-    @property
-    def step(self) -> int | None:
-        """Return slice step stride.
-
-        Returns:
-            Step stride or None.
-        """
-        ...
 
 
 class ParsedParamTuple(pydantic.BaseModel):
@@ -156,94 +128,16 @@ class CExtensionSignature(pydantic.BaseModel):
         """
         return len(self.params)
 
-    @typing.overload
-    def __getitem__(self, index: int) -> ParsedParamTuple: ...
-
-    @typing.overload
-    def __getitem__(
-        self, index: IndexSlice
-    ) -> MutableSequence[ParsedParamTuple | RawParamTuple]: ...
-
-    def __getitem__(
-        self, index: int | IndexSlice
-    ) -> ParsedParamTuple | MutableSequence[ParsedParamTuple | RawParamTuple]:
-        """Retrieve a parameter tuple or slice of parameter tuples.
+    def __getitem__(self, index: int) -> ParsedParamTuple:
+        """Retrieve a parameter tuple by integer index.
 
         Args:
-            index: Integer index or slice.
+            index: Integer index.
 
         Returns:
-            Single `ParsedParamTuple` or list of `ParsedParamTuple` items.
+            Single `ParsedParamTuple` item.
         """
-        if isinstance(index, int):
-            return self.params[index]
-        res_slice: list[ParsedParamTuple | RawParamTuple] = list(
-            self.params[slice(index.start, index.stop, index.step)]
-        )
-        return res_slice
-
-    @typing.overload
-    def __setitem__(
-        self,
-        index: int,
-        value: ParsedParamTuple | RawParamTuple,
-    ) -> None: ...
-
-    @typing.overload
-    def __setitem__(
-        self,
-        index: IndexSlice,
-        value: Iterable[ParsedParamTuple | RawParamTuple],
-    ) -> None: ...
-
-    def __setitem__(
-        self,
-        index: int | IndexSlice,
-        value: (
-            ParsedParamTuple
-            | RawParamTuple
-            | Iterable[ParsedParamTuple | RawParamTuple]
-        ),
-    ) -> None:
-        """Assign a parameter tuple or slice of parameter tuples.
-
-        Args:
-            index: Integer index or slice.
-            value: Replacement tuple or sequence of tuples.
-        """
-        if isinstance(index, int):
-            assert isinstance(value, (ParsedParamTuple, tuple))
-            self.params[index] = _to_parsed_param_tuple(value)
-        else:
-            assert not isinstance(value, (ParsedParamTuple, tuple))
-            self.params[slice(index.start, index.stop, index.step)] = [
-                _to_parsed_param_tuple(item) for item in value
-            ]
-
-    def __delitem__(self, index: int | IndexSlice) -> None:
-        """Remove a parameter tuple or slice of parameter tuples.
-
-        Args:
-            index: Integer index or slice to delete.
-        """
-        del self.params[
-            index
-            if isinstance(index, int)
-            else slice(index.start, index.stop, index.step)
-        ]
-
-    def insert(
-        self,
-        index: int,
-        value: ParsedParamTuple | RawParamTuple,
-    ) -> None:
-        """Insert a parameter tuple at `index`.
-
-        Args:
-            index: Target insertion index.
-            value: Parameter tuple to insert.
-        """
-        self.params.insert(index, _to_parsed_param_tuple(value))
+        return self.params[index]
 
     def iter_params(self) -> typing.Iterator[ParsedParamTuple]:
         """Iterate over the parameter tuples.
@@ -253,11 +147,18 @@ class CExtensionSignature(pydantic.BaseModel):
         """
         return iter(self.params)
 
-    def __eq__(self, other: object) -> bool:
+    def __eq__(
+        self,
+        other: (
+            CExtensionSignature
+            | typing.Sequence[ParsedParamTuple | RawParamTuple]
+            | InspectableTarget
+        ),
+    ) -> bool:
         """Compare equality against another `CExtensionSignature` or `list` of tuples.
 
         Args:
-            other: Object to compare with.
+            other: Signature or sequence to compare with.
 
         Returns:
             True if parameter sequences are equal, False otherwise.
@@ -473,19 +374,19 @@ def _parse_c_extension_sig_str(
 
 
 def extract_c_extension_signature(
-    target: object, target_name: str
+    target: InspectableTarget, target_name: str
 ) -> CExtensionSignature | None:
     """Extract signature parameters from C-extension / PyBind11 docstrings.
 
     Args:
-        target: The callable object to inspect.
+        target: The callable target to inspect.
         target_name: The name of the callable.
 
     Returns:
         A CExtensionSignature sequence of parameter tuples: (name, kind, default_str, annotation_str)
         with .returns_type and .overloads populated, or None if parsing fails.
     """
-    docstring = getattr(target, "__doc__", None)
+    docstring = read_runtime_attr(target, "__doc__", None)
     if not docstring or not isinstance(docstring, str) or not docstring.strip():
         return None
 

@@ -8,9 +8,13 @@ from collections.abc import Mapping, Sequence
 from unittest.mock import patch
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.models import JsonValue
 
 
-def some_function(a: int = 1, b: str = "test", *args: object, **kwargs: object) -> None:
+def some_function(
+    a: int = 1, b: str = "test", *args: JsonValue, **kwargs: JsonValue
+) -> None:
     """Execute a sample function with typed parameters and variadic arguments.
 
     Args:
@@ -75,8 +79,8 @@ def test_ghost_inspector_cdd_docstring_import_error() -> None:
 
     def fake_import(
         name: str,
-        globals: Mapping[str, object] | None = None,
-        locals: Mapping[str, object] | None = None,
+        globals: Mapping[str, InspectableTarget] | None = None,
+        locals: Mapping[str, InspectableTarget] | None = None,
         fromlist: Sequence[str] = (),
         level: int = 0,
     ) -> types.ModuleType:

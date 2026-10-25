@@ -12,6 +12,7 @@ from ml_ecosystem_snapshots.grounding.models import (
     DiagnosticSeverity,
     GroundingReport,
 )
+from ml_ecosystem_snapshots.introspection.runtime_boundary import read_runtime_attr
 
 
 class SassControlCodeSpec(pydantic.BaseModel):
@@ -229,9 +230,11 @@ def validate_rdna_instruction(
 
     report.matched_ref = ref
     domain_meta = ref.domain_metadata or {}
-    raw_enc = getattr(ref, "encoding", None) or domain_meta.get("encoding")
+    raw_enc = read_runtime_attr(ref, "encoding", None) or domain_meta.get("encoding")
     actual_encoding = str(raw_enc) if raw_enc is not None else None
-    raw_arch = getattr(ref, "architecture", None) or domain_meta.get("architecture")
+    raw_arch = read_runtime_attr(ref, "architecture", None) or domain_meta.get(
+        "architecture"
+    )
     arch_str = str(raw_arch) if raw_arch is not None else None
     raw_supp = domain_meta.get("valid_architectures")
     supported_archs: list[str] = (

@@ -126,7 +126,7 @@ def validate_python_call(
 
     primary_cand = _normalize_candidate_dict(ref)
     candidates: list[dict[str, JsonValue]] = [primary_cand]
-    for ov in getattr(ref, "overloads", []):
+    for ov in ref.overloads or ():
         candidates.append(_normalize_candidate_dict(ov))
 
     all_param_names: set[str] = set()
@@ -213,12 +213,12 @@ def validate_python_call(
     pos_params = [
         p
         for p in ref.params
-        if "KEYWORD_ONLY" not in str(getattr(p, "kind", ""))
-        and "VAR_POSITIONAL" not in str(getattr(p, "kind", ""))
-        and "VAR_KEYWORD" not in str(getattr(p, "kind", ""))
+        if "KEYWORD_ONLY" not in str(p.kind)
+        and "VAR_POSITIONAL" not in str(p.kind)
+        and "VAR_KEYWORD" not in str(p.kind)
     ]
-    has_var_args = getattr(ref, "has_varargs", False) or any(
-        "VAR_POSITIONAL" in str(getattr(p, "kind", "")) for p in ref.params
+    has_var_args = bool(ref.has_varargs) or any(
+        "VAR_POSITIONAL" in str(p.kind) for p in ref.params
     )
 
     if not has_var_args and len(args) > len(pos_params) and pos_params:

@@ -670,3 +670,59 @@ def test_extract_target_refs_single_root_function(
 
     refs = extract_target_refs_single(fpath, "standalone", "ref_pkg")
     assert len(refs) == 1
+
+
+def test_compliance_models_getitem_and_get() -> None:
+    """Test __getitem__ and get methods on ComplianceMismatchEntry, ComplianceScoreReport, and SnippetComplianceReport."""
+    from ml_ecosystem_snapshots.compliance import (
+        ComplianceMismatchEntry,
+        ComplianceScoreReport,
+        SnippetComplianceReport,
+    )
+
+    mismatch = ComplianceMismatchEntry(
+        api_path="pkg.fn",
+        expected=[("a", "POSITIONAL_OR_KEYWORD", None, "int")],
+        actual=[],
+        reason="Mismatch reason",
+    )
+    assert mismatch["api_path"] == "pkg.fn"
+    assert len(mismatch["expected"]) == 1
+    assert mismatch["actual"] == []
+    assert mismatch["reason"] == "Mismatch reason"
+
+    score_rep = ComplianceScoreReport(
+        score_percentage=75.0,
+        total_endpoints=4,
+        matched=["a", "b", "c"],
+        missing=["d"],
+        mismatched=[mismatch],
+        opaque_signatures=["op1"],
+        warnings=["warn1"],
+    )
+    assert score_rep["score_percentage"] == 75.0
+    assert score_rep["total_endpoints"] == 4
+    assert score_rep["matched"] == ["a", "b", "c"]
+    assert score_rep["missing"] == ["d"]
+    assert score_rep["mismatched"] == [mismatch]
+    assert score_rep["opaque_signatures"] == ["op1"]
+    assert score_rep["warnings"] == ["warn1"]
+    assert score_rep.get("score_percentage") == 75.0
+    assert score_rep.get("unknown_key", 99) == 99
+
+    snip_rep = SnippetComplianceReport(
+        is_compliant=True,
+        total_ops=3,
+        verified_ops=3,
+        total_instructions=2,
+        verified_instructions=2,
+        errors=[],
+    )
+    assert snip_rep["is_compliant"] is True
+    assert snip_rep["total_ops"] == 3
+    assert snip_rep["verified_ops"] == 3
+    assert snip_rep["total_instructions"] == 2
+    assert snip_rep["verified_instructions"] == 2
+    assert snip_rep["errors"] == []
+    assert snip_rep.get("is_compliant") is True
+    assert snip_rep.get("unknown_key", "fallback") == "fallback"

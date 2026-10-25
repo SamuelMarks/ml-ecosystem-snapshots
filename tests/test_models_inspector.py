@@ -233,6 +233,47 @@ def test_ghost_inspector_aten_overload_and_factory_default(
     assert isinstance(p0, ExtendedGhostParam)
     assert p0.default_factory == "<factory_default>"
 
+    # Also test when c_ext_params has no overloads and aten_sig supplies overloads
+    sig_without_overloads = CExtensionSignature(
+        params=[("x", "POSITIONAL_OR_KEYWORD", None, "int")],
+        overloads=[],
+    )
+    mocker.patch(
+        "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
+        return_value=sig_without_overloads,
+    )
+    ref_merged = GhostInspector.inspect(dummy_torch_fn, "torch.dummy_torch_fn")
+    assert ref_merged.overloads is not None
+    assert len(ref_merged.overloads) == 1
+    assert ref_merged.signature_completeness == "exact"
+
+    # Also test when extract_aten_c_extension_signature raises an exception
+    mocker.patch(
+        "ml_ecosystem_snapshots.frameworks.torch.extract_aten_c_extension_signature",
+        side_effect=RuntimeError("aten error"),
+    )
+    ref_aten_err = GhostInspector.inspect(dummy_torch_fn, "torch.dummy_torch_fn")
+    assert ref_aten_err.signature_completeness == "heuristic"
+
+    # Also test _build_extended_params when p_anno is None and cdd_ast_params supplies typ
+    from ml_ecosystem_snapshots.introspection.inspector import (
+        ExtractedParamRecord,
+        _build_extended_params,
+    )
+    from ml_ecosystem_snapshots.introspection.sanitize import sanitize_type_str
+
+    built_params = _build_extended_params(
+        extracted_params=[("alpha", "POSITIONAL_OR_KEYWORD", None, None)],
+        cdd_params={},
+        cdd_ast_params={
+            "alpha": ExtractedParamRecord(doc="alpha doc", typ="float", default=None)
+        },
+        is_torch_target=False,
+        name="sample",
+        active_sanitize_type_str=sanitize_type_str,
+    )
+    assert built_params[0].annotation == "float"
+
 
 def test_ghost_inspector_aten_none(mocker: pytest_mock.MockerFixture) -> None:
     """Test GhostInspector when extract_aten_c_extension_signature returns None.

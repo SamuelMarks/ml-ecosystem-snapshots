@@ -5,7 +5,12 @@ from __future__ import annotations
 from collections import OrderedDict
 import typing
 
-from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef
+from ml_switcheroo_ir.schema.ghost import (
+    ExtendedGhostParam,
+    ExtendedGhostRef,
+    GhostParam,
+    GhostRef,
+)
 import pydantic
 
 from ml_ecosystem_snapshots.models import JsonValue
@@ -594,15 +599,17 @@ def export_mlir_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
     blocks: list[str] = []
 
     for ref in refs:
-        meta = getattr(ref, "domain_metadata", None) or {}
-        traits = meta.get("traits") or []
-        regions = meta.get("regions") or []
+        meta = (ref.domain_metadata or {}) if isinstance(ref, ExtendedGhostRef) else {}
+        raw_traits = meta.get("traits")
+        traits = [str(t) for t in raw_traits] if isinstance(raw_traits, list) else []
+        raw_regions = meta.get("regions")
+        regions = [str(r) for r in raw_regions] if isinstance(raw_regions, list) else []
 
         operands: list[str] = []
         attributes: list[str] = []
 
         for p in ref.params:
-            role = getattr(p, "role", None)
+            role = p.role if isinstance(p, ExtendedGhostParam) else None
             if str(role) == "IRParameterRole.REGION" or p.annotation == "Region":
                 continue
             if str(role) == "IRParameterRole.ATTRIBUTE" or p.kind == "KEYWORD_ONLY":
@@ -623,8 +630,9 @@ def export_mlir_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
         if operands:
             lines.append("- **SSA Operands**:")
             for p in ref.params:
+                p_role = p.role if isinstance(p, ExtendedGhostParam) else None
                 if (
-                    str(getattr(p, "role", None)) != "IRParameterRole.ATTRIBUTE"
+                    str(p_role) != "IRParameterRole.ATTRIBUTE"
                     and p.annotation != "Region"
                 ):
                     lines.append(f"  - `%{p.name}` (type `{p.annotation or 'Value'}`)")
@@ -632,15 +640,16 @@ def export_mlir_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
         if attributes:
             lines.append("- **Attributes**:")
             for p in ref.params:
+                p_role = p.role if isinstance(p, ExtendedGhostParam) else None
                 if (
-                    str(getattr(p, "role", None)) == "IRParameterRole.ATTRIBUTE"
+                    str(p_role) == "IRParameterRole.ATTRIBUTE"
                     or p.kind == "KEYWORD_ONLY"
                 ):
                     lines.append(
                         f"  - `{p.name}` (type `{p.annotation or 'Attribute'}`)"
                     )
 
-        results = getattr(ref, "returns", None)
+        results = ref.returns if isinstance(ref, ExtendedGhostRef) else None
         if results:
             lines.append("- **Results**:")
             for r in results:

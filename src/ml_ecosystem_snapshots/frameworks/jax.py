@@ -13,6 +13,10 @@ from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.frameworks.optax import OptaxScanner
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    InspectableTarget,
+    read_runtime_attr,
+)
 from ml_ecosystem_snapshots.utils import get_all_members
 
 jax: types.ModuleType | None = None
@@ -76,7 +80,7 @@ def _scan_jax_initializers(include_nonpublic: bool) -> list[GhostRef]:
     return found
 
 
-def _attach_jax_static_arg_metadata(ref: GhostRef, obj: object) -> GhostRef:
+def _attach_jax_static_arg_metadata(ref: GhostRef, obj: InspectableTarget) -> GhostRef:
     """Attach static argument numbers and names from JIT-compiled functions as metadata.
 
     Args:
@@ -86,14 +90,14 @@ def _attach_jax_static_arg_metadata(ref: GhostRef, obj: object) -> GhostRef:
     Returns:
         Augmented GhostRef with static argument metadata.
     """
-    static_nums = getattr(obj, "_static_argnums", None) or getattr(
+    static_nums = read_runtime_attr(obj, "_static_argnums", None) or read_runtime_attr(
         obj, "static_argnums", None
     )
-    static_names = getattr(obj, "_static_argnames", None) or getattr(
-        obj, "static_argnames", None
-    )
+    static_names = read_runtime_attr(
+        obj, "_static_argnames", None
+    ) or read_runtime_attr(obj, "static_argnames", None)
 
-    if static_nums:
+    if isinstance(static_nums, (list, tuple, set, frozenset)) and static_nums:
         if ref.environment_tags is None:
             ref.environment_tags = []
         ref.environment_tags.append(
@@ -103,7 +107,7 @@ def _attach_jax_static_arg_metadata(ref: GhostRef, obj: object) -> GhostRef:
             if idx in static_nums:
                 p.standardized_name = "static_arg"
 
-    if static_names:
+    if isinstance(static_names, (list, tuple, set, frozenset)) and static_names:
         if ref.environment_tags is None:
             ref.environment_tags = []
         ref.environment_tags.append(
@@ -207,7 +211,6 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
                     OSError,
                     ImportError,
                     RuntimeError,
-                    Exception,
                 ):
                     pass
 
@@ -239,7 +242,6 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
                         OSError,
                         ImportError,
                         RuntimeError,
-                        Exception,
                     ):
                         pass
 
@@ -263,7 +265,6 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
                         OSError,
                         ImportError,
                         RuntimeError,
-                        Exception,
                     ):
                         pass
 
@@ -291,7 +292,6 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
                         OSError,
                         ImportError,
                         RuntimeError,
-                        Exception,
                     ):
                         pass
         except (
@@ -304,7 +304,6 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
             OSError,
             ImportError,
             RuntimeError,
-            Exception,
         ):
             pass
     except ImportError:

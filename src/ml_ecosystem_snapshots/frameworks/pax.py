@@ -60,7 +60,6 @@ def collect_api(
                     OSError,
                     ImportError,
                     RuntimeError,
-                    Exception,
                 ):
                     pass
     return results

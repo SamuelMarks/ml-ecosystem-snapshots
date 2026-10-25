@@ -131,12 +131,16 @@ def _run_domain_op_check_cli(
         invalid_format: Suffix string when reporting an invalid operation ('Invalid:' or 'is invalid:').
         extra_kwargs: Optional additional keyword arguments to forward to `check_fn`.
     """
-    raw_attrs = getattr(args, "attributes", None)
+    arg_map = vars(args)
+    raw_attrs = arg_map.get("attributes")
     attrs: list[str] | None = (
-        [a.strip() for a in raw_attrs.split(",") if a.strip()] if raw_attrs else None
+        [a.strip() for a in str(raw_attrs).split(",") if a.strip()]
+        if raw_attrs
+        else None
     )
-    target = str(getattr(args, op_attr))
-    count_val: int | None = getattr(args, count_attr, None)
+    target = str(arg_map.get(op_attr, ""))
+    raw_count = arg_map.get(count_attr)
+    count_val: int | None = int(raw_count) if isinstance(raw_count, int) else None
 
     res: DomainOpCheckResult | typing.Mapping[str, JsonValue]
     if extra_kwargs and "domain" in extra_kwargs:
@@ -219,7 +223,7 @@ def cmd_check(args: argparse.Namespace) -> None:
     with open(path, "r", encoding="utf-8") as f:
         reference_snapshot = json.load(f)
 
-    target_path = getattr(args, "target_path", "")
+    target_path = str(vars(args).get("target_path", "") or "")
     target_ext = os.path.splitext(target_path)[1].lower() if target_path else ""
 
     if target_ext in (".sass", ".s"):
@@ -499,30 +503,37 @@ def cmd_check_ptx(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_ptx_instruction
 
-    mnemonic = getattr(args, "mnemonic", None)
+    arg_map = vars(args)
+    mnemonic = arg_map.get("mnemonic")
     if not mnemonic:
         print("Error: Instruction mnemonic must be specified.")
         sys.exit(1)
 
+    raw_types = arg_map.get("types")
     types = (
-        [t.strip() for t in args.types.split(",") if t.strip()]
-        if getattr(args, "types", None)
+        [t.strip() for t in str(raw_types).split(",") if t.strip()]
+        if raw_types
         else None
     )
+    raw_operands = arg_map.get("operands")
     operands = (
-        [op.strip() for op in args.operands.split(",") if op.strip()]
-        if getattr(args, "operands", None)
+        [op.strip() for op in str(raw_operands).split(",") if op.strip()]
+        if raw_operands
         else None
     )
 
     res = check_ptx_instruction(
-        mnemonic=mnemonic,
+        mnemonic=str(mnemonic),
         types=types,
         operands=operands,
-        state_space=getattr(args, "state_space", None),
-        scope=getattr(args, "scope", None),
-        vector_width=getattr(args, "vector_width", None),
-        sm_arch=getattr(args, "sm_arch", None),
+        state_space=str(arg_map["state_space"])
+        if arg_map.get("state_space") is not None
+        else None,
+        scope=str(arg_map["scope"]) if arg_map.get("scope") is not None else None,
+        vector_width=str(arg_map["vector_width"])
+        if arg_map.get("vector_width") is not None
+        else None,
+        sm_arch=str(arg_map["sm_arch"]) if arg_map.get("sm_arch") is not None else None,
     )
 
     if not res.get("is_valid"):
@@ -697,7 +708,7 @@ def cmd_check_onnx(args: argparse.Namespace) -> None:
         args,
         check_onnx_op,
         "ONNX Operation",
-        extra_kwargs={"domain": getattr(args, "domain", "") or ""},
+        extra_kwargs={"domain": str(vars(args).get("domain", "") or "")},
     )
 
 
@@ -709,11 +720,12 @@ def cmd_check_metal(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_metal_op
 
+    raw_addr = vars(args).get("address_space")
     _run_domain_op_check_cli(
         args,
         check_metal_op,
         "Metal Operation",
-        extra_kwargs={"address_space": getattr(args, "address_space", None)},
+        extra_kwargs={"address_space": str(raw_addr) if raw_addr is not None else None},
     )
 
 
@@ -735,209 +747,70 @@ def cmd_check_wasm(args: argparse.Namespace) -> None:
     )
 
 
-def cmd_check_webgl(args: argparse.Namespace) -> None:
-    """Validate WebGL 2.0 / GLSL ES 3.00 operation against specification.
+def _make_simple_domain_check_cmd(
+    fn_name: str,
+    label: str,
+    invalid_format: str = "is invalid:",
+) -> typing.Callable[[argparse.Namespace], None]:
+    """Create a CLI command handler for a standard MCP domain operation verifier.
 
     Args:
-        args: Parsed command line arguments.
+        fn_name: Name of the verifier function exported by `ml_ecosystem_snapshots.mcp_server`.
+        label: Human-readable domain operation prefix.
+        invalid_format: Suffix string when reporting an invalid operation.
+
+    Returns:
+        CLI handler callable accepting `argparse.Namespace`.
     """
-    from ml_ecosystem_snapshots.mcp_server import check_webgl_op
 
-    _run_domain_op_check_cli(args, check_webgl_op, "WebGL Operation")
+    def _handler(args: argparse.Namespace) -> None:
+        """Validate domain operation against specification.
 
+        Args:
+            args: Parsed command line arguments.
+        """
+        import ml_ecosystem_snapshots.mcp_server as _mcp_srv
 
-def cmd_check_cpp(args: argparse.Namespace) -> None:
-    """Validate C++17 / PyBind11 operation against specification.
+        check_fn: DomainCheckCallable = getattr(_mcp_srv, fn_name)
+        _run_domain_op_check_cli(
+            args,
+            check_fn,
+            label,
+            invalid_format=invalid_format,
+        )
 
-    Args:
-        args: Parsed command line arguments.
-    """
-    from ml_ecosystem_snapshots.mcp_server import check_cpp_op
-
-    _run_domain_op_check_cli(args, check_cpp_op, "C++ Operation")
-
-
-def cmd_check_array_api(args: argparse.Namespace) -> None:
-    """Validate Python Array API Standard operation against specification.
-
-    Args:
-        args: Parsed command line arguments.
-    """
-    from ml_ecosystem_snapshots.mcp_server import check_array_api_op
-
-    _run_domain_op_check_cli(
-        args,
-        check_array_api_op,
-        "Array API Operation",
-        invalid_format="is invalid:",
-    )
+    _handler.__name__ = f"cmd_{fn_name[:-3]}" if fn_name.endswith("_op") else fn_name
+    return _handler
 
 
-def cmd_check_scipy(args: argparse.Namespace) -> None:
-    """Validate SciPy operation against specification.
-
-    Args:
-        args: Parsed command line arguments.
-    """
-    from ml_ecosystem_snapshots.mcp_server import check_scipy_op
-
-    _run_domain_op_check_cli(
-        args, check_scipy_op, "SciPy Operation", invalid_format="is invalid:"
-    )
-
-
-def cmd_check_torchvision(args: argparse.Namespace) -> None:
-    """Validate TorchVision operation against specification.
-
-    Args:
-        args: Parsed command line arguments.
-    """
-    from ml_ecosystem_snapshots.mcp_server import check_torchvision_op
-
-    _run_domain_op_check_cli(
-        args,
-        check_torchvision_op,
-        "TorchVision Operation",
-        invalid_format="is invalid:",
-    )
-
-
-def cmd_check_torchaudio(args: argparse.Namespace) -> None:
-    """Validate TorchAudio operation against specification.
-
-    Args:
-        args: Parsed command line arguments.
-    """
-    from ml_ecosystem_snapshots.mcp_server import check_torchaudio_op
-
-    _run_domain_op_check_cli(
-        args,
-        check_torchaudio_op,
-        "TorchAudio Operation",
-        invalid_format="is invalid:",
-    )
-
-
-def cmd_check_safetensors(args: argparse.Namespace) -> None:
-    """Validate SafeTensors operation against specification.
-
-    Args:
-        args: Parsed command line arguments.
-    """
-    from ml_ecosystem_snapshots.mcp_server import check_safetensors_op
-
-    _run_domain_op_check_cli(
-        args,
-        check_safetensors_op,
-        "SafeTensors Operation",
-        invalid_format="is invalid:",
-    )
-
-
-def cmd_check_aten(args: argparse.Namespace) -> None:
-    """Validate PyTorch ATen operation against specification.
-
-    Args:
-        args: Parsed command line arguments.
-    """
-    from ml_ecosystem_snapshots.mcp_server import check_aten_op
-
-    _run_domain_op_check_cli(
-        args, check_aten_op, "ATen Operation", invalid_format="is invalid:"
-    )
-
-
-def cmd_check_nccl(args: argparse.Namespace) -> None:
-    """Validate NCCL/RCCL collective operation against specification.
-
-    Args:
-        args: Parsed command line arguments.
-    """
-    from ml_ecosystem_snapshots.mcp_server import check_nccl_op
-
-    _run_domain_op_check_cli(
-        args, check_nccl_op, "NCCL Operation", invalid_format="is invalid:"
-    )
-
-
-def cmd_check_flash_attention(args: argparse.Namespace) -> None:
-    """Validate FlashAttention operation against specification.
-
-    Args:
-        args: Parsed command line arguments.
-    """
-    from ml_ecosystem_snapshots.mcp_server import check_flash_attention_op
-
-    _run_domain_op_check_cli(
-        args,
-        check_flash_attention_op,
-        "Attention Operation",
-        invalid_format="is invalid:",
-    )
-
-
-def cmd_check_chex(args: argparse.Namespace) -> None:
-    """Validate Chex assertion, dataclass, or testing operation against specification.
-
-    Args:
-        args: Parsed command line arguments.
-    """
-    from ml_ecosystem_snapshots.mcp_server import check_chex_op
-
-    _run_domain_op_check_cli(
-        args,
-        check_chex_op,
-        "Chex Operation",
-        invalid_format="is invalid:",
-    )
-
-
-def cmd_check_grain(args: argparse.Namespace) -> None:
-    """Validate Grain (`grain` / `grain.python`) operation against specification.
-
-    Args:
-        args: Parsed command line arguments.
-    """
-    from ml_ecosystem_snapshots.mcp_server import check_grain_op
-
-    _run_domain_op_check_cli(
-        args,
-        check_grain_op,
-        "Grain Operation",
-        invalid_format="is invalid:",
-    )
-
-
-def cmd_check_orbax(args: argparse.Namespace) -> None:
-    """Validate Orbax Checkpoint or Export operation against specification.
-
-    Args:
-        args: Parsed command line arguments.
-    """
-    from ml_ecosystem_snapshots.mcp_server import check_orbax_op
-
-    _run_domain_op_check_cli(
-        args,
-        check_orbax_op,
-        "Orbax Operation",
-        invalid_format="is invalid:",
-    )
-
-
-def cmd_check_optax(args: argparse.Namespace) -> None:
-    """Validate Optax optimizer, loss, schedule, or utility operation against specification.
-
-    Args:
-        args: Parsed command line arguments.
-    """
-    from ml_ecosystem_snapshots.mcp_server import check_optax_op
-
-    _run_domain_op_check_cli(
-        args,
-        check_optax_op,
-        "Optax Operation",
-        invalid_format="is invalid:",
-    )
+cmd_check_webgl = _make_simple_domain_check_cmd(
+    "check_webgl_op", "WebGL Operation", invalid_format="Invalid:"
+)
+cmd_check_cpp = _make_simple_domain_check_cmd(
+    "check_cpp_op", "C++ Operation", invalid_format="Invalid:"
+)
+cmd_check_array_api = _make_simple_domain_check_cmd(
+    "check_array_api_op", "Array API Operation"
+)
+cmd_check_scipy = _make_simple_domain_check_cmd("check_scipy_op", "SciPy Operation")
+cmd_check_torchvision = _make_simple_domain_check_cmd(
+    "check_torchvision_op", "TorchVision Operation"
+)
+cmd_check_torchaudio = _make_simple_domain_check_cmd(
+    "check_torchaudio_op", "TorchAudio Operation"
+)
+cmd_check_safetensors = _make_simple_domain_check_cmd(
+    "check_safetensors_op", "SafeTensors Operation"
+)
+cmd_check_aten = _make_simple_domain_check_cmd("check_aten_op", "ATen Operation")
+cmd_check_nccl = _make_simple_domain_check_cmd("check_nccl_op", "NCCL Operation")
+cmd_check_flash_attention = _make_simple_domain_check_cmd(
+    "check_flash_attention_op", "Attention Operation"
+)
+cmd_check_chex = _make_simple_domain_check_cmd("check_chex_op", "Chex Operation")
+cmd_check_grain = _make_simple_domain_check_cmd("check_grain_op", "Grain Operation")
+cmd_check_orbax = _make_simple_domain_check_cmd("check_orbax_op", "Orbax Operation")
+cmd_check_optax = _make_simple_domain_check_cmd("check_optax_op", "Optax Operation")
 
 
 __all__ = [

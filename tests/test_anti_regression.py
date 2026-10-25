@@ -202,7 +202,9 @@ def test_dask_minimum_symbol_threshold() -> None:
     fake_fft = types.ModuleType("dask.array.fft")
     fake_top = types.ModuleType("dask")
 
-    def sample_array_op(x: object, axis: int = 0, keepdims: bool = False) -> object:
+    def sample_array_op(
+        x: list[float], axis: int = 0, keepdims: bool = False
+    ) -> list[float]:
         """Compute array reduction along axis.
 
         Args:
@@ -350,6 +352,10 @@ def test_no_mock_introspection_or_type_ignores_in_src() -> None:
             assert (
                 token not in content
             ), f"Banned token '{token}' found in production module {fpath}"
+        if not fpath.endswith("stubs.py"):
+            assert (
+                ": object" not in content and "-> object" not in content
+            ), f"Banned 'object' type annotation found in production module {fpath}"
 
     all_py_files = sorted(
         glob.glob("src/ml_ecosystem_snapshots/**/*.py", recursive=True)
@@ -364,6 +370,9 @@ def test_no_mock_introspection_or_type_ignores_in_src() -> None:
         assert (
             "# type: ignore" not in content
         ), f"Banned '# type: ignore' found in {fpath}"
+        assert (
+            "len(captured.out) >= 0" not in content
+        ), f"Tautological assertion found in {fpath}"
 
 
 def test_every_test_function_has_assertions() -> None:

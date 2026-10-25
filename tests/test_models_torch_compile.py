@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.models import JsonValue
 
 
-def torch_compile_mock(func: object) -> object:
+def torch_compile_mock(func: InspectableTarget) -> InspectableTarget:
     """Mock decorator simulating torch.compile wrapper.
 
     Args:
@@ -18,7 +20,7 @@ def torch_compile_mock(func: object) -> object:
     class Compiled:
         """Mock container for compiled function."""
 
-        def __init__(self, f: object) -> None:
+        def __init__(self, f: InspectableTarget) -> None:
             """Initialize with original function.
 
             Args:
@@ -33,7 +35,7 @@ def test_unwrap_torch_compile() -> None:
     """Test GhostInspector correctly unwraps and inspects torch.compile decorated functions."""
 
     @torch_compile_mock
-    def my_compiled(x: object, y: int = 10) -> None:
+    def my_compiled(x: JsonValue, y: int = 10) -> None:
         """Sample function for compilation unwrapping.
 
         Args:

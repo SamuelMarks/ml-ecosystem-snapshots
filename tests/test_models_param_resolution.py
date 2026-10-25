@@ -59,7 +59,7 @@ def test_ghost_inspector_aten_overload_merge_and_returns() -> None:
 def test_ghost_inspector_opaque_c_extension_none_env_tags() -> None:
     """Test opaque C-extension handling when environment_tags is None."""
 
-    def opaque_fn(*args: object, **kwargs: object) -> None:
+    def opaque_fn(*args: str, **kwargs: str) -> None:
         """Opaque function without signature or docstring.
 
         Args:

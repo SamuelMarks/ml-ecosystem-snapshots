@@ -290,7 +290,7 @@ def test_opaque_c_extension_existing_environment_tags() -> None:
 
 
 def test_c_extension_signature_sequence_operations() -> None:
-    """Verify CExtensionSignature MutableSequence operations, slicing, equality, and repr."""
+    """Verify CExtensionSignature parameter access, iteration, equality, and repr."""
     from ml_ecosystem_snapshots.c_extension_sig import (
         CExtensionSignature,
         ParsedParamTuple,
@@ -305,32 +305,17 @@ def test_c_extension_signature_sequence_operations() -> None:
     )
     assert len(sig) == 2
     assert sig[0].name == "x"
-    assert len(sig[0:1]) == 1
-
-    # Single-index assignment with tuple and ParsedParamTuple
-    sig[0] = ("a", "POSITIONAL_ONLY", None, "Tensor")
-    assert sig[0][0] == "a"
-    sig[0] = ParsedParamTuple("a2", "POSITIONAL_ONLY", None, "Tensor")
-    assert sig[0][0] == "a2"
-
-    # Slice assignment
-    sig[0:1] = [
-        ("b", "POSITIONAL_OR_KEYWORD", None, "float"),
-        ParsedParamTuple("c", "KEYWORD_ONLY", "0", "int"),
-    ]
-    assert len(sig) == 3
-
-    # Insert and delitem
-    sig.insert(1, ("inserted", "POSITIONAL_OR_KEYWORD", None, "str"))
-    assert len(sig) == 4
-    sig.insert(1, ParsedParamTuple("inserted2", "POSITIONAL_OR_KEYWORD", None, "str"))
-    assert len(sig) == 5
-    del sig[1]
-    assert len(sig) == 4
+    assert sig[0].kind == "POSITIONAL_OR_KEYWORD"
+    assert sig[0].default is None
+    assert sig[0].annotation == "Tensor"
+    assert sig[0][0] == "x"
+    assert sig[0].as_tuple() == ("x", "POSITIONAL_OR_KEYWORD", None, "Tensor")
+    assert sig[1].name == "y"
+    assert sig[1].default == "1"
 
     # Equality and repr
     sig_copy = CExtensionSignature(params=list(sig.iter_params()))
     assert sig == sig_copy
     assert sig == list(sig.iter_params())
     assert sig != "not_a_sig"
-    assert "ParsedParamTuple" in repr(sig) or "('b'" in repr(sig)
+    assert "ParsedParamTuple" in repr(sig) or "'x'" in repr(sig)

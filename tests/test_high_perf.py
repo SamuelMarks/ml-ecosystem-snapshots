@@ -43,21 +43,28 @@ def test_triton_collect() -> None:
     mock_tl._priv = lambda: None
 
     import types
+    from ml_switcheroo_ir.schema.ghost import GhostRef
 
     mock_math = types.ModuleType("triton.language.math")
-    setattr(mock_math, "a_bad", 123)
-    setattr(mock_math, "sin", lambda: None)
-    setattr(mock_math, "_priv", lambda: None)
-    setattr(mock_math, "bad", 123)
+    mock_math.__dict__["a_bad"] = 123
+    mock_math.__dict__["sin"] = lambda: None
+    mock_math.__dict__["_priv"] = lambda: None
+    mock_math.__dict__["bad"] = 123
     mock_tl.math = mock_math
 
     with patch(
         "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect"
     ) as mock_inspect:
-        mock_inspect.return_value = MagicMock()  # Return a dummy GhostRef
+        mock_inspect.side_effect = lambda obj, path, **kw: GhostRef(
+            name=path.split(".")[-1],
+            api_path=path,
+            kind="function",
+            params=[],
+            docstring="",
+        )
         with patch("importlib.import_module") as mock_import:
 
-            def side_effect(name: str) -> object:
+            def side_effect(name: str) -> types.ModuleType | MagicMock:
                 """Execute helper side effect.
 
                 Args:
@@ -80,14 +87,14 @@ def test_triton_collect() -> None:
 
             res = triton_collect(SemanticTier.UTIL)
             assert len(res) == 3
+            assert {r.api_path for r in res} == {
+                "triton.language.constexpr",
+                "triton.language.tensor",
+                "triton.language.math.sin",
+            }
 
             res_priv = triton_collect(SemanticTier.UTIL, include_nonpublic=True)
             assert len(res_priv) == 5
-
-            # Now set mock_inspect to return None to cover if ref is False
-            mock_inspect.return_value = None
-            res_none = triton_collect(SemanticTier.UTIL)
-            assert res_none == []
 
 
 def test_onnx_collect() -> None:

@@ -9,6 +9,11 @@ import typing
 
 import pydantic
 
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    InspectableTarget,
+    has_runtime_attr,
+)
+
 if typing.TYPE_CHECKING:
     import griffe
 
@@ -42,8 +47,11 @@ class DocstringParamMeta(pydantic.BaseModel):
         Returns:
             Field value.
         """
-        val: str | None = getattr(self, key)
-        return val
+        if key == "doc":
+            return self.doc
+        if key == "typ":
+            return self.typ
+        return self.default
 
 
 class DocstringReturnMeta(pydantic.BaseModel):
@@ -72,8 +80,9 @@ class DocstringReturnMeta(pydantic.BaseModel):
         Returns:
             Field value.
         """
-        val: str | None = getattr(self, key)
-        return val
+        if key == "doc":
+            return self.doc
+        return self.typ
 
 
 class DocstringMetadata(pydantic.BaseModel):
@@ -114,10 +123,11 @@ class DocstringMetadata(pydantic.BaseModel):
         Returns:
             Field value.
         """
-        val: dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None = (
-            getattr(self, key)
-        )
-        return val
+        if key == "params":
+            return self.params
+        if key == "returns":
+            return self.returns
+        return self.raises
 
     @typing.overload
     def get(
@@ -140,6 +150,15 @@ class DocstringMetadata(pydantic.BaseModel):
         default: list[str] | None = None,
     ) -> list[str]: ...
 
+    @typing.overload
+    def get(
+        self,
+        key: str,
+        default: (
+            dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None
+        ) = None,
+    ) -> dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None: ...
+
     def get(
         self,
         key: str,
@@ -156,15 +175,15 @@ class DocstringMetadata(pydantic.BaseModel):
         Returns:
             Field value or `default`.
         """
-        val: dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None = (
-            getattr(self, key, default)
-        )
-        return val
+        if key in ("params", "returns", "raises"):
+            res = self[key]
+            return default if res is None else res
+        return default
 
 
 def get_all_members(
     module: types.ModuleType | type,
-) -> list[tuple[str, object]]:
+) -> list[tuple[str, InspectableTarget]]:
     """Safely extract all members from a module, bypassing __getattr__ obfuscation.
 
     Many modern ML frameworks use lazy-loading modules that define __getattr__
@@ -175,9 +194,9 @@ def get_all_members(
         module: The module to inspect.
 
     Returns:
-        A list of (name, object) tuples.
+        A list of `(name, member_target)` tuples.
     """
-    members: list[tuple[str, object]] = []
+    members: list[tuple[str, InspectableTarget]] = []
     seen: set[str] = set()
 
     for name in dir(module):
@@ -187,15 +206,19 @@ def get_all_members(
         except Exception as exc:
             _LOGGER.debug("Skipping inaccessible member %s: %s", name, exc)
 
-    if hasattr(module, "__all__"):
-        for name in getattr(module, "__all__"):
-            if name not in seen:
+    if has_runtime_attr(module, "__all__"):
+        all_names = getattr(module, "__all__")
+        for name in all_names:
+            name_str = str(name)
+            if name_str not in seen:
                 try:
-                    members.append((name, getattr(module, name)))
-                    seen.add(name)
+                    members.append((name_str, getattr(module, name_str)))
+                    seen.add(name_str)
                 except Exception as exc:
                     _LOGGER.debug(
-                        "Skipping inaccessible __all__ member %s: %s", name, exc
+                        "Skipping inaccessible __all__ member %s: %s",
+                        name_str,
+                        exc,
                     )
 
     return members

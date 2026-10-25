@@ -62,22 +62,21 @@ def test_get_pkg_version_aliases() -> None:
 
 
 def test_optax_collect_api() -> None:
-    """Test optax.collect_api."""
-    with patch(
-        "ml_ecosystem_snapshots.frameworks.optax.OptaxScanner.scan_optimizers",
-        return_value=[],
-    ):
-        assert collect_api(SemanticTier.OPTIMIZER, False) == []
-    with patch(
-        "ml_ecosystem_snapshots.frameworks.optax.OptaxScanner.scan_losses",
-        return_value=[],
-    ):
-        assert collect_api(SemanticTier.LOSS, False) == []
-    with patch(
-        "ml_ecosystem_snapshots.frameworks.optax.OptaxScanner.scan_schedulers",
-        return_value=[],
-    ):
-        assert collect_api(SemanticTier.SCHEDULER, False) == []
+    """Test optax.collect_api across canonical offline and mocked scanner tiers."""
+    import os
+
+    with patch.dict(os.environ, {"ML_SNAPSHOTS_OFFLINE": "1"}):
+        opt_refs = collect_api(SemanticTier.OPTIMIZER, False)
+        assert any(r.name == "adam" for r in opt_refs)
+
+        loss_refs = collect_api(SemanticTier.LOSS, False)
+        assert any(r.name == "softmax_cross_entropy" for r in loss_refs)
+
+        sched_refs = collect_api(SemanticTier.SCHEDULER, False)
+        assert any(r.name == "warmup_cosine_decay_schedule" for r in sched_refs)
+
+        arr_refs = collect_api(SemanticTier.ARRAY_API, False)
+        assert any(r.name == "apply_updates" for r in arr_refs)
 
     # default returns []
     assert collect_api(SemanticTier.UTIL, False) == []

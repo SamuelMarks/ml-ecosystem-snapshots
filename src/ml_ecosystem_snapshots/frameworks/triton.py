@@ -8,10 +8,15 @@ import inspect
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    InspectableTarget,
+    has_runtime_attr,
+    read_runtime_attr,
+)
 
 
 def _extract_triton_kernel(
-    obj: object, name: str, module_name: str, inspector: GhostInspector
+    obj: InspectableTarget, name: str, module_name: str, inspector: GhostInspector
 ) -> GhostRef:
     """Extract a `GhostRef` for a Triton JIT kernel or language primitive.
 
@@ -24,17 +29,16 @@ def _extract_triton_kernel(
     Returns:
         The extracted `GhostRef` with `tl.constexpr` annotations normalized.
     """
-    fn = getattr(obj, "fn") if hasattr(obj, "fn") else obj
+    fn = read_runtime_attr(obj, "fn", obj) if has_runtime_attr(obj, "fn") else obj
 
     ref = inspector.inspect(fn, f"{module_name}.{name}")
-    if ref is not None:
-        raw_annos = getattr(fn, "__annotations__", None)
-        if isinstance(raw_annos, dict):
-            for param in ref.params:
-                if param.name in raw_annos:
-                    anno = raw_annos[param.name]
-                    if "constexpr" in str(anno):
-                        param.annotation = "tl.constexpr"
+    raw_annos = read_runtime_attr(fn, "__annotations__", None)
+    if isinstance(raw_annos, dict):
+        for param in ref.params:
+            if param.name in raw_annos:
+                anno = raw_annos[param.name]
+                if "constexpr" in str(anno):
+                    param.annotation = "tl.constexpr"
     return ref
 
 
@@ -68,9 +72,9 @@ def collect_api(
                 continue
             obj = getattr(tl, name, None)
             if obj and callable(obj):
-                ref = _extract_triton_kernel(obj, name, "triton.language", inspector)
-                if ref is not None:
-                    results.append(ref)
+                results.append(
+                    _extract_triton_kernel(obj, name, "triton.language", inspector)
+                )
 
         tl_math = getattr(tl, "math", None)
         if inspect.ismodule(tl_math):
@@ -79,11 +83,11 @@ def collect_api(
                     continue
                 obj = getattr(tl_math, name, None)
                 if obj and callable(obj):
-                    ref = _extract_triton_kernel(
-                        obj, name, "triton.language.math", inspector
+                    results.append(
+                        _extract_triton_kernel(
+                            obj, name, "triton.language.math", inspector
+                        )
                     )
-                    if ref is not None:
-                        results.append(ref)
     except ImportError:
         pass
 

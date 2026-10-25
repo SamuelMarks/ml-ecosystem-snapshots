@@ -15,7 +15,17 @@ import sys
 import typing
 import typing_extensions
 
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+from ml_switcheroo_ir.schema.ghost import (
+    ExtendedGhostParam,
+    ExtendedGhostRef,
+    GhostInstructionRef,
+    GhostIsaRef,
+    GhostMlirRef,
+    GhostOperationRef,
+    GhostPythonRef,
+    GhostRef,
+    SemanticTier,
+)
 import pydantic
 
 from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
@@ -26,9 +36,22 @@ from ml_ecosystem_snapshots.models import (
     SnapshotEnvelopeDict,
     SnapshotSymbolDict,
 )
+from ml_ecosystem_snapshots.version_resolver import (
+    _extract_version_with_griffe as _resolve_version_with_griffe,
+    get_pkg_version as _resolve_pkg_version,
+)
 
-if typing.TYPE_CHECKING:
-    import griffe
+
+def _extract_version_with_griffe(module_name: str) -> str | None:
+    """Extract `__version__` statically from a module using the custom Griffe fork.
+
+    Args:
+        module_name: Dotted module name to inspect (e.g. 'keras', 'chex', 'optax').
+
+    Returns:
+        Extracted version string with quotes stripped, or `None` if unavailable.
+    """
+    return _resolve_version_with_griffe(module_name)
 
 
 class CollectorFn(typing.Protocol):
@@ -219,150 +242,6 @@ def get_available_frameworks() -> dict[str, CollectorFn]:
 FRAMEWORK_COLLECTORS: dict[str, CollectorFn] = get_available_frameworks()
 
 
-_PKG_NAME_ALIASES: dict[str, str] = {
-    "flax_nnx": "flax",
-    "sklearn": "scikit-learn",
-    "pytorch": "torch",
-    "pax": "paxml",
-    "chex": "chex",
-    "grain": "grain",
-    "pygrain": "grain",
-    "optax": "optax",
-    "huggingface": "transformers",
-    "orbax_checkpoint": "orbax-checkpoint",
-    "orbax": "orbax-checkpoint",
-}
-
-_FALLBACK_PKG_VERSIONS: dict[str, tuple[str, str]] = {
-    "chex": ("chex", "0.1.87"),
-    "grain": ("grain", "0.2.2"),
-    "optax": ("optax", "0.2.3"),
-    "orbax-checkpoint": ("orbax.checkpoint", "0.6.4"),
-}
-
-
-@typing.runtime_checkable
-class _GriffeValueMemberProto(typing.Protocol):
-    """Protocol for a Griffe Attribute node exposing a read-only `value` property."""
-
-    @property
-    def value(self) -> str | int | None:
-        """Return the raw attribute value."""
-        ...
-
-
-@typing.runtime_checkable
-class _GriffeAliasMemberProto(typing.Protocol):
-    """Protocol for a Griffe Alias node exposing a read-only `target` property."""
-
-    @property
-    def target(self) -> _GriffeValueMemberProto | None:
-        """Return the resolved alias target."""
-        ...
-
-
-@typing.runtime_checkable
-class _GriffeVersionModuleProto(typing.Protocol):
-    """Protocol for a Griffe Module node exposing `members` for `__version__` lookup."""
-
-    @property
-    def members(
-        self,
-    ) -> typing.Mapping[
-        str,
-        griffe.Object
-        | griffe.Alias
-        | _GriffeAliasMemberProto
-        | _GriffeValueMemberProto
-        | None,
-    ]:
-        """Return module members mapping."""
-        ...
-
-
-def _extract_version_with_griffe(module_name: str) -> str | None:
-    """Extract `__version__` statically from a module using the custom Griffe fork.
-
-    Args:
-        module_name: Dotted module name to inspect (e.g. 'keras', 'chex', 'optax').
-
-    Returns:
-        Extracted version string with quotes stripped, or `None` if unavailable.
-    """
-    try:
-        import griffe as _griffe_mod
-
-        loaded: (
-            _GriffeVersionModuleProto
-            | griffe.Module
-            | griffe.Object
-            | griffe.Alias
-            | str
-        ) = _griffe_mod.load(module_name)
-        if isinstance(loaded, _GriffeVersionModuleProto):
-            ver = loaded.members.get("__version__")
-            if isinstance(ver, _GriffeAliasMemberProto):
-                target = ver.target
-                val = (
-                    target.value
-                    if isinstance(target, _GriffeValueMemberProto)
-                    else None
-                )
-            elif isinstance(ver, _GriffeValueMemberProto):
-                val = ver.value
-            else:
-                val = None
-            if val is not None:
-                return str(val).strip("'\"")
-    except Exception:
-        pass
-    return None
-
-
-_STATIC_SPEC_VERSIONS: dict[str, str] = {
-    "wgsl": "draft-2024",
-    "metal": "3.2",
-    "wasm_simd": "2.0",
-    "wasm": "2.0",
-    "webgl": "2.0",
-    "cpp_runtime": "17",
-    "cpp": "17",
-    "array_api": "2024.12",
-    "nccl": "2.21",
-    "rccl": "2.21",
-    "flash_attention": "2.6.3",
-    "flash_attn": "2.6.3",
-    "html_dsl": "0.0.2",
-    "latex_dsl": "0.0.2",
-    "tikz": "0.0.2",
-}
-
-_LIVE_MODULE_VERSION_FALLBACKS: dict[str, tuple[str, str, str | None]] = {
-    "ir": ("ml_switcheroo_ir", "0.0.4", "ml-switcheroo-ir"),
-    "ml_switcheroo_ir": ("ml_switcheroo_ir", "0.0.4", "ml-switcheroo-ir"),
-    "scipy": ("scipy", "1.13.1", "scipy"),
-    "torchvision": ("torchvision", "0.23.0", "torchvision"),
-    "torchaudio": ("torchaudio", "2.8.0", "torchaudio"),
-    "safetensors": ("safetensors", "0.7.0", "safetensors"),
-    "aten": ("torch", "2.8.0", "torch"),
-    "numba": ("numba", "0.60.0", "numba"),
-    "sparse": ("sparse", "0.15.4", "sparse"),
-    "dpnp": ("dpnp", "0.15.0", None),
-    "awkward": ("awkward", "2.6.8", None),
-    "pyarrow_compute": ("pyarrow", "17.0.0", None),
-    "bohrium": ("bohrium", "0.13.0", None),
-    "onnx": ("onnx", "1.17.0", "onnx"),
-    "onnx_spec": ("onnx", "1.17.0", "onnx"),
-}
-
-_EXHAUSTIVE_JSON_VERSIONS: dict[str, str] = {
-    "nvidia_sass": "12.6.0",
-    "amd_rdna": "19.1.0",
-    "nvidia_ptx": "8.5",
-    "stablehlo": "1.9.0",
-}
-
-
 def get_pkg_version(package_name: str) -> str:
     """Safely retrieves the installed version of a python package.
 
@@ -372,94 +251,11 @@ def get_pkg_version(package_name: str) -> str:
     Returns:
         The version string, or "unknown" if not installed.
     """
-    import builtins
-    import importlib.metadata
-
-    try:
-        if package_name in _STATIC_SPEC_VERSIONS:
-            return _STATIC_SPEC_VERSIONS[package_name]
-
-        if package_name in _LIVE_MODULE_VERSION_FALLBACKS:
-            mod_name, default_ver, dist_fallback = _LIVE_MODULE_VERSION_FALLBACKS[
-                package_name
-            ]
-            try:
-                mod = builtins.__import__(mod_name)
-                return str(getattr(mod, "__version__", default_ver))
-            except Exception:
-                if dist_fallback is None:
-                    return default_ver
-                try:
-                    return importlib.metadata.version(dist_fallback)
-                except Exception:
-                    return default_ver
-        elif package_name in _PKG_NAME_ALIASES:
-            package_name = _PKG_NAME_ALIASES[package_name]
-        elif package_name == "keras":
-            try:
-                return importlib.metadata.version("keras")
-            except Exception:
-                griffe_ver = _extract_version_with_griffe("keras")
-                if griffe_ver is not None:
-                    return griffe_ver
-        elif package_name == "cupy":
-            try:
-                import cupy
-
-                return str(cupy.__version__)
-            except ImportError:
-                return importlib.metadata.version("cupy-cuda12x")
-        elif package_name == "tensorflow":
-            try:
-                import tensorflow as tf
-
-                return str(tf.__version__)
-            except ImportError:
-                try:
-                    return importlib.metadata.version("tensorflow-macos")
-                except Exception:
-                    return importlib.metadata.version("tensorflow-cpu")
-        elif package_name == "mlir":
-            for mlir_pkg in ("mlir", "mlir-native"):
-                try:
-                    return importlib.metadata.version(mlir_pkg)
-                except Exception:
-                    pass
-            json_file = os.path.join(
-                os.path.dirname(__file__), "frameworks", "mlir_exhaustive.json"
-            )
-            if os.path.exists(json_file):
-                try:
-                    with open(json_file, "r", encoding="utf-8") as f:
-                        h = json.load(f)
-                        if isinstance(h, dict) and h.get("version"):
-                            return str(h["version"])
-                except Exception:
-                    pass
-            return "19.1.0"
-        elif package_name in _EXHAUSTIVE_JSON_VERSIONS:
-            json_file = os.path.join(
-                os.path.dirname(__file__),
-                "frameworks",
-                f"{package_name}_exhaustive.json",
-            )
-            if os.path.exists(json_file):
-                try:
-                    with open(json_file, "r", encoding="utf-8") as f:
-                        h = json.load(f)
-                        if isinstance(h, dict) and h.get("version"):
-                            return str(h["version"])
-                except Exception:
-                    pass
-            return _EXHAUSTIVE_JSON_VERSIONS[package_name]
-
-        return importlib.metadata.version(package_name)
-    except Exception:
-        if package_name in _FALLBACK_PKG_VERSIONS:
-            griffe_mod, fallback_ver = _FALLBACK_PKG_VERSIONS[package_name]
-            extracted = _extract_version_with_griffe(griffe_mod)
-            return extracted if extracted is not None else fallback_ver
-        return "unknown"
+    return _resolve_pkg_version(
+        package_name,
+        base_file=__file__,
+        extract_griffe_fn=_extract_version_with_griffe,
+    )
 
 
 def _domain_meta_to_key(meta: JsonValue) -> HashableKey:
@@ -497,24 +293,41 @@ def _consolidate_aliases(refs: list[GhostRef]) -> list[GhostRef]:
                 str(p.kind),
                 str(p.default) if p.default is not None else None,
                 p.annotation,
-                str(getattr(p, "direction", None)),
-                str(getattr(p, "role", None)),
-                tuple(str(dt) for dt in (getattr(p, "allowed_dtypes", None) or ())),
-                str(getattr(p, "rank_constraint", None)),
+                str(p.direction if isinstance(p, ExtendedGhostParam) else None),
+                str(p.role if isinstance(p, ExtendedGhostParam) else None),
+                tuple(
+                    str(dt)
+                    for dt in (
+                        (p.allowed_dtypes or ())
+                        if isinstance(p, ExtendedGhostParam)
+                        else ()
+                    )
+                ),
+                str(p.rank_constraint if isinstance(p, ExtendedGhostParam) else None),
             )
             for p in ref.params
         )
-        returns = getattr(ref, "returns", None)
+        returns = ref.returns if isinstance(ref, ExtendedGhostRef) else None
         returns_sig = (
-            tuple(
-                (str(getattr(r, "name", None)), str(getattr(r, "type", None)))
-                for r in returns
+            tuple((str(r.name), str(r.type)) for r in returns) if returns else None
+        )
+        domain_type = str(
+            ref.domain_type
+            if isinstance(
+                ref,
+                (
+                    GhostPythonRef,
+                    GhostMlirRef,
+                    GhostOperationRef,
+                    GhostIsaRef,
+                    GhostInstructionRef,
+                ),
             )
-            if returns
             else None
         )
-        domain_type = str(getattr(ref, "domain_type", None))
-        domain_metadata_key = _domain_meta_to_key(getattr(ref, "domain_metadata", None))
+        domain_metadata_key = _domain_meta_to_key(
+            ref.domain_metadata if isinstance(ref, ExtendedGhostRef) else None
+        )
 
         key: HashableKey = (
             ref.name,

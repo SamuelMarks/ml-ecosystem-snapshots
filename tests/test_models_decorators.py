@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    InspectableTarget,
+)
+from ml_ecosystem_snapshots.models import JsonValue
 
 
-def dummy_decorator(func: object) -> object:
+def dummy_decorator(
+    func: InspectableTarget,
+) -> InspectableTarget:
     """Execute helper dummy decorator.
 
     Args:
@@ -16,7 +22,7 @@ def dummy_decorator(func: object) -> object:
         Computed result.
     """
 
-    def wrapper(*args: object, **kwargs: object) -> object:
+    def wrapper(*args: JsonValue, **kwargs: JsonValue) -> JsonValue:
         """Execute helper wrapper.
 
         Args:
@@ -27,14 +33,13 @@ def dummy_decorator(func: object) -> object:
         Returns:
             Computed result.
         """
-        assert callable(func)
-        return func(*args, **kwargs)
+        return None
 
-    setattr(wrapper, "__wrapped__", func)
+    wrapper.__dict__["__wrapped__"] = func
     return wrapper
 
 
-def tf_function_mock(func: object) -> object:
+def tf_function_mock(func: InspectableTarget) -> InspectableTarget:
     """Execute helper tf function mock.
 
     Args:
@@ -48,7 +53,7 @@ def tf_function_mock(func: object) -> object:
     class TFFunction:
         """Mock or helper class TFFunction for unit testing."""
 
-        def __init__(self, f: object) -> None:
+        def __init__(self, f: InspectableTarget) -> None:
             """Execute helper init  .
 
             Args:
@@ -82,7 +87,7 @@ def test_unwrap_tf_decorator() -> None:
     """Verify unwrap tf decorator behavior."""
 
     @tf_function_mock
-    def my_tf_func(tensor: object, training: bool = False) -> None:
+    def my_tf_func(tensor: JsonValue, training: bool = False) -> None:
         """Execute helper my tf func.
 
         Args:
@@ -99,7 +104,7 @@ def test_unwrap_tf_decorator() -> None:
 def test_unwrap_generic_decorator() -> None:
     """Verify unwrap generic decorator behavior."""
 
-    def generic_dec(func: object) -> object:
+    def generic_dec(func: InspectableTarget) -> InspectableTarget:
         """Execute helper generic dec.
 
         Args:
@@ -116,11 +121,11 @@ def test_unwrap_generic_decorator() -> None:
             pass
 
         w = Wrapper()
-        setattr(w, "__original_fn", func)
+        w.__dict__["__original_fn"] = func
         return w
 
     @generic_dec
-    def fn1(a: object) -> None:
+    def fn1(a: JsonValue) -> None:
         """Execute helper fn1.
 
         Args:
@@ -135,7 +140,7 @@ def test_unwrap_generic_decorator() -> None:
 def test_unwrap_variant_decorator() -> None:
     """Verify unwrap variant decorator behavior."""
 
-    def variant_dec(func: object) -> object:
+    def variant_dec(func: InspectableTarget) -> InspectableTarget:
         """Execute helper variant dec.
 
         Args:
@@ -152,11 +157,11 @@ def test_unwrap_variant_decorator() -> None:
             pass
 
         w = Wrapper()
-        setattr(w, "_original_fn", func)
+        w.__dict__["_original_fn"] = func
         return w
 
     @variant_dec
-    def fn2(b: object) -> None:
+    def fn2(b: JsonValue) -> None:
         """Execute helper fn2.
 
         Args:

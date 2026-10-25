@@ -17,7 +17,7 @@ def test_ghost_inspector_overloads(tmp_path: pathlib.Path) -> None:
     """
     p = tmp_path / "test_overload_mock_unique.py"
     p.write_text(
-        """
+        """from __future__ import annotations
 import typing
 
 @typing.overload
@@ -26,8 +26,8 @@ def my_overloaded_func(a: int) -> int: ...
 @typing.overload
 def my_overloaded_func(a: str, b: str) -> str: ...
 
-def my_overloaded_func(a: object, b: object = None) -> object:
-    pass
+def my_overloaded_func(a: int | str, b: str | None = None) -> int | str:
+    return a
 """
     )
 
@@ -71,7 +71,7 @@ def test_ghost_inspector_class_constructor_overloads(tmp_path: pathlib.Path) -> 
     """
     p = tmp_path / "test_class_overload_mock.py"
     p.write_text(
-        """
+        """from __future__ import annotations
 import typing
 
 class OverloadedClass:
@@ -81,7 +81,7 @@ class OverloadedClass:
     @typing.overload
     def __init__(self, dim: str, mode: str) -> None: ...
 
-    def __init__(self, dim: object, mode: object = None) -> None:
+    def __init__(self, dim: int | str, mode: str | None = None) -> None:
         pass
 """
     )

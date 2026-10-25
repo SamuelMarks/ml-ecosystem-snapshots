@@ -310,13 +310,6 @@ def test_triton_missing() -> None:
     ):
         assert collect_api(SemanticTier.UTIL) == []
 
-    with patch.object(GhostInspector, "inspect", return_value=None):
-        with patch(
-            "ml_ecosystem_snapshots.frameworks.triton.importlib.import_module",
-            return_value=fake_tl,
-        ):
-            assert collect_api(SemanticTier.UTIL) == []
-
     class NoAnno:
         """Kernel callable without annotations."""
 
@@ -332,6 +325,7 @@ def test_triton_missing() -> None:
             return x
 
     no_anno = NoAnno()
+    no_anno.__dict__["__annotations__"] = None
     ref_no_anno = _extract_triton_kernel(no_anno, "no_anno", "mod", GhostInspector())
     assert ref_no_anno is not None
     assert ref_no_anno.name == "no_anno"

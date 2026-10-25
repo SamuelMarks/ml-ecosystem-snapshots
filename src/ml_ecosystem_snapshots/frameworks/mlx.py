@@ -130,7 +130,6 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
                                 OSError,
                                 ImportError,
                                 RuntimeError,
-                                Exception,
                             ):
                                 pass
     except (
@@ -143,7 +142,6 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
         OSError,
         ImportError,
         RuntimeError,
-        Exception,
     ):
         pass
 

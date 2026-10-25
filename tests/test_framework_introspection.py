@@ -1256,7 +1256,7 @@ def test_jax_array_ops_inspect_exceptions(mocker: pytest_mock.MockerFixture) -> 
         """
         if name == "jax.numpy.float32":
             return GhostRef(name="float32", api_path="jax.numpy.float32", kind="class")
-        raise Exception("inspection failure")
+        raise RuntimeError("inspection failure")
 
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",

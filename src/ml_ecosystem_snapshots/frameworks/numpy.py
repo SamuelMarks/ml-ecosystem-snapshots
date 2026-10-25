@@ -55,7 +55,6 @@ def collect_api(
                         OSError,
                         ImportError,
                         RuntimeError,
-                        Exception,
                     ):
                         pass
     elif category == SemanticTier.ARRAY_API:
@@ -78,7 +77,6 @@ def collect_api(
                         OSError,
                         ImportError,
                         RuntimeError,
-                        Exception,
                     ):
                         pass
 
@@ -104,7 +102,6 @@ def collect_api(
                             OSError,
                             ImportError,
                             RuntimeError,
-                            Exception,
                         ):
                             pass
 
@@ -130,7 +127,6 @@ def collect_api(
                             OSError,
                             ImportError,
                             RuntimeError,
-                            Exception,
                         ):
                             pass
     return results

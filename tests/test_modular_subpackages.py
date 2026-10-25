@@ -125,7 +125,7 @@ def test_mcp_registry_and_tools_reexports() -> None:
 def test_introspection_and_serialization_subpackages() -> None:
     """Verify introspection and serialization subpackage helpers."""
 
-    def sample_kw(**kwargs: object) -> object:
+    def sample_kw(**kwargs: JsonValue) -> JsonValue:
         """Sample function accessing kwargs['alpha'].
 
         Args:

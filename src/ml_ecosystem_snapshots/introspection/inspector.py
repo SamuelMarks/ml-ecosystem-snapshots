@@ -31,6 +31,13 @@ from ml_ecosystem_snapshots.c_extension_sig import (
 from ml_ecosystem_snapshots.introspection.ast_kwargs import (
     extract_accepted_kwargs_from_ast,
 )
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    InspectableTarget,
+    get_runtime_signature,
+    get_runtime_source,
+    has_runtime_attr,
+    read_runtime_attr,
+)
 from ml_ecosystem_snapshots.introspection.sanitize import (
     sanitize_param_default,
     sanitize_type_str,
@@ -303,7 +310,7 @@ def _extract_docstring_ir(
 
 
 def _extract_ast_and_griffe_node(
-    obj: object,
+    obj: InspectableTarget,
     kind: str,
     api_path: str,
     docstring_parser_name: str,
@@ -323,11 +330,11 @@ def _extract_ast_and_griffe_node(
     """Extract CDD AST parameter definitions, `super().__init__(**kwargs)` usage, and Griffe node.
 
     Args:
-        obj: Target Python object.
+        obj: Target Python runtime symbol.
         kind: Symbol kind ('class', 'function', 'method').
         api_path: Canonical dotted API path.
         docstring_parser_name: Docstring style name.
-        griffe_node: Existing Griffe node if `obj` is already a Griffe object.
+        griffe_node: Existing Griffe node if `obj` is already a Griffe node.
         cdd_params: Extracted docstring parameter dictionary.
         active_ast_mod: Active `ast` module reference.
         active_griffe_cache: Active Griffe module cache dictionary.
@@ -339,8 +346,7 @@ def _extract_ast_and_griffe_node(
     has_super_kwargs_call = False
 
     try:
-        getsource_fn: typing.Callable[[object], str] = getattr(inspect, "getsource")
-        source = getsource_fn(obj)
+        source = get_runtime_source(obj)
         parsed_ast = active_ast_mod.parse(source).body[0]
 
         if kind == "class":
@@ -417,8 +423,8 @@ def _extract_ast_and_griffe_node(
 
 
 def _extract_raw_parameters(
-    obj: object,
-    target: object,
+    obj: InspectableTarget,
+    target: InspectableTarget,
     name: str,
     kind: str,
     api_path: str,
@@ -434,7 +440,7 @@ def _extract_raw_parameters(
     active_ast_mod: types.ModuleType,
     active_sanitize_type_str: typing.Callable[[str | None], str | None],
     active_extract_c_ext_sig: typing.Callable[
-        [object, str], CExtensionSignature | None
+        [InspectableTarget, str], CExtensionSignature | None
     ],
 ) -> tuple[
     list[RawParamTuple],
@@ -448,7 +454,7 @@ def _extract_raw_parameters(
     """Run the 4-stage parameter fallback cascade (CDD AST -> Griffe -> inspect -> C-Ext/ATen).
 
     Args:
-        obj: Unwrapped Python object.
+        obj: Unwrapped Python runtime symbol.
         target: Callable target (`obj` or `obj.__init__`).
         name: Unqualified symbol name.
         kind: Symbol kind ('class', 'function', 'method').
@@ -548,10 +554,7 @@ def _extract_raw_parameters(
                             extracted_params[i] = (pn, p_kind_str, pd, pa)
         else:
             try:
-                sig_fn1: typing.Callable[[object], inspect.Signature] = getattr(
-                    inspect, "signature"
-                )
-                sig = sig_fn1(target)
+                sig = get_runtime_signature(target)
                 for param in sig.parameters.values():
                     if param.name == "self":
                         continue
@@ -603,10 +606,7 @@ def _extract_raw_parameters(
             extracted_params.append((param.name, p_kind_str, default_val, anno_val))
     else:
         try:
-            sig_fn2: typing.Callable[[object], inspect.Signature] = getattr(
-                inspect, "signature"
-            )
-            sig = sig_fn2(target)
+            sig = get_runtime_signature(target)
 
             for param in sig.parameters.values():
                 if param.name == "self":
@@ -714,22 +714,25 @@ def _extract_raw_parameters(
 
 
 def _merge_mro_super_kwargs(
-    obj: object,
+    obj: InspectableTarget,
     extracted_params: list[RawParamTuple],
     active_sanitize_type_str: typing.Callable[[str | None], str | None],
 ) -> None:
     """Merge parent `__init__` parameters across MRO when `super().__init__(**kwargs)` is used.
 
     Args:
-        obj: Class object being inspected.
+        obj: Class target being inspected.
         extracted_params: Mutable list of `(name, kind, default, annotation)` tuples.
         active_sanitize_type_str: Type annotation string sanitizer callable.
     """
-    for parent in getattr(obj, "__mro__", ())[1:]:
-        if parent is object:
+    mro_seq = read_runtime_attr(obj, "__mro__", ())
+    assert isinstance(mro_seq, tuple)
+    for parent in mro_seq[1:]:
+        if getattr(parent, "__name__", "") == "object":
             continue
         try:
-            parent_sig = inspect.signature(parent.__init__)
+            parent_init = getattr(parent, "__init__")
+            parent_sig = get_runtime_signature(parent_init)
             for param in parent_sig.parameters.values():
                 if param.name == "self" or param.kind in (
                     inspect.Parameter.VAR_POSITIONAL,
@@ -744,7 +747,7 @@ def _merge_mro_super_kwargs(
                     )
                     anno_val = (
                         param.annotation.__name__
-                        if hasattr(param.annotation, "__name__")
+                        if has_runtime_attr(param.annotation, "__name__")
                         else (
                             str(param.annotation)
                             if param.annotation is not inspect.Parameter.empty
@@ -1041,13 +1044,13 @@ class GhostInspector:
 
     @staticmethod
     def inspect(
-        obj: object,
+        obj: InspectableTarget,
         api_path: str,
         is_public: bool | None = None,
         environment_tags: list[str] | None = None,
         kind: str | None = None,
     ) -> GhostPythonRef:
-        """Create a GhostRef from a live Python object.
+        """Create a GhostRef from a live Python runtime symbol.
 
         Gracefully handles C-Extensions and builtins that resist introspection.
 
@@ -1059,38 +1062,47 @@ class GhostInspector:
             kind: Optional explicit kind override (e.g. 'function', 'class', 'method').
 
         Returns:
-            A populated GhostRef object.
+            A populated GhostPythonRef instance.
         """
         obj = unwrap_decorated_target(obj)
 
-        is_griffe_node = hasattr(obj, "is_class") and hasattr(obj, "is_function")
-        if is_griffe_node:
-            name = str(getattr(obj, "name", api_path.split(".")[-1]))
+        griffe_node: (
+            griffe.Module | griffe.Object | griffe.Alias | GriffeNodeProtocol | None
+        ) = None
+        if (
+            isinstance(obj, GriffeNodeProtocol)
+            and has_runtime_attr(obj, "is_class")
+            and has_runtime_attr(obj, "is_function")
+        ):
+            name = str(read_runtime_attr(obj, "name", api_path.split(".")[-1]))
             determined_kind = (
                 kind
                 if kind is not None
-                else ("class" if getattr(obj, "is_class", False) else "function")
+                else (
+                    "class"
+                    if bool(read_runtime_attr(obj, "is_class", False))
+                    else "function"
+                )
             )
-            doc_obj = getattr(obj, "docstring", None)
+            doc_obj = read_runtime_attr(obj, "docstring", None)
             doc = (
-                str(doc_obj.value)
-                if doc_obj and hasattr(doc_obj, "value")
-                else (str(doc_obj) if doc_obj else None)
+                str(read_runtime_attr(doc_obj, "value", doc_obj))
+                if doc_obj is not None and has_runtime_attr(doc_obj, "value")
+                else (str(doc_obj) if doc_obj is not None else None)
             )
-            griffe_node: (
-                griffe.Module | griffe.Object | griffe.Alias | GriffeNodeProtocol | None
-            ) = obj if isinstance(obj, GriffeNodeProtocol) else None
+            griffe_node = obj
+            is_griffe_node = True
         else:
-            name = str(getattr(obj, "__name__", api_path.split(".")[-1]))
+            is_griffe_node = False
+            name = str(read_runtime_attr(obj, "__name__", api_path.split(".")[-1]))
             if name == "<lambda>":
                 name = api_path.split(".")[-1]
             determined_kind = (
                 kind
                 if kind is not None
-                else ("class" if inspect.isclass(obj) else "function")
+                else ("class" if isinstance(obj, type) else "function")
             )
             doc = inspect.getdoc(obj)
-            griffe_node = None
         kind = determined_kind
 
         active_sanitize_type_str = sanitize_type_str

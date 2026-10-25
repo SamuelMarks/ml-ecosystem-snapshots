@@ -3,20 +3,22 @@
 from __future__ import annotations
 
 import ast
-import inspect
 import textwrap
-import typing
 
 from ml_ecosystem_snapshots.exceptions import IntrospectionError
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    InspectableTarget,
+    get_runtime_source,
+)
 
 
 def _parse_callable_ast(
-    func: object,
+    func: InspectableTarget,
 ) -> ast.AST:
-    """Retrieve and parse the Python AST of a live callable object.
+    """Retrieve and parse the Python AST of a live callable target.
 
     Args:
-        func: Live function or method object to inspect.
+        func: Live function or method target to inspect.
 
     Returns:
         Parsed module `ast.AST` tree.
@@ -25,8 +27,7 @@ def _parse_callable_ast(
         IntrospectionError: If source code cannot be retrieved or parsed.
     """
     try:
-        getsource_fn: typing.Callable[[object], str] = getattr(inspect, "getsource")
-        src = getsource_fn(func)
+        src = get_runtime_source(func)
         src = textwrap.dedent(src)
         return ast.parse(src)
     except (OSError, TypeError, SyntaxError, IndentationError, ValueError) as exc:
@@ -36,7 +37,7 @@ def _parse_callable_ast(
 
 
 def extract_accepted_kwargs_from_ast(
-    func: object,
+    func: InspectableTarget,
 ) -> list[str] | None:
     """Statically analyze a function AST to extract keyword arguments accessed via `**kwargs`.
 
@@ -47,7 +48,7 @@ def extract_accepted_kwargs_from_ast(
         "qux" in kwargs
 
     Args:
-        func: Live function or method object to inspect.
+        func: Live function or method target to inspect.
 
     Returns:
         Sorted list of discovered keyword argument names, or None when unavailable.

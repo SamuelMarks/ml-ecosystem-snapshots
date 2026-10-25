@@ -18,6 +18,10 @@ import pydantic
 
 from ml_ecosystem_snapshots.c_extension_sig import CExtensionSignature
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    InspectableTarget,
+    read_runtime_attr,
+)
 from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.utils import get_all_members
 
@@ -397,7 +401,6 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
                         OSError,
                         ImportError,
                         RuntimeError,
-                        Exception,
                     ):
                         pass
 
@@ -420,7 +423,6 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
                             OSError,
                             ImportError,
                             RuntimeError,
-                            Exception,
                         ):
                             pass
 
@@ -1043,7 +1045,7 @@ def _coerce_aten_schema(
 
 
 def extract_aten_c_extension_signature(
-    target: object, name: str | None = None, is_method: bool = False
+    target: InspectableTarget, name: str | None = None, is_method: bool = False
 ) -> CExtensionSignature | None:
     """Extract a CExtensionSignature with exhaustive overloads from torch.ops.aten.
 
@@ -1055,7 +1057,7 @@ def extract_aten_c_extension_signature(
     Returns:
         CExtensionSignature with primary parameters and overloads if found, else None.
     """
-    op_name = str(name or getattr(target, "__name__", "") or "")
+    op_name = str(name or read_runtime_attr(target, "__name__", "") or "")
     raw_schemas = get_aten_op_schema(op_name)
     if not raw_schemas:
         return None

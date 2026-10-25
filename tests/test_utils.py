@@ -406,3 +406,37 @@ def test_is_offline_mode_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ML_SNAPSHOTS_OFFLINE", "0")
     assert is_offline_mode() is False
     monkeypatch.delenv("ML_SNAPSHOTS_OFFLINE", raising=False)
+
+
+def test_docstring_metadata_getitem_and_get() -> None:
+    """Test __getitem__ and get methods on DocstringParamMeta, DocstringReturnMeta, and DocstringMetadata."""
+    from ml_ecosystem_snapshots.utils import (
+        DocstringMetadata,
+        DocstringParamMeta,
+        DocstringReturnMeta,
+    )
+
+    p_meta = DocstringParamMeta(doc="param doc", typ="int", default="0")
+    assert p_meta["doc"] == "param doc"
+    assert p_meta["typ"] == "int"
+    assert p_meta["default"] == "0"
+
+    r_meta = DocstringReturnMeta(doc="ret doc", typ="bool")
+    assert r_meta["doc"] == "ret doc"
+    assert r_meta["typ"] == "bool"
+
+    d_meta = DocstringMetadata(
+        params={"x": p_meta},
+        returns=r_meta,
+        raises=["ValueError"],
+    )
+    assert d_meta["params"] == {"x": p_meta}
+    assert d_meta["returns"] == r_meta
+    assert d_meta["raises"] == ["ValueError"]
+    assert d_meta.get("params") == {"x": p_meta}
+    assert d_meta.get("returns") == r_meta
+    assert d_meta.get("raises") == ["ValueError"]
+    assert d_meta.get("nonexistent_key", []) == []
+
+    d_meta_none_ret = DocstringMetadata(params={}, returns=None, raises=[])
+    assert d_meta_none_ret.get("returns", r_meta) == r_meta

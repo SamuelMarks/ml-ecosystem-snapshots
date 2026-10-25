@@ -12,19 +12,25 @@ from ml_switcheroo_ir.schema.ghost import (
 )
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    InspectableTarget,
+    get_runtime_signature,
+    has_runtime_attr,
+    read_runtime_attr,
+)
 from ml_ecosystem_snapshots.introspection.sanitize import sanitize_type_str
 
 
-def _extract_generation_kwargs(obj: object, ref: GhostRef) -> None:
+def _extract_generation_kwargs(obj: InspectableTarget, ref: GhostRef) -> None:
     """Extract generation keyword arguments from a model's `generate` method signature.
 
     Args:
         obj: Target Hugging Face model class or callable exposing `generate`.
         ref: Populated `GhostRef` to augment with generation keyword arguments.
     """
-    gen_method = getattr(obj, "generate")
+    gen_method = read_runtime_attr(obj, "generate", None)
     try:
-        sig = inspect.signature(gen_method)
+        sig = get_runtime_signature(gen_method)
         for param in sig.parameters.values():
             if param.name == "self" or param.kind in (
                 inspect.Parameter.VAR_POSITIONAL,
@@ -55,17 +61,17 @@ def _extract_generation_kwargs(obj: object, ref: GhostRef) -> None:
         pass
 
 
-def _parse_pretrained_config(obj: object, ref: GhostRef) -> None:
+def _parse_pretrained_config(obj: InspectableTarget, ref: GhostRef) -> None:
     """Extract class-level `__annotations__` fields from a PreTrainedConfig subclass.
 
     Args:
-        obj: Target configuration class object.
+        obj: Target configuration class symbol.
         ref: Populated `GhostRef` to augment with configuration attributes.
     """
-    if not hasattr(obj, "__annotations__"):
+    if not has_runtime_attr(obj, "__annotations__"):
         return
 
-    raw_annos = getattr(obj, "__annotations__", {})
+    raw_annos = read_runtime_attr(obj, "__annotations__", {})
     assert isinstance(raw_annos, dict)
     for attr_name, attr_type in raw_annos.items():
         if not any(p.name == attr_name for p in ref.params):
@@ -81,7 +87,7 @@ def _parse_pretrained_config(obj: object, ref: GhostRef) -> None:
             )
 
 
-def _handle_automodel_factory(obj: object, name: str, ref: GhostRef) -> None:
+def _handle_automodel_factory(obj: InspectableTarget, name: str, ref: GhostRef) -> None:
     """Ensure `AutoModel*` factory classes expose a `config: PreTrainedConfig` parameter.
 
     Args:

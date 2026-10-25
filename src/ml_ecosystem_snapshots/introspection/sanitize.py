@@ -6,11 +6,15 @@ import ast
 import inspect
 import re
 
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    DefaultValueInput,
+    read_runtime_attr,
+)
 from ml_ecosystem_snapshots.utils import strip_sphinx_roles
 
 
 def sanitize_param_default(
-    val: object,
+    val: DefaultValueInput,
 ) -> tuple[str | None, str | None, bool]:
     """Sanitize parameter default value while preserving semantic literals and scrubbing memory addresses.
 
@@ -39,7 +43,7 @@ def sanitize_param_default(
             if val_repr.startswith("<class '") and val_repr.endswith("'>"):
                 cls_name = val_repr[8:-2]
                 return (cls_name, None, False)
-            func_name = getattr(val, "__name__", None)
+            func_name = read_runtime_attr(val, "__name__", None)
             factory_str = (
                 f"<function {func_name}>" if func_name else "<factory_default>"
             )

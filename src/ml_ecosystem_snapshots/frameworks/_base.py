@@ -24,6 +24,9 @@ from ml_switcheroo_ir.schema.ghost import (
 import pydantic
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    InspectableTarget,
+)
 from ml_ecosystem_snapshots.introspection.static_parsers import (
     load_griffe_module_safely,
 )
@@ -347,14 +350,14 @@ class InspectorCallable(typing.Protocol):
 
     def __call__(
         self,
-        obj: object,
+        obj: InspectableTarget,
         api_path: str,
         is_public: bool | None = None,
     ) -> GhostRef:
-        """Inspect a live Python object into a `GhostRef`.
+        """Inspect a live Python runtime symbol into a `GhostRef`.
 
         Args:
-            obj: Live Python object to inspect.
+            obj: Live Python symbol to inspect.
             api_path: Qualified API path string.
             is_public: Optional public visibility override.
 

@@ -142,7 +142,7 @@ def cmd_export(args: argparse.Namespace) -> None:
 
         fw_name = (
             (snap.get("target") if isinstance(snap, dict) else None)
-            or (getattr(refs[0], "framework", None) if refs else None)
+            or (refs[0].model_dump().get("framework") if refs else None)
             or "unknown"
         )
         content = export_scoped_prompt_context(str(fw_name))

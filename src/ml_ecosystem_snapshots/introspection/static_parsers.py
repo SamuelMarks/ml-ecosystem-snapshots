@@ -6,6 +6,9 @@ import logging
 import typing
 import typing_extensions
 
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    GriffeNodeProtocol,
+)
 from ml_ecosystem_snapshots.network_env import is_offline_mode
 from ml_ecosystem_snapshots.utils import (
     get_framework_docstring_parser,
@@ -14,13 +17,6 @@ from ml_ecosystem_snapshots.utils import (
 
 if typing.TYPE_CHECKING:
     import griffe
-
-
-@typing.runtime_checkable
-class GriffeNodeProtocol(typing.Protocol):
-    """Structural protocol for Griffe AST nodes (Module, Object, Function, Class, Alias)."""
-
-    is_public: bool
 
 
 class GriffeLoaderProto(typing.Protocol):
@@ -124,6 +120,7 @@ def preload_griffe_cache(frameworks: list[str] | None = None) -> None:
 
 __all__ = [
     "GriffeCacheEntry",
+    "GriffeNodeProtocol",
     "_GRIFFE_CACHE",
     "load_griffe_module_safely",
     "preload_griffe_cache",

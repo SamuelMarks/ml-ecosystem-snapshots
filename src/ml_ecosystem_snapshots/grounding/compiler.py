@@ -4,6 +4,14 @@ from __future__ import annotations
 
 import typing
 
+from ml_switcheroo_ir.schema.ghost import (
+    ExtendedGhostParam,
+    ExtendedGhostRef,
+    GhostMlirRef,
+    GhostOperationRef,
+    GhostParam,
+)
+
 from ml_ecosystem_snapshots.grounding.engine import GroundingEngine
 from ml_ecosystem_snapshots.grounding.models import (
     DiagnosticSeverity,
@@ -11,6 +19,47 @@ from ml_ecosystem_snapshots.grounding.models import (
 )
 from ml_ecosystem_snapshots.mcp.models import DomainOpCheckResult
 from ml_ecosystem_snapshots.models import JsonValue
+
+
+def _extract_ref_expected_operands(
+    ref: ExtendedGhostRef,
+) -> list[GhostParam]:
+    """Extract expected non-attribute, non-region operands from an IR `ExtendedGhostRef`.
+
+    Args:
+        ref: Hydrated `ExtendedGhostRef` operation specification.
+
+    Returns:
+        List of operand `GhostParam` specifications.
+    """
+    raw_operands = (
+        ref.operands if isinstance(ref, (GhostMlirRef, GhostOperationRef)) else None
+    )
+    return (
+        list(raw_operands)
+        if raw_operands is not None
+        else [
+            p
+            for p in ref.params
+            if "ATTRIBUTE"
+            not in str(p.role if isinstance(p, ExtendedGhostParam) else "")
+            and p.annotation != "Region"
+        ]
+    )
+
+
+def _extract_operand_type_constraint(
+    op_info: GhostParam,
+) -> str:
+    """Extract the type constraint string from an operand specification.
+
+    Args:
+        op_info: `GhostParam` operand specification.
+
+    Returns:
+        Type constraint string.
+    """
+    return str(op_info.annotation or "")
 
 
 def validate_stablehlo_op(
@@ -96,24 +145,10 @@ def validate_stablehlo_op(
                 suggested_fix="dimension_numbers",
             )
 
-    raw_operands = getattr(ref, "operands", None)
-    expected_operands = (
-        raw_operands
-        if raw_operands is not None
-        else [
-            p
-            for p in ref.params
-            if "ATTRIBUTE" not in str(getattr(p, "role", ""))
-            and getattr(p, "annotation", None) != "Region"
-        ]
-    )
+    expected_operands = _extract_ref_expected_operands(ref)
     if expected_operands:
-        is_variadic = getattr(ref, "has_varargs", False) or any(
-            "variadic"
-            in str(
-                getattr(o, "annotation", "")
-                or (o.get("type", "") if isinstance(o, dict) else "")
-            ).lower()
+        is_variadic = bool(ref.has_varargs) or any(
+            "variadic" in _extract_operand_type_constraint(o).lower()
             for o in expected_operands
         )
         if not is_variadic and len(operand_types) != len(expected_operands):
@@ -129,11 +164,7 @@ def validate_stablehlo_op(
         for i, (op_info, actual_type) in enumerate(
             zip(expected_operands, operand_types)
         ):
-            constraint = str(
-                op_info.get("type", "")
-                if isinstance(op_info, dict)
-                else getattr(op_info, "annotation", "") or ""
-            )
+            constraint = _extract_operand_type_constraint(op_info)
             for te in validate_mlir_type(actual_type, constraint=constraint):
                 report.add_diagnostic(
                     field=f"operands[{i}]",
@@ -142,7 +173,10 @@ def validate_stablehlo_op(
                 )
 
     meta = ref.domain_metadata or {}
-    raw_traits = meta.get("traits") or getattr(ref, "traits", None) or []
+    ref_traits = (
+        ref.traits if isinstance(ref, (GhostMlirRef, GhostOperationRef)) else None
+    )
+    raw_traits = meta.get("traits") or ref_traits or []
     base_traits = [str(t) for t in raw_traits] if isinstance(raw_traits, list) else []
     traits = _infer_implicit_mlir_traits(full_op_name, base_traits)
     attr_dict = dict(attributes)
@@ -252,24 +286,10 @@ def validate_mlir_op(
 
     report.matched_ref = ref
 
-    raw_operands = getattr(ref, "operands", None)
-    expected_operands = (
-        raw_operands
-        if raw_operands is not None
-        else [
-            p
-            for p in ref.params
-            if "ATTRIBUTE" not in str(getattr(p, "role", ""))
-            and getattr(p, "annotation", None) != "Region"
-        ]
-    )
+    expected_operands = _extract_ref_expected_operands(ref)
     if expected_operands and operand_count != len(expected_operands):
-        is_variadic = getattr(ref, "has_varargs", False) or any(
-            "variadic"
-            in str(
-                getattr(o, "annotation", "")
-                or (o.get("type", "") if isinstance(o, dict) else "")
-            ).lower()
+        is_variadic = bool(ref.has_varargs) or any(
+            "variadic" in _extract_operand_type_constraint(o).lower()
             for o in expected_operands
         )
         if not is_variadic:
@@ -286,11 +306,7 @@ def validate_mlir_op(
         for i, (op_info, actual_type) in enumerate(
             zip(expected_operands, operand_types)
         ):
-            constraint = str(
-                op_info.get("type", "")
-                if isinstance(op_info, dict)
-                else getattr(op_info, "annotation", "") or ""
-            )
+            constraint = _extract_operand_type_constraint(op_info)
             for te in validate_mlir_type(actual_type, constraint=constraint):
                 report.add_diagnostic(
                     field=f"operands[{i}]",
@@ -299,7 +315,10 @@ def validate_mlir_op(
                 )
 
     meta = ref.domain_metadata or {}
-    raw_traits = meta.get("traits") or getattr(ref, "traits", None) or []
+    ref_traits = (
+        ref.traits if isinstance(ref, (GhostMlirRef, GhostOperationRef)) else None
+    )
+    raw_traits = meta.get("traits") or ref_traits or []
     base_traits = [str(t) for t in raw_traits] if isinstance(raw_traits, list) else []
     traits = _infer_implicit_mlir_traits(full_path, base_traits)
     attr_dict = dict(attributes)
