@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import operator
 
 import sys
 import types
@@ -13,6 +12,8 @@ from ml_ecosystem_snapshots.frameworks.bohrium import (
     _get_bohrium,
     collect_api,
 )
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.models import ExtendedGhostRef
 from ml_switcheroo_ir.schema.ghost import (
     GhostPythonRef,
     SemanticTier,
@@ -47,7 +48,7 @@ def test_collect_api_bohrium_live(monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock Bohrium module."""
 
         @staticmethod
-        def array(obj: object) -> object:
+        def array(obj: InspectableTarget) -> InspectableTarget:
             """Mock array creation.
 
             Args:
@@ -94,23 +95,32 @@ def test_get_bohrium_exception(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch: Pytest monkeypatch fixture.
     """
     import builtins
+    import typing
 
-    real_import = operator.attrgetter("__import__")(builtins)
+    real_import = builtins.__import__
 
-    def mock_import(name: str, *args: object, **kwargs: object) -> object:
+    def mock_import(
+        name: str,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         """Mock import function.
 
         Args:
             name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             The imported module or raises.
         """
         if "bohrium" in name:
             raise ImportError("Simulated bohrium absent")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", mock_import)
     assert _get_bohrium() is None
@@ -134,7 +144,9 @@ def test_collect_api_bohrium_inspection_exception(
         "ml_ecosystem_snapshots.frameworks.bohrium._get_bohrium", lambda: FlakyBohrium()
     )
 
-    def mock_inspect(*args: object, **kwargs: object) -> object:
+    def mock_inspect(
+        *args: InspectableTarget, **kwargs: InspectableTarget
+    ) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:

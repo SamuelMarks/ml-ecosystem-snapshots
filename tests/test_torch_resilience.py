@@ -17,6 +17,7 @@ from ml_ecosystem_snapshots.frameworks.torch import (
     get_jit_schemas_for_op,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import GhostPythonRef
 
 
@@ -37,16 +38,25 @@ def test_torch_module_import_reload() -> None:
     assert operator.attrgetter("data")(torch_fw) is not None
 
     import builtins
+    import typing
 
-    real_import: object = operator.attrgetter("__import__")(builtins)
+    real_import = builtins.__import__
 
-    def mock_import(name: str, *args: object, **kwargs: object) -> object:
+    def mock_import(
+        name: str,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         """Mock import raising ImportError on torch submodules.
 
         Args:
             name: Module name.
-            *args: Variable positional arguments.
-            **kwargs: Variable keyword arguments.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Raises:
             ImportError: Simulated import error for torch submodules.
@@ -56,8 +66,7 @@ def test_torch_module_import_reload() -> None:
         """
         if name in ("torch.nn", "torch.optim", "torch.utils.data"):
             raise ImportError(f"simulated {name} import failure")
-        assert callable(real_import)
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     with patch("builtins.__import__", side_effect=mock_import):
         importlib.reload(torch_fw)
@@ -154,7 +163,7 @@ def test_torch_scan_array_api_inspect_exceptions(
     class MockTensor:
         """Mock Tensor class."""
 
-        def add_(self, other: object) -> object:
+        def add_(self, other: "MockTensor") -> "MockTensor":
             """In-place add.
 
             Args:
@@ -207,7 +216,7 @@ def test_torch_scan_array_api_tensor_inplace_tags_none(
     class MockTensor:
         """Mock Tensor class."""
 
-        def add_(self, other: object) -> object:
+        def add_(self, other: "MockTensor") -> "MockTensor":
             """In-place add.
 
             Args:

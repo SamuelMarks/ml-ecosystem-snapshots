@@ -10,6 +10,8 @@ import pytest_mock
 import types
 import typing
 from unittest.mock import patch, MagicMock
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.models import ExtendedGhostRef
 from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
 
 
@@ -46,7 +48,7 @@ def test_deepspeed_missing() -> None:
             """
             return x
 
-        def initialize(self, model: object = None) -> None:
+        def initialize(self, model: InspectableTarget = None) -> None:
             """Mock initialize method without config_params so collector injects it.
 
             Args:
@@ -113,7 +115,9 @@ def test_onnxruntime_missing() -> None:
         class SessionWithProviders:
             """Mock Session class already containing providers parameter."""
 
-            def __init__(self, path_or_bytes: str, providers: object = None) -> None:
+            def __init__(
+                self, path_or_bytes: str, providers: list[str] | None = None
+            ) -> None:
                 """Initialize session with providers parameter.
 
                 Args:
@@ -160,7 +164,9 @@ def test_onnxruntime_missing() -> None:
         class InferenceSession:
             """Mock InferenceSession class with providers parameter."""
 
-            def __init__(self, path_or_bytes: str, providers: object = None) -> None:
+            def __init__(
+                self, path_or_bytes: str, providers: list[str] | None = None
+            ) -> None:
                 """Initialize session with providers parameter.
 
                 Args:
@@ -176,7 +182,7 @@ def test_onnxruntime_missing() -> None:
 
     orig_inspect = GhostInspector.inspect
 
-    def selective_inspect(obj: object, name: str) -> object:
+    def selective_inspect(obj: InspectableTarget, name: str) -> ExtendedGhostRef:
         """Delegate to GhostInspector.inspect except for BadSession.
 
         Args:
@@ -228,7 +234,9 @@ def test_triton_missing() -> None:
     fake_tl = types.ModuleType("triton.language")
     fake_tl_math = types.ModuleType("triton.language.math")
 
-    def fake_fn(a: object, b: object, c: object) -> None:
+    def fake_fn(
+        a: InspectableTarget, b: InspectableTarget, c: InspectableTarget
+    ) -> None:
         """Mock Triton JIT function with constexpr annotation.
 
         Args:
@@ -245,7 +253,9 @@ def test_triton_missing() -> None:
 
         fn = staticmethod(fake_fn)
 
-        def __call__(self, *args: object, **kwargs: object) -> None:
+        def __call__(
+            self, *args: InspectableTarget, **kwargs: InspectableTarget
+        ) -> None:
             """Invoke wrapped kernel function.
 
             Args:
@@ -315,7 +325,7 @@ def test_triton_missing() -> None:
     class NoAnno:
         """Kernel callable without annotations."""
 
-        def __call__(self, x: object) -> object:
+        def __call__(self, x: InspectableTarget) -> InspectableTarget:
             """Execute kernel callable.
 
             Args:
@@ -358,7 +368,12 @@ def test_huggingface_missing() -> None:
     class M:
         """Mock generation-capable model class."""
 
-        def generate(self, input: object, *args: object, **kwargs: object) -> None:
+        def generate(
+            self,
+            input: InspectableTarget,
+            *args: InspectableTarget,
+            **kwargs: InspectableTarget,
+        ) -> None:
             """Mock generate method.
 
             Args:
@@ -450,31 +465,49 @@ def test_huggingface_missing() -> None:
             raise ValueError()
 
         @property
-        def DummyConfig(self) -> object:
+        def DummyConfig(self) -> InspectableTarget:
             """Return a dummy config instance with empty annotations.
 
             Returns:
                 DummyConfig instance.
             """
-            return type("DummyConfig", (), {"__annotations__": {}})()
+
+            class _DummyCfg:
+                """Dummy config class."""
+
+                __annotations__: dict[str, type] = {}
+
+            return _DummyCfg()
 
         @property
-        def EmptyConfig(self) -> object:
+        def EmptyConfig(self) -> InspectableTarget:
             """Return an EmptyConfig instance with 'a' annotation.
 
             Returns:
                 EmptyConfig instance.
             """
-            return type("EmptyConfig", (), {"__annotations__": {"a": int}})()
+
+            class _EmptyCfg:
+                """Empty config class."""
+
+                a: int
+
+            return _EmptyCfg()
 
         @property
-        def EmptyConfigB(self) -> object:
+        def EmptyConfigB(self) -> InspectableTarget:
             """Return an EmptyConfigB instance with 'b' annotation.
 
             Returns:
                 EmptyConfigB instance.
             """
-            return type("EmptyConfigB", (), {"__annotations__": {"b": int}})()
+
+            class _EmptyCfgB:
+                """Empty config B class."""
+
+                b: int
+
+            return _EmptyCfgB()
 
         @property
         def AutoModelA(self) -> MagicMock:
@@ -522,7 +555,7 @@ def test_huggingface_missing() -> None:
             return None
 
         @property
-        def GenModel(self) -> object:
+        def GenModel(self) -> InspectableTarget:
             """Return a model instance with a generate method.
 
             Returns:
@@ -533,7 +566,10 @@ def test_huggingface_missing() -> None:
                 """Mock inner model class with generate method."""
 
                 def generate(
-                    self, input: object, *args: object, **kwargs: object
+                    self,
+                    input: InspectableTarget,
+                    *args: InspectableTarget,
+                    **kwargs: InspectableTarget,
                 ) -> None:
                     """Mock generate method.
 
@@ -555,7 +591,7 @@ def test_huggingface_missing() -> None:
             """
             return MagicMock()
 
-    def mock_inspect(obj: object, name: str) -> object:
+    def mock_inspect(obj: InspectableTarget, name: str) -> GhostRef | MagicMock | None:
         """Return a mocked GhostRef or raise for ThrowConfig.
 
         Args:
@@ -813,7 +849,7 @@ def test_deepspeed_fallback_edges(mocker: pytest_mock.MockerFixture) -> None:
         return_value=fake_ds,
     )
 
-    def mock_inspect(obj: object, name: str) -> GhostRef | None:
+    def mock_inspect(obj: InspectableTarget, name: str) -> GhostRef | None:
         """Mock inspect function raising ValueError for error_op.
 
         Args:
@@ -934,8 +970,8 @@ def test_tensorflow_import_reload() -> None:
 
     def mock_import(
         name: str,
-        globals: typing.Mapping[str, object] | None = None,
-        locals: typing.Mapping[str, object] | None = None,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
         fromlist: typing.Sequence[str] = (),
         level: int = 0,
     ) -> types.ModuleType:
@@ -991,7 +1027,7 @@ def test_tensorflow_collect_live_image_lookup(monkeypatch: pytest.MonkeyPatch) -
 
         pass
 
-    def mock_resize(x: object) -> object:
+    def mock_resize(x: InspectableTarget) -> InspectableTarget:
         """Mock resize function.
 
         Args:
@@ -1002,7 +1038,7 @@ def test_tensorflow_collect_live_image_lookup(monkeypatch: pytest.MonkeyPatch) -
         """
         return x
 
-    def mock_private(x: object) -> object:
+    def mock_private(x: InspectableTarget) -> InspectableTarget:
         """Mock private function.
 
         Args:
@@ -1050,7 +1086,9 @@ def test_tensorflow_collect_live_image_lookup(monkeypatch: pytest.MonkeyPatch) -
     assert any("tf.lookup._private_table" in r.api_path for r in refs_nonpublic)
 
     # 3. Exception in inspect
-    def mock_broken_inspect(obj: object, name: str, **kwargs: object) -> object:
+    def mock_broken_inspect(
+        obj: InspectableTarget, name: str, **kwargs: InspectableTarget
+    ) -> ExtendedGhostRef:
         """Mock broken inspect raising on image, lookup, and nn.
 
         Args:
@@ -1093,8 +1131,8 @@ def test_tensorflow_get_tf_exception(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def failing_import(
         name: str,
-        globals: typing.Mapping[str, object] | None = None,
-        locals: typing.Mapping[str, object] | None = None,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
         fromlist: typing.Sequence[str] = (),
         level: int = 0,
     ) -> types.ModuleType:

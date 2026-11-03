@@ -45,7 +45,7 @@ def test_build_and_run_error_cleanup(
 
     calls: list[list[str]] = []
 
-    def side_effect(cmd: list[str], **kwargs: object) -> None:
+    def side_effect(cmd: list[str], **kwargs: bool) -> None:
         """Record subprocess command and fail on docker build.
 
         Args:

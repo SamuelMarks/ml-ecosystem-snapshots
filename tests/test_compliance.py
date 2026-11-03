@@ -469,11 +469,12 @@ def test_extract_target_refs_catch_inner_exception(tmp_path: Path) -> None:
     sub_mod.write_text("class Outer:\n    class Inner:\n        pass\n")
 
     import ml_ecosystem_snapshots.introspection.inspector
+    from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 
     orig_inspect = ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect
 
     def mock_inspect(
-        obj: object, api_path: str, is_public: bool | None = None
+        obj: InspectableTarget, api_path: str, is_public: bool | None = None
     ) -> ExtendedGhostRef:
         """Mock inspect function.
 

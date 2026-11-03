@@ -1522,12 +1522,14 @@ def test_mcp_server_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
     import importlib
     import ml_ecosystem_snapshots.mcp_server as mcp_mod
 
+    from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+
     orig_import = builtins.__import__
 
     def fake_import(
         name: str,
-        globals: typing.Mapping[str, object] | None = None,
-        locals: typing.Mapping[str, object] | None = None,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
         fromlist: typing.Sequence[str] = (),
         level: int = 0,
     ) -> types.ModuleType:

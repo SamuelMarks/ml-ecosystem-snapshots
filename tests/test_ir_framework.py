@@ -171,23 +171,34 @@ def test_get_pkg_version_ir_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch: Pytest monkeypatch fixture.
     """
     import builtins
+    import types
+    import typing
+    from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 
-    real_import = operator.attrgetter("__import__")(builtins)
+    real_import = builtins.__import__
 
-    def mock_import(name: str, *args: object, **kwargs: object) -> object:
+    def mock_import(
+        name: str,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         """Mock import function.
 
         Args:
             name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             The imported module or raises.
         """
         if name == "ml_switcheroo_ir":
-            raise ImportError("simulated error")
-        return real_import(name, *args, **kwargs)
+            raise ImportError("Simulated IR absent")
+        return real_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", mock_import)
     ver = get_pkg_version("ir")

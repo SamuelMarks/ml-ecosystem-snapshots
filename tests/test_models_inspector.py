@@ -6,6 +6,7 @@ import pytest_mock
 
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostParam
 from ml_switcheroo_ir.schema.ghost import GhostRef
 
@@ -29,7 +30,7 @@ def dummy_func_with_docstring(x: int) -> str:
     return "test"
 
 
-def dummy_func_sphinx_docstring(y: object) -> None:
+def dummy_func_sphinx_docstring(y: InspectableTarget) -> None:
     """Sphinx doc.
 
     :param y: The y value.
@@ -111,7 +112,7 @@ def test_inspect_annotation_fallback() -> None:
         # A class that lacks __name__ but is passed as annotation
         pass
 
-    def func_annotated(a: object) -> None:
+    def func_annotated(a: InspectableTarget) -> None:
         """Execute helper func annotated.
 
         Args:
@@ -133,7 +134,7 @@ def test_griffe_self_skip() -> None:
     class A:
         """Mock or helper class A for unit testing."""
 
-        def m(self, x: object) -> None:
+        def m(self, x: InspectableTarget) -> None:
             """Execute helper m.
 
             Args:

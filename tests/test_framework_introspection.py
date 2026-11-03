@@ -30,6 +30,7 @@ from ml_ecosystem_snapshots.frameworks import (
     tensorflow as tf_fw,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 
 
 def test_ir_collect_api_all_categories() -> None:
@@ -140,7 +141,7 @@ def test_onnxruntime_collect_api_edge_branches(
 
     providers_present = [False]
 
-    def mock_inspect(obj: object, path: str) -> GhostRef | None:
+    def mock_inspect(obj: InspectableTarget, path: str) -> GhostRef | None:
         """Mock inspect function.
 
         Args:
@@ -236,7 +237,9 @@ def test_numpy_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> No
 
     original_inspect = GhostInspector.inspect
 
-    def mock_inspect_act(obj: object, name: str, is_public: bool = True) -> GhostRef:
+    def mock_inspect_act(
+        obj: InspectableTarget, name: str, is_public: bool = True
+    ) -> GhostRef:
         """Mock inspect for activation.
 
         Args:
@@ -327,7 +330,9 @@ def test_numpy_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> No
     pytest.MonkeyPatch().setattr(fake_fft_mod, "ifft", ifft, raising=False)
     pytest.MonkeyPatch().setattr(fake_np_array, "fft", fake_fft_mod, raising=False)
 
-    def mock_inspect_arr(obj: object, name: str, is_public: bool = True) -> GhostRef:
+    def mock_inspect_arr(
+        obj: InspectableTarget, name: str, is_public: bool = True
+    ) -> GhostRef:
         """Mock inspect for array api.
 
         Args:
@@ -368,8 +373,8 @@ def test_numpy_import_error_handling() -> None:
 
     def mock_import(
         name: str,
-        globals: typing.Mapping[str, object] | None = None,
-        locals: typing.Mapping[str, object] | None = None,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
         fromlist: typing.Sequence[str] = (),
         level: int = 0,
     ) -> types.ModuleType:
@@ -567,7 +572,7 @@ def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None
 
     mocker.patch.object(mlx_mod, "mlx", fake_mlx)
 
-    def mock_inspect(obj: object, path: str) -> GhostRef:
+    def mock_inspect(obj: InspectableTarget, path: str) -> GhostRef:
         """Mock inspect function.
 
         Args:
@@ -685,8 +690,8 @@ def test_mlx_import_error_handling() -> None:
 
     def mock_import_fail(
         name: str,
-        globals: typing.Mapping[str, object] | None = None,
-        locals: typing.Mapping[str, object] | None = None,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
         fromlist: typing.Sequence[str] = (),
         level: int = 0,
     ) -> types.ModuleType:
@@ -786,8 +791,8 @@ def test_huggingface_collect_api_all_branches(
             default_val: int = 10,
             no_default: float = 0.0,
             no_anno=None,
-            *args: object,
-            **kwargs: object,
+            *args: InspectableTarget,
+            **kwargs: InspectableTarget,
         ) -> None:
             """Generate method.
 
@@ -911,7 +916,7 @@ def test_huggingface_collect_api_all_branches(
             )
             return names
 
-        def __getattr__(self, name: str) -> object:
+        def __getattr__(self, name: str) -> InspectableTarget:
             """Simulate getattr results.
 
             Args:
@@ -937,7 +942,9 @@ def test_huggingface_collect_api_all_branches(
                 return SampleGenModel()
             return lambda: None
 
-    def mock_import_large(name: str, package: str | None = None) -> object:
+    def mock_import_large(
+        name: str, package: str | None = None
+    ) -> types.ModuleType | LargeMod:
         """Mock import returning LargeMod.
 
         Args:
@@ -951,7 +958,7 @@ def test_huggingface_collect_api_all_branches(
             return LargeMod()
         return real_import(name, package)
 
-    def mock_inspect_large(obj: object, path: str) -> GhostRef | None:
+    def mock_inspect_large(obj: InspectableTarget, path: str) -> GhostRef | None:
         """Mock inspect for large transformers module.
 
         Args:
@@ -1302,7 +1309,9 @@ def test_jax_array_ops_inspect_exceptions(mocker: pytest_mock.MockerFixture) -> 
         },
     )
 
-    def mock_inspect(obj: object, name: str, **kwargs: object) -> GhostRef:
+    def mock_inspect(
+        obj: InspectableTarget, name: str, **kwargs: InspectableTarget
+    ) -> GhostRef:
         """Mock inspect function.
 
         Args:
@@ -1365,8 +1374,8 @@ def test_jax_pallas_import_failure(mocker: pytest_mock.MockerFixture) -> None:
 
     def mock_import(
         name: str,
-        globals: typing.Mapping[str, object] | None = None,
-        locals: typing.Mapping[str, object] | None = None,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
         fromlist: typing.Sequence[str] = (),
         level: int = 0,
     ) -> types.ModuleType:
@@ -1405,8 +1414,8 @@ def test_jax_array_ops_import_error(mocker: pytest_mock.MockerFixture) -> None:
 
     def mock_import(
         name: str,
-        globals: typing.Mapping[str, object] | None = None,
-        locals: typing.Mapping[str, object] | None = None,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
         fromlist: typing.Sequence[str] = (),
         level: int = 0,
     ) -> types.ModuleType:

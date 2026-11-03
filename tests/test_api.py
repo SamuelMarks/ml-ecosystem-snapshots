@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import operator
 
 from pathlib import Path
 import pytest_mock
@@ -11,6 +10,7 @@ import os
 import sys
 import types
 import pytest
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.utils import get_all_members
 
@@ -46,7 +46,7 @@ def test_get_all_members() -> None:
             """
             return ["VisibleClass", "__all__", "broken_dir"]
 
-        def __getattr__(self, name: str) -> object:
+        def __getattr__(self, name: str) -> InspectableTarget:
             """Execute helper getattr  .
 
             Args:
@@ -745,24 +745,33 @@ def test_init_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     import builtins
     import importlib
+    import typing
     import ml_ecosystem_snapshots
 
-    orig_import = operator.attrgetter("__import__")(builtins)
+    orig_import = builtins.__import__
 
-    def fake_import(name: str, *args: object, **kwargs: object) -> object:
+    def fake_import(
+        name: str,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         """Simulate missing ml_ecosystem_snapshots.api.
 
         Args:
             name: Module name.
-            *args: Positional arguments.
-            **kwargs: Keyword arguments.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             Imported module.
         """
         if name == "ml_ecosystem_snapshots.api":
             raise ImportError("simulated missing api")
-        return orig_import(name, *args, **kwargs)
+        return orig_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
     importlib.reload(ml_ecosystem_snapshots)
@@ -874,36 +883,53 @@ def test_get_pkg_version_ir_package(
     """
     import builtins
     import types
+    import typing
     from ml_ecosystem_snapshots.api import get_pkg_version
 
     mock_ir = types.SimpleNamespace(__version__="0.0.9")
-    real_import = operator.attrgetter("__import__")(builtins)
+    real_import = builtins.__import__
 
-    def mock_import_success(name: str, *args: object, **kwargs: object) -> object:
+    def mock_import_success(
+        name: str,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType | types.SimpleNamespace:
         """Mock import returning mock IR.
 
         Args:
             name: Module name.
-            *args: Positional args.
-            **kwargs: Keyword args.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             Module namespace or real module.
         """
         if name == "ml_switcheroo_ir":
             return mock_ir
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", mock_import_success)
     assert get_pkg_version("ir") == "0.0.9"
 
-    def mock_import_fail(name: str, *args: object, **kwargs: object) -> object:
+    def mock_import_fail(
+        name: str,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType | types.SimpleNamespace:
         """Mock import raising ImportError on IR.
 
         Args:
             name: Module name.
-            *args: Positional args.
-            **kwargs: Keyword args.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             Real imported module.
@@ -913,7 +939,7 @@ def test_get_pkg_version_ir_package(
         """
         if name == "ml_switcheroo_ir":
             raise ImportError("no ml_switcheroo_ir")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", mock_import_fail)
     mocker.patch("importlib.metadata.version", return_value="0.0.5")
@@ -955,6 +981,7 @@ def test_get_pkg_version_modules_installed_and_fallbacks(
     import builtins
     import importlib.metadata
     import types
+    import typing
     from ml_ecosystem_snapshots.api import get_pkg_version
 
     mock_modules: dict[str, types.SimpleNamespace] = {
@@ -966,22 +993,30 @@ def test_get_pkg_version_modules_installed_and_fallbacks(
         "bohrium": types.SimpleNamespace(__version__="0.13.2"),
         "onnx": types.SimpleNamespace(__version__="1.17.2"),
     }
-    real_import = operator.attrgetter("__import__")(builtins)
+    real_import = builtins.__import__
 
-    def mock_import_success(name: str, *args: object, **kwargs: object) -> object:
+    def mock_import_success(
+        name: str,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType | types.SimpleNamespace:
         """Mock import returning mock modules.
 
         Args:
             name: Module name.
-            *args: Positional args.
-            **kwargs: Keyword args.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             Mock module or real module.
         """
         if name in mock_modules:
             return mock_modules[name]
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", mock_import_success)
     assert get_pkg_version("numba") == "0.60.2"
@@ -993,13 +1028,21 @@ def test_get_pkg_version_modules_installed_and_fallbacks(
     assert get_pkg_version("onnx") == "1.17.2"
     assert get_pkg_version("onnx_spec") == "1.17.2"
 
-    def mock_import_fail(name: str, *args: object, **kwargs: object) -> object:
+    def mock_import_fail(
+        name: str,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType | types.SimpleNamespace:
         """Mock import raising error for simulated modules.
 
         Args:
             name: Module name.
-            *args: Positional args.
-            **kwargs: Keyword args.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             Real imported module.
@@ -1009,7 +1052,7 @@ def test_get_pkg_version_modules_installed_and_fallbacks(
         """
         if name in mock_modules:
             raise ImportError(f"simulated import error for {name}")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", mock_import_fail)
 
@@ -1187,25 +1230,35 @@ def test_get_pkg_version_import_fallbacks(monkeypatch: pytest.MonkeyPatch) -> No
     assert get_pkg_version("onnx_spec") == "7.7.7"
 
     # 2. Failure branches
-    real_import = operator.attrgetter("__import__")(builtins)
+    import typing
+
+    real_import = builtins.__import__
 
     for name in pkgs:
         monkeypatch.delitem(sys.modules, name, raising=False)
 
-    def mock_import(name: str, *args: object, **kwargs: object) -> object:
+    def mock_import(
+        name: str,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType | types.SimpleNamespace:
         """Mock import raising error for targets.
 
         Args:
             name: Module name.
-            *args: Positional args.
-            **kwargs: Keyword args.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             Module or raises ImportError.
         """
         if name in pkgs:
             raise ImportError(f"Simulated {name} absent")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", mock_import)
     monkeypatch.setattr("importlib.metadata.version", lambda pkg: "9.9.9")

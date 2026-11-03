@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import operator
 
 import sys
 import types
@@ -14,6 +13,8 @@ from ml_ecosystem_snapshots.frameworks.pyarrow_compute import (
     collect_api,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.models import ExtendedGhostRef
 from ml_switcheroo_ir.schema.ghost import (
     GhostPythonRef,
     SemanticTier,
@@ -44,7 +45,7 @@ def test_collect_api_pyarrow_compute_live(monkeypatch: pytest.MonkeyPatch) -> No
             return a + b
 
         @staticmethod
-        def sum(arr: object) -> object:
+        def sum(arr: InspectableTarget) -> InspectableTarget:
             """Mock sum kernel.
 
             Args:
@@ -75,7 +76,9 @@ def test_collect_api_pyarrow_compute_live(monkeypatch: pytest.MonkeyPatch) -> No
 
     real_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: object, name: str, is_public: bool = True) -> object:
+    def mock_inspect(
+        obj: InspectableTarget, name: str, is_public: bool = True
+    ) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -149,16 +152,25 @@ def test_get_pyarrow_compute_exception(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch: Pytest monkeypatch fixture.
     """
     import builtins
+    import typing
 
-    real_import = operator.attrgetter("__import__")(builtins)
+    real_import = builtins.__import__
 
-    def mock_import(name: str, *args: object, **kwargs: object) -> object:
+    def mock_import(
+        name: str,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         """Mock import raising ImportError on pyarrow.
 
         Args:
             name: Module name.
-            *args: Positional import arguments.
-            **kwargs: Keyword import arguments.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             Imported module.
@@ -168,7 +180,7 @@ def test_get_pyarrow_compute_exception(monkeypatch: pytest.MonkeyPatch) -> None:
         """
         if "pyarrow" in name:
             raise ImportError("Simulated pyarrow absent")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", mock_import)
     assert _get_pyarrow_compute() is None
@@ -193,7 +205,7 @@ def test_collect_api_pyarrow_compute_inspection_exception(
         lambda: FlakyPyArrow(),
     )
 
-    def mock_inspect(*args: object, **kwargs: object) -> None:
+    def mock_inspect(*args: InspectableTarget, **kwargs: InspectableTarget) -> None:
         """Mock inspect raising RuntimeError.
 
         Args:

@@ -645,9 +645,14 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Path) -> None:
 
         def __init__(self) -> None:
             """Initialize MockConn."""
-            self.row_factory: object = None
+            self.row_factory: type[sqlite3.Row] | None = None
 
-        def execute(self, sql: str, *args: object, **kwargs: object) -> mock.MagicMock:
+        def execute(
+            self,
+            sql: str,
+            *args: str | int | float | None,
+            **kwargs: str | int | float | None,
+        ) -> mock.MagicMock:
             """Mock execute method to raise OperationalError on WAL pragma.
 
             Args:
@@ -666,7 +671,7 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Path) -> None:
             """Enter context manager."""
             return self
 
-        def __exit__(self, *args: object) -> None:
+        def __exit__(self, *args: BaseException | type[BaseException] | None) -> None:
             """Exit context manager.
 
             Args:

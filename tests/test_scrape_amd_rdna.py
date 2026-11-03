@@ -152,14 +152,14 @@ def S_MOV_B32 : SOP1_32 <"s_mov_b32">;
             with mock.patch(
                 "ml_ecosystem_snapshots.tools.scrape_amd_rdna.open"
             ) as mock_open:
-                original_open = open
+                import io
 
                 def open_side_effect(
                     path: str,
                     mode: str = "r",
                     encoding: str | None = None,
                     newline: str | None = None,
-                ) -> object:
+                ) -> io.TextIOWrapper:
                     """Mock open side effect.
 
                     Args:
@@ -171,11 +171,12 @@ def S_MOV_B32 : SOP1_32 <"s_mov_b32">;
                     Returns:
                         The mocked file object.
                     """
-                    if "amd_rdna_exhaustive.json" in path:
-                        return original_open(
-                            output_path, mode, encoding=encoding, newline=newline
-                        )
-                    return original_open(path, mode, encoding=encoding, newline=newline)
+                    target = output_path if "amd_rdna_exhaustive.json" in path else path
+                    return io.TextIOWrapper(
+                        io.FileIO(target, mode),
+                        encoding=encoding or "utf-8",
+                        newline=newline,
+                    )
 
                 mock_open.side_effect = open_side_effect
 

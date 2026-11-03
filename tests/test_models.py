@@ -10,6 +10,7 @@ import pytest_mock
 
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import (
     ExtendedGhostParam,
     GhostIsaRef,
@@ -45,7 +46,9 @@ def test_ghost_ref_has_arg() -> None:
     assert ref.has_arg("y") is False
 
 
-def dummy_func(a: int, b: int = 2, *args: object, **kwargs: object) -> None:
+def dummy_func(
+    a: int, b: int = 2, *args: InspectableTarget, **kwargs: InspectableTarget
+) -> None:
     """Docstring for dummy_func. a: int, b: int, args: tuple, kwargs: dict.
 
     # noqa: DAR101
@@ -67,7 +70,7 @@ class DummyClass:
         pass
 
 
-def dummy_c_extension(*args: object, **kwargs: object) -> None:
+def dummy_c_extension(*args: InspectableTarget, **kwargs: InspectableTarget) -> None:
     """Execute helper dummy c extension without docstring args for C-ext fallback.
 
     *args: Variadic positional arguments.
@@ -175,7 +178,7 @@ def test_unrepresentable_default() -> None:
             """
             raise Exception("no")
 
-    def f(a: object = Unrepresentable()) -> None:
+    def f(a: Unrepresentable = Unrepresentable()) -> None:
         """Execute helper f. a.
 
         Args:
@@ -195,7 +198,7 @@ def test_memory_address_default() -> None:
 
         pass
 
-    def f(a: object = MemoryDefault()) -> None:
+    def f(a: MemoryDefault = MemoryDefault()) -> None:
         """Execute helper f. a.
 
         Args:
@@ -214,7 +217,7 @@ def test_callable_default() -> None:
         """Execute helper my default."""
         pass
 
-    def f(a: object = my_default) -> None:
+    def f(a: typing.Callable[[], None] = my_default) -> None:
         """Execute helper f. a.
 
         Args:
@@ -248,7 +251,7 @@ def test_ghost_inspector_str_throws() -> None:
             """
             raise Exception("no")
 
-    def f(a: object = StrThrows()) -> None:
+    def f(a: StrThrows = StrThrows()) -> None:
         """Execute helper f. a.
 
         Args:
@@ -302,7 +305,7 @@ def test_ghost_inspector_str_has_address() -> None:
             """
             return "something at 0x1234"
 
-    def f(a: object = StrAddr()) -> None:
+    def f(a: StrAddr = StrAddr()) -> None:
         """Execute helper f. a.
 
         Args:
@@ -388,7 +391,7 @@ def test_ghost_inspector_cdd_fallback() -> None:
     """Verify ghost inspector cdd fallback behavior."""
 
     # Test when p_anno is missing but cdd has it
-    def dummy_func_cdd(x: object) -> None:
+    def dummy_func_cdd(x: InspectableTarget) -> None:
         """Dummy func.
 
         # noqa: DAR101
@@ -480,7 +483,7 @@ def test_ghost_inspector_cdd_anno_fallback() -> None:
     """Verify ghost inspector cdd anno fallback behavior."""
 
     # cdd_params gives 'typ' but inspect does not find it
-    def dummy_func_no_anno(x: object) -> None:
+    def dummy_func_no_anno(x: InspectableTarget) -> None:
         """Dummy func.
 
         # noqa: DAR101
@@ -814,7 +817,7 @@ def test_ghost_inspector_griffe_class_init(mocker: pytest_mock.MockerFixture) ->
         members: dict[str, str] = {}
 
         @property
-        def parameters(self) -> object:
+        def parameters(self) -> list[str]:
             """Raise RuntimeError on parameters access.
 
             Raises:
@@ -823,7 +826,7 @@ def test_ghost_inspector_griffe_class_init(mocker: pytest_mock.MockerFixture) ->
             raise RuntimeError("unresolved alias parameters")
 
         @property
-        def overloads(self) -> object:
+        def overloads(self) -> list[str]:
             """Raise RuntimeError on overloads access.
 
             Raises:
@@ -832,7 +835,7 @@ def test_ghost_inspector_griffe_class_init(mocker: pytest_mock.MockerFixture) ->
             raise RuntimeError("unresolved alias overloads")
 
         @property
-        def returns(self) -> object:
+        def returns(self) -> str:
             """Raise RuntimeError on returns access.
 
             Raises:
@@ -972,7 +975,7 @@ def test_ghost_inspector_c_ext_overloads_with_literal_and_standard_enum(
         return_value=mock_c_sig,
     )
 
-    def dummy_fn(*args: object, **kwargs: object) -> None:
+    def dummy_fn(*args: InspectableTarget, **kwargs: InspectableTarget) -> None:
         """Dummy C function.
 
         Args:
@@ -1018,7 +1021,7 @@ def test_extract_accepted_kwargs_from_ast() -> None:
         extract_accepted_kwargs_from_ast,
     )
 
-    def sample_kwargs_fn(**kwargs: object) -> None:
+    def sample_kwargs_fn(**kwargs: InspectableTarget) -> None:
         """Sample function querying kwargs in various ways.
 
         Args:

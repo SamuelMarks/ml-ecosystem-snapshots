@@ -63,7 +63,7 @@ def test_collect_api_live_mode() -> None:
     fake_core = types.SimpleNamespace(safe_open=lambda fn: None)
     fake_torch = types.SimpleNamespace(save_file=lambda t, fn, metadata=None: None)
 
-    def fake_get_submodule(sub: str) -> object:
+    def fake_get_submodule(sub: str) -> types.SimpleNamespace | None:
         """Return fake submodule by name.
 
         Args:
@@ -89,7 +89,7 @@ def test_collect_api_inspection_exception_handled() -> None:
 
     fake_torch = types.SimpleNamespace(save_file="not_inspectable")
 
-    def fake_get_submodule(sub: str) -> object:
+    def fake_get_submodule(sub: str) -> types.SimpleNamespace | None:
         """Return fake torch submodule.
 
         Args:

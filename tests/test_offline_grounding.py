@@ -25,7 +25,7 @@ def forbid_network_connections() -> typing.Generator[None, None, None]:
         None after patching socket.socket.connect.
     """
 
-    def _block_connect(*args: object, **kwargs: object) -> None:
+    def _block_connect(*args: str | int | tuple[str, int], **kwargs: str | int) -> None:
         """Blocked connect function.
 
         Args:

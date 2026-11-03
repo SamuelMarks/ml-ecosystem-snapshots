@@ -65,7 +65,7 @@ def test_collect_api_live_mode() -> None:
     fake_transforms = types.SimpleNamespace(gaussian_blur=lambda img: img)
     fake_utils = types.SimpleNamespace(draw_bounding_boxes=lambda img, boxes: img)
 
-    def fake_get_submodule(sub: str) -> object:
+    def fake_get_submodule(sub: str) -> types.SimpleNamespace | None:
         """Return fake submodule by name.
 
         Args:
@@ -93,7 +93,7 @@ def test_collect_api_inspection_exception_handled() -> None:
 
     fake_ops = types.SimpleNamespace(nms="not_inspectable")
 
-    def fake_get_submodule(sub: str) -> object:
+    def fake_get_submodule(sub: str) -> types.SimpleNamespace | None:
         """Return fake ops submodule.
 
         Args:

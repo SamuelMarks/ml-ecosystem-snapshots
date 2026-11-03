@@ -32,7 +32,7 @@ def block_network(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch: Pytest monkeypatch fixture.
     """
 
-    def guarded_socket(*args: object, **kwargs: object) -> None:
+    def guarded_socket(*args: int, **kwargs: int) -> None:
         """Prevent socket creation during offline testing.
 
         Args:

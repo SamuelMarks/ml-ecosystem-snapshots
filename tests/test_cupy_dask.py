@@ -11,12 +11,13 @@ import types
 
 from ml_switcheroo_ir.schema.ghost import SemanticTier
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
 import ml_ecosystem_snapshots.frameworks.cupy as cupy_fw
 import ml_ecosystem_snapshots.frameworks.dask as dask_fw
 
 
-def create_module(name: str, attrs: dict[str, object]) -> types.ModuleType:
+def create_module(name: str, attrs: dict[str, InspectableTarget]) -> types.ModuleType:
     """Create a mock module with given attributes.
 
     Args:
@@ -73,7 +74,9 @@ def test_cupy_collect(mocker: pytest_mock.MockerFixture) -> None:
     # Test ACTIVATION
     orig_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: object, fqn: str, is_public: bool) -> ExtendedGhostRef:
+    def mock_inspect(
+        obj: InspectableTarget, fqn: str, is_public: bool
+    ) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -138,7 +141,9 @@ def test_dask_collect(mocker: pytest_mock.MockerFixture) -> None:
 
     orig_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: object, fqn: str, is_public: bool) -> ExtendedGhostRef:
+    def mock_inspect(
+        obj: InspectableTarget, fqn: str, is_public: bool
+    ) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -186,7 +191,9 @@ def test_dask_collect(mocker: pytest_mock.MockerFixture) -> None:
     assert len(res_util_nonpublic) >= len(res_util)
 
     # Test UTIL tier when dask import raises
-    def mock_import_raise(*args: object, **kwargs: object) -> object:
+    def mock_import_raise(
+        *args: InspectableTarget, **kwargs: InspectableTarget
+    ) -> types.ModuleType:
         """Mock import raising error when importing dask.
 
         Args:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import types
 import typing
 from unittest.mock import patch
 
@@ -14,6 +15,7 @@ from ml_ecosystem_snapshots.introspection.ast_kwargs import (
     extract_accepted_kwargs_from_ast,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_switcheroo_ir.schema.ghost import GhostRef
 
 
@@ -70,7 +72,10 @@ class SimpleClassModel:
 
 
 def target_fn_ast_edges(
-    self: object, ast_arg: int = 42, broken_arg: str = "x", hint_arg: int = 1
+    self: InspectableTarget,
+    ast_arg: int = 42,
+    broken_arg: str = "x",
+    hint_arg: int = 1,
 ) -> None:
     """Target function for AST default edges.
 
@@ -146,7 +151,9 @@ def test_ghost_inspector_unwrap_max_depth() -> None:
         None.
     """
 
-    def make_wrapper(inner: object) -> object:
+    def make_wrapper(
+        inner: typing.Callable[[int], int],
+    ) -> typing.Callable[[int], int]:
         """Create function wrapper with __wrapped__ attribute.
 
         Args:
@@ -156,18 +163,16 @@ def test_ghost_inspector_unwrap_max_depth() -> None:
             Wrapped callable.
         """
 
-        def wrapped(*args: object, **kwargs: object) -> object:
+        def wrapped(x: int) -> int:
             """Wrapped function.
 
             Args:
-                *args: Positional args.
-                **kwargs: Keyword args.
+                x: Input value.
 
             Returns:
                 Call result.
             """
-            assert callable(inner)
-            return inner(*args, **kwargs)
+            return inner(x)
 
         pytest.MonkeyPatch().setattr(wrapped, "__wrapped__", inner, raising=False)
         return wrapped
@@ -183,7 +188,7 @@ def test_ghost_inspector_unwrap_max_depth() -> None:
         """
         return x
 
-    curr: object = base_func
+    curr: typing.Callable[[int], int] = base_func
     for _ in range(12):
         curr = make_wrapper(curr)
 
@@ -378,7 +383,9 @@ def test_ghost_inspector_parent_mro_signature_exception(
     real_signature = inspect.signature
 
     def mock_signature(
-        obj: object, *args: object, **kwargs: object
+        obj: InspectableTarget,
+        *args: InspectableTarget,
+        **kwargs: InspectableTarget,
     ) -> inspect.Signature:
         """Mock signature raising on MroParentClass.__init__.
 
@@ -395,7 +402,7 @@ def test_ghost_inspector_parent_mro_signature_exception(
         """
         if obj == MroParentClass.__init__:
             raise TypeError("parent init signature failure")
-        assert callable(obj)
+        assert isinstance(obj, (types.FunctionType, types.MethodType, type))
         return real_signature(obj)
 
     mocker.patch("inspect.signature", side_effect=mock_signature)
@@ -503,7 +510,7 @@ def test_ghost_inspector_c_ext_overload_infer_exception(
     )
     mocker.patch("inspect.signature", side_effect=TypeError("no signature"))
 
-    def c_ext_dummy(x: object) -> None:
+    def c_ext_dummy(x: InspectableTarget) -> None:
         """Dummy C extension function.
 
         Args:

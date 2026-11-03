@@ -12,6 +12,7 @@ import sys
 import types
 
 import pytest
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 
 
 class MockArgument:
@@ -134,7 +135,7 @@ class MockTorchOp:
         self.__doc__ = doc
         self.__module__ = "torch"
 
-    def __call__(self, *args: object, **kwargs: object) -> None:
+    def __call__(self, *args: InspectableTarget, **kwargs: InspectableTarget) -> None:
         """Execute mock operator.
 
         Args:
@@ -163,7 +164,7 @@ class MockTensor:
         """Initialize mock tensor."""
         pass
 
-    def add(self, other: object, *, alpha: int = 1) -> "MockTensor":
+    def add(self, other: "MockTensor" | int | float, *, alpha: int = 1) -> "MockTensor":
         """Add tensor.
 
         Args:
@@ -175,7 +176,9 @@ class MockTensor:
         """
         return self
 
-    def add_(self, other: object, *, alpha: int = 1) -> "MockTensor":
+    def add_(
+        self, other: "MockTensor" | int | float, *, alpha: int = 1
+    ) -> "MockTensor":
         """In-place add tensor.
 
         Args:
@@ -195,7 +198,7 @@ class MockTensor:
         """
         return self
 
-    def matmul(self, other: object) -> "MockTensor":
+    def matmul(self, other: "MockTensor") -> "MockTensor":
         """Matrix multiplication.
 
         Args:
@@ -214,7 +217,9 @@ class MockTensor:
         """
         return self
 
-    def cat(self, tensors: object, dim: int = 0) -> "MockTensor":
+    def cat(
+        self, tensors: list["MockTensor"] | tuple["MockTensor", ...], dim: int = 0
+    ) -> "MockTensor":
         """Concatenate tensors.
 
         Args:
@@ -226,7 +231,7 @@ class MockTensor:
         """
         return self
 
-    def mm(self, mat2: object) -> "MockTensor":
+    def mm(self, mat2: "MockTensor") -> "MockTensor":
         """Matrix multiply.
 
         Args:
@@ -237,7 +242,7 @@ class MockTensor:
         """
         return self
 
-    def bmm(self, mat2: object) -> "MockTensor":
+    def bmm(self, mat2: "MockTensor") -> "MockTensor":
         """Batch matrix multiply.
 
         Args:

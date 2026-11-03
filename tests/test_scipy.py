@@ -57,7 +57,7 @@ def test_collect_api_live_mode() -> None:
     fake_linalg = types.SimpleNamespace(inv=lambda a: a)
     fake_signal = types.SimpleNamespace(convolve=lambda in1, in2: in1)
 
-    def fake_get_submodule(sub: str) -> object:
+    def fake_get_submodule(sub: str) -> types.SimpleNamespace | None:
         """Return fake submodule by name.
 
         Args:
@@ -85,7 +85,7 @@ def test_collect_api_inspection_exception_handled() -> None:
 
     fake_special = types.SimpleNamespace(erf="not_inspectable")
 
-    def fake_get_submodule(sub: str) -> object:
+    def fake_get_submodule(sub: str) -> types.SimpleNamespace | None:
         """Return fake special submodule.
 
         Args:

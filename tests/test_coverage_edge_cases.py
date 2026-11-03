@@ -60,7 +60,7 @@ def test_fetch_amdgpu_td_file_cache_write_error(
         "ml_ecosystem_snapshots.network_env.fetch_url", lambda url: "content"
     )
 
-    def mock_makedirs(*args: object, **kwargs: object) -> None:
+    def mock_makedirs(*args: str | int, **kwargs: bool | int) -> None:
         """Mock makedirs throwing OSError.
 
         Args:

@@ -257,7 +257,7 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ops_empty == CANONICAL_WGSL_OPS
 
     # Case 3: Outer import failure
-    def mock_files_raise(_: object) -> object:
+    def mock_files_raise(_: str) -> MagicMock:
         """Mock failure in files resource resolution.
 
         Args:

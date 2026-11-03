@@ -337,7 +337,7 @@ def resolve_griffe_parser(parser_name: str) -> griffe.Parser | None:
             if isinstance(parser_cls, _RestParserClassProtocol):
                 rest_val: griffe.Parser = parser_cls.rest
                 return rest_val
-            sphinx_val: griffe.Parser = _griffe_mod.Parser.sphinx
+            sphinx_val: griffe.Parser = _griffe_mod.Parser("sphinx")
             return sphinx_val
         parsed_val: griffe.Parser = _griffe_mod.Parser(parser_name)
         return parsed_val

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import operator
 
 import sys
 import types
@@ -14,6 +13,8 @@ from ml_ecosystem_snapshots.frameworks.numba import (
     collect_api,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.models import ExtendedGhostRef
 from ml_switcheroo_ir.schema.ghost import (
     GhostPythonRef,
     SemanticTier,
@@ -31,7 +32,7 @@ def test_collect_api_numba_live(monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock Numba module."""
 
         @staticmethod
-        def njit(func: object) -> object:
+        def njit(func: InspectableTarget) -> InspectableTarget:
             """Mock njit decorator.
 
             Args:
@@ -43,7 +44,7 @@ def test_collect_api_numba_live(monkeypatch: pytest.MonkeyPatch) -> None:
             return func
 
         @staticmethod
-        def vectorize(func: object) -> object:
+        def vectorize(func: InspectableTarget) -> InspectableTarget:
             """Mock vectorize decorator.
 
             Args:
@@ -72,7 +73,9 @@ def test_collect_api_numba_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
     real_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: object, name: str, is_public: bool = True) -> object:
+    def mock_inspect(
+        obj: InspectableTarget, name: str, is_public: bool = True
+    ) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -139,16 +142,25 @@ def test_get_numba_exception(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch: Pytest monkeypatch fixture.
     """
     import builtins
+    import typing
 
-    real_import = operator.attrgetter("__import__")(builtins)
+    real_import = builtins.__import__
 
-    def mock_import(name: str, *args: object, **kwargs: object) -> object:
+    def mock_import(
+        name: str,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         """Mock import raising ImportError on numba.
 
         Args:
             name: Module name.
-            *args: Positional import arguments.
-            **kwargs: Keyword import arguments.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             Imported module.
@@ -158,7 +170,7 @@ def test_get_numba_exception(monkeypatch: pytest.MonkeyPatch) -> None:
         """
         if "numba" in name:
             raise ImportError("Simulated numba absent")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", mock_import)
     assert _get_numba() is None
@@ -182,7 +194,7 @@ def test_collect_api_numba_inspection_exception(
         "ml_ecosystem_snapshots.frameworks.numba._get_numba", lambda: FlakyNumba()
     )
 
-    def mock_inspect(*args: object, **kwargs: object) -> None:
+    def mock_inspect(*args: InspectableTarget, **kwargs: InspectableTarget) -> None:
         """Mock inspect raising RuntimeError.
 
         Args:

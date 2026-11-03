@@ -840,7 +840,7 @@ def test_cmd_index_rebuild_and_status(
     assert "Index database does not exist yet" in captured1.out
 
     # 2. Rebuild
-    def mock_ensure_index(*args: object, **kwargs: object) -> sqlite3.Connection:
+    def mock_ensure_index(*args: str, **kwargs: str) -> sqlite3.Connection:
         """Mock ensure_index initializing the test database.
 
         Args:

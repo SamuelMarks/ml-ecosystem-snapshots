@@ -79,14 +79,14 @@ def test_scrape_nvidia_sass() -> None:
             "ml_ecosystem_snapshots.tools.scrape_nvidia_sass.open"
         ) as mock_open:
             # We want to use the real open, but intercept the paths
-            original_open = open
+            import io
 
             def side_effect(
                 path: str,
                 mode: str = "r",
                 encoding: str | None = None,
                 newline: str | None = None,
-            ) -> object:
+            ) -> io.TextIOWrapper:
                 """Mock open side effect.
 
                 Args:
@@ -98,15 +98,16 @@ def test_scrape_nvidia_sass() -> None:
                 Returns:
                     The mocked file object.
                 """
+                target = path
                 if "/tmp/isa.json" in path:
-                    return original_open(
-                        input_path, mode, encoding=encoding, newline=newline
-                    )
-                if "nvidia_sass_exhaustive.json" in path:
-                    return original_open(
-                        output_path, mode, encoding=encoding, newline=newline
-                    )
-                return original_open(path, mode, encoding=encoding, newline=newline)
+                    target = input_path
+                elif "nvidia_sass_exhaustive.json" in path:
+                    target = output_path
+                return io.TextIOWrapper(
+                    io.FileIO(target, mode),
+                    encoding=encoding or "utf-8",
+                    newline=newline,
+                )
 
             mock_open.side_effect = side_effect
 

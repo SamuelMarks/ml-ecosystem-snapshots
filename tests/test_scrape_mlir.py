@@ -123,7 +123,7 @@ def test_inspect_mlir_python_module(mocker: pytest_mock.MockerFixture) -> None:
 
     mock_mod = MockDialectModule()
 
-    def mock_import(name: str) -> object:
+    def mock_import(name: str) -> MockDialectModule:
         """Mock import_module for MLIR dialects.
 
         Args:

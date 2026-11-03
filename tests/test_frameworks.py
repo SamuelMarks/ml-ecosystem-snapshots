@@ -11,6 +11,7 @@ from unittest.mock import patch
 import pytest
 import pytest_mock
 
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 pytestmark = [pytest.mark.frameworks]
@@ -49,7 +50,7 @@ def _stub_heavy_griffe_cache(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setitem(static_parsers._GRIFFE_CACHE, pkg, None)
 
 
-def create_module(name: str, attrs: dict[str, object]) -> types.ModuleType:
+def create_module(name: str, attrs: dict[str, InspectableTarget]) -> types.ModuleType:
     """Execute helper create module.
 
     Args:
@@ -971,7 +972,7 @@ def test_keras_collect_static_none_env_tags(mocker: pytest_mock.MockerFixture) -
     from ml_ecosystem_snapshots.frameworks.keras import _collect_static
     from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
-    mocker.patch.object(keras_fw, "griffe", object())
+    mocker.patch.object(keras_fw, "griffe", types.SimpleNamespace())
     ref = GhostRef(
         name="add",
         api_path="keras.ops.add",
@@ -1141,7 +1142,7 @@ def test_jax_collect(mocker: pytest_mock.MockerFixture) -> None:
         },
     )
 
-    def static_func(axis: int, data: object) -> None:
+    def static_func(axis: int, data: InspectableTarget) -> None:
         """Static arg test function.
 
         Args:
@@ -1529,7 +1530,7 @@ def test_sklearn_collect(mocker: pytest_mock.MockerFixture) -> None:
 
         pass
 
-    def accuracy_score(y_true: object, y_pred: object) -> None:
+    def accuracy_score(y_true: InspectableTarget, y_pred: InspectableTarget) -> None:
         """Execute helper accuracy score.
 
         Args:
@@ -1620,28 +1621,36 @@ def test_sklearn_module_import_error(mocker: pytest_mock.MockerFixture) -> None:
     from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
     import types
+    import typing
     import builtins
 
     mock_sklearn = types.ModuleType("sklearn")
     mocker.patch.object(sklearn_fw, "sklearn", mock_sklearn)
 
-    original_import: object = operator.attrgetter("__import__")(builtins)
+    original_import = builtins.__import__
 
-    def mock_import(name: str, *args: object, **kwargs: object) -> object:
+    def mock_import(
+        name: str,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
+        fromlist: typing.Sequence[str] = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         """Mock import function.
 
         Args:
             name: The module name.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
+            globals: Globals dictionary.
+            locals: Locals dictionary.
+            fromlist: From-import list.
+            level: Relative import level.
 
         Returns:
             The imported module or raises.
         """
         if name.startswith("sklearn."):
             raise ImportError("Mocked import error")
-        assert callable(original_import)
-        return original_import(name, *args, **kwargs)
+        return original_import(name, globals, locals, fromlist, level)
 
     mocker.patch("builtins.__import__", side_effect=mock_import)
 
@@ -1820,7 +1829,7 @@ def test_numpy_collect(mocker: pytest_mock.MockerFixture) -> None:
     original_inspect = GhostInspector.inspect
 
     def mock_inspect(
-        obj: object, api_path: str, is_public: bool | None = None
+        obj: InspectableTarget, api_path: str, is_public: bool | None = None
     ) -> GhostRef:
         """Mock inspect function delegating to real GhostInspector.inspect except on minimum.
 
@@ -1898,7 +1907,7 @@ def test_orbax_collect(mocker: pytest_mock.MockerFixture) -> None:
     class Checkpointer:
         """Checkpoint manager class."""
 
-        def __init__(self, handler: object) -> None:
+        def __init__(self, handler: InspectableTarget) -> None:
             """Initialize Checkpointer.
 
             Args:
@@ -1925,7 +1934,7 @@ def test_orbax_collect(mocker: pytest_mock.MockerFixture) -> None:
     original_inspect = GhostInspector.inspect
 
     def mock_inspect(
-        obj: object, api_path: str, is_public: bool | None = None
+        obj: InspectableTarget, api_path: str, is_public: bool | None = None
     ) -> GhostRef:
         """Mock inspect function delegating to real GhostInspector.inspect except on error_func.
 
@@ -2023,7 +2032,7 @@ def test_pax_collect(mocker: pytest_mock.MockerFixture) -> None:
     original_inspect = GhostInspector.inspect
 
     def mock_inspect(
-        obj: object, api_path: str, is_public: bool | None = None
+        obj: InspectableTarget, api_path: str, is_public: bool | None = None
     ) -> GhostRef:
         """Mock inspect function delegating to real GhostInspector.inspect except on ErrorClass.
 
@@ -2140,8 +2149,8 @@ def test_deepspeed_collect(mocker: pytest_mock.MockerFixture) -> None:
     assert ds_shim.collect_api(SemanticTier.LOSS) == []
 
     def initialize(
-        model: object, config_params: str = "ds_config.json"
-    ) -> tuple[object, str]:
+        model: InspectableTarget, config_params: str = "ds_config.json"
+    ) -> tuple[InspectableTarget, str]:
         """Initialize DeepSpeed engine.
 
         Args:
@@ -2288,7 +2297,7 @@ def test_huggingface_collect(mocker: pytest_mock.MockerFixture) -> None:
     class PreTrainedModel:
         """Base class for Hugging Face pretrained models."""
 
-        def __init__(self, config: object = None) -> None:
+        def __init__(self, config: InspectableTarget = None) -> None:
             """Initialize PreTrainedModel.
 
             Args:
@@ -2299,7 +2308,11 @@ def test_huggingface_collect(mocker: pytest_mock.MockerFixture) -> None:
     class Trainer:
         """Hugging Face training loop orchestrator."""
 
-        def __init__(self, model: object = None, args: object = None) -> None:
+        def __init__(
+            self,
+            model: InspectableTarget = None,
+            args: InspectableTarget = None,
+        ) -> None:
             """Initialize Trainer.
 
             Args:
@@ -2520,7 +2533,7 @@ def test_tensor_instance_methods_extraction() -> None:
 
         if "Tensor" not in dir(torch) or "view" not in dir(torch.Tensor):
             raise ImportError("torch has no Tensor.view")
-        torch_mod: object = torch
+        torch_mod: types.ModuleType | types.SimpleNamespace = torch
     except ImportError:
 
         class MockTensor:
@@ -2582,7 +2595,9 @@ def test_tensor_instance_methods_extraction() -> None:
                 """
                 return self
 
-            def to(self, *args: object, **kwargs: object) -> "MockTensor":
+            def to(
+                self, *args: InspectableTarget, **kwargs: InspectableTarget
+            ) -> "MockTensor":
                 """Cast tensor.
 
                 Args:
@@ -2607,13 +2622,15 @@ def test_tensor_instance_methods_extraction() -> None:
     try:
         import jax
 
-        jax_mod: object = jax
+        jax_mod: types.ModuleType | types.SimpleNamespace = jax
     except ImportError:
 
         class MockArray:
             """Mock JAX Array."""
 
-            def reshape(self, *args: object, **kwargs: object) -> "MockArray":
+            def reshape(
+                self, *args: InspectableTarget, **kwargs: InspectableTarget
+            ) -> "MockArray":
                 """Reshape array.
 
                 Args:
@@ -2625,7 +2642,9 @@ def test_tensor_instance_methods_extraction() -> None:
                 """
                 return self
 
-            def transpose(self, *args: object, **kwargs: object) -> "MockArray":
+            def transpose(
+                self, *args: InspectableTarget, **kwargs: InspectableTarget
+            ) -> "MockArray":
                 """Transpose array.
 
                 Args:
@@ -2653,7 +2672,7 @@ def test_tensor_instance_methods_extraction() -> None:
     try:
         import tensorflow as tf
 
-        tf_mod: object = tf
+        tf_mod: types.ModuleType | types.SimpleNamespace = tf
     except ImportError:
 
         class MockTFTensor:
@@ -2667,7 +2686,7 @@ def test_tensor_instance_methods_extraction() -> None:
                 """
                 return (1,)
 
-            def set_shape(self, shape: object) -> None:
+            def set_shape(self, shape: tuple[int, ...] | list[int] | None) -> None:
                 """Set tensor shape.
 
                 Args:
@@ -2678,7 +2697,7 @@ def test_tensor_instance_methods_extraction() -> None:
         class MockTFVariable:
             """Mock TensorFlow Variable."""
 
-            def assign(self, value: object) -> object:
+            def assign(self, value: InspectableTarget) -> InspectableTarget:
                 """Assign variable value.
 
                 Args:
@@ -2689,7 +2708,7 @@ def test_tensor_instance_methods_extraction() -> None:
                 """
                 return value
 
-            def assign_add(self, delta: object) -> object:
+            def assign_add(self, delta: InspectableTarget) -> InspectableTarget:
                 """Assign add variable value.
 
                 Args:

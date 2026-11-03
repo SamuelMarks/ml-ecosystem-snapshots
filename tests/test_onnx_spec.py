@@ -209,15 +209,17 @@ def test_get_onnx_defs_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     import builtins
 
+    from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+
     real_import = builtins.__import__
 
     def mock_import(
         name: str,
-        globals: typing.Mapping[str, object] | None = None,
-        locals: typing.Mapping[str, object] | None = None,
+        globals: typing.Mapping[str, InspectableTarget] | None = None,
+        locals: typing.Mapping[str, InspectableTarget] | None = None,
         fromlist: typing.Sequence[str] = (),
         level: int = 0,
-    ) -> object:
+    ) -> types.ModuleType:
         """Mock import raising ImportError on onnx.
 
         Args:
@@ -265,7 +267,9 @@ def test_onnx_schema_attributes_with_defaults(monkeypatch: pytest.MonkeyPatch) -
     class FakeAttribute:
         """Mock Schema attribute with type and default value."""
 
-        def __init__(self, typ: str, required: bool, default_val: object) -> None:
+        def __init__(
+            self, typ: str, required: bool, default_val: float | int | str | None
+        ) -> None:
             """Initialize fake attribute.
 
             Args:

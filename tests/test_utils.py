@@ -309,10 +309,12 @@ def test_resolve_griffe_parser_setattr_failure() -> None:
     from unittest import mock
     from ml_ecosystem_snapshots.utils import resolve_griffe_parser
 
+    from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+
     orig_hasattr = hasattr
     orig_setattr = setattr
 
-    def mock_hasattr(obj: object, attr: str) -> bool:
+    def mock_hasattr(obj: InspectableTarget, attr: str) -> bool:
         """Mock hasattr to report missing 'rest' on griffe.Parser.
 
         Args:
@@ -326,7 +328,7 @@ def test_resolve_griffe_parser_setattr_failure() -> None:
             return False
         return orig_hasattr(obj, attr)
 
-    def mock_setattr(obj: object, attr: str, val: object) -> None:
+    def mock_setattr(obj: InspectableTarget, attr: str, val: InspectableTarget) -> None:
         """Mock setattr to raise an exception when setting _missing_.
 
         Args:

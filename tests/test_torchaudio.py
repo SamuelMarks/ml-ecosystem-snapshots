@@ -66,7 +66,7 @@ def test_collect_api_live_mode() -> None:
     )
     fake_trans = types.SimpleNamespace(MFCC=lambda: None)
 
-    def fake_get_submodule(sub: str) -> object:
+    def fake_get_submodule(sub: str) -> types.SimpleNamespace | None:
         """Return fake submodule by name.
 
         Args:
@@ -92,7 +92,7 @@ def test_collect_api_inspection_exception_handled() -> None:
 
     fake_func = types.SimpleNamespace(melscale_fbanks="not_inspectable")
 
-    def fake_get_submodule(sub: str) -> object:
+    def fake_get_submodule(sub: str) -> types.SimpleNamespace | None:
         """Return fake functional submodule.
 
         Args:

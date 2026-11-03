@@ -171,7 +171,7 @@ def test_parse_pretrained_config_with_empty_annotations() -> None:
     class DummyConfig:
         """Mock or helper class DummyConfig for unit testing."""
 
-        def __init__(self, **kwargs: object) -> None:
+        def __init__(self, **kwargs: str | int | float | bool | None) -> None:
             """Init docstring.
 
             Args:

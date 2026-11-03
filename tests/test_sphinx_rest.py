@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import operator
 
+import types
 import pytest_mock
 import unittest.mock as mock
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.introspection.sanitize import sanitize_type_str
 from ml_ecosystem_snapshots.utils import (
     get_framework_docstring_parser,
@@ -117,7 +119,7 @@ def test_resolve_griffe_parser() -> None:
 
     orig_hasattr = hasattr
 
-    def mock_hasattr(obj: object, attr: str) -> bool:
+    def mock_hasattr(obj: InspectableTarget, attr: str) -> bool:
         """Mock hasattr to simulate missing 'rest' attribute on griffe.Parser.
 
         Args:
@@ -206,7 +208,7 @@ ValueError
 def test_ghost_inspector_sphinx_docstring() -> None:
     """Test GhostInspector inspection with full Sphinx docstring field lists."""
 
-    def dummy_op(x: object, y: object) -> None:
+    def dummy_op(x: InspectableTarget, y: InspectableTarget) -> None:
         """Dummy op summary.
 
         :param x: Primary input vector.
@@ -220,6 +222,7 @@ def test_ghost_inspector_sphinx_docstring() -> None:
         """
         pass
 
+    dummy_op.__annotations__.clear()
     ref = GhostInspector.inspect(dummy_op, "torch.ops.dummy_op")
 
     assert ref.name == "dummy_op"
@@ -343,7 +346,11 @@ def test_extract_griffe_docstring_metadata_edge_cases(
     class MockSection:
         """Mock Griffe docstring section."""
 
-        def __init__(self, kind: str, value: object) -> None:
+        def __init__(
+            self,
+            kind: str,
+            value: list[MockParam] | list[MockReturn] | list[MockRaise],
+        ) -> None:
             """Initialize MockSection.
 
             Args:
@@ -383,7 +390,7 @@ def test_extract_griffe_docstring_metadata_edge_cases(
 def test_ghost_inspector_custom_fault_and_doc_return() -> None:
     """Test GhostInspector capturing custom non-Error/Exception raises and doc-only returns."""
 
-    def fn(x: object) -> None:
+    def fn(x: InspectableTarget) -> None:
         """Function summary.
 
         :param x: Value.
@@ -407,7 +414,7 @@ def test_ghost_inspector_griffe_return_type_fallback(
         mocker: Pytest mocker fixture.
     """
 
-    def dummy_ret(x: object) -> None:
+    def dummy_ret(x: InspectableTarget) -> None:
         """Dummy ret summary.
 
         :param x: Input.
@@ -444,20 +451,20 @@ def test_parse_docstring_with_griffe_unresolved(
     """
     call_count = 0
 
-    def mock_resolve(name: str) -> object:
+    def mock_resolve(name: str) -> griffe.Parser | None:
         """Mock resolve_griffe_parser to return None on the first call.
 
         Args:
             name: The parser name to resolve.
 
         Returns:
-            None on first call, then griffe.Parser.sphinx.
+            None on first call, then griffe.Parser('sphinx').
         """
         nonlocal call_count
         call_count += 1
         if call_count == 1:
             return None
-        return griffe.Parser.sphinx
+        return griffe.Parser("sphinx")
 
     mocker.patch(
         "ml_ecosystem_snapshots.utils.resolve_griffe_parser",
@@ -500,7 +507,7 @@ def test_sanitize_type_str_with_sphinx_roles() -> None:
 def test_promote_documented_kwargs() -> None:
     """Test promoting documented kwargs from Sphinx/reST docstrings to formal GhostParams."""
 
-    def custom_layer(in_features: int, **kwargs: object) -> None:
+    def custom_layer(in_features: int, **kwargs: InspectableTarget) -> None:
         """Initialize custom layer.
 
         Args:
@@ -541,7 +548,6 @@ def test_pytorch_modules_kwargs_promotion() -> None:
         if "Linear" not in dir(nn) or "Conv2d" not in dir(nn):
             raise ImportError("torch.nn has no Linear or Conv2d")
     except ImportError:
-        import types
 
         class Linear:
             """Linear layer.
@@ -589,7 +595,9 @@ def test_pytorch_modules_kwargs_promotion() -> None:
                 """
                 pass
 
-        nn_mod: object = types.SimpleNamespace(Linear=Linear, Conv2d=Conv2d)
+        nn_mod: types.ModuleType | types.SimpleNamespace = types.SimpleNamespace(
+            Linear=Linear, Conv2d=Conv2d
+        )
     else:
         nn_mod = nn
 

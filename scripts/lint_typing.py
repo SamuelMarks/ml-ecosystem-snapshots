@@ -109,9 +109,9 @@ def check_file(file_path: str) -> list[str]:
                 violations.append(
                     f"{file_path}:{node.lineno}:{node.col_offset}: banned 'Any' usage"
                 )
-        elif isinstance(node, ast.Name) and node.id == "Any":
+        elif isinstance(node, ast.Name) and node.id in {"Any", "object"}:
             violations.append(
-                f"{file_path}:{node.lineno}:{node.col_offset}: banned 'Any' usage"
+                f"{file_path}:{node.lineno}:{node.col_offset}: banned '{node.id}' usage"
             )
         elif isinstance(node, ast.ImportFrom):
             for alias in node.names:

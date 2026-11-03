@@ -5,8 +5,10 @@ from __future__ import annotations
 # ruff: noqa: D205, D415, D207, D212
 
 import inspect
+import types
 from unittest.mock import patch
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
 
@@ -18,7 +20,9 @@ def dummy_c_ext() -> None:
 original_sig = inspect.signature
 
 
-def patched_sig(target: object, *args: object, **kwargs: object) -> inspect.Signature:
+def patched_sig(
+    target: InspectableTarget, *args: InspectableTarget, **kwargs: InspectableTarget
+) -> inspect.Signature:
     """Raise ValueError for `dummy_c_ext` and delegate other targets to `inspect.signature`.
 
     Args:
@@ -34,7 +38,7 @@ def patched_sig(target: object, *args: object, **kwargs: object) -> inspect.Sign
     """
     if target is dummy_c_ext:
         raise ValueError("no signature found")
-    assert callable(target)
+    assert isinstance(target, (types.FunctionType, types.MethodType, type))
     return original_sig(target)
 
 
@@ -52,7 +56,7 @@ def test_c_extension_signature_fallback() -> None:
         assert ref.params[1].annotation == "Tensor | None"
 
 
-def dummy_posonly(*args: object, **kwargs: object) -> None:  # noqa: D402
+def dummy_posonly(*args: InspectableTarget, **kwargs: InspectableTarget) -> None:  # noqa: D402
     """dummy_posonly(a: int, /, b: str = 'x') -> None
 
     Parameters:
