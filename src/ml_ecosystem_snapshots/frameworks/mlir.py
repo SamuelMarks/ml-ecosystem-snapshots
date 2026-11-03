@@ -667,7 +667,7 @@ def _load_mlir_exhaustive() -> list[GhostRef]:
 
     refs: list[GhostRef] = []
     for op in ops_list:
-        params: list[GhostParam] = []
+        params: list[ExtendedGhostParam] = []
 
         # 1. SSA Operands
         raw_operands = op.get("operands", [])
@@ -768,8 +768,9 @@ def _load_mlir_exhaustive() -> list[GhostRef]:
         }
 
         ssa_operands: list[GhostParam] = [
-            p for p in params if getattr(p, "role", None) == IRParameterRole.OPERAND
+            p for p in params if p.role == IRParameterRole.OPERAND
         ]
+        params_list: list[GhostParam] = list(params)
 
         raw_succs = op.get("successors")
         successors: list[str] | None = (
@@ -783,7 +784,7 @@ def _load_mlir_exhaustive() -> list[GhostRef]:
                 name=str(op.get("class_name", "UnknownOp")),
                 api_path=str(op.get("api_path", "")),
                 kind="function",
-                params=params,
+                params=params_list,
                 operands=ssa_operands,
                 docstring="\n".join(docstring_parts),
                 returns_type=returns_type,

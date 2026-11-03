@@ -10,9 +10,11 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import operator
 import os
 from pathlib import Path
 import sys
+import typing
 
 _src_dir = str(Path(__file__).resolve().parent.parent.parent)
 if _src_dir not in sys.path:
@@ -55,6 +57,13 @@ CORE_MLIR_DIALECTS: list[str] = [
 ]
 
 
+@typing.runtime_checkable
+class _MlirOpClassProtocol(typing.Protocol):
+    """Protocol for MLIR Python dialect operation classes exposing `OPERATION_NAME`."""
+
+    OPERATION_NAME: str
+
+
 def inspect_mlir_python_module(
     dialects: list[str] | None = None,
 ) -> list[TableGenRecordModel]:
@@ -74,9 +83,11 @@ def inspect_mlir_python_module(
             mod = importlib.import_module(f"mlir.dialects.{dialect}")
             for attr_name in dir(mod):
                 if attr_name.endswith("Op") and not attr_name.startswith("_"):
-                    cls = getattr(mod, attr_name)
-                    op_mnemonic = getattr(
-                        cls, "OPERATION_NAME", f"{dialect}.{attr_name[:-2].lower()}"
+                    cls: type = operator.attrgetter(attr_name)(mod)
+                    op_mnemonic = (
+                        cls.OPERATION_NAME
+                        if isinstance(cls, _MlirOpClassProtocol)
+                        else f"{dialect}.{attr_name[:-2].lower()}"
                     )
                     ops.append(
                         TableGenRecordModel(

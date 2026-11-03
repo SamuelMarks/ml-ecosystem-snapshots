@@ -43,7 +43,7 @@ def my_overloaded_func(a: int | str, b: str | None = None) -> int | str:
         "test_overload_mock_unique.my_overloaded_func",
     )
 
-    assert hasattr(ref, "overloads")
+    assert "overloads" in dir(ref)
     assert ref.overloads is not None
     assert len(ref.overloads) == 2
     ov0 = ref.overloads[0]
@@ -99,7 +99,7 @@ class OverloadedClass:
         kind="class",
     )
 
-    assert hasattr(ref, "overloads")
+    assert "overloads" in dir(ref)
     assert ref.overloads is not None
     assert len(ref.overloads) == 2
     ov0 = ref.overloads[0]

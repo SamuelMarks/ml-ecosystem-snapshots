@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 import pytest
 
 from ml_ecosystem_snapshots.frameworks.dpnp import (
@@ -98,7 +100,7 @@ def test_get_dpnp_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     import builtins
 
-    real_import = getattr(builtins, "__import__")
+    real_import = operator.attrgetter("__import__")(builtins)
 
     def mock_import(name: str, *args: object, **kwargs: object) -> object:
         """Mock import function.

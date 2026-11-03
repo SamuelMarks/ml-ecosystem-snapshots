@@ -374,7 +374,7 @@ def test_resolve_griffe_parser_has_rest() -> None:
         sphinx = "custom_sphinx_parser"
 
     mock_griffe = types.ModuleType("griffe")
-    setattr(mock_griffe, "Parser", MockParser)
+    pytest.MonkeyPatch().setattr(mock_griffe, "Parser", MockParser, raising=False)
 
     with patch.dict(sys.modules, {"griffe": mock_griffe}):
         res = resolve_griffe_parser("rest")

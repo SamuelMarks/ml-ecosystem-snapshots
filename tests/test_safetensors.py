@@ -20,7 +20,7 @@ from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
 
 if "safetensors" not in sys.modules:
     fake_st = types.ModuleType("safetensors")
-    setattr(fake_st, "__version__", "0.7.0")
+    pytest.MonkeyPatch().setattr(fake_st, "__version__", "0.7.0", raising=False)
     sys.modules["safetensors"] = fake_st
 
 

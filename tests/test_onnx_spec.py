@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 import argparse
 import sys
 import types
@@ -51,8 +53,16 @@ def test_onnx_op_properties_and_roles() -> None:
     add_ref = op_map["Add"]
     assert add_ref.api_path == "onnx.Add"
     assert add_ref.operands is not None and len(add_ref.operands) == 2
-    assert getattr(add_ref.operands[0], "role", None) == IRParameterRole.OPERAND
-    assert getattr(add_ref.operands[1], "role", None) == IRParameterRole.OPERAND
+    assert (
+        operator.attrgetter("role")(add_ref.operands[0])
+        if "role" in dir(add_ref.operands[0])
+        else None
+    ) == IRParameterRole.OPERAND
+    assert (
+        operator.attrgetter("role")(add_ref.operands[1])
+        if "role" in dir(add_ref.operands[1])
+        else None
+    ) == IRParameterRole.OPERAND
     assert add_ref.returns is not None and len(add_ref.returns) == 1
     assert add_ref.returns[0].name == "C"
 
@@ -61,7 +71,8 @@ def test_onnx_op_properties_and_roles() -> None:
     attr_params = [
         p
         for p in conv_ref.params
-        if getattr(p, "role", None) == IRParameterRole.ATTRIBUTE
+        if (operator.attrgetter("role")(p) if "role" in dir(p) else None)
+        == IRParameterRole.ATTRIBUTE
     ]
     assert len(attr_params) > 0
 
@@ -238,7 +249,7 @@ def test_get_onnx_defs_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     fake_onnx = types.ModuleType("onnx")
     fake_defs = types.ModuleType("onnx.defs")
-    setattr(fake_onnx, "defs", fake_defs)
+    pytest.MonkeyPatch().setattr(fake_onnx, "defs", fake_defs, raising=False)
     monkeypatch.setitem(sys.modules, "onnx", fake_onnx)
     monkeypatch.setitem(sys.modules, "onnx.defs", fake_defs)
     assert _get_onnx_defs() is fake_defs

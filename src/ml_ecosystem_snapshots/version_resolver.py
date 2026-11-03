@@ -2,17 +2,55 @@
 
 from __future__ import annotations
 
-import builtins
 import importlib.metadata
 import json
 import os
 import typing
 
-from ml_ecosystem_snapshots.introspection.runtime_boundary import (
-    InspectableTarget,
-    has_runtime_attr,
-    read_runtime_attr,
-)
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+
+
+@typing.runtime_checkable
+class _GriffeValueProtocol(typing.Protocol):
+    """Protocol for Griffe AST objects exposing a static `.value` attribute."""
+
+    value: str | None
+
+
+@typing.runtime_checkable
+class _GriffeTargetProtocol(typing.Protocol):
+    """Protocol for Griffe alias objects exposing a `.target` attribute."""
+
+    target: _GriffeValueProtocol | InspectableTarget
+
+
+@typing.runtime_checkable
+class _GriffeMembersMappingProtocol(typing.Protocol):
+    """Protocol for a Griffe members mapping supporting `.get(key)`."""
+
+    def get(self, key: str) -> _GriffeTargetProtocol | _GriffeValueProtocol | None:
+        """Retrieve a member by name.
+
+        Args:
+            key: Member attribute name.
+
+        Returns:
+            Matching Griffe member object or `None`.
+        """
+
+
+@typing.runtime_checkable
+class _GriffeModuleProtocol(typing.Protocol):
+    """Protocol for a loaded Griffe module exposing a `.members` dictionary."""
+
+    members: _GriffeMembersMappingProtocol
+
+
+@typing.runtime_checkable
+class VersionedModuleProtocol(typing.Protocol):
+    """Protocol for Python modules exposing a `__version__` string attribute."""
+
+    __version__: str
 
 
 _PKG_NAME_ALIASES: dict[str, str] = {
@@ -49,22 +87,16 @@ def _extract_version_with_griffe(module_name: str) -> str | None:
     try:
         import griffe as _griffe_mod
 
-        loaded: InspectableTarget = _griffe_mod.load(module_name)
-        if not isinstance(loaded, str) and has_runtime_attr(loaded, "members"):
-            members_obj = read_runtime_attr(loaded, "members", None)
-            get_fn: typing.Callable[[str], InspectableTarget] = getattr(
-                members_obj, "get"
-            )
-            ver = get_fn("__version__")
-            if ver is not None and has_runtime_attr(ver, "target"):
-                target = read_runtime_attr(ver, "target", None)
-                val = (
-                    read_runtime_attr(target, "value", None)
-                    if target is not None and has_runtime_attr(target, "value")
-                    else None
-                )
-            elif ver is not None and has_runtime_attr(ver, "value"):
-                val = read_runtime_attr(ver, "value", None)
+        loaded: _GriffeModuleProtocol | InspectableTarget = _griffe_mod.load(
+            module_name
+        )
+        if not isinstance(loaded, str) and isinstance(loaded, _GriffeModuleProtocol):
+            ver = loaded.members.get("__version__")
+            if isinstance(ver, _GriffeTargetProtocol):
+                target = ver.target
+                val = target.value if isinstance(target, _GriffeValueProtocol) else None
+            elif isinstance(ver, _GriffeValueProtocol):
+                val = ver.value
             else:
                 val = None
             if val is not None:
@@ -144,8 +176,9 @@ def get_pkg_version(
                 package_name
             ]
             try:
-                mod = builtins.__import__(mod_name)
-                return str(getattr(mod, "__version__", default_ver))
+                mod: InspectableTarget = __import__(mod_name)
+                assert isinstance(mod, VersionedModuleProtocol)
+                return str(mod.__version__)
             except Exception:
                 if dist_fallback is None:
                     return default_ver
@@ -221,6 +254,7 @@ def get_pkg_version(
 
 
 __all__ = [
+    "VersionedModuleProtocol",
     "_EXHAUSTIVE_JSON_VERSIONS",
     "_FALLBACK_PKG_VERSIONS",
     "_LIVE_MODULE_VERSION_FALLBACKS",

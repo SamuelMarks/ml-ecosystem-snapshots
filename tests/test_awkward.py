@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 import sys
 import types
 import pytest
@@ -154,7 +156,7 @@ def test_get_awkward_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     import builtins
 
-    real_import = getattr(builtins, "__import__")
+    real_import = operator.attrgetter("__import__")(builtins)
 
     def mock_import(name: str, *args: object, **kwargs: object) -> object:
         """Mock import function.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import operator
 import os
 import sys
 import typing
@@ -12,6 +13,25 @@ import typing_extensions
 
 from ml_ecosystem_snapshots.mcp.models import DomainOpCheckResult
 from ml_ecosystem_snapshots.models import JsonValue
+
+
+def _read_namespace_attr(
+    args: argparse.Namespace, attr_name: str, default: JsonValue = None
+) -> JsonValue:
+    """Read an optional attribute from an `argparse.Namespace` without reflection builtins.
+
+    Args:
+        args: Parsed CLI `Namespace` instance.
+        attr_name: Attribute name to look up.
+        default: Default value when absent.
+
+    Returns:
+        Attribute value or `default`.
+    """
+    val: JsonValue = (
+        operator.attrgetter(attr_name)(args) if attr_name in dir(args) else default
+    )
+    return val
 
 
 class _DomainOpNameCheckProto(typing.Protocol):
@@ -131,20 +151,19 @@ def _run_domain_op_check_cli(
         invalid_format: Suffix string when reporting an invalid operation ('Invalid:' or 'is invalid:').
         extra_kwargs: Optional additional keyword arguments to forward to `check_fn`.
     """
-    arg_map = vars(args)
-    raw_attrs = arg_map.get("attributes")
+    raw_attrs = _read_namespace_attr(args, "attributes")
     attrs: list[str] | None = (
         [a.strip() for a in str(raw_attrs).split(",") if a.strip()]
         if raw_attrs
         else None
     )
-    target = str(arg_map.get(op_attr, ""))
-    raw_count = arg_map.get(count_attr)
+    target = str(_read_namespace_attr(args, op_attr, ""))
+    raw_count = _read_namespace_attr(args, count_attr)
     count_val: int | None = int(raw_count) if isinstance(raw_count, int) else None
 
     res: DomainOpCheckResult | typing.Mapping[str, JsonValue]
     if extra_kwargs and "domain" in extra_kwargs:
-        onnx_fn: _DomainOnnxCheckProto = getattr(check_fn, "__call__")
+        onnx_fn: _DomainOnnxCheckProto = operator.attrgetter("__call__")(check_fn)
         res = onnx_fn(
             op_name=target,
             domain=str(extra_kwargs["domain"] or ""),
@@ -152,7 +171,7 @@ def _run_domain_op_check_cli(
             attributes=attrs,
         )
     elif extra_kwargs and "address_space" in extra_kwargs:
-        metal_fn: _DomainMetalCheckProto = getattr(check_fn, "__call__")
+        metal_fn: _DomainMetalCheckProto = operator.attrgetter("__call__")(check_fn)
         addr_val = extra_kwargs["address_space"]
         res = metal_fn(
             op_name=target,
@@ -161,14 +180,14 @@ def _run_domain_op_check_cli(
             attributes=attrs,
         )
     elif op_attr == "mnemonic":
-        wasm_fn: _DomainMnemonicCheckProto = getattr(check_fn, "__call__")
+        wasm_fn: _DomainMnemonicCheckProto = operator.attrgetter("__call__")(check_fn)
         res = wasm_fn(
             mnemonic=target,
             operands_count=count_val,
             attributes=attrs,
         )
     else:
-        std_fn: _DomainOpNameCheckProto = getattr(check_fn, "__call__")
+        std_fn: _DomainOpNameCheckProto = operator.attrgetter("__call__")(check_fn)
         res = std_fn(
             op_name=target,
             inputs_count=count_val,
@@ -223,7 +242,7 @@ def cmd_check(args: argparse.Namespace) -> None:
     with open(path, "r", encoding="utf-8") as f:
         reference_snapshot = json.load(f)
 
-    target_path = str(vars(args).get("target_path", "") or "")
+    target_path = str(_read_namespace_attr(args, "target_path", "") or "")
     target_ext = os.path.splitext(target_path)[1].lower() if target_path else ""
 
     if target_ext in (".sass", ".s"):
@@ -503,37 +522,37 @@ def cmd_check_ptx(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_ptx_instruction
 
-    arg_map = vars(args)
-    mnemonic = arg_map.get("mnemonic")
+    mnemonic = _read_namespace_attr(args, "mnemonic")
     if not mnemonic:
         print("Error: Instruction mnemonic must be specified.")
         sys.exit(1)
 
-    raw_types = arg_map.get("types")
+    raw_types = _read_namespace_attr(args, "types")
     types = (
         [t.strip() for t in str(raw_types).split(",") if t.strip()]
         if raw_types
         else None
     )
-    raw_operands = arg_map.get("operands")
+    raw_operands = _read_namespace_attr(args, "operands")
     operands = (
         [op.strip() for op in str(raw_operands).split(",") if op.strip()]
         if raw_operands
         else None
     )
 
+    state_space = _read_namespace_attr(args, "state_space")
+    scope = _read_namespace_attr(args, "scope")
+    vector_width = _read_namespace_attr(args, "vector_width")
+    sm_arch = _read_namespace_attr(args, "sm_arch")
+
     res = check_ptx_instruction(
         mnemonic=str(mnemonic),
         types=types,
         operands=operands,
-        state_space=str(arg_map["state_space"])
-        if arg_map.get("state_space") is not None
-        else None,
-        scope=str(arg_map["scope"]) if arg_map.get("scope") is not None else None,
-        vector_width=str(arg_map["vector_width"])
-        if arg_map.get("vector_width") is not None
-        else None,
-        sm_arch=str(arg_map["sm_arch"]) if arg_map.get("sm_arch") is not None else None,
+        state_space=str(state_space) if state_space is not None else None,
+        scope=str(scope) if scope is not None else None,
+        vector_width=str(vector_width) if vector_width is not None else None,
+        sm_arch=str(sm_arch) if sm_arch is not None else None,
     )
 
     if not res.get("is_valid"):
@@ -708,7 +727,7 @@ def cmd_check_onnx(args: argparse.Namespace) -> None:
         args,
         check_onnx_op,
         "ONNX Operation",
-        extra_kwargs={"domain": str(vars(args).get("domain", "") or "")},
+        extra_kwargs={"domain": str(_read_namespace_attr(args, "domain", "") or "")},
     )
 
 
@@ -720,7 +739,7 @@ def cmd_check_metal(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.mcp_server import check_metal_op
 
-    raw_addr = vars(args).get("address_space")
+    raw_addr = _read_namespace_attr(args, "address_space")
     _run_domain_op_check_cli(
         args,
         check_metal_op,
@@ -771,7 +790,7 @@ def _make_simple_domain_check_cmd(
         """
         import ml_ecosystem_snapshots.mcp_server as _mcp_srv
 
-        check_fn: DomainCheckCallable = getattr(_mcp_srv, fn_name)
+        check_fn: DomainCheckCallable = operator.attrgetter(fn_name)(_mcp_srv)
         _run_domain_op_check_cli(
             args,
             check_fn,

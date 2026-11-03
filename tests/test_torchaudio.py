@@ -20,7 +20,7 @@ from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
 
 if "torchaudio" not in sys.modules:
     fake_ta = types.ModuleType("torchaudio")
-    setattr(fake_ta, "__version__", "2.8.0")
+    pytest.MonkeyPatch().setattr(fake_ta, "__version__", "2.8.0", raising=False)
     sys.modules["torchaudio"] = fake_ta
 
 

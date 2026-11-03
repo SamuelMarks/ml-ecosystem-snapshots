@@ -8,16 +8,71 @@ from __future__ import annotations
 
 import inspect
 import types
+import typing
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.frameworks.optax import OptaxScanner
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import (
-    InspectableTarget,
-    read_runtime_attr,
-)
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.utils import get_all_members
+
+
+@typing.runtime_checkable
+class _JaxPrivateStaticNumProtocol(typing.Protocol):
+    """Protocol for JAX JIT functions exposing `._static_argnums`."""
+
+    _static_argnums: typing.Sequence[int] | set[int] | frozenset[int] | None
+
+
+@typing.runtime_checkable
+class _JaxPublicStaticNumProtocol(typing.Protocol):
+    """Protocol for JAX JIT functions exposing `.static_argnums`."""
+
+    static_argnums: typing.Sequence[int] | set[int] | frozenset[int] | None
+
+
+@typing.runtime_checkable
+class _JaxPrivateStaticNameProtocol(typing.Protocol):
+    """Protocol for JAX JIT functions exposing `._static_argnames`."""
+
+    _static_argnames: typing.Sequence[str] | set[str] | frozenset[str] | None
+
+
+@typing.runtime_checkable
+class _JaxPublicStaticNameProtocol(typing.Protocol):
+    """Protocol for JAX JIT functions exposing `.static_argnames`."""
+
+    static_argnames: typing.Sequence[str] | set[str] | frozenset[str] | None
+
+
+@typing.runtime_checkable
+class _JaxWithLaxProtocol(typing.Protocol):
+    """Protocol for `jax` exposing `.lax`."""
+
+    lax: types.ModuleType
+
+
+@typing.runtime_checkable
+class _JaxWithRandomProtocol(typing.Protocol):
+    """Protocol for `jax` exposing `.random`."""
+
+    random: types.ModuleType
+
+
+@typing.runtime_checkable
+class _JaxWithArrayProtocol(typing.Protocol):
+    """Protocol for `jax` exposing `.Array`."""
+
+    Array: type
+
+
+@typing.runtime_checkable
+class _JaxWithShardingProtocol(typing.Protocol):
+    """Protocol for `jax` exposing `.sharding`."""
+
+    sharding: types.ModuleType
+
 
 jax: types.ModuleType | None = None
 try:
@@ -90,12 +145,21 @@ def _attach_jax_static_arg_metadata(ref: GhostRef, obj: InspectableTarget) -> Gh
     Returns:
         Augmented GhostRef with static argument metadata.
     """
-    static_nums = read_runtime_attr(obj, "_static_argnums", None) or read_runtime_attr(
-        obj, "static_argnums", None
+    priv_nums = (
+        obj._static_argnums if isinstance(obj, _JaxPrivateStaticNumProtocol) else None
     )
-    static_names = read_runtime_attr(
-        obj, "_static_argnames", None
-    ) or read_runtime_attr(obj, "static_argnames", None)
+    pub_nums = (
+        obj.static_argnums if isinstance(obj, _JaxPublicStaticNumProtocol) else None
+    )
+    static_nums = priv_nums or pub_nums
+
+    priv_names = (
+        obj._static_argnames if isinstance(obj, _JaxPrivateStaticNameProtocol) else None
+    )
+    pub_names = (
+        obj.static_argnames if isinstance(obj, _JaxPublicStaticNameProtocol) else None
+    )
+    static_names = priv_names or pub_names
 
     if isinstance(static_nums, (list, tuple, set, frozenset)) and static_nums:
         if ref.environment_tags is None:
@@ -177,7 +241,7 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
         )
 
         # 2. Core primitive operations in jax.lax.*
-        if hasattr(jax, "lax"):
+        if isinstance(jax, _JaxWithLaxProtocol):
             found.extend(
                 _collect_jax_namespace(
                     jax.lax, "jax.lax", include_nonpublic, attach_static_args=True
@@ -185,7 +249,7 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
             )
 
         # 3. Random generation APIs in jax.random.*
-        if hasattr(jax, "random"):
+        if isinstance(jax, _JaxWithRandomProtocol):
             found.extend(
                 _collect_jax_namespace(
                     jax.random,
@@ -196,8 +260,9 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
             )
 
         # 4. Transformations (jax.jit, jax.grad, jax.vmap, jax.pmap, jax.checkpoint)
+        jax_members: dict[str, InspectableTarget] = dict(inspect.getmembers(jax))
         for transform_name in ["jit", "grad", "vmap", "pmap", "checkpoint"]:
-            obj = getattr(jax, transform_name, None)
+            obj = jax_members.get(transform_name)
             if obj and callable(obj):
                 try:
                     found.append(GhostInspector.inspect(obj, f"jax.{transform_name}"))
@@ -214,14 +279,15 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
                 ):
                     pass
 
-        obj = getattr(jnp, "transpose", None)
+        jnp_members: dict[str, InspectableTarget] = dict(inspect.getmembers(jnp))
+        obj = jnp_members.get("transpose")
         if obj and not any(r.name == "transpose" for r in found):
             found.append(GhostInspector.inspect(obj, "jnp.transpose"))
 
         found.append(GhostInspector.inspect(np.float32, "jax.numpy.float32"))
 
         # 5. jax.Array member methods
-        if hasattr(jax, "Array"):
+        if isinstance(jax, _JaxWithArrayProtocol):
             for name, obj in inspect.getmembers(jax.Array):
                 if not include_nonpublic and name.startswith("_"):
                     continue
@@ -246,7 +312,7 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
                         pass
 
         # 6. jax.sharding APIs
-        if hasattr(jax, "sharding"):
+        if isinstance(jax, _JaxWithShardingProtocol):
             for name, obj in inspect.getmembers(jax.sharding):
                 if not include_nonpublic and name.startswith("_"):
                     continue

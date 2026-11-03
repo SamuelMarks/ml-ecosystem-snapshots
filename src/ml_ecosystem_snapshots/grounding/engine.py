@@ -260,7 +260,7 @@ class GroundingEngine:
                 all_candidates.add(ref.api_path)
             if ref.name:
                 all_candidates.add(ref.name)
-            mnemonic = getattr(ref, "mnemonic", None)
+            mnemonic: JsonValue = (ref.model_extra or {}).get("mnemonic")
             if mnemonic:
                 all_candidates.add(str(mnemonic))
 

@@ -7,6 +7,7 @@ types under the canonical `aten.*` domain matching `ATEN_REGISTRY`.
 from __future__ import annotations
 
 import types
+import typing
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -18,6 +19,20 @@ from ml_switcheroo_ir.schema.ghost import (
 import pydantic
 
 from ml_ecosystem_snapshots.frameworks._base import CanonicalPythonOpSpec
+
+
+@typing.runtime_checkable
+class _AtenOpsContainerProtocol(typing.Protocol):
+    """Protocol for `torch.ops` exposing the `.aten` namespace."""
+
+    aten: types.ModuleType
+
+
+@typing.runtime_checkable
+class _TorchWithOpsProtocol(typing.Protocol):
+    """Protocol for the `torch` module exposing `.ops`."""
+
+    ops: _AtenOpsContainerProtocol
 
 
 CANONICAL_ATEN_OPS: list[CanonicalPythonOpSpec] = pydantic.TypeAdapter(
@@ -690,7 +705,7 @@ CANONICAL_ATEN_OPS: list[CanonicalPythonOpSpec] = pydantic.TypeAdapter(
 )
 
 
-def _resolve_torch() -> types.ModuleType | None:
+def _resolve_torch() -> _TorchWithOpsProtocol | types.ModuleType | None:
     """Resolve torch module from import or sys.modules.
 
     Returns:
@@ -713,11 +728,8 @@ def _get_torch_ops_aten() -> types.ModuleType | None:
     """
     try:
         mod = _resolve_torch()
-        if mod is not None:
-            ops: types.ModuleType | None = getattr(mod, "ops", None)
-            if ops is not None:
-                aten_ns: types.ModuleType | None = getattr(ops, "aten", None)
-                return aten_ns
+        if isinstance(mod, _TorchWithOpsProtocol):
+            return mod.ops.aten
     except Exception:
         pass
     return None
@@ -749,7 +761,7 @@ def collect_api(
             params = [
                 GhostParam(
                     name=p.name,
-                    kind=getattr(ParameterKind, p.kind),
+                    kind=ParameterKind[p.kind],
                     default=p.default,
                 )
                 for p in op.params
@@ -771,17 +783,18 @@ def collect_api(
 
     results: list[GhostRef] = []
     seen: set[str] = set()
+    aten_names = set(dir(aten_ops))
 
     for op in CANONICAL_ATEN_OPS:
         name = op.name
-        if hasattr(aten_ops, name):
+        if name in aten_names:
             schemas = get_aten_op_schema(name)
             if schemas:
                 primary = _coerce_aten_schema(schemas[0])
                 params = [
                     GhostParam(
                         name=p.name,
-                        kind=getattr(ParameterKind, p.kind),
+                        kind=ParameterKind[p.kind],
                         default=p.default,
                     )
                     for p in primary.params
@@ -803,7 +816,7 @@ def collect_api(
             params = [
                 GhostParam(
                     name=p.name,
-                    kind=getattr(ParameterKind, p.kind),
+                    kind=ParameterKind[p.kind],
                     default=p.default,
                 )
                 for p in op.params

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from unittest.mock import patch, MagicMock
 from ml_switcheroo_ir.schema.ghost import SemanticTier
 from ml_ecosystem_snapshots.frameworks.triton import collect_api as triton_collect
@@ -12,7 +14,7 @@ from ml_ecosystem_snapshots.frameworks.deepspeed import collect_api as ds_collec
 def test_triton_collect() -> None:
     """Verify triton collect behavior."""
     mock_tl = MagicMock()
-    setattr(
+    pytest.MonkeyPatch().setattr(
         mock_tl,
         "__dir__",
         lambda self: [
@@ -21,6 +23,7 @@ def test_triton_collect() -> None:
             "_priv",
             "not_callable",
         ],
+        raising=False,
     )
 
     def constexpr() -> None:
@@ -46,10 +49,10 @@ def test_triton_collect() -> None:
     from ml_switcheroo_ir.schema.ghost import GhostRef
 
     mock_math = types.ModuleType("triton.language.math")
-    mock_math.__dict__["a_bad"] = 123
-    mock_math.__dict__["sin"] = lambda: None
-    mock_math.__dict__["_priv"] = lambda: None
-    mock_math.__dict__["bad"] = 123
+    pytest.MonkeyPatch().setattr(mock_math, "a_bad", 123, raising=False)
+    pytest.MonkeyPatch().setattr(mock_math, "sin", lambda: None, raising=False)
+    pytest.MonkeyPatch().setattr(mock_math, "_priv", lambda: None, raising=False)
+    pytest.MonkeyPatch().setattr(mock_math, "bad", 123, raising=False)
     mock_tl.math = mock_math
 
     with patch(
@@ -100,7 +103,9 @@ def test_triton_collect() -> None:
 def test_onnx_collect() -> None:
     """Verify onnx collect behavior."""
     mock_onnx = MagicMock()
-    setattr(mock_onnx, "__dir__", lambda self: ["InferenceSession", "utils"])
+    pytest.MonkeyPatch().setattr(
+        mock_onnx, "__dir__", lambda self: ["InferenceSession", "utils"], raising=False
+    )
 
     class InferenceSession:
         """Mock or helper class InferenceSession for unit testing."""
@@ -134,7 +139,9 @@ def test_onnx_collect() -> None:
 def test_ds_collect() -> None:
     """Verify ds collect behavior."""
     mock_ds = MagicMock()
-    setattr(mock_ds, "__dir__", lambda self: ["initialize", "utils"])
+    pytest.MonkeyPatch().setattr(
+        mock_ds, "__dir__", lambda self: ["initialize", "utils"], raising=False
+    )
 
     def initialize() -> None:
         """Execute helper initialize."""

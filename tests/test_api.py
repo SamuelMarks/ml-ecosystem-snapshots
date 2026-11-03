@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 from pathlib import Path
 import pytest_mock
 
@@ -745,7 +747,7 @@ def test_init_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
     import importlib
     import ml_ecosystem_snapshots
 
-    orig_import = getattr(builtins, "__import__")
+    orig_import = operator.attrgetter("__import__")(builtins)
 
     def fake_import(name: str, *args: object, **kwargs: object) -> object:
         """Simulate missing ml_ecosystem_snapshots.api.
@@ -798,7 +800,7 @@ def test_get_pkg_version_new_dialects(monkeypatch: pytest.MonkeyPatch) -> None:
     from ml_ecosystem_snapshots.api import get_pkg_version
 
     fake_onnx = types.ModuleType("onnx")
-    setattr(fake_onnx, "__version__", "1.17.0")
+    pytest.MonkeyPatch().setattr(fake_onnx, "__version__", "1.17.0", raising=False)
     monkeypatch.setitem(sys.modules, "onnx", fake_onnx)
 
     assert get_pkg_version("metal") == "3.2"
@@ -875,7 +877,7 @@ def test_get_pkg_version_ir_package(
     from ml_ecosystem_snapshots.api import get_pkg_version
 
     mock_ir = types.SimpleNamespace(__version__="0.0.9")
-    real_import = getattr(builtins, "__import__")
+    real_import = operator.attrgetter("__import__")(builtins)
 
     def mock_import_success(name: str, *args: object, **kwargs: object) -> object:
         """Mock import returning mock IR.
@@ -964,7 +966,7 @@ def test_get_pkg_version_modules_installed_and_fallbacks(
         "bohrium": types.SimpleNamespace(__version__="0.13.2"),
         "onnx": types.SimpleNamespace(__version__="1.17.2"),
     }
-    real_import = getattr(builtins, "__import__")
+    real_import = operator.attrgetter("__import__")(builtins)
 
     def mock_import_success(name: str, *args: object, **kwargs: object) -> object:
         """Mock import returning mock modules.
@@ -1167,7 +1169,7 @@ def test_get_pkg_version_import_fallbacks(monkeypatch: pytest.MonkeyPatch) -> No
     # 1. Success branches
     for name in pkgs:
         fake_mod = types.ModuleType(name)
-        setattr(fake_mod, "__version__", "7.7.7")
+        pytest.MonkeyPatch().setattr(fake_mod, "__version__", "7.7.7", raising=False)
         monkeypatch.setitem(sys.modules, name, fake_mod)
 
     assert get_pkg_version("scipy") == "7.7.7"
@@ -1185,7 +1187,7 @@ def test_get_pkg_version_import_fallbacks(monkeypatch: pytest.MonkeyPatch) -> No
     assert get_pkg_version("onnx_spec") == "7.7.7"
 
     # 2. Failure branches
-    real_import = getattr(builtins, "__import__")
+    real_import = operator.attrgetter("__import__")(builtins)
 
     for name in pkgs:
         monkeypatch.delitem(sys.modules, name, raising=False)

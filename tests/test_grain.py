@@ -140,9 +140,11 @@ def test_collect_grain_api_offline_and_live(
         """
         return source
 
-    fake_core.__dict__["custom_loader"] = custom_loader
-    fake_py.__dict__["custom_loader"] = custom_loader
-    fake_py.__dict__["DataLoader"] = custom_loader
+    pytest.MonkeyPatch().setattr(
+        fake_core, "custom_loader", custom_loader, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_py, "custom_loader", custom_loader, raising=False)
+    pytest.MonkeyPatch().setattr(fake_py, "DataLoader", custom_loader, raising=False)
 
     griffe_ref = GhostRef(
         name="griffe_sampler",

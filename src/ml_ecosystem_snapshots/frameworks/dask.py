@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import types
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
@@ -35,10 +36,11 @@ def collect_api(
     if category == SemanticTier.ARRAY_API:
         if not da:
             return results
-        submodules = [
+        da_members: dict[str, types.ModuleType] = dict(inspect.getmembers(da))
+        submodules: list[tuple[types.ModuleType | None, str]] = [
             (da, "dask.array"),
-            (getattr(da, "linalg", None), "dask.array.linalg"),
-            (getattr(da, "fft", None), "dask.array.fft"),
+            (da_members.get("linalg"), "dask.array.linalg"),
+            (da_members.get("fft"), "dask.array.fft"),
         ]
         for submod_obj, prefix in submodules:
             if submod_obj is None:

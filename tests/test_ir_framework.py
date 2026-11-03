@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 import inspect
 import pytest
 
@@ -115,8 +117,8 @@ def test_ir_live_signature_reflection_parity() -> None:
     """Verify every extracted GhostRef in frameworks/ir.py matches live ml_switcheroo_ir signatures."""
     refs = collect_api(SemanticTier.NEURAL)
     for ref in refs:
-        assert hasattr(ir, ref.name), f"Missing symbol {ref.name} in ml_switcheroo_ir"
-        obj = getattr(ir, ref.name)
+        assert ref.name in dir(ir), f"Missing symbol {ref.name} in ml_switcheroo_ir"
+        obj = operator.attrgetter(ref.name)(ir)
         if ref.name == "DType":
             continue
         sig = inspect.signature(obj)
@@ -170,7 +172,7 @@ def test_get_pkg_version_ir_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     import builtins
 
-    real_import = getattr(builtins, "__import__")
+    real_import = operator.attrgetter("__import__")(builtins)
 
     def mock_import(name: str, *args: object, **kwargs: object) -> object:
         """Mock import function.

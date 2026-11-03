@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 import pytest_mock
 import unittest.mock as mock
 
@@ -90,7 +92,11 @@ def test_resolve_griffe_parser() -> None:
     """Test resolving parser strings to Griffe Parser enum instances."""
     rest_parser = resolve_griffe_parser("rest")
     assert rest_parser in (
-        getattr(griffe.Parser, "rest", griffe.Parser.sphinx),
+        (
+            operator.attrgetter("rest")(griffe.Parser)
+            if "rest" in dir(griffe.Parser)
+            else griffe.Parser.sphinx
+        ),
         griffe.Parser.sphinx,
     )
 
@@ -148,7 +154,13 @@ Raises:
     sections = parse_docstring_with_griffe(google_doc, parser_name="rest")
     assert len(sections) > 1
     has_params = any(
-        getattr(s.kind, "value", str(s.kind)) == "parameters" for s in sections
+        (
+            operator.attrgetter("value")(s.kind)
+            if "value" in dir(s.kind)
+            else str(s.kind)
+        )
+        == "parameters"
+        for s in sections
     )
     assert has_params
 
@@ -175,7 +187,13 @@ ValueError
     sections_np = parse_docstring_with_griffe(numpy_doc, parser_name="rest")
     assert len(sections_np) > 1
     has_params_np = any(
-        getattr(s.kind, "value", str(s.kind)) == "parameters" for s in sections_np
+        (
+            operator.attrgetter("value")(s.kind)
+            if "value" in dir(s.kind)
+            else str(s.kind)
+        )
+        == "parameters"
+        for s in sections_np
     )
     assert has_params_np
 
@@ -520,7 +538,7 @@ def test_pytorch_modules_kwargs_promotion() -> None:
     try:
         import torch.nn as nn
 
-        if not hasattr(nn, "Linear") or not hasattr(nn, "Conv2d"):
+        if "Linear" not in dir(nn) or "Conv2d" not in dir(nn):
             raise ImportError("torch.nn has no Linear or Conv2d")
     except ImportError:
         import types
@@ -576,7 +594,7 @@ def test_pytorch_modules_kwargs_promotion() -> None:
         nn_mod = nn
 
     linear_ref = GhostInspector.inspect(
-        getattr(nn_mod, "Linear"), "torch.nn.Linear", kind="class"
+        operator.attrgetter("Linear")(nn_mod), "torch.nn.Linear", kind="class"
     )
     linear_param_names = {p.name for p in linear_ref.params}
     assert "in_features" in linear_param_names
@@ -584,7 +602,7 @@ def test_pytorch_modules_kwargs_promotion() -> None:
     assert "bias" in linear_param_names
 
     conv_ref = GhostInspector.inspect(
-        getattr(nn_mod, "Conv2d"), "torch.nn.Conv2d", kind="class"
+        operator.attrgetter("Conv2d")(nn_mod), "torch.nn.Conv2d", kind="class"
     )
     conv_param_names = {p.name for p in conv_ref.params}
     assert "in_channels" in conv_param_names

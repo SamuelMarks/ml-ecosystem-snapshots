@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from unittest.mock import patch, MagicMock
 
 from ml_switcheroo_ir.schema.ghost import SemanticTier, GhostRef
@@ -46,7 +48,7 @@ def test_collect_transformers() -> None:
     mock_mod.DummyConfig = DummyConfig
     mock_mod.AutoModelForCausalLM = AutoModelForCausalLM
     mock_mod.DummyModel = DummyModel
-    setattr(
+    pytest.MonkeyPatch().setattr(
         mock_mod,
         "__dir__",
         lambda self: [
@@ -54,6 +56,7 @@ def test_collect_transformers() -> None:
             "AutoModelForCausalLM",
             "DummyModel",
         ],
+        raising=False,
     )
 
     with (
@@ -101,7 +104,9 @@ def test_collect_diffusers() -> None:
         pass
 
     mock_mod.DummyScheduler = DummyScheduler
-    setattr(mock_mod, "__dir__", lambda self: ["DummyScheduler"])
+    pytest.MonkeyPatch().setattr(
+        mock_mod, "__dir__", lambda self: ["DummyScheduler"], raising=False
+    )
 
     with (
         patch("importlib.import_module", return_value=mock_mod),
@@ -134,7 +139,9 @@ def test_collect_tokenizers() -> None:
         pass
 
     mock_mod.DummyTokenizer = DummyTokenizer
-    setattr(mock_mod, "__dir__", lambda self: ["DummyTokenizer"])
+    pytest.MonkeyPatch().setattr(
+        mock_mod, "__dir__", lambda self: ["DummyTokenizer"], raising=False
+    )
 
     with (
         patch("importlib.import_module", return_value=mock_mod),
@@ -172,7 +179,7 @@ def test_parse_pretrained_config_with_empty_annotations() -> None:
             """
             pass
 
-    setattr(DummyConfig, "__annotations__", {})
+    pytest.MonkeyPatch().setattr(DummyConfig, "__annotations__", {}, raising=False)
 
     _parse_pretrained_config(DummyConfig, ref)
     assert len(ref.params) == 0

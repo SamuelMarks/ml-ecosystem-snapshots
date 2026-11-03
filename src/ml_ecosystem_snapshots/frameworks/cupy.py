@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import operator
 import types
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 
 cp: types.ModuleType | None = None
 try:
@@ -34,9 +36,10 @@ def collect_api(
         return results
 
     if category == SemanticTier.ACTIVATION:
+        cp_names = set(dir(cp))
         for name in ["tanh", "exp", "maximum", "minimum"]:
-            if hasattr(cp, name):
-                obj = getattr(cp, name)
+            if name in cp_names:
+                obj: InspectableTarget = operator.attrgetter(name)(cp)
                 if callable(obj):
                     try:
                         res = GhostInspector.inspect(

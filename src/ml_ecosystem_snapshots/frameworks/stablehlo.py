@@ -893,7 +893,7 @@ def _load_stablehlo_exhaustive() -> list[GhostRef]:
 
     refs: list[GhostRef] = []
     for op in ops_list:
-        params: list[GhostParam] = []
+        params: list[ExtendedGhostParam] = []
 
         # 1. SSA Operands
         raw_operands = op.get("operands", [])
@@ -1012,15 +1012,16 @@ def _load_stablehlo_exhaustive() -> list[GhostRef]:
         }
 
         ssa_operands: list[GhostParam] = [
-            p for p in params if getattr(p, "role", None) == IRParameterRole.OPERAND
+            p for p in params if p.role == IRParameterRole.OPERAND
         ]
+        params_list: list[GhostParam] = list(params)
 
         refs.append(
             GhostMlirRef(
                 name=str(op.get("class_name", "UnknownOp")),
                 api_path=api_path,
                 kind="function",
-                params=params,
+                params=params_list,
                 operands=ssa_operands,
                 docstring="\n".join(docstring_parts),
                 returns_type=returns_type,

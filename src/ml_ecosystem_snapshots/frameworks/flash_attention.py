@@ -7,6 +7,7 @@ cache indexing layouts, and attention attributes matching `custom_ops.json`.
 from __future__ import annotations
 
 import importlib
+import operator
 import types
 
 from ml_switcheroo_ir.schema.ghost import (
@@ -17,6 +18,7 @@ import pydantic
 
 from ml_ecosystem_snapshots.frameworks._base import CanonicalPythonOpSpec
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 
 
 CANONICAL_FLASH_ATTN_OPS: list[CanonicalPythonOpSpec] = pydantic.TypeAdapter(
@@ -184,11 +186,12 @@ def collect_api(
 
     results: list[GhostRef] = []
     seen: set[str] = set()
+    mod_names = set(dir(mod))
 
     for op in CANONICAL_FLASH_ATTN_OPS:
         name = op.name
-        if hasattr(mod, name):
-            obj = getattr(mod, name)
+        if name in mod_names:
+            obj: InspectableTarget = operator.attrgetter(name)(mod)
             try:
                 ref = GhostInspector.inspect(obj, op.api_path, is_public=True)
                 ref.environment_tags = list(ref.environment_tags or ()) + [

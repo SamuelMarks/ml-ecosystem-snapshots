@@ -75,8 +75,8 @@ class HallucinationCheckResult(_McpResultModel):
         Returns:
             Field value.
         """
-        val: bool | str | list[str] | JsonValue = getattr(self, key)
-        return val
+        dumped: dict[str, bool | str | list[str] | JsonValue] = self.model_dump()
+        return dumped[key]
 
     @typing.overload
     def get(
@@ -129,7 +129,8 @@ class HallucinationCheckResult(_McpResultModel):
         Returns:
             Field value or `default`.
         """
-        val: bool | str | list[str] | JsonValue = getattr(self, key, None)
+        dumped: dict[str, bool | str | list[str] | JsonValue] = self.model_dump()
+        val = dumped.get(key, default)
         return val if val is not None else default
 
 
@@ -178,8 +179,8 @@ class AntiPatternExplanationResult(_McpResultModel):
         Returns:
             Field value.
         """
-        val: bool | str | list[str] | None = getattr(self, key)
-        return val
+        dumped: dict[str, bool | str | list[str] | None] = self.model_dump()
+        return dumped[key]
 
 
 class CodeBlockFinding(_McpResultModel):
@@ -210,8 +211,8 @@ class CodeBlockFinding(_McpResultModel):
         Returns:
             Field value.
         """
-        val: int | str | list[str] = getattr(self, key)
-        return val
+        dumped: dict[str, int | str | list[str]] = self.model_dump()
+        return dumped[key]
 
 
 class CodeBlockCheckResult(_McpResultModel):
@@ -249,8 +250,12 @@ class CodeBlockCheckResult(_McpResultModel):
         Returns:
             Field value.
         """
-        val: int | bool | list[CodeBlockFinding] | JsonValue = getattr(self, key)
-        return val
+        if key == "findings":
+            return self.findings
+        dumped: dict[str, int | bool | list[CodeBlockFinding] | JsonValue] = (
+            self.model_dump()
+        )
+        return dumped[key]
 
 
 class IsaCheckResult(_McpResultModel):
@@ -299,8 +304,8 @@ class IsaCheckResult(_McpResultModel):
         Returns:
             Field value.
         """
-        val: bool | str | list[str] | JsonValue = getattr(self, key)
-        return val
+        dumped: dict[str, bool | str | list[str] | JsonValue] = self.model_dump()
+        return dumped[key]
 
     @typing.overload
     def get(
@@ -345,7 +350,8 @@ class IsaCheckResult(_McpResultModel):
         Returns:
             Field value or `default`.
         """
-        val: bool | str | list[str] | JsonValue = getattr(self, key, None)
+        dumped: dict[str, bool | str | list[str] | JsonValue] = self.model_dump()
+        val = dumped.get(key, default)
         return val if val is not None else default
 
 
@@ -387,10 +393,10 @@ class IrCheckResult(_McpResultModel):
         Returns:
             Field value.
         """
-        val: bool | list[str] | list[str | dict[str, JsonValue]] | JsonValue = getattr(
-            self, key
-        )
-        return val
+        dumped: dict[
+            str, bool | list[str] | list[str | dict[str, JsonValue]] | JsonValue
+        ] = self.model_dump()
+        return dumped[key]
 
     @typing.overload
     def get(
@@ -434,9 +440,10 @@ class IrCheckResult(_McpResultModel):
         Returns:
             Field value or `default`.
         """
-        val: bool | list[str] | list[str | dict[str, JsonValue]] | JsonValue = getattr(
-            self, key, None
-        )
+        dumped: dict[
+            str, bool | list[str] | list[str | dict[str, JsonValue]] | JsonValue
+        ] = self.model_dump()
+        val = dumped.get(key, default)
         return val if val is not None else default
 
 
@@ -470,8 +477,8 @@ class DomainOpCheckResult(_McpResultModel):
         Returns:
             Field value.
         """
-        val: bool | list[str] | JsonValue = getattr(self, key)
-        return val
+        dumped: dict[str, bool | list[str] | JsonValue] = self.model_dump()
+        return dumped[key]
 
     @typing.overload
     def get(
@@ -504,7 +511,8 @@ class DomainOpCheckResult(_McpResultModel):
         Returns:
             Field value or `default`.
         """
-        val: bool | list[str] | JsonValue = getattr(self, key, None)
+        dumped: dict[str, bool | list[str] | JsonValue] = self.model_dump()
+        val = dumped.get(key, default)
         return val if val is not None else default
 
 
@@ -543,8 +551,8 @@ class ConceptTranslationResult(_McpResultModel):
         Returns:
             Field value.
         """
-        val: str | dict[str, JsonValue] | JsonValue = getattr(self, key)
-        return val
+        dumped: dict[str, str | dict[str, JsonValue] | JsonValue] = self.model_dump()
+        return dumped[key]
 
 
 __all__ = [

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 import types
 from unittest import mock
 from unittest.mock import patch
@@ -60,7 +62,7 @@ def create_module(name: str, attrs: dict[str, object]) -> types.ModuleType:
     """
     mod = types.ModuleType(name)
     for k, v in attrs.items():
-        setattr(mod, k, v)
+        pytest.MonkeyPatch().setattr(mod, k, v, raising=False)
     return mod
 
 
@@ -722,9 +724,9 @@ def test_tf_raw_ops_none_env_tags(mocker: pytest_mock.MockerFixture) -> None:
     from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
     fake_raw = types.ModuleType("tf.raw_ops")
-    setattr(fake_raw, "op1", lambda x: x)
+    pytest.MonkeyPatch().setattr(fake_raw, "op1", lambda x: x, raising=False)
     fake_tf = types.ModuleType("tf")
-    setattr(fake_tf, "raw_ops", fake_raw)
+    pytest.MonkeyPatch().setattr(fake_tf, "raw_ops", fake_raw, raising=False)
 
     ref = GhostRef(
         name="op1",
@@ -754,9 +756,9 @@ def test_tf_raw_ops_inspect_exception(mocker: pytest_mock.MockerFixture) -> None
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     fake_raw = types.ModuleType("tf.raw_ops")
-    setattr(fake_raw, "broken_op", lambda x: x)
+    pytest.MonkeyPatch().setattr(fake_raw, "broken_op", lambda x: x, raising=False)
     fake_tf = types.ModuleType("tf")
-    setattr(fake_tf, "raw_ops", fake_raw)
+    pytest.MonkeyPatch().setattr(fake_tf, "raw_ops", fake_raw, raising=False)
 
     mocker.patch.object(tf_fw, "tf", fake_tf)
     mocker.patch(
@@ -1148,8 +1150,10 @@ def test_jax_collect(mocker: pytest_mock.MockerFixture) -> None:
         """
         pass
 
-    setattr(static_func, "_static_argnums", (0,))
-    setattr(static_func, "_static_argnames", ("axis",))
+    pytest.MonkeyPatch().setattr(static_func, "_static_argnums", (0,), raising=False)
+    pytest.MonkeyPatch().setattr(
+        static_func, "_static_argnames", ("axis",), raising=False
+    )
 
     fake_pallas = create_module("jax.experimental.pallas", {})
     fake_experimental = create_module("jax.experimental", {"pallas": fake_pallas})
@@ -1371,7 +1375,9 @@ def test_flax_nnx_collect(mocker: pytest_mock.MockerFixture) -> None:
     assert flax_fw.collect_api(SemanticTier.LAYER) == []
 
     # TypeError branch coverage
-    setattr(fake_nnx, "Module", 1)  # Force TypeError
+    pytest.MonkeyPatch().setattr(
+        fake_nnx, "Module", 1, raising=False
+    )  # Force TypeError
     assert flax_fw.collect_api(SemanticTier.LAYER) == []
 
     mocker.patch.object(flax_fw, "nnx", None)
@@ -1533,15 +1539,25 @@ def test_sklearn_collect(mocker: pytest_mock.MockerFixture) -> None:
         pass
 
     mock_sklearn = types.ModuleType("sklearn")
-    setattr(mock_sklearn, "base", types.ModuleType("sklearn.base"))
-    setattr(mock_sklearn.base, "BaseEstimator", BaseEstimator)
+    pytest.MonkeyPatch().setattr(
+        mock_sklearn, "base", types.ModuleType("sklearn.base"), raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        mock_sklearn.base, "BaseEstimator", BaseEstimator, raising=False
+    )
 
     mock_ensemble = types.ModuleType("sklearn.ensemble")
-    setattr(mock_ensemble, "RandomForestClassifier", RandomForestClassifier)
-    setattr(mock_ensemble, "NotAnEstimator", NotAnEstimator)
+    pytest.MonkeyPatch().setattr(
+        mock_ensemble, "RandomForestClassifier", RandomForestClassifier, raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        mock_ensemble, "NotAnEstimator", NotAnEstimator, raising=False
+    )
 
     mock_metrics = types.ModuleType("sklearn.metrics")
-    setattr(mock_metrics, "accuracy_score", accuracy_score)
+    pytest.MonkeyPatch().setattr(
+        mock_metrics, "accuracy_score", accuracy_score, raising=False
+    )
 
     sys_modules = {
         "sklearn": mock_sklearn,
@@ -1609,7 +1625,7 @@ def test_sklearn_module_import_error(mocker: pytest_mock.MockerFixture) -> None:
     mock_sklearn = types.ModuleType("sklearn")
     mocker.patch.object(sklearn_fw, "sklearn", mock_sklearn)
 
-    original_import: object = getattr(builtins, "__import__")
+    original_import: object = operator.attrgetter("__import__")(builtins)
 
     def mock_import(name: str, *args: object, **kwargs: object) -> object:
         """Mock import function.
@@ -1664,7 +1680,7 @@ def test_sklearn_scan_module_edge_cases(mocker: pytest_mock.MockerFixture) -> No
             """
             raise RuntimeError("Bad")
 
-    setattr(mock_mod, "bad_obj", BadObj())
+    pytest.MonkeyPatch().setattr(mock_mod, "bad_obj", BadObj(), raising=False)
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.tensorflow.get_all_members",
         side_effect=Exception("mocked"),
@@ -1679,8 +1695,8 @@ def test_sklearn_scan_module_edge_cases(mocker: pytest_mock.MockerFixture) -> No
 
         pass
 
-    setattr(mock_mod2, "_private", ValidObj)
-    setattr(mock_mod2, "blocked", ValidObj)
+    pytest.MonkeyPatch().setattr(mock_mod2, "_private", ValidObj, raising=False)
+    pytest.MonkeyPatch().setattr(mock_mod2, "blocked", ValidObj, raising=False)
 
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.tensorflow.get_all_members",
@@ -1711,8 +1727,8 @@ def test_sklearn_scan_module_branches(mocker: pytest_mock.MockerFixture) -> None
         pass
 
     # 1. kind="class", is_estimator=False
-    setattr(mock_mod, "ValidObj", ValidObj)
-    setattr(mock_mod, "valid_func", valid_func)
+    pytest.MonkeyPatch().setattr(mock_mod, "ValidObj", ValidObj, raising=False)
+    pytest.MonkeyPatch().setattr(mock_mod, "valid_func", valid_func, raising=False)
 
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.tensorflow.get_all_members",
@@ -2502,7 +2518,7 @@ def test_tensor_instance_methods_extraction() -> None:
     try:
         import torch
 
-        if not hasattr(torch, "Tensor") or not hasattr(torch.Tensor, "view"):
+        if "Tensor" not in dir(torch) or "view" not in dir(torch.Tensor):
             raise ImportError("torch has no Tensor.view")
         torch_mod: object = torch
     except ImportError:
@@ -2687,15 +2703,15 @@ def test_tensor_instance_methods_extraction() -> None:
         tf_mod = types.SimpleNamespace(Tensor=MockTFTensor, Variable=MockTFVariable)
 
     # 1. PyTorch Tensor methods
-    torch_tensor_cls = getattr(torch_mod, "Tensor")
+    torch_tensor_cls = operator.attrgetter("Tensor")(torch_mod)
     for m in ("view", "reshape", "permute", "transpose", "repeat", "to"):
-        obj = getattr(torch_tensor_cls, m)
+        obj = operator.attrgetter(m)(torch_tensor_cls)
         ref = GhostInspector.inspect(obj, f"torch.Tensor.{m}", kind="method")
         assert ref.kind == "method"
         assert ref.api_path == f"torch.Tensor.{m}"
         assert len(ref.params) > 0
 
-    detach_obj = getattr(torch_tensor_cls, "detach")
+    detach_obj = operator.attrgetter("detach")(torch_tensor_cls)
     detach_ref = GhostInspector.inspect(
         detach_obj, "torch.Tensor.detach", kind="method"
     )
@@ -2704,25 +2720,25 @@ def test_tensor_instance_methods_extraction() -> None:
     assert len(detach_ref.params) == 0
 
     # 2. JAX Array methods
-    jax_array_cls = getattr(jax_mod, "Array")
+    jax_array_cls = operator.attrgetter("Array")(jax_mod)
     for m in ("reshape", "transpose", "flatten"):
-        obj = getattr(jax_array_cls, m)
+        obj = operator.attrgetter(m)(jax_array_cls)
         ref = GhostInspector.inspect(obj, f"jax.Array.{m}", kind="method")
         assert ref.kind == "method"
         assert ref.api_path == f"jax.Array.{m}"
         assert len(ref.params) > 0
 
     # 3. TensorFlow Tensor and Variable methods
-    tf_tensor_cls = getattr(tf_mod, "Tensor")
+    tf_tensor_cls = operator.attrgetter("Tensor")(tf_mod)
     for m in ("get_shape", "set_shape"):
-        obj = getattr(tf_tensor_cls, m)
+        obj = operator.attrgetter(m)(tf_tensor_cls)
         ref = GhostInspector.inspect(obj, f"tf.Tensor.{m}", kind="method")
         assert ref.kind == "method"
         assert ref.api_path == f"tf.Tensor.{m}"
 
-    tf_var_cls = getattr(tf_mod, "Variable")
+    tf_var_cls = operator.attrgetter("Variable")(tf_mod)
     for m in ("assign", "assign_add"):
-        obj = getattr(tf_var_cls, m)
+        obj = operator.attrgetter(m)(tf_var_cls)
         ref = GhostInspector.inspect(obj, f"tf.Variable.{m}", kind="method")
         assert ref.kind == "method"
         assert ref.api_path == f"tf.Variable.{m}"
@@ -2740,12 +2756,12 @@ def test_keras_griffe_missing(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setitem(sys.modules, "griffe", None)
     importlib.reload(k_fw)
-    assert getattr(k_fw, "griffe") is None
+    assert operator.attrgetter("griffe")(k_fw) is None
 
     # Restore
     monkeypatch.undo()
     importlib.reload(k_fw)
-    assert getattr(k_fw, "griffe") is not None
+    assert operator.attrgetter("griffe")(k_fw) is not None
 
 
 def test_maxtext_import_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2763,12 +2779,12 @@ def test_maxtext_import_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_mt = types.ModuleType("maxtext")
     monkeypatch.setitem(sys.modules, "maxtext", fake_mt)
     importlib.reload(m_fw)
-    assert getattr(m_fw, "maxtext") is fake_mt
+    assert operator.attrgetter("maxtext")(m_fw) is fake_mt
 
     # Unavailable
     monkeypatch.setitem(sys.modules, "maxtext", None)
     importlib.reload(m_fw)
-    assert getattr(m_fw, "maxtext") is None
+    assert operator.attrgetter("maxtext")(m_fw) is None
 
     # Restore
     monkeypatch.undo()

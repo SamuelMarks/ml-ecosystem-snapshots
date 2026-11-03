@@ -134,8 +134,7 @@ def cmd_pull(args: argparse.Namespace) -> None:
     from ml_ecosystem_snapshots.index import get_cache_dir
     from ml_ecosystem_snapshots.network_env import is_offline_mode
 
-    arg_map = vars(args)
-    if bool(arg_map.get("offline", False)) or is_offline_mode():
+    if ("offline" in dir(args) and bool(args.offline)) or is_offline_mode():
         print(
             "Network access disabled: pull command cannot be executed in offline mode."
         )
@@ -175,14 +174,13 @@ def cmd_download_all(args: argparse.Namespace) -> None:
     from ml_ecosystem_snapshots.index import get_cache_dir
     from ml_ecosystem_snapshots.network_env import is_offline_mode
 
-    arg_map = vars(args)
-    if bool(arg_map.get("offline", False)) or is_offline_mode():
+    if ("offline" in dir(args) and bool(args.offline)) or is_offline_mode():
         print(
             "Network access disabled: download-all command cannot be executed in offline mode."
         )
         sys.exit(1)
 
-    raw_cache_dir = arg_map.get("cache_dir")
+    raw_cache_dir = args.cache_dir if "cache_dir" in dir(args) else None
     cache_dir = (
         str(raw_cache_dir)
         if raw_cache_dir
@@ -236,7 +234,7 @@ def cmd_verify_local_cache(args: argparse.Namespace) -> None:
     from ml_ecosystem_snapshots.index import get_cache_dir
 
     pkg_dir = _get_pkg_dir()
-    raw_cache_dir = vars(args).get("cache_dir")
+    raw_cache_dir = args.cache_dir if "cache_dir" in dir(args) else None
     cache_dir = str(raw_cache_dir) if raw_cache_dir else get_cache_dir()
     search_dirs = [
         cache_dir,

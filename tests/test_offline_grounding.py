@@ -7,6 +7,8 @@ operate strictly without network access, querying bundled ground-truth JSON file
 
 from __future__ import annotations
 
+import operator
+
 import socket
 import typing
 from unittest import mock
@@ -464,4 +466,4 @@ def test_offline_ghost_isa_structured_modifiers() -> None:
     assert isa_ref.structured_modifiers is not None
     assert isa_ref.structured_modifiers["rounding"] == ".RN"
     assert isa_ref.vopd_profile is not None
-    assert getattr(isa_ref.vopd_profile, "supported", None) is False
+    assert operator.attrgetter("supported")(isa_ref.vopd_profile) is False

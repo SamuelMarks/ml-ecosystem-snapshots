@@ -89,7 +89,13 @@ def test_runtime_boundary_protocols_and_helpers() -> None:
 
     desc_obj = _SampleDescriptor()
     assert isinstance(desc_obj, DescriptorProtocol)
-    assert desc_obj.__get__(None, _SampleDescriptor) == 42
+
+    class _DescriptorHost:
+        """Host class for exercising `_SampleDescriptor`."""
+
+        value = desc_obj
+
+    assert _DescriptorHost.value == 42
 
     assert has_runtime_attr(_sample_fn, "__name__") is True
     assert has_runtime_attr(_sample_fn, "nonexistent_attr_xyz") is False

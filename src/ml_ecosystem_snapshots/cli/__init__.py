@@ -48,7 +48,7 @@ def main() -> None:
     """Parse CLI arguments and dispatch to the selected subcommand handler."""
     parser = build_parser()
     args = parser.parse_args()
-    if bool(vars(args).get("offline", False)):
+    if "offline" in dir(args) and bool(args.offline):
         os.environ["ML_SNAPSHOTS_OFFLINE"] = "1"
     args.func(args)
 

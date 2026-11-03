@@ -1696,6 +1696,20 @@ def _hydrate_canonical_optax_tier(
     return refs
 
 
+@typing.runtime_checkable
+class _OptaxWithLossesProtocol(typing.Protocol):
+    """Protocol for `optax` exposing `.losses`."""
+
+    losses: types.ModuleType
+
+
+@typing.runtime_checkable
+class _OptaxWithSchedulesProtocol(typing.Protocol):
+    """Protocol for `optax` exposing `.schedules`."""
+
+    schedules: types.ModuleType
+
+
 class OptaxScanner:
     """Helper to inspect Optax APIs for the Ghost Protocol discovery system."""
 
@@ -1748,7 +1762,7 @@ class OptaxScanner:
                 CANONICAL_OPTAX_LOSSES, attach_root_alias=True
             )
 
-        if not optax or not hasattr(optax, "losses"):
+        if not isinstance(optax, _OptaxWithLossesProtocol):
             return []
 
         results: list[GhostRef] = []
@@ -1787,7 +1801,7 @@ class OptaxScanner:
                 CANONICAL_OPTAX_SCHEDULERS, attach_root_alias=True
             )
 
-        if not optax or not hasattr(optax, "schedules"):
+        if not isinstance(optax, _OptaxWithSchedulesProtocol):
             return []
 
         results: list[GhostRef] = []
@@ -1832,7 +1846,9 @@ class OptaxScanner:
                     except Exception:
                         pass
 
-            optax_vars = vars(optax)
+            optax_members: dict[str, types.ModuleType] = dict(
+                inspect.getmembers(optax, inspect.ismodule)
+            )
             for submod_name in (
                 "projections",
                 "tree_utils",
@@ -1840,7 +1856,7 @@ class OptaxScanner:
                 "assignment",
                 "perturbations",
             ):
-                submod = optax_vars.get(submod_name)
+                submod = optax_members.get(submod_name)
                 if isinstance(submod, types.ModuleType):
                     for name, obj in get_all_members(submod):
                         if not include_nonpublic and name.startswith("_"):

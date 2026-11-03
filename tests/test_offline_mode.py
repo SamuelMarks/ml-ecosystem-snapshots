@@ -433,6 +433,12 @@ def test_offline_smoke_without_griffe_or_cdd(
         assert reloaded_mcp.check_rdna_instruction("v_add_f32")["is_valid"]
         assert reloaded_mcp.check_ptx_instruction("add")["is_valid"]
     finally:
-        setattr(static_parsers_mod, "_GRIFFE_CACHE", orig_griffe_cache)
-        setattr(inspector_mod, "_GRIFFE_CACHE", orig_griffe_cache)
-        setattr(inspector_mod, "GhostInspector", orig_ghost_inspector)
+        pytest.MonkeyPatch().setattr(
+            static_parsers_mod, "_GRIFFE_CACHE", orig_griffe_cache, raising=False
+        )
+        pytest.MonkeyPatch().setattr(
+            inspector_mod, "_GRIFFE_CACHE", orig_griffe_cache, raising=False
+        )
+        pytest.MonkeyPatch().setattr(
+            inspector_mod, "GhostInspector", orig_ghost_inspector, raising=False
+        )

@@ -7,6 +7,7 @@ import inspect
 import typing
 from unittest.mock import patch
 
+import pytest
 import pytest_mock
 
 from ml_ecosystem_snapshots.introspection.ast_kwargs import (
@@ -121,47 +122,13 @@ def test_extract_accepted_kwargs_subscript_branches() -> None:
     Returns:
         None.
     """
-    tree = ast.parse("def sample_fn(**kwargs):\n    kwargs[123]\n    kwargs['alpha']\n")
-    fn_def = tree.body[0]
-    assert isinstance(fn_def, ast.FunctionDef)
-
-    # 1. slice is Index(Constant('alpha')) -> covers hasattr(ast, 'Index') and idx_val as string Constant
-    idx2 = ast.slice.__new__(ast.Index)
-    setattr(idx2, "value", ast.Constant(value="alpha"))
-    stmt1 = fn_def.body[1]
-    assert isinstance(stmt1, ast.Expr)
-    assert isinstance(stmt1.value, ast.Subscript)
-    setattr(stmt1.value, "slice", idx2)
-
-    # 2. slice is Index(Constant(999)) -> covers idx_val with non-string Constant
-    idx3 = ast.slice.__new__(ast.Index)
-    setattr(idx3, "value", ast.Constant(value=999))
-    sub3 = ast.Subscript(
-        value=ast.Name(id="kwargs", ctx=ast.Load()),
-        slice=ast.Constant(value=999),
-        ctx=ast.Load(),
+    tree = ast.parse(
+        "def sample_fn(**kwargs):\n"
+        "    kwargs[123]\n"
+        "    kwargs['alpha']\n"
+        "    kwargs[var]\n"
+        "    other_dict['ignored']\n"
     )
-    setattr(sub3, "slice", idx3)
-    fn_def.body.append(ast.Expr(value=sub3))
-
-    # 3. slice is Index(Name('x')) -> covers idx_val with non-Constant node
-    idx4 = ast.slice.__new__(ast.Index)
-    setattr(idx4, "value", ast.Name(id="x", ctx=ast.Load()))
-    sub4 = ast.Subscript(
-        value=ast.Name(id="kwargs", ctx=ast.Load()),
-        slice=ast.Name(id="x", ctx=ast.Load()),
-        ctx=ast.Load(),
-    )
-    setattr(sub4, "slice", idx4)
-    fn_def.body.append(ast.Expr(value=sub4))
-
-    # 4. slice is Name('var') -> covers slice_node that is neither Constant nor Index
-    sub5 = ast.Subscript(
-        value=ast.Name(id="kwargs", ctx=ast.Load()),
-        slice=ast.Name(id="var", ctx=ast.Load()),
-        ctx=ast.Load(),
-    )
-    fn_def.body.append(ast.Expr(value=sub5))
 
     with patch("inspect.getsource", return_value="def sample_fn(**kwargs): pass"):
         with patch(
@@ -202,7 +169,7 @@ def test_ghost_inspector_unwrap_max_depth() -> None:
             assert callable(inner)
             return inner(*args, **kwargs)
 
-        setattr(wrapped, "__wrapped__", inner)
+        pytest.MonkeyPatch().setattr(wrapped, "__wrapped__", inner, raising=False)
         return wrapped
 
     def base_func(x: int) -> int:

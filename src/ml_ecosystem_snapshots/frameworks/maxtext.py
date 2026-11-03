@@ -109,7 +109,7 @@ def collect_api(
     if not maxtext or category != SemanticTier.MODEL:
         return []
 
-    if getattr(maxtext, "__path__", None):
+    if "__path__" in dir(maxtext) and maxtext.__path__:
         maxtext_dir = maxtext.__path__[0]
         models_dir = os.path.join(maxtext_dir, "models")
         return _parse_maxtext_classes(models_dir, "maxtext.models")

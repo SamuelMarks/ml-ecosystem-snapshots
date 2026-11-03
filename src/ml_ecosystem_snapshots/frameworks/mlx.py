@@ -78,7 +78,7 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
                     results.append(GhostInspector.inspect(obj, f"mlx.nn.{name}"))
 
         elif category == SemanticTier.LOSS:
-            if hasattr(mlx.nn, "losses"):
+            if "losses" in dir(mlx.nn):
                 for name, obj in get_all_members(mlx.nn.losses):
                     if not include_nonpublic and name.startswith("_"):
                         continue
@@ -99,13 +99,16 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
                         GhostInspector.inspect(obj, f"mlx.optimizers.{name}")
                     )
         elif category == SemanticTier.ARRAY_API:
-            core_mod = getattr(mlx, "core", None)
-            if core_mod:
-                submods = [
+            if "core" in dir(mlx):
+                core_mod: types.ModuleType = mlx.core
+                core_members: dict[str, types.ModuleType] = dict(
+                    inspect.getmembers(core_mod)
+                )
+                submods: list[tuple[types.ModuleType | None, str]] = [
                     (core_mod, "mlx.core"),
-                    (getattr(core_mod, "random", None), "mlx.core.random"),
-                    (getattr(core_mod, "linalg", None), "mlx.core.linalg"),
-                    (getattr(core_mod, "fft", None), "mlx.core.fft"),
+                    (core_members.get("random"), "mlx.core.random"),
+                    (core_members.get("linalg"), "mlx.core.linalg"),
+                    (core_members.get("fft"), "mlx.core.fft"),
                 ]
                 for smod, prefix in submods:
                     if not smod:

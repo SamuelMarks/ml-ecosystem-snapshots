@@ -7,6 +7,7 @@ framework collector modules.
 
 from __future__ import annotations
 
+import operator
 import types
 import typing
 
@@ -99,8 +100,10 @@ class CanonicalPythonOpSpec(pydantic.BaseModel):
         Returns:
             Field value.
         """
-        val: str | list[CanonicalParamSpec] | JsonValue = getattr(self, key)
-        return val
+        dumped: dict[str, str | list[CanonicalParamSpec] | JsonValue] = (
+            self.model_dump()
+        )
+        return dumped[key]
 
     def get(
         self,
@@ -116,8 +119,9 @@ class CanonicalPythonOpSpec(pydantic.BaseModel):
         Returns:
             Field value or `default`.
         """
-        val: str | list[CanonicalParamSpec] | None = getattr(self, key, default)
-        return val
+        dumped: dict[str, str | list[CanonicalParamSpec] | None] = self.model_dump()
+        val = dumped.get(key, default)
+        return val if val is not None else default
 
 
 class CanonicalSubmoduleOpSpec(CanonicalPythonOpSpec):
@@ -147,8 +151,8 @@ class CanonicalSsaAttrSpec(pydantic.BaseModel):
         Returns:
             Field value.
         """
-        val: JsonValue = getattr(self, key)
-        return val
+        dumped: dict[str, JsonValue] = self.model_dump()
+        return dumped[key]
 
 
 class CanonicalSsaOpSpec(pydantic.BaseModel):
@@ -199,10 +203,12 @@ class CanonicalSsaOpSpec(pydantic.BaseModel):
         Returns:
             Field value.
         """
-        val: str | list[str] | list[CanonicalSsaAttrSpec] | JsonValue = getattr(
-            self, key
+        if key == "attributes":
+            return self.attributes
+        dumped: dict[str, str | list[str] | list[CanonicalSsaAttrSpec] | JsonValue] = (
+            self.model_dump()
         )
-        return val
+        return dumped[key]
 
     @typing.overload
     def get(
@@ -248,9 +254,12 @@ class CanonicalSsaOpSpec(pydantic.BaseModel):
         Returns:
             Field value or `default`.
         """
-        val: list[str] | list[CanonicalSsaAttrSpec] | JsonValue = getattr(
-            self, key, None
+        if key == "attributes":
+            return self.attributes
+        dumped: dict[str, list[str] | list[CanonicalSsaAttrSpec] | JsonValue] = (
+            self.model_dump()
         )
+        val = dumped.get(key, default)
         return val if val is not None else default
 
 
@@ -329,7 +338,7 @@ def build_canonical_python_ref(
     params = [
         GhostParam(
             name=p.name,
-            kind=getattr(ParameterKind, p.kind),
+            kind=ParameterKind[p.kind],
             default=p.default,
         )
         for p in spec.params
@@ -404,9 +413,10 @@ def collect_from_canonical_or_live(
 
     inspect_callable = inspector_fn or GhostInspector.inspect
     results: list[GhostRef] = []
+    live_names = set(dir(live_module))
     for name in target_names:
-        if hasattr(live_module, name):
-            obj = getattr(live_module, name)
+        if name in live_names:
+            obj: InspectableTarget = operator.attrgetter(name)(live_module)
             try:
                 ref = inspect_callable(obj, f"{module_prefix}.{name}", is_public=True)
                 ref.environment_tags = list(ref.environment_tags or ()) + list(
@@ -464,8 +474,8 @@ def collect_from_submodules_or_canonical(
         sub = spec.submodule or default_submodule
         if sub in loaded_submods:
             mod = loaded_submods[sub]
-            if hasattr(mod, spec.name):
-                obj = getattr(mod, spec.name)
+            if spec.name in dir(mod):
+                obj: InspectableTarget = operator.attrgetter(spec.name)(mod)
                 try:
                     ref = inspect_callable(obj, spec.api_path, is_public=True)
                     ref.environment_tags = list(ref.environment_tags or ()) + [
@@ -538,7 +548,7 @@ def build_ssa_operation_refs(
             if api_path_fn is not None
             else f"{api_prefix}.{op_name}"
         )
-        params: list[GhostParam] = []
+        params: list[ExtendedGhostParam] = []
 
         for inp_str in spec.inputs:
             params.append(
@@ -576,18 +586,15 @@ def build_ssa_operation_refs(
             GhostResult(name=out, type=result_type) for out in spec.outputs
         ]
         returns_type = result_type if returns else empty_return_type
+        params_list: list[GhostParam] = list(params)
 
         refs.append(
             GhostOperationRef(
                 name=op_name,
                 api_path=api_path,
                 kind="function",
-                params=params,
-                operands=[
-                    p
-                    for p in params
-                    if getattr(p, "role", None) == IRParameterRole.OPERAND
-                ],
+                params=params_list,
+                operands=[p for p in params if p.role == IRParameterRole.OPERAND],
                 returns=returns,
                 returns_type=returns_type,
                 docstring=spec.description or default_doc_fn(op_name),
@@ -621,7 +628,7 @@ def collect_dir_callables(
     for name in dir(mod_obj):
         if not include_nonpublic and name.startswith("_"):
             continue
-        obj = getattr(mod_obj, name)
+        obj: InspectableTarget = operator.attrgetter(name)(mod_obj)
         if callable(obj):
             try:
                 res = inspect_callable(

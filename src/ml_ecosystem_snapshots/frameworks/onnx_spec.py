@@ -208,13 +208,19 @@ CANONICAL_ONNX_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(
 )
 
 
+@typing.runtime_checkable
+class _OnnxAttrDescriptionProtocol(typing.Protocol):
+    """Protocol representing an ONNX OpSchema attribute with a description field."""
+
+    description: str
+
+
 class _OnnxAttrProto(typing.Protocol):
     """Protocol representing an ONNX OpSchema attribute entry."""
 
     type: str | int
     required: bool
     default_value: str | int | float | bytes | None
-    description: str
 
 
 class _OnnxParamProto(typing.Protocol):
@@ -235,7 +241,20 @@ class _OnnxOpSchemaProto(typing.Protocol):
     doc: str
 
 
-def _get_onnx_defs() -> types.ModuleType | None:
+@typing.runtime_checkable
+class _OnnxDefsModuleProtocol(typing.Protocol):
+    """Protocol for `onnx.defs` exposing `get_all_schemas_with_history`."""
+
+    def get_all_schemas_with_history(self) -> typing.Sequence[_OnnxOpSchemaProto]:
+        """Return all registered ONNX operator schemas across versions.
+
+        Returns:
+            Sequence of ONNX operator schema objects.
+        """
+        ...
+
+
+def _get_onnx_defs() -> _OnnxDefsModuleProtocol | types.ModuleType | None:
     """Lazily load the onnx.defs module to prevent unnecessary import overhead.
 
     Returns:
@@ -261,53 +280,52 @@ def _load_onnx_ops() -> list[CanonicalSsaOpSpec]:
         return CANONICAL_ONNX_OPS
 
     try:
-        schemas: typing.Sequence[_OnnxOpSchemaProto] = getattr(
-            defs, "get_all_schemas_with_history"
-        )()
+        assert isinstance(defs, _OnnxDefsModuleProtocol)
+        schemas: typing.Sequence[_OnnxOpSchemaProto] = (
+            defs.get_all_schemas_with_history()
+        )
         latest_map: dict[tuple[str, str], _OnnxOpSchemaProto] = {}
         for s in schemas:
-            key = (str(getattr(s, "domain", "")), str(getattr(s, "name", "")))
-            s_ver = int(getattr(s, "since_version", 1))
-            if key not in latest_map or s_ver > int(
-                getattr(latest_map[key], "since_version", 1)
-            ):
+            key = (str(s.domain), str(s.name))
+            s_ver = int(s.since_version)
+            if key not in latest_map or s_ver > int(latest_map[key].since_version):
                 latest_map[key] = s
 
         ops: list[CanonicalSsaOpSpec] = []
         for (domain, name), s in sorted(
             latest_map.items(), key=lambda x: (x[0][0], x[0][1])
         ):
-            inputs = [str(inp.name) for inp in getattr(s, "inputs", ())]
-            outputs = [str(out.name) for out in getattr(s, "outputs", ())]
+            inputs = [str(inp.name) for inp in s.inputs]
+            outputs = [str(out.name) for out in s.outputs]
             attributes: list[CanonicalSsaAttrSpec] = []
-            raw_attrs = getattr(s, "attributes", {})
+            raw_attrs = s.attributes
             assert isinstance(raw_attrs, dict)
             for attr_name, attr in raw_attrs.items():
+                desc_str = (
+                    str(attr.description or "")
+                    if isinstance(attr, _OnnxAttrDescriptionProtocol)
+                    else ""
+                )
                 attributes.append(
                     CanonicalSsaAttrSpec(
                         name=str(attr_name),
-                        type=str(getattr(attr, "type", "any"))
-                        .replace("AttrType.", "")
-                        .lower(),
-                        required=bool(getattr(attr, "required", False)),
+                        type=str(attr.type).replace("AttrType.", "").lower(),
+                        required=bool(attr.required),
                         default=(
-                            str(getattr(attr, "default_value"))
-                            if hasattr(attr, "default_value")
-                            and getattr(attr, "default_value")
-                            else None
+                            str(attr.default_value) if attr.default_value else None
                         ),
-                        description=str(getattr(attr, "description", "") or ""),
+                        description=desc_str,
                     )
                 )
             ops.append(
                 CanonicalSsaOpSpec(
                     name=name,
                     domain=domain,
-                    since_version=int(getattr(s, "since_version", 1)),
+                    since_version=int(s.since_version),
                     inputs=inputs,
                     outputs=outputs,
                     attributes=attributes,
-                    description=str(getattr(s, "doc", "") or f"ONNX {name} operator."),
+                    description=str(s.doc or f"ONNX {name} operator."),
                 )
             )
         if ops:

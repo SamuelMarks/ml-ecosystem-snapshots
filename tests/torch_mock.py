@@ -11,6 +11,8 @@ import inspect
 import sys
 import types
 
+import pytest
+
 
 class MockArgument:
     """Mock JIT/ATen schema parameter argument."""
@@ -105,8 +107,9 @@ class MockAtenOp:
             overloads_dict: Mapping of overload variant names to MockOverload instances.
         """
         self._overloads = overloads_dict
+        mp = pytest.MonkeyPatch()
         for k, v in overloads_dict.items():
-            setattr(self, k, v)
+            mp.setattr(self, k, v, raising=False)
 
     def overloads(self) -> list[str]:
         """List registered overload variants.
@@ -260,8 +263,9 @@ def create_mock_torch() -> types.ModuleType:
     Returns:
         The configured mock torch module.
     """
+    mp = pytest.MonkeyPatch()
     torch_mod = types.ModuleType("torch")
-    setattr(torch_mod, "Tensor", MockTensor)
+    mp.setattr(torch_mod, "Tensor", MockTensor, raising=False)
 
     ops_mod = types.ModuleType("torch.ops")
     aten_mod = types.ModuleType("torch.ops.aten")
@@ -413,19 +417,19 @@ def create_mock_torch() -> types.ModuleType:
         ),
     }
 
-    setattr(aten_mod, "add", MockAtenOp(add_schemas))
-    setattr(aten_mod, "add_", MockAtenOp(add_inplace_schemas))
-    setattr(aten_mod, "relu", MockAtenOp(relu_schemas))
-    setattr(aten_mod, "matmul", MockAtenOp(matmul_schemas))
-    setattr(aten_mod, "sum", MockAtenOp(sum_schemas))
-    setattr(aten_mod, "cat", MockAtenOp(cat_schemas))
-    setattr(aten_mod, "mm", MockAtenOp(mm_schemas))
-    setattr(aten_mod, "bmm", MockAtenOp(bmm_schemas))
+    mp.setattr(aten_mod, "add", MockAtenOp(add_schemas), raising=False)
+    mp.setattr(aten_mod, "add_", MockAtenOp(add_inplace_schemas), raising=False)
+    mp.setattr(aten_mod, "relu", MockAtenOp(relu_schemas), raising=False)
+    mp.setattr(aten_mod, "matmul", MockAtenOp(matmul_schemas), raising=False)
+    mp.setattr(aten_mod, "sum", MockAtenOp(sum_schemas), raising=False)
+    mp.setattr(aten_mod, "cat", MockAtenOp(cat_schemas), raising=False)
+    mp.setattr(aten_mod, "mm", MockAtenOp(mm_schemas), raising=False)
+    mp.setattr(aten_mod, "bmm", MockAtenOp(bmm_schemas), raising=False)
     # Non-callable member to test branch where member is skipped
-    setattr(aten_mod, "name", "aten")
+    mp.setattr(aten_mod, "name", "aten", raising=False)
 
-    setattr(ops_mod, "aten", aten_mod)
-    setattr(torch_mod, "ops", ops_mod)
+    mp.setattr(ops_mod, "aten", aten_mod, raising=False)
+    mp.setattr(torch_mod, "ops", ops_mod, raising=False)
 
     # JIT registry
     jit_schemas = [
@@ -455,32 +459,51 @@ def create_mock_torch() -> types.ModuleType:
             "default",
         ),
     ]
-    setattr(c_mod, "_jit_get_all_schemas", lambda: jit_schemas)
-    setattr(torch_mod, "_C", c_mod)
+    mp.setattr(c_mod, "_jit_get_all_schemas", lambda: jit_schemas, raising=False)
+    mp.setattr(torch_mod, "_C", c_mod, raising=False)
 
     # Callable operators
-    setattr(
+    mp.setattr(
         torch_mod,
         "add",
         MockTorchOp("add", "add(input, other, *, alpha=1, out=None) -> Tensor\n"),
+        raising=False,
     )
-    setattr(torch_mod, "relu", MockTorchOp("relu", "relu(input) -> Tensor\n"))
-    setattr(
+    mp.setattr(
+        torch_mod,
+        "relu",
+        MockTorchOp("relu", "relu(input) -> Tensor\n"),
+        raising=False,
+    )
+    mp.setattr(
         torch_mod,
         "matmul",
         MockTorchOp("matmul", "matmul(input, other) -> Tensor\n"),
+        raising=False,
     )
-    setattr(torch_mod, "sum", MockTorchOp("sum", "sum(input) -> Tensor\n"))
-    setattr(
+    mp.setattr(
+        torch_mod,
+        "sum",
+        MockTorchOp("sum", "sum(input) -> Tensor\n"),
+        raising=False,
+    )
+    mp.setattr(
         torch_mod,
         "cat",
         MockTorchOp("cat", "cat(tensors, dim=0) -> Tensor\n"),
+        raising=False,
     )
-    setattr(torch_mod, "mm", MockTorchOp("mm", "mm(input, mat2) -> Tensor\n"))
-    setattr(
+    mp.setattr(
+        torch_mod,
+        "mm",
+        MockTorchOp("mm", "mm(input, mat2) -> Tensor\n"),
+        raising=False,
+    )
+    mp.setattr(
         torch_mod,
         "bmm",
         MockTorchOp("bmm", "bmm(input, mat2) -> Tensor\n"),
+        raising=False,
     )
 
     # Submodules
@@ -488,11 +511,11 @@ def create_mock_torch() -> types.ModuleType:
     optim_mod = types.ModuleType("torch.optim")
     data_mod = types.ModuleType("torch.utils.data")
     utils_mod = types.ModuleType("torch.utils")
-    setattr(utils_mod, "data", data_mod)
+    mp.setattr(utils_mod, "data", data_mod, raising=False)
 
-    setattr(torch_mod, "nn", nn_mod)
-    setattr(torch_mod, "optim", optim_mod)
-    setattr(torch_mod, "utils", utils_mod)
+    mp.setattr(torch_mod, "nn", nn_mod, raising=False)
+    mp.setattr(torch_mod, "optim", optim_mod, raising=False)
+    mp.setattr(torch_mod, "utils", utils_mod, raising=False)
 
     return torch_mod
 
@@ -505,13 +528,13 @@ def install_mock_torch() -> types.ModuleType:
     """
     torch_mod = create_mock_torch()
     sys.modules["torch"] = torch_mod
-    sys.modules["torch.ops"] = getattr(torch_mod, "ops")
-    sys.modules["torch.ops.aten"] = getattr(torch_mod.ops, "aten")
-    sys.modules["torch._C"] = getattr(torch_mod, "_C")
-    sys.modules["torch.nn"] = getattr(torch_mod, "nn")
-    sys.modules["torch.optim"] = getattr(torch_mod, "optim")
-    sys.modules["torch.utils"] = getattr(torch_mod, "utils")
-    sys.modules["torch.utils.data"] = getattr(torch_mod.utils, "data")
+    sys.modules["torch.ops"] = torch_mod.ops
+    sys.modules["torch.ops.aten"] = torch_mod.ops.aten
+    sys.modules["torch._C"] = torch_mod._C
+    sys.modules["torch.nn"] = torch_mod.nn
+    sys.modules["torch.optim"] = torch_mod.optim
+    sys.modules["torch.utils"] = torch_mod.utils
+    sys.modules["torch.utils.data"] = torch_mod.utils.data
     return torch_mod
 
 
@@ -525,7 +548,7 @@ def ensure_torch() -> types.ModuleType:
         import importlib
 
         torch_mod: types.ModuleType = importlib.import_module("torch")
-        if hasattr(torch_mod, "ops") and hasattr(torch_mod.ops, "aten"):
+        if "ops" in dir(torch_mod) and "aten" in dir(torch_mod.ops):
             return torch_mod
     except (ImportError, Exception):
         pass

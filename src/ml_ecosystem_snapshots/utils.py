@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import operator
 import re
 import types
 import typing
@@ -11,13 +12,52 @@ import pydantic
 
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     InspectableTarget,
-    has_runtime_attr,
+    read_runtime_attr,
 )
 
 if typing.TYPE_CHECKING:
     import griffe
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@typing.runtime_checkable
+class _ModuleWithAllProtocol(typing.Protocol):
+    """Protocol for modules or types defining an `__all__` export sequence."""
+
+    __all__: typing.Sequence[str]
+
+
+@typing.runtime_checkable
+class _RestParserClassProtocol(typing.Protocol):
+    """Protocol for a Griffe Parser class exposing a `.rest` attribute."""
+
+    rest: griffe.Parser
+
+
+@typing.runtime_checkable
+class _DocstringParamItemProtocol(typing.Protocol):
+    """Protocol for a Griffe docstring parameter element."""
+
+    name: str | None
+    annotation: InspectableTarget
+    value: InspectableTarget
+    description: str | None
+
+
+@typing.runtime_checkable
+class _DocstringReturnItemProtocol(typing.Protocol):
+    """Protocol for a Griffe docstring return element."""
+
+    annotation: InspectableTarget
+    description: str | None
+
+
+@typing.runtime_checkable
+class _DocstringRaiseItemProtocol(typing.Protocol):
+    """Protocol for a Griffe docstring raise element."""
+
+    annotation: InspectableTarget
 
 
 class DocstringParamMeta(pydantic.BaseModel):
@@ -201,18 +241,20 @@ def get_all_members(
 
     for name in dir(module):
         try:
-            members.append((name, getattr(module, name)))
+            val: InspectableTarget = operator.attrgetter(name)(module)
+            members.append((name, val))
             seen.add(name)
         except Exception as exc:
             _LOGGER.debug("Skipping inaccessible member %s: %s", name, exc)
 
-    if has_runtime_attr(module, "__all__"):
-        all_names = getattr(module, "__all__")
+    if isinstance(module, _ModuleWithAllProtocol):
+        all_names = module.__all__
         for name in all_names:
             name_str = str(name)
             if name_str not in seen:
                 try:
-                    members.append((name_str, getattr(module, name_str)))
+                    val_all: InspectableTarget = operator.attrgetter(name_str)(module)
+                    members.append((name_str, val_all))
                     seen.add(name_str)
                 except Exception as exc:
                     _LOGGER.debug(
@@ -291,11 +333,14 @@ def resolve_griffe_parser(parser_name: str) -> griffe.Parser | None:
         import griffe as _griffe_mod
 
         if parser_name == "rest":
-            rest_parser: griffe.Parser | None = getattr(
-                _griffe_mod.Parser, "rest", None
-            ) or getattr(_griffe_mod.Parser, "sphinx", None)
-            return rest_parser
-        return _griffe_mod.Parser(parser_name)
+            parser_cls: InspectableTarget = _griffe_mod.Parser
+            if isinstance(parser_cls, _RestParserClassProtocol):
+                rest_val: griffe.Parser = parser_cls.rest
+                return rest_val
+            sphinx_val: griffe.Parser = _griffe_mod.Parser.sphinx
+            return sphinx_val
+        parsed_val: griffe.Parser = _griffe_mod.Parser(parser_name)
+        return parsed_val
     except Exception:
         return None
 
@@ -335,9 +380,7 @@ def parse_docstring_with_griffe(
                 doc_obj, resolved
             )
             has_structured = any(
-                getattr(s.kind, "value", str(s.kind))
-                in ("parameters", "returns", "raises")
-                for s in sections
+                s.kind in ("parameters", "returns", "raises") for s in sections
             )
             if has_structured:
                 return sections
@@ -384,18 +427,20 @@ def extract_griffe_docstring_metadata(
     raises: list[str] = []
 
     for section in sections:
-        kind_name = getattr(section.kind, "value", str(section.kind))
-        if (
-            kind_name == "parameters"
-            and hasattr(section, "value")
-            and isinstance(section.value, list)
-        ):
+        raw_kind: InspectableTarget = section.kind
+        kind_name: str = (
+            raw_kind
+            if isinstance(raw_kind, str)
+            else str(read_runtime_attr(raw_kind, "value", raw_kind))
+        )
+        if kind_name == "parameters" and isinstance(section.value, list):
             for item in section.value:
-                p_name = getattr(item, "name", None)
+                assert isinstance(item, _DocstringParamItemProtocol)
+                p_name = item.name
                 if p_name:
-                    annotation = getattr(item, "annotation", None)
-                    value = getattr(item, "value", None)
-                    desc = getattr(item, "description", None)
+                    annotation = item.annotation
+                    value = item.value
+                    desc = item.description
                     cleaned_typ = (
                         strip_sphinx_roles(str(annotation))
                         if annotation is not None
@@ -406,14 +451,11 @@ def extract_griffe_docstring_metadata(
                         typ=cleaned_typ,
                         default=str(value) if value is not None else None,
                     )
-        elif (
-            kind_name == "returns"
-            and hasattr(section, "value")
-            and isinstance(section.value, list)
-        ):
+        elif kind_name == "returns" and isinstance(section.value, list):
             for item in section.value:
-                annotation = getattr(item, "annotation", None)
-                desc = getattr(item, "description", None)
+                assert isinstance(item, _DocstringReturnItemProtocol)
+                annotation = item.annotation
+                desc = item.description
                 cleaned_typ = (
                     strip_sphinx_roles(str(annotation))
                     if annotation is not None
@@ -423,17 +465,10 @@ def extract_griffe_docstring_metadata(
                     doc=str(desc) if desc else "",
                     typ=cleaned_typ,
                 )
-        elif (
-            kind_name == "raises"
-            and hasattr(section, "value")
-            and isinstance(section.value, list)
-        ):
+        elif kind_name == "raises" and isinstance(section.value, list):
             for item in section.value:
-                annotation = (
-                    getattr(item, "annotation", None)
-                    or getattr(item, "name", None)
-                    or getattr(item, "value", None)
-                )
+                assert isinstance(item, _DocstringRaiseItemProtocol)
+                annotation = item.annotation
                 if annotation:
                     exc_name = strip_sphinx_roles(str(annotation)) or str(annotation)
                     if exc_name not in raises:

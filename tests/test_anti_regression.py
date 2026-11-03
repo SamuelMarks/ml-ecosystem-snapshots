@@ -227,7 +227,7 @@ def test_dask_minimum_symbol_threshold() -> None:
         )
         fn.__annotations__ = dict(sample_array_op.__annotations__)
         fn.__doc__ = sample_array_op.__doc__
-        setattr(fake_da, f"op_{i}", fn)
+        pytest.MonkeyPatch().setattr(fake_da, f"op_{i}", fn, raising=False)
 
     for i in range(15):
         fn = types.FunctionType(
@@ -237,7 +237,7 @@ def test_dask_minimum_symbol_threshold() -> None:
             argdefs=sample_array_op.__defaults__,
             closure=sample_array_op.__closure__,
         )
-        setattr(fake_linalg, f"linalg_op_{i}", fn)
+        pytest.MonkeyPatch().setattr(fake_linalg, f"linalg_op_{i}", fn, raising=False)
 
     for i in range(10):
         fn = types.FunctionType(
@@ -247,10 +247,10 @@ def test_dask_minimum_symbol_threshold() -> None:
             argdefs=sample_array_op.__defaults__,
             closure=sample_array_op.__closure__,
         )
-        setattr(fake_top, f"util_op_{i}", fn)
+        pytest.MonkeyPatch().setattr(fake_top, f"util_op_{i}", fn, raising=False)
 
-    setattr(fake_da, "linalg", fake_linalg)
-    setattr(fake_da, "fft", fake_fft)
+    pytest.MonkeyPatch().setattr(fake_da, "linalg", fake_linalg, raising=False)
+    pytest.MonkeyPatch().setattr(fake_da, "fft", fake_fft, raising=False)
 
     with (
         patch.object(dask_mod, "da", fake_da),

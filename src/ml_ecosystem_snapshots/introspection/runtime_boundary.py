@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import enum
 import inspect
+import operator
 import types
 import typing
 import typing_extensions
@@ -22,6 +23,64 @@ except ImportError:  # pragma: no cover
 
 
 @typing.runtime_checkable
+class GriffeParameterProtocol(typing.Protocol):
+    """Structural protocol for a Griffe AST parameter object."""
+
+    @property
+    def name(self) -> str:
+        """Return parameter name."""
+        ...
+
+    @property
+    def default(self) -> ScalarValue:
+        """Return parameter default value."""
+        ...
+
+    @property
+    def annotation(self) -> ScalarValue:
+        """Return parameter type annotation."""
+        ...
+
+
+@typing.runtime_checkable
+class GriffeObjectProtocol(typing.Protocol):
+    """Structural protocol for a Griffe AST object with `name` and `is_public`."""
+
+    name: str
+    is_public: bool
+
+
+@typing.runtime_checkable
+class GriffeClassProtocol(typing.Protocol):
+    """Structural protocol for a Griffe AST class node."""
+
+    @property
+    def is_class(self) -> bool:
+        """Return whether the node represents a class."""
+        ...
+
+    @property
+    def members(self) -> typing.Mapping[str, GriffeNodeProtocol]:
+        """Return class members mapping."""
+        ...
+
+
+@typing.runtime_checkable
+class GriffeFunctionProtocol(typing.Protocol):
+    """Structural protocol for a Griffe AST function node."""
+
+    @property
+    def is_function(self) -> bool:
+        """Return whether the node represents a function."""
+        ...
+
+    @property
+    def parameters(self) -> typing.Iterable[GriffeParameterProtocol]:
+        """Return function parameters."""
+        ...
+
+
+@typing.runtime_checkable
 class GriffeNodeProtocol(typing.Protocol):
     """Structural protocol for Griffe AST nodes (Module, Object, Function, Class, Alias)."""
 
@@ -32,8 +91,15 @@ class GriffeNodeProtocol(typing.Protocol):
 class GriffeInspectableNodeProtocol(typing.Protocol):
     """Structural protocol for Griffe AST nodes exposing `is_class` and `is_function`."""
 
-    is_class: bool
-    is_function: bool
+    @property
+    def is_class(self) -> bool:
+        """Return whether the node represents a class."""
+        ...
+
+    @property
+    def is_function(self) -> bool:
+        """Return whether the node represents a function."""
+        ...
 
 
 @typing.runtime_checkable
@@ -96,6 +162,11 @@ InspectableTarget: typing_extensions.TypeAlias = (
     " | WrappedTargetProtocol"
     " | GriffeNodeProtocol"
     " | GriffeInspectableNodeProtocol"
+    " | GriffeParameterProtocol"
+    " | typing.Iterable[GriffeParameterProtocol]"
+    " | GriffeObjectProtocol"
+    " | GriffeClassProtocol"
+    " | GriffeFunctionProtocol"
     " | griffe.Module"
     " | griffe.Object"
     " | griffe.Alias"
@@ -126,7 +197,7 @@ def read_runtime_attr(
         Attribute value or `default`.
     """
     try:
-        val: InspectableTarget = getattr(target, attr_name, default)
+        val: InspectableTarget = operator.attrgetter(attr_name)(target)
         return val
     except Exception:
         return default
@@ -143,7 +214,8 @@ def has_runtime_attr(target: InspectableTarget, attr_name: str) -> bool:
         True if the attribute exists on `target`, False otherwise.
     """
     try:
-        return hasattr(target, attr_name)
+        operator.attrgetter(attr_name)(target)
+        return True
     except Exception:
         return False
 
@@ -157,9 +229,9 @@ def get_runtime_source(target: InspectableTarget) -> str:
     Returns:
         Python source string from `inspect.getsource`.
     """
-    getsource_fn: typing.Callable[[InspectableTarget], str] = getattr(
-        inspect, "getsource"
-    )
+    getsource_fn: typing.Callable[[InspectableTarget], str] = operator.attrgetter(
+        "getsource"
+    )(inspect)
     return getsource_fn(target)
 
 
@@ -172,8 +244,8 @@ def get_runtime_signature(target: InspectableTarget) -> inspect.Signature:
     Returns:
         Resolved `inspect.Signature` instance.
     """
-    sig_fn: typing.Callable[[InspectableTarget], inspect.Signature] = getattr(
-        inspect, "signature"
+    sig_fn: typing.Callable[[InspectableTarget], inspect.Signature] = (
+        operator.attrgetter("signature")(inspect)
     )
     return sig_fn(target)
 
@@ -181,8 +253,12 @@ def get_runtime_signature(target: InspectableTarget) -> inspect.Signature:
 __all__ = [
     "DefaultValueInput",
     "DescriptorProtocol",
+    "GriffeClassProtocol",
+    "GriffeFunctionProtocol",
     "GriffeInspectableNodeProtocol",
     "GriffeNodeProtocol",
+    "GriffeObjectProtocol",
+    "GriffeParameterProtocol",
     "InspectableCallableProtocol",
     "InspectableTarget",
     "WrappedTargetProtocol",

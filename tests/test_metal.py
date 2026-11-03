@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 import argparse
 import pytest
 
@@ -52,7 +54,9 @@ def test_metal_op_properties_and_roles() -> None:
     assert store_ref.returns_type == "None"
     assert store_ref.operands is not None
     ptr_op = next(p for p in store_ref.operands if p.name == "ptr")
-    assert getattr(ptr_op, "direction", None) == OperandDirection.WRITE
+    assert (
+        operator.attrgetter("direction")(ptr_op) if "direction" in dir(ptr_op) else None
+    ) == OperandDirection.WRITE
 
 
 def test_check_metal_op_validation() -> None:

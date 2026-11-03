@@ -20,7 +20,7 @@ from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
 
 if "torchvision" not in sys.modules:
     fake_tv = types.ModuleType("torchvision")
-    setattr(fake_tv, "__version__", "0.23.0")
+    pytest.MonkeyPatch().setattr(fake_tv, "__version__", "0.23.0", raising=False)
     sys.modules["torchvision"] = fake_tv
 
 

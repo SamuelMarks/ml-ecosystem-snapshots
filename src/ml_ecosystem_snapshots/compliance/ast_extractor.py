@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import importlib
 import logging
+import operator
 import os
 from pathlib import Path
 import sys
@@ -13,10 +14,7 @@ import typing
 import griffe
 from ml_switcheroo_ir.schema.ghost import GhostRef
 
-from ml_ecosystem_snapshots.introspection.runtime_boundary import (
-    InspectableTarget,
-    read_runtime_attr,
-)
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.utils import (
     get_framework_docstring_parser,
     resolve_griffe_parser,
@@ -238,9 +236,9 @@ def extract_target_refs_single(
 
                 obj: InspectableTarget = live_mod
                 for p in parts[i:]:
-                    obj = getattr(obj, p)
+                    obj = operator.attrgetter(p)(obj)
 
-                node_path = str(read_runtime_attr(node, "path", "") or "")
+                node_path = str(node.path or "")
                 if node_path.startswith("zero_jax."):
                     current_path = (
                         node_path.replace("zero_jax.", f"{target_prefix}.jax.", 1)

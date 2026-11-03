@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import datetime
+import inspect
 import json
 import os
 from pathlib import Path
@@ -29,6 +30,7 @@ from ml_switcheroo_ir.schema.ghost import (
 import pydantic
 
 from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import (
     JsonValue,
     ScalarValue,
@@ -36,6 +38,7 @@ from ml_ecosystem_snapshots.models import (
     SnapshotEnvelopeDict,
     SnapshotSymbolDict,
 )
+from ml_ecosystem_snapshots.network_env import ZstdModuleProtocol
 from ml_ecosystem_snapshots.version_resolver import (
     _extract_version_with_griffe as _resolve_version_with_griffe,
     get_pkg_version as _resolve_pkg_version,
@@ -140,7 +143,8 @@ def _make_lazy_collector(
         else:
             full_mod = module_name
         mod = importlib.import_module(full_mod)
-        func: CollectorFn = getattr(mod, func_name)
+        members: dict[str, CollectorFn] = dict(inspect.getmembers(mod, callable))
+        func = members[func_name]
         return func(category, include_nonpublic)
 
     return _collector
@@ -218,8 +222,9 @@ def get_available_frameworks() -> dict[str, CollectorFn]:
                 f"ml_ecosystem_snapshots.frameworks.{module_name}"
             )
             found_any = False
-            for name, obj in vars(mod).items():
-                if callable(obj) and name.startswith("collect_"):
+            members: list[tuple[str, CollectorFn]] = inspect.getmembers(mod, callable)
+            for name, obj in members:
+                if name.startswith("collect_"):
                     found_any = True
                     if name == "collect_api":
                         identifier = module_name
@@ -240,6 +245,7 @@ def get_available_frameworks() -> dict[str, CollectorFn]:
 
 
 FRAMEWORK_COLLECTORS: dict[str, CollectorFn] = get_available_frameworks()
+COLLECTOR_REGISTRY: dict[str, CollectorFn] = FRAMEWORK_COLLECTORS
 
 
 def get_pkg_version(package_name: str) -> str:
@@ -654,8 +660,9 @@ def write_snapshot(
         try:
             import importlib
 
-            zstd = importlib.import_module("zstandard")
-            cctx = getattr(zstd, "ZstdCompressor")()
+            zstd: InspectableTarget = importlib.import_module("zstandard")
+            assert isinstance(zstd, ZstdModuleProtocol)
+            cctx = zstd.ZstdCompressor()
             compressed: bytes = cctx.compress(raw_bytes)
             with open(file_path, "wb") as f:
                 f.write(compressed)

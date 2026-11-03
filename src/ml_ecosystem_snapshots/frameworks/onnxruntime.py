@@ -13,6 +13,7 @@ from ml_switcheroo_ir.schema.ghost import (
 )
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import read_runtime_attr
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ def collect_api(
         if not include_nonpublic and name.startswith("_"):
             continue
 
-        obj = getattr(mod, name, None)
+        obj = read_runtime_attr(mod, name, None)
         if obj is None:
             continue
 

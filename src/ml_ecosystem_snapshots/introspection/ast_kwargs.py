@@ -105,14 +105,6 @@ def extract_accepted_kwargs_from_ast(
                     slice_node.value, str
                 ):
                     discovered.add(slice_node.value)
-                elif hasattr(ast, "Index") and isinstance(
-                    slice_node, getattr(ast, "Index")
-                ):
-                    idx_val = getattr(slice_node, "value", None)
-                    if isinstance(idx_val, ast.Constant) and isinstance(
-                        idx_val.value, str
-                    ):
-                        discovered.add(idx_val.value)
             self.generic_visit(node)
 
         def visit_Compare(self, node: ast.Compare) -> None:

@@ -70,22 +70,22 @@ def collect_api(
         for name in dir(tl):
             if not include_nonpublic and name.startswith("_"):
                 continue
-            obj = getattr(tl, name, None)
+            obj = read_runtime_attr(tl, name, None)
             if obj and callable(obj):
                 results.append(
                     _extract_triton_kernel(obj, name, "triton.language", inspector)
                 )
 
-        tl_math = getattr(tl, "math", None)
+        tl_math = read_runtime_attr(tl, "math", None)
         if inspect.ismodule(tl_math):
             for name in dir(tl_math):
                 if not include_nonpublic and name.startswith("_"):
                     continue
-                obj = getattr(tl_math, name, None)
-                if obj and callable(obj):
+                obj_math = read_runtime_attr(tl_math, name, None)
+                if obj_math and callable(obj_math):
                     results.append(
                         _extract_triton_kernel(
-                            obj, name, "triton.language.math", inspector
+                            obj_math, name, "triton.language.math", inspector
                         )
                     )
     except ImportError:

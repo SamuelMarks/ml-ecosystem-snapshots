@@ -55,8 +55,10 @@ class CddIrModel(pydantic.BaseModel):
         Returns:
             Field value.
         """
-        val: str | dict[str, dict[str, str]] | JsonValue = getattr(self, key)
-        return val
+        dumped: dict[str, str | dict[str, dict[str, str]] | JsonValue] = (
+            self.model_dump()
+        )
+        return dumped[key]
 
     def to_cdd_dict(self) -> dict[str, JsonValue]:
         """Convert to a mutable dictionary with `OrderedDict` params/returns for `cdd-python`.
@@ -475,10 +477,10 @@ def export_llm_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
             desc = f" - {p.description}" if p.description else ""
 
             constraints: list[str] = []
-            p_dtypes = getattr(p, "allowed_dtypes", None)
+            p_dtypes = p.allowed_dtypes if isinstance(p, ExtendedGhostParam) else None
             if p_dtypes:
                 constraints.append(f"dtypes: {p_dtypes}")
-            p_rank = getattr(p, "rank_constraint", None)
+            p_rank = p.rank_constraint if isinstance(p, ExtendedGhostParam) else None
             if p_rank is not None:
                 constraints.append(f"rank: {p_rank}")
             constr_str = f" [{', '.join(constraints)}]" if constraints else ""
@@ -531,10 +533,28 @@ def export_sass_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
     blocks: list[str] = []
 
     for ref in refs:
-        meta = getattr(ref, "domain_metadata", None) or {}
-        modifiers = meta.get("modifiers") or []
-        archs = meta.get("valid_architectures") or ref.environment_tags or []
-        op_sigs = meta.get("operand_signatures") or []
+        meta_raw = ref.domain_metadata if isinstance(ref, ExtendedGhostRef) else None
+        meta = meta_raw if isinstance(meta_raw, dict) else {}
+        raw_modifiers = meta.get("modifiers")
+        modifiers: list[str] = (
+            [str(m) for m in raw_modifiers] if isinstance(raw_modifiers, list) else []
+        )
+        raw_archs = meta.get("valid_architectures")
+        archs: list[str] = (
+            [str(a) for a in raw_archs]
+            if isinstance(raw_archs, list) and raw_archs
+            else list(ref.environment_tags or [])
+        )
+        raw_op_sigs = meta.get("operand_signatures")
+        op_sigs: list[list[str]] = (
+            [
+                [str(item) for item in sig]
+                for sig in raw_op_sigs
+                if isinstance(sig, list)
+            ]
+            if isinstance(raw_op_sigs, list)
+            else []
+        )
 
         mod_suffix = (
             f"{{.{' | .'.join(m.lstrip('.') for m in modifiers[:4])}}}"
@@ -569,7 +589,7 @@ def export_sass_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
         if ref.params:
             lines.append("- **Operands**:")
             for p in ref.params:
-                dir_val = getattr(p, "direction", None)
+                dir_val = p.direction if isinstance(p, ExtendedGhostParam) else None
                 dir_str = f" [{dir_val}]" if dir_val else ""
                 lines.append(
                     f"  - `{p.name}` ({p.standardized_name or 'operand'}, type `{p.annotation or 'Register'}`){dir_str}"

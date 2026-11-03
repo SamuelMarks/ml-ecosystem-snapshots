@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 import json
 from pathlib import Path
 import pytest
@@ -59,7 +61,11 @@ def test_nvidia_sass_specific_instruction() -> None:
     assert fadd.environment_tags is not None
     assert "cuda" in (fadd.environment_tags or [])
     assert "sm_80" in (fadd.environment_tags or [])
-    assert getattr(fadd, "structured_operands", None) is not None
+    assert (
+        operator.attrgetter("structured_operands")(fadd)
+        if "structured_operands" in dir(fadd)
+        else None
+    ) is not None
 
 
 def test_build_structured_sass_operands() -> None:

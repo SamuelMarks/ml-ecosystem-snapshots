@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 import sys
 import pytest
 import pytest_mock
@@ -255,13 +257,13 @@ def test_triton_missing() -> None:
             """
             return fake_fn(*args, **kwargs)
 
-    setattr(fake_tl, "kernel_op", Wrap())
-    setattr(fake_tl, "_private_op", fake_fn)
-    setattr(fake_tl, "non_callable", 123)
-    setattr(fake_tl_math, "sin", fake_fn)
-    setattr(fake_tl_math, "_priv_math", fake_fn)
-    setattr(fake_tl_math, "non_callable", 456)
-    setattr(fake_tl, "math", fake_tl_math)
+    pytest.MonkeyPatch().setattr(fake_tl, "kernel_op", Wrap(), raising=False)
+    pytest.MonkeyPatch().setattr(fake_tl, "_private_op", fake_fn, raising=False)
+    pytest.MonkeyPatch().setattr(fake_tl, "non_callable", 123, raising=False)
+    pytest.MonkeyPatch().setattr(fake_tl_math, "sin", fake_fn, raising=False)
+    pytest.MonkeyPatch().setattr(fake_tl_math, "_priv_math", fake_fn, raising=False)
+    pytest.MonkeyPatch().setattr(fake_tl_math, "non_callable", 456, raising=False)
+    pytest.MonkeyPatch().setattr(fake_tl, "math", fake_tl_math, raising=False)
 
     with patch(
         "ml_ecosystem_snapshots.frameworks.triton.importlib.import_module",
@@ -280,7 +282,7 @@ def test_triton_missing() -> None:
 
     # Cover branch where tl.math is not a module
     fake_tl_no_math = types.ModuleType("triton.language")
-    setattr(fake_tl_no_math, "kernel_op", Wrap())
+    pytest.MonkeyPatch().setattr(fake_tl_no_math, "kernel_op", Wrap(), raising=False)
     with patch(
         "ml_ecosystem_snapshots.frameworks.triton.importlib.import_module",
         return_value=fake_tl_no_math,
@@ -325,7 +327,7 @@ def test_triton_missing() -> None:
             return x
 
     no_anno = NoAnno()
-    no_anno.__dict__["__annotations__"] = None
+    pytest.MonkeyPatch().setattr(no_anno, "__annotations__", None, raising=False)
     ref_no_anno = _extract_triton_kernel(no_anno, "no_anno", "mod", GhostInspector())
     assert ref_no_anno is not None
     assert ref_no_anno.name == "no_anno"
@@ -397,7 +399,7 @@ def test_huggingface_missing() -> None:
             raise ValueError()
 
     mock_mod = MagicMock()
-    setattr(
+    pytest.MonkeyPatch().setattr(
         mock_mod,
         "__dir__",
         lambda self: [
@@ -407,6 +409,7 @@ def test_huggingface_missing() -> None:
             "Other",
             "bad",
         ],
+        raising=False,
     )
     mock_mod.DummyConfig = type("DummyConfig", (), {})()  # No __annotations__
     mock_mod.AutoModel = MagicMock()
@@ -703,17 +706,17 @@ def test_pax_import_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_paxml = types.ModuleType("paxml")
     fake_praxis = types.ModuleType("praxis")
     fake_layers = types.ModuleType("praxis.layers")
-    setattr(fake_praxis, "layers", fake_layers)
+    pytest.MonkeyPatch().setattr(fake_praxis, "layers", fake_layers, raising=False)
     monkeypatch.setitem(sys.modules, "paxml", fake_paxml)
     monkeypatch.setitem(sys.modules, "praxis", fake_praxis)
     monkeypatch.setitem(sys.modules, "praxis.layers", fake_layers)
     importlib.reload(pax_mod)
-    assert getattr(pax_mod, "praxis") is fake_praxis
+    assert operator.attrgetter("praxis")(pax_mod) is fake_praxis
 
     # Unavailable
     monkeypatch.setitem(sys.modules, "paxml", None)
     importlib.reload(pax_mod)
-    assert getattr(pax_mod, "praxis") is None
+    assert operator.attrgetter("praxis")(pax_mod) is None
     assert pax_mod.collect_api(SemanticTier.MODEL) == []
 
     # Restore
@@ -734,7 +737,7 @@ def test_sklearn_import_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setitem(sys.modules, "sklearn", None)
     importlib.reload(sklearn_mod)
-    assert getattr(sklearn_mod, "sklearn") is None
+    assert operator.attrgetter("sklearn")(sklearn_mod) is None
     assert sklearn_mod.collect_api(SemanticTier.MODEL) == []
 
     # Restore
@@ -772,12 +775,8 @@ def test_flax_nnx_import_fallback(
 
         pass
 
-    setattr(fake_nnx, "BadClass", BadClass)
-    setattr(
-        fake_nnx,
-        "Module",
-        123,  # Non-class causes issubclass(BadClass, 123) to raise TypeError
-    )
+    pytest.MonkeyPatch().setattr(fake_nnx, "BadClass", BadClass, raising=False)
+    pytest.MonkeyPatch().setattr(fake_nnx, "Module", 123, raising=False)
     monkeypatch.setitem(sys.modules, "flax", types.ModuleType("flax"))
     monkeypatch.setitem(sys.modules, "flax.nnx", fake_nnx)
     importlib.reload(nnx_mod)
@@ -805,10 +804,10 @@ def test_deepspeed_fallback_edges(mocker: pytest_mock.MockerFixture) -> None:
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, SemanticTier
 
     fake_ds = types.ModuleType("deepspeed")
-    setattr(fake_ds, "initialize", lambda: None)
-    setattr(fake_ds, "none_ref", lambda: None)
-    setattr(fake_ds, "error_op", lambda: None)
-    setattr(fake_ds, "z_extra_util", lambda: None)
+    pytest.MonkeyPatch().setattr(fake_ds, "initialize", lambda: None, raising=False)
+    pytest.MonkeyPatch().setattr(fake_ds, "none_ref", lambda: None, raising=False)
+    pytest.MonkeyPatch().setattr(fake_ds, "error_op", lambda: None, raising=False)
+    pytest.MonkeyPatch().setattr(fake_ds, "z_extra_util", lambda: None, raising=False)
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.deepspeed.importlib.import_module",
         return_value=fake_ds,
@@ -874,12 +873,12 @@ def test_optax_import_reload() -> None:
 
     with patch.dict("sys.modules", {"optax": None}):
         importlib.reload(optax_fw)
-        assert getattr(optax_fw, "optax") is None
+        assert operator.attrgetter("optax")(optax_fw) is None
 
     mock_optax = types.ModuleType("optax")
     with patch.dict("sys.modules", {"optax": mock_optax}):
         importlib.reload(optax_fw)
-        assert getattr(optax_fw, "optax") is mock_optax
+        assert operator.attrgetter("optax")(optax_fw) is mock_optax
 
     # Restore clean reload
     importlib.reload(optax_fw)
@@ -900,14 +899,14 @@ def test_orbax_checkpoint_import_reload() -> None:
 
     with patch.dict("sys.modules", {"orbax.checkpoint": None, "orbax": None}):
         importlib.reload(orbax_checkpoint)
-        assert getattr(orbax_checkpoint, "ocp") is None
+        assert operator.attrgetter("ocp")(orbax_checkpoint) is None
 
     mock_orbax = types.ModuleType("orbax")
     mock_ocp = types.ModuleType("orbax.checkpoint")
-    setattr(mock_orbax, "checkpoint", mock_ocp)
+    pytest.MonkeyPatch().setattr(mock_orbax, "checkpoint", mock_ocp, raising=False)
     with patch.dict("sys.modules", {"orbax": mock_orbax, "orbax.checkpoint": mock_ocp}):
         importlib.reload(orbax_checkpoint)
-        assert getattr(orbax_checkpoint, "ocp") is mock_ocp
+        assert operator.attrgetter("ocp")(orbax_checkpoint) is mock_ocp
 
     # Restore clean reload
     importlib.reload(orbax_checkpoint)
@@ -927,7 +926,7 @@ def test_tensorflow_import_reload() -> None:
 
     with patch.dict("sys.modules", {"tensorflow": None}):
         importlib.reload(tf_fw)
-        assert getattr(tf_fw, "tf") is None
+        assert operator.attrgetter("tf")(tf_fw) is None
 
     # Test _get_tf exception handler
     tf_fw.tf = None

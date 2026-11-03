@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import operator
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -15,8 +16,6 @@ from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     InspectableTarget,
     get_runtime_signature,
-    has_runtime_attr,
-    read_runtime_attr,
 )
 from ml_ecosystem_snapshots.introspection.sanitize import sanitize_type_str
 
@@ -28,7 +27,9 @@ def _extract_generation_kwargs(obj: InspectableTarget, ref: GhostRef) -> None:
         obj: Target Hugging Face model class or callable exposing `generate`.
         ref: Populated `GhostRef` to augment with generation keyword arguments.
     """
-    gen_method = read_runtime_attr(obj, "generate", None)
+    gen_method: InspectableTarget = (
+        operator.attrgetter("generate")(obj) if "generate" in dir(obj) else None
+    )
     try:
         sig = get_runtime_signature(gen_method)
         for param in sig.parameters.values():
@@ -68,10 +69,10 @@ def _parse_pretrained_config(obj: InspectableTarget, ref: GhostRef) -> None:
         obj: Target configuration class symbol.
         ref: Populated `GhostRef` to augment with configuration attributes.
     """
-    if not has_runtime_attr(obj, "__annotations__"):
+    if "__annotations__" not in dir(obj):
         return
 
-    raw_annos = read_runtime_attr(obj, "__annotations__", {})
+    raw_annos: InspectableTarget = operator.attrgetter("__annotations__")(obj)
     assert isinstance(raw_annos, dict)
     for attr_name, attr_type in raw_annos.items():
         if not any(p.name == attr_name for p in ref.params):
@@ -159,7 +160,7 @@ def collect_huggingface(
                 continue
 
         try:
-            obj = getattr(mod, name)
+            obj: InspectableTarget = operator.attrgetter(name)(mod)
         except (
             AttributeError,
             TypeError,
@@ -192,7 +193,7 @@ def collect_huggingface(
                         _parse_pretrained_config(obj, ref)
                     if name.startswith("AutoModel"):
                         _handle_automodel_factory(obj, name, ref)
-                    if hasattr(obj, "generate"):
+                    if "generate" in dir(obj):
                         _extract_generation_kwargs(obj, ref)
 
                     results.append(ref)

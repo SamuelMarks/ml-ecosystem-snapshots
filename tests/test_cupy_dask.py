@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import operator
+import pytest
+
 import sys
 import pytest_mock
 import types
@@ -25,7 +28,7 @@ def create_module(name: str, attrs: dict[str, object]) -> types.ModuleType:
     """
     mod = types.ModuleType(name)
     for k, v in attrs.items():
-        setattr(mod, k, v)
+        pytest.MonkeyPatch().setattr(mod, k, v, raising=False)
     return mod
 
 
@@ -262,12 +265,12 @@ def test_dask_import_error(mocker: pytest_mock.MockerFixture) -> None:
     fake_da = types.ModuleType("dask.array")
     mocker.patch.dict(sys.modules, {"dask": fake_dask, "dask.array": fake_da})
     importlib.reload(d_fw)
-    assert getattr(d_fw, "da") is fake_da
+    assert operator.attrgetter("da")(d_fw) is fake_da
 
     # 2. Unavailable
     mocker.patch.dict(sys.modules, {"dask": None, "dask.array": None})
     importlib.reload(d_fw)
-    assert getattr(d_fw, "da") is None
+    assert operator.attrgetter("da")(d_fw) is None
     assert d_fw.collect_api(SemanticTier.UTIL) == []
 
     # Restore

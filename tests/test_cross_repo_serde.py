@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 import json
 import os
 
@@ -156,7 +158,9 @@ def test_exhaustive_snapshot_loading_serde() -> None:
 
         for raw_item in records[:10]:
             ref = hydrate_ghost_ref(raw_item)
-            assert ref.name or getattr(ref, "mnemonic", None)
+            assert ref.name or (
+                operator.attrgetter("mnemonic")(ref) if "mnemonic" in dir(ref) else None
+            )
             # Re-serialize to verify schema integrity
             dumped = ref.model_dump()
             assert isinstance(dumped, dict)

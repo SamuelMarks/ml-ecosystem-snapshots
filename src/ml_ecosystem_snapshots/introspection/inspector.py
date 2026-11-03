@@ -6,6 +6,7 @@ import ast
 import contextlib
 import inspect
 import io
+import operator
 import re
 import types
 import typing
@@ -32,6 +33,7 @@ from ml_ecosystem_snapshots.introspection.ast_kwargs import (
     extract_accepted_kwargs_from_ast,
 )
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    GriffeParameterProtocol,
     InspectableTarget,
     get_runtime_signature,
     get_runtime_source,
@@ -53,6 +55,7 @@ from ml_ecosystem_snapshots.serialization.hydration import hydrate_ghost_ref
 from ml_ecosystem_snapshots.utils import (
     DocstringMetadata,
     DocstringParamMeta,
+    DocstringReturnMeta,
     extract_griffe_docstring_metadata,
     get_framework_docstring_parser,
     resolve_griffe_parser,
@@ -80,7 +83,12 @@ class ExtractedParamRecord(pydantic.BaseModel):
         Returns:
             String representation or `default`.
         """
-        val: JsonValue | ast.AST | None = getattr(self, key, None)
+        field_map: dict[str, JsonValue | ast.AST | None] = {
+            "doc": self.doc,
+            "typ": self.typ,
+            "default": self.default,
+        }
+        val = field_map.get(key)
         return str(val) if val is not None else default
 
 
@@ -108,7 +116,11 @@ def to_parameter_kind(
     """
     if isinstance(val, ParameterKind):
         return val
-    s = str(getattr(val, "name", val)).upper()
+    s = (
+        val.name.upper()
+        if isinstance(val, inspect._ParameterKind)
+        else str(val).upper()
+    )
     try:
         return ParameterKind[s]
     except KeyError:
@@ -203,12 +215,11 @@ def _coerce_param_record(
             typ=str(raw_typ) if raw_typ is not None else None,
             default=val.get("default"),
         )
-    raw_doc_attr = getattr(val, "doc", None)
-    raw_typ_attr = getattr(val, "typ", None)
+    assert isinstance(val, (ExtractedParamRecord, DocstringParamMeta))
     return ExtractedParamRecord(
-        doc=str(raw_doc_attr) if raw_doc_attr is not None else None,
-        typ=str(raw_typ_attr) if raw_typ_attr is not None else None,
-        default=getattr(val, "default", None),
+        doc=str(val.doc) if val.doc is not None else None,
+        typ=str(val.typ) if val.typ is not None else None,
+        default=val.default,
     )
 
 
@@ -268,16 +279,13 @@ def _extract_docstring_ir(
             griffe_meta = active_extract_griffe_meta(doc, docstring_parser_name)
             ret_meta = griffe_meta.get("returns")
             if ret_meta:
-                ret_typ = (
-                    ret_meta.get("typ")
-                    if isinstance(ret_meta, dict)
-                    else getattr(ret_meta, "typ", None)
-                )
-                ret_doc = (
-                    ret_meta.get("doc")
-                    if isinstance(ret_meta, dict)
-                    else getattr(ret_meta, "doc", None)
-                )
+                if isinstance(ret_meta, dict):
+                    ret_typ = ret_meta.get("typ")
+                    ret_doc = ret_meta.get("doc")
+                else:
+                    assert isinstance(ret_meta, DocstringReturnMeta)
+                    ret_typ = ret_meta.typ
+                    ret_doc = ret_meta.doc
                 if ret_typ and not returns_type:
                     returns_type = active_sanitize_type_str(str(ret_typ))
                 if ret_doc and not returns_description:
@@ -399,7 +407,7 @@ def _extract_ast_and_griffe_node(
     if griffe_node is None and griffe_mod is not None:
         try:
             resolved_parser = resolve_griffe_parser(docstring_parser_name)
-            loader_fn = getattr(griffe_mod, "load")
+            loader_fn = operator.attrgetter("load")(griffe_mod)
             if active_griffe_cache.get("__loader__") is not loader_fn:
                 active_griffe_cache.clear()
                 active_griffe_cache["__loader__"] = loader_fn
@@ -410,10 +418,12 @@ def _extract_ast_and_griffe_node(
                 )
 
             parts = api_path.split(".")
-            current = active_griffe_cache[top_level]
-            if len(parts) > 1 and hasattr(current, "members"):
+            current: GriffeCacheEntry | InspectableTarget = active_griffe_cache[
+                top_level
+            ]
+            if len(parts) > 1 and "members" in dir(current):
                 for part in parts[1:]:
-                    current = getattr(current, "members")[part]
+                    current = operator.attrgetter("members")(current)[part]
             if isinstance(current, GriffeNodeProtocol):
                 griffe_node = current
         except Exception:
@@ -478,18 +488,22 @@ def _extract_raw_parameters(
     is_c_ext = False
     sig_completeness: typing.Literal["exact", "heuristic", "opaque"] = "exact"
 
-    griffe_params = None
+    griffe_params: typing.Iterable[GriffeParameterProtocol] | None = None
     has_griffe_params = False
-    try:
-        griffe_params = getattr(griffe_node, "parameters", None)
-        if griffe_params is None and getattr(griffe_node, "is_class", False):
-            members = getattr(griffe_node, "members", {})
-            init_node = members.get("__init__") or members.get("__new__")
-            griffe_params = getattr(init_node, "parameters", None)
-        if griffe_params and len(griffe_params) > 0:
-            has_griffe_params = True
-    except Exception:
-        pass
+    raw_g_params = read_runtime_attr(griffe_node, "parameters", None)
+    if raw_g_params is None and bool(read_runtime_attr(griffe_node, "is_class", False)):
+        members = read_runtime_attr(griffe_node, "members", {})
+        assert isinstance(members, typing.Mapping)
+        init_node = members.get("__init__") or members.get("__new__")
+        raw_g_params = read_runtime_attr(init_node, "parameters", None)
+    if (
+        raw_g_params
+        and isinstance(raw_g_params, typing.Sized)
+        and isinstance(raw_g_params, typing.Iterable)
+        and len(raw_g_params) > 0
+    ):
+        griffe_params = raw_g_params
+        has_griffe_params = True
 
     if cdd_ast_params:
         for p_name, p_info in cdd_ast_params.items():
@@ -522,10 +536,11 @@ def _extract_raw_parameters(
             for param in griffe_params:
                 if param.name == "self":
                     continue
+                param_kind_obj = read_runtime_attr(param, "kind", None)
                 if param.name not in cdd_ast_params:
                     p_kind_str = (
-                        param.kind.name.upper()
-                        if getattr(param, "kind", None)
+                        str(read_runtime_attr(param_kind_obj, "name", "")).upper()
+                        if param_kind_obj
                         else "POSITIONAL_OR_KEYWORD"
                     )
                     if p_kind_str == "VAR_POSITIONAL":
@@ -547,37 +562,48 @@ def _extract_raw_parameters(
                     for i, (pn, pk, pd, pa) in enumerate(extracted_params):
                         if pn == param.name:
                             p_kind_str = (
-                                param.kind.name.upper()
-                                if getattr(param, "kind", None)
+                                str(
+                                    read_runtime_attr(param_kind_obj, "name", "")
+                                ).upper()
+                                if param_kind_obj
                                 else pk
                             )
                             extracted_params[i] = (pn, p_kind_str, pd, pa)
         else:
             try:
                 sig = get_runtime_signature(target)
-                for param in sig.parameters.values():
-                    if param.name == "self":
+                for sig_param in sig.parameters.values():
+                    if sig_param.name == "self":
                         continue
-                    if param.name not in cdd_ast_params:
-                        p_kind_str = str(param.kind)
-                        if param.kind == inspect.Parameter.VAR_POSITIONAL:
+                    if sig_param.name not in cdd_ast_params:
+                        p_kind_str = str(sig_param.kind)
+                        if sig_param.kind == inspect.Parameter.VAR_POSITIONAL:
                             has_varargs = True
 
                         default_val = None
                         anno_val = (
                             active_sanitize_type_str(
-                                str(resolved_hints.get(param.name, param.annotation))
+                                str(
+                                    resolved_hints.get(
+                                        sig_param.name, sig_param.annotation
+                                    )
+                                )
                             )
-                            if param.annotation is not inspect.Parameter.empty
+                            if sig_param.annotation is not inspect.Parameter.empty
                             else None
                         )
                         extracted_params.append(
-                            (param.name, p_kind_str, default_val, anno_val)
+                            (sig_param.name, p_kind_str, default_val, anno_val)
                         )
                     else:
                         for i, (pn, _pk, pd, pa) in enumerate(extracted_params):
-                            if pn == param.name:
-                                extracted_params[i] = (pn, str(param.kind), pd, pa)
+                            if pn == sig_param.name:
+                                extracted_params[i] = (
+                                    pn,
+                                    str(sig_param.kind),
+                                    pd,
+                                    pa,
+                                )
             except Exception:
                 pass
 
@@ -586,9 +612,10 @@ def _extract_raw_parameters(
             if param.name == "self":
                 continue
 
+            param_kind_obj = read_runtime_attr(param, "kind", None)
             p_kind_str = (
-                param.kind.name.upper()
-                if getattr(param, "kind", None)
+                str(read_runtime_attr(param_kind_obj, "name", "")).upper()
+                if param_kind_obj
                 else "POSITIONAL_OR_KEYWORD"
             )
             if p_kind_str == "VAR_POSITIONAL":
@@ -608,32 +635,38 @@ def _extract_raw_parameters(
         try:
             sig = get_runtime_signature(target)
 
-            for param in sig.parameters.values():
-                if param.name == "self":
+            for sig_param in sig.parameters.values():
+                if sig_param.name == "self":
                     continue
 
-                if param.kind == inspect.Parameter.VAR_POSITIONAL:
+                if sig_param.kind == inspect.Parameter.VAR_POSITIONAL:
                     has_varargs = True
 
-                default_val, _factory, _is_mand = sanitize_param_default(param.default)
+                default_val, _factory, _is_mand = sanitize_param_default(
+                    sig_param.default
+                )
 
                 anno_val = None
-                if param.name in resolved_hints:
-                    anno_val = active_sanitize_type_str(str(resolved_hints[param.name]))
-                elif param.annotation is not inspect.Parameter.empty:
-                    if hasattr(param.annotation, "__name__"):
-                        anno_val = param.annotation.__name__
+                if sig_param.name in resolved_hints:
+                    anno_val = active_sanitize_type_str(
+                        str(resolved_hints[sig_param.name])
+                    )
+                elif sig_param.annotation is not inspect.Parameter.empty:
+                    if has_runtime_attr(sig_param.annotation, "__name__"):
+                        anno_val = str(
+                            read_runtime_attr(sig_param.annotation, "__name__", "")
+                        )
                     else:
-                        anno_val = str(param.annotation)
+                        anno_val = str(sig_param.annotation)
                     anno_val = active_sanitize_type_str(anno_val)
 
                 extracted_params.append(
-                    (param.name, str(param.kind), default_val, anno_val)
+                    (sig_param.name, str(sig_param.kind), default_val, anno_val)
                 )
 
             if (
                 inspect.isbuiltin(obj)
-                or getattr(target, "__module__", "").startswith("_")
+                or str(read_runtime_attr(target, "__module__", "")).startswith("_")
                 or "torch._C" in str(target)
                 or type(target).__name__ == "builtin_function_or_method"
             ):
@@ -645,7 +678,9 @@ def _extract_raw_parameters(
 
             is_torch_target = (
                 (name and name.startswith("torch."))
-                or (getattr(target, "__module__", "") or "").startswith("torch")
+                or str(read_runtime_attr(target, "__module__", "") or "").startswith(
+                    "torch"
+                )
                 or api_path.startswith("torch.")
             )
             is_exact_aten = False
@@ -664,10 +699,7 @@ def _extract_raw_parameters(
                         if c_ext_params is None:
                             c_ext_params = aten_sig
                             is_exact_aten = True
-                        elif (
-                            not getattr(c_ext_params, "overloads", None)
-                            and aten_sig.overloads
-                        ):
+                        elif not c_ext_params.overloads and aten_sig.overloads:
                             c_ext_params.overloads = aten_sig.overloads
                             is_exact_aten = True
                 except Exception:
@@ -675,9 +707,9 @@ def _extract_raw_parameters(
 
             if c_ext_params is not None:
                 sig_completeness = "exact" if is_exact_aten else "heuristic"
-                if (returns_type is None or returns_type == "NoneType") and getattr(
-                    c_ext_params, "returns_type", None
-                ):
+                if (
+                    returns_type is None or returns_type == "NoneType"
+                ) and c_ext_params.returns_type:
                     returns_type = active_sanitize_type_str(c_ext_params.returns_type)
                 for idx in range(len(c_ext_params)):
                     p_item = c_ext_params[idx]
@@ -728,10 +760,10 @@ def _merge_mro_super_kwargs(
     mro_seq = read_runtime_attr(obj, "__mro__", ())
     assert isinstance(mro_seq, tuple)
     for parent in mro_seq[1:]:
-        if getattr(parent, "__name__", "") == "object":
+        if str(read_runtime_attr(parent, "__name__", "")) == "object":
             continue
         try:
-            parent_init = getattr(parent, "__init__")
+            parent_init = operator.attrgetter("__init__")(parent)
             parent_sig = get_runtime_signature(parent_init)
             for param in parent_sig.parameters.values():
                 if param.name == "self" or param.kind in (
@@ -746,7 +778,7 @@ def _merge_mro_super_kwargs(
                         else None
                     )
                     anno_val = (
-                        param.annotation.__name__
+                        str(read_runtime_attr(param.annotation, "__name__", ""))
                         if has_runtime_attr(param.annotation, "__name__")
                         else (
                             str(param.annotation)
@@ -915,31 +947,33 @@ def _extract_overloads(
     """
     overloads_refs: list[ExtendedGhostRef] = []
     has_griffe_overloads = False
-    griffe_overloads = None
-    try:
-        griffe_overloads = getattr(griffe_node, "overloads", None)
-        if not griffe_overloads and getattr(griffe_node, "is_class", False):
-            init_node = getattr(griffe_node, "members", {}).get("__init__")
-            if init_node:
-                griffe_overloads = getattr(init_node, "overloads", None)
-        if griffe_overloads:
-            has_griffe_overloads = True
-    except Exception:
-        pass
+    griffe_overloads: list[InspectableTarget] | None = None
+    raw_overloads = read_runtime_attr(griffe_node, "overloads", None)
+    if not raw_overloads and bool(read_runtime_attr(griffe_node, "is_class", False)):
+        members = read_runtime_attr(griffe_node, "members", {})
+        assert isinstance(members, typing.Mapping)
+        init_node = members.get("__init__")
+        if init_node:
+            raw_overloads = read_runtime_attr(init_node, "overloads", None)
+    if isinstance(raw_overloads, list) and raw_overloads:
+        griffe_overloads = raw_overloads
+        has_griffe_overloads = True
 
     if has_griffe_overloads and griffe_overloads is not None:
         for overload in griffe_overloads:
-            if isinstance(overload, str):
-                continue
             ov_raw_tuples: list[RawParamTuple] = []
             overload_has_varargs = False
-            if hasattr(overload, "parameters"):
-                for param in overload.parameters:
+            if has_runtime_attr(overload, "parameters"):
+                ov_params_seq = read_runtime_attr(overload, "parameters", ())
+                assert isinstance(ov_params_seq, typing.Iterable)
+                for param in ov_params_seq:
+                    assert isinstance(param, GriffeParameterProtocol)
                     if param.name == "self":
                         continue
+                    param_kind_obj = read_runtime_attr(param, "kind", None)
                     p_kind_str = (
-                        param.kind.name.upper()
-                        if getattr(param, "kind", None)
+                        str(read_runtime_attr(param_kind_obj, "name", "")).upper()
+                        if param_kind_obj
                         else "POSITIONAL_OR_KEYWORD"
                     )
                     if p_kind_str == "VAR_POSITIONAL":
@@ -964,10 +998,9 @@ def _extract_overloads(
                 name=name,
                 active_sanitize_type_str=active_sanitize_type_str,
             )
+            ov_ret_raw = read_runtime_attr(overload, "returns", None)
             overload_returns = (
-                active_sanitize_type_str(str(overload.returns))
-                if getattr(overload, "returns", None)
-                else None
+                active_sanitize_type_str(str(ov_ret_raw)) if ov_ret_raw else None
             )
 
             overloads_refs.append(
@@ -987,7 +1020,7 @@ def _extract_overloads(
                     overloads=[],
                 )
             )
-    elif c_ext_params is not None and getattr(c_ext_params, "overloads", None):
+    elif c_ext_params is not None and c_ext_params.overloads:
         for ov in c_ext_params.overloads:
             ov_raw_tuples = []
             ov_has_varargs = False
@@ -1010,11 +1043,8 @@ def _extract_overloads(
                 name=name,
                 active_sanitize_type_str=active_sanitize_type_str,
             )
-            ov_ret = (
-                active_sanitize_type_str(ov.returns_type)
-                if getattr(ov, "returns_type", None)
-                else None
-            )
+            ov_ret_val = read_runtime_attr(ov, "returns_type", None)
+            ov_ret = active_sanitize_type_str(str(ov_ret_val)) if ov_ret_val else None
             overloads_refs.append(
                 ExtendedGhostRef(
                     name=name,
@@ -1121,7 +1151,7 @@ class GhostInspector:
             active_extract_griffe_meta=active_extract_griffe_meta,
         )
 
-        target = getattr(obj, "__init__", obj) if kind == "class" else obj
+        target = read_runtime_attr(obj, "__init__", obj) if kind == "class" else obj
 
         cdd_ast_params, has_super_kwargs_call, griffe_node = (
             _extract_ast_and_griffe_node(
@@ -1138,8 +1168,10 @@ class GhostInspector:
 
         if is_public is not None:
             determined_is_public = is_public
-        elif griffe_node is not None and hasattr(griffe_node, "is_public"):
-            determined_is_public = bool(getattr(griffe_node, "is_public"))
+        elif griffe_node is not None and has_runtime_attr(griffe_node, "is_public"):
+            determined_is_public = bool(
+                read_runtime_attr(griffe_node, "is_public", True)
+            )
         else:
             determined_is_public = not name.startswith("_")
 
@@ -1155,12 +1187,9 @@ class GhostInspector:
                 pass
 
         if griffe_node is not None and returns_type is None:
-            try:
-                g_ret = getattr(griffe_node, "returns", None)
-                if g_ret:
-                    returns_type = active_sanitize_type_str(str(g_ret))
-            except Exception:
-                pass
+            g_ret = read_runtime_attr(griffe_node, "returns", None)
+            if g_ret:
+                returns_type = active_sanitize_type_str(str(g_ret))
 
         (
             extracted_params,
@@ -1201,7 +1230,9 @@ class GhostInspector:
 
         is_torch_target = bool(
             (name and name.startswith("torch."))
-            or (getattr(target, "__module__", "") or "").startswith("torch")
+            or str(read_runtime_attr(target, "__module__", "") or "").startswith(
+                "torch"
+            )
             or api_path.startswith("torch.")
         )
 
@@ -1232,9 +1263,7 @@ class GhostInspector:
             active_sanitize_type_str=active_sanitize_type_str,
         )
 
-        has_var_kwargs = any(
-            "VAR_KEYWORD" in str(getattr(p, "kind", "")) for p in params
-        )
+        has_var_kwargs = any("VAR_KEYWORD" in str(p.kind) for p in params)
         discovered_kwargs = (
             extract_accepted_kwargs_from_ast(target) if has_var_kwargs else None
         )

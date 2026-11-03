@@ -169,16 +169,28 @@ def test_optax_scan_array_api_live_and_griffe_branches(
         """
         return tree
 
-    fake_proj.__dict__["projection_non_negative"] = projection_non_negative
-    fake_proj.__dict__["projection_box"] = projection_box
-    fake_proj.__dict__["_private_proj"] = _private_proj
-    fake_proj.__dict__["NOT_A_FN"] = 123
+    pytest.MonkeyPatch().setattr(
+        fake_proj, "projection_non_negative", projection_non_negative, raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        fake_proj, "projection_box", projection_box, raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        fake_proj, "_private_proj", _private_proj, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_proj, "NOT_A_FN", 123, raising=False)
 
-    fake_optax.__dict__["apply_updates"] = apply_updates
-    fake_optax.__dict__["global_norm"] = global_norm
-    fake_optax.__dict__["_private_top"] = _private_top
-    fake_optax.__dict__["projections"] = fake_proj
-    fake_optax.__dict__["tree_utils"] = "not_a_module"
+    pytest.MonkeyPatch().setattr(
+        fake_optax, "apply_updates", apply_updates, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_optax, "global_norm", global_norm, raising=False)
+    pytest.MonkeyPatch().setattr(
+        fake_optax, "_private_top", _private_top, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_optax, "projections", fake_proj, raising=False)
+    pytest.MonkeyPatch().setattr(
+        fake_optax, "tree_utils", "not_a_module", raising=False
+    )
 
     real_inspect = GhostInspector.inspect
 

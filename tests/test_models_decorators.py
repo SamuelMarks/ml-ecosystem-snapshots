@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     InspectableTarget,
@@ -35,7 +37,7 @@ def dummy_decorator(
         """
         return None
 
-    wrapper.__dict__["__wrapped__"] = func
+    pytest.MonkeyPatch().setattr(wrapper, "__wrapped__", func, raising=False)
     return wrapper
 
 
@@ -121,7 +123,7 @@ def test_unwrap_generic_decorator() -> None:
             pass
 
         w = Wrapper()
-        w.__dict__["__original_fn"] = func
+        pytest.MonkeyPatch().setattr(w, "__original_fn", func, raising=False)
         return w
 
     @generic_dec
@@ -157,7 +159,7 @@ def test_unwrap_variant_decorator() -> None:
             pass
 
         w = Wrapper()
-        w.__dict__["_original_fn"] = func
+        pytest.MonkeyPatch().setattr(w, "_original_fn", func, raising=False)
         return w
 
     @variant_dec

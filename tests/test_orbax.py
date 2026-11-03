@@ -130,11 +130,19 @@ def test_scan_and_collect_orbax_api_all_branches(
         """
         return x
 
-    fake_exp.__dict__["_private_export_helper"] = _private_export_helper
-    fake_exp.__dict__["custom_export_fn"] = custom_export_fn
-    fake_exp.__dict__["failing_export_fn"] = failing_export_fn
-    fake_exp.__dict__["ExportManager"] = custom_export_fn
-    fake_exp.__dict__["CONST_VAL"] = 42
+    pytest.MonkeyPatch().setattr(
+        fake_exp, "_private_export_helper", _private_export_helper, raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        fake_exp, "custom_export_fn", custom_export_fn, raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        fake_exp, "failing_export_fn", failing_export_fn, raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        fake_exp, "ExportManager", custom_export_fn, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_exp, "CONST_VAL", 42, raising=False)
 
     ocp_ref = GhostRef(
         name="CheckpointManager",

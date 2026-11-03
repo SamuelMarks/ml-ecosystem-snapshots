@@ -8,7 +8,57 @@ from pathlib import Path
 import typing
 
 from ml_ecosystem_snapshots.exceptions import OfflineModeNetworkError
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import JsonValue
+
+
+@typing.runtime_checkable
+class ZstdCompressorProtocol(typing.Protocol):
+    """Protocol for a Zstandard compressor instance."""
+
+    def compress(self, data: bytes) -> bytes:
+        """Compress raw bytes.
+
+        Args:
+            data: Uncompressed byte buffer.
+
+        Returns:
+            Compressed byte buffer.
+        """
+
+
+@typing.runtime_checkable
+class ZstdDecompressorProtocol(typing.Protocol):
+    """Protocol for a Zstandard decompressor instance."""
+
+    def decompress(self, data: bytes) -> bytes:
+        """Decompress zstd-compressed bytes.
+
+        Args:
+            data: Compressed byte buffer.
+
+        Returns:
+            Decompressed byte buffer.
+        """
+
+
+@typing.runtime_checkable
+class ZstdModuleProtocol(typing.Protocol):
+    """Protocol for the `zstandard` compression module."""
+
+    def ZstdCompressor(self) -> ZstdCompressorProtocol:
+        """Instantiate a Zstandard compressor.
+
+        Returns:
+            Compressor instance.
+        """
+
+    def ZstdDecompressor(self) -> ZstdDecompressorProtocol:
+        """Instantiate a Zstandard decompressor.
+
+        Returns:
+            Decompressor instance.
+        """
 
 
 def is_offline_mode() -> bool:
@@ -57,8 +107,9 @@ def load_json_data(file_path: str | Path) -> JsonValue:
         import importlib
 
         try:
-            zstd = importlib.import_module("zstandard")
-            dctx = getattr(zstd, "ZstdDecompressor")()
+            zstd: InspectableTarget = importlib.import_module("zstandard")
+            assert isinstance(zstd, ZstdModuleProtocol)
+            dctx = zstd.ZstdDecompressor()
             with open(path_str, "rb") as bf:
                 decompressed: bytes = dctx.decompress(bf.read())
             res_zst: JsonValue = json.loads(decompressed.decode("utf-8"))
@@ -136,6 +187,9 @@ def fetch_url(url: str, timeout: int = 10, strict_offline: bool = False) -> str 
 
 
 __all__ = [
+    "ZstdCompressorProtocol",
+    "ZstdDecompressorProtocol",
+    "ZstdModuleProtocol",
     "fetch_url",
     "get_custom_snapshots_paths",
     "is_offline_mode",

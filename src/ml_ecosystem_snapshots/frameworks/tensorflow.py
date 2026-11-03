@@ -7,11 +7,13 @@ GhostRefs for layers, losses, optimizers, and activations.
 from __future__ import annotations
 
 import inspect
+import operator
 import types
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.utils import get_all_members
 
 tf: types.ModuleType | None = None
@@ -53,9 +55,10 @@ def _collect_tf_submodules(
         List of inspected `GhostRef` objects.
     """
     collected: list[GhostRef] = []
+    tf_names = set(dir(tf_mod))
     for sub_name in submodule_names:
-        if hasattr(tf_mod, sub_name):
-            sub_mod = getattr(tf_mod, sub_name)
+        if sub_name in tf_names:
+            sub_mod: types.ModuleType = operator.attrgetter(sub_name)(tf_mod)
             for name, obj in get_all_members(sub_mod):
                 if (callable(obj) or (allow_classes and inspect.isclass(obj))) and (
                     include_nonpublic or not name.startswith("_")
@@ -96,18 +99,18 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
                 "elu",
                 "selu",
             }
-            if hasattr(tf_mod, "nn"):
+            if "nn" in dir(tf_mod):
+                nn_names = set(dir(tf_mod.nn))
                 for name in target_names:
-                    if hasattr(tf_mod.nn, name):
-                        results.append(
-                            GhostInspector.inspect(
-                                getattr(tf_mod.nn, name), f"tf.nn.{name}"
-                            )
+                    if name in nn_names:
+                        act_obj: InspectableTarget = operator.attrgetter(name)(
+                            tf_mod.nn
                         )
+                        results.append(GhostInspector.inspect(act_obj, f"tf.nn.{name}"))
 
         elif category == SemanticTier.LAYER:
-            is_keras_available = hasattr(tf_mod, "keras") and hasattr(
-                tf_mod.keras, "layers"
+            is_keras_available = "keras" in dir(tf_mod) and "layers" in dir(
+                tf_mod.keras
             )
             if is_keras_available:
                 for name, obj in get_all_members(tf_mod.keras.layers):
@@ -119,8 +122,8 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
                         )
 
         elif category == SemanticTier.LOSS:
-            is_keras_available = hasattr(tf_mod, "keras") and hasattr(
-                tf_mod.keras, "losses"
+            is_keras_available = "keras" in dir(tf_mod) and "losses" in dir(
+                tf_mod.keras
             )
             if is_keras_available:
                 for name, obj in get_all_members(tf_mod.keras.losses):
@@ -132,8 +135,8 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
                         )
 
         elif category == SemanticTier.OPTIMIZER:
-            is_keras_available = hasattr(tf_mod, "keras") and hasattr(
-                tf_mod.keras, "optimizers"
+            is_keras_available = "keras" in dir(tf_mod) and "optimizers" in dir(
+                tf_mod.keras
             )
             if is_keras_available:
                 for name, obj in get_all_members(tf_mod.keras.optimizers):
@@ -146,9 +149,9 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
 
         elif category == SemanticTier.SCHEDULER:
             is_keras_available = (
-                hasattr(tf_mod, "keras")
-                and hasattr(tf_mod.keras, "optimizers")
-                and hasattr(tf_mod.keras.optimizers, "schedules")
+                "keras" in dir(tf_mod)
+                and "optimizers" in dir(tf_mod.keras)
+                and "schedules" in dir(tf_mod.keras.optimizers)
             )
             if is_keras_available:
                 for name, obj in get_all_members(tf_mod.keras.optimizers.schedules):
@@ -162,8 +165,8 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
                         )
 
         elif category == SemanticTier.INITIALIZER:
-            is_keras_available = hasattr(tf_mod, "keras") and hasattr(
-                tf_mod.keras, "initializers"
+            is_keras_available = "keras" in dir(tf_mod) and "initializers" in dir(
+                tf_mod.keras
             )
             if is_keras_available:
                 for name, obj in get_all_members(tf_mod.keras.initializers):
@@ -175,8 +178,8 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
                         )
 
         elif category == SemanticTier.METRIC:
-            is_keras_available = hasattr(tf_mod, "keras") and hasattr(
-                tf_mod.keras, "metrics"
+            is_keras_available = "keras" in dir(tf_mod) and "metrics" in dir(
+                tf_mod.keras
             )
             if is_keras_available:
                 for name, obj in get_all_members(tf_mod.keras.metrics):
@@ -188,7 +191,7 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
                         )
 
         elif category == SemanticTier.DATALOADER:
-            if hasattr(tf_mod, "data"):
+            if "data" in dir(tf_mod):
                 for name, obj in get_all_members(tf_mod.data):
                     if inspect.isclass(obj) and (
                         include_nonpublic or not name.startswith("_")
@@ -231,12 +234,15 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
                 "where",
             ]
             seen_ops = set(top_level_tensor_ops)
+            tf_top_names = set(dir(tf_mod))
             for name in top_level_tensor_ops:
-                if hasattr(tf_mod, name):
-                    obj = getattr(tf_mod, name)
-                    if callable(obj):
+                if name in tf_top_names:
+                    obj_top: InspectableTarget = operator.attrgetter(name)(tf_mod)
+                    if callable(obj_top):
                         try:
-                            results.append(GhostInspector.inspect(obj, f"tf.{name}"))
+                            results.append(
+                                GhostInspector.inspect(obj_top, f"tf.{name}")
+                            )
                         except Exception:
                             pass
 
@@ -250,7 +256,7 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
                         except Exception:
                             pass
 
-            if hasattr(tf_mod, "raw_ops"):
+            if "raw_ops" in dir(tf_mod):
                 for name, obj in get_all_members(tf_mod.raw_ops):
                     if not name.startswith("_") or include_nonpublic:
                         if callable(obj) and not inspect.isclass(obj):
@@ -261,7 +267,7 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
                             except Exception:
                                 pass
 
-            if hasattr(tf_mod, "Tensor"):
+            if "Tensor" in dir(tf_mod):
                 for name, obj in inspect.getmembers(tf_mod.Tensor):
                     if (
                         (include_nonpublic or not name.startswith("_"))
@@ -277,7 +283,7 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
                         except Exception:
                             pass
 
-            if hasattr(tf_mod, "Variable"):
+            if "Variable" in dir(tf_mod):
                 for name, obj in inspect.getmembers(tf_mod.Variable):
                     if (
                         (include_nonpublic or not name.startswith("_"))
@@ -293,8 +299,8 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
                         except Exception:
                             pass
 
-        if category in (SemanticTier.ARRAY_API, SemanticTier.UTIL) and hasattr(
-            tf_mod, "raw_ops"
+        if category in (SemanticTier.ARRAY_API, SemanticTier.UTIL) and "raw_ops" in dir(
+            tf_mod
         ):
             for name, obj in get_all_members(tf_mod.raw_ops):
                 if not include_nonpublic and name.startswith("_"):

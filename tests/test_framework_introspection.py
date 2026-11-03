@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import operator
+import pytest
+
 import builtins
 import pytest_mock
 import importlib
@@ -107,13 +110,19 @@ def test_onnxruntime_collect_api_edge_branches(
         """Private function."""
         pass
 
-    setattr(fake_mod, "InferenceSession", InferenceSession)
-    setattr(fake_mod, "OtherSession", OtherSession)
-    setattr(fake_mod, "dummy_util", dummy_util)
-    setattr(fake_mod, "_private_func", _private_func)
-    setattr(fake_mod, "none_obj", None)
-    setattr(fake_mod, "raise_exc", lambda: None)
-    setattr(fake_mod, "return_none_ref", lambda: None)
+    pytest.MonkeyPatch().setattr(
+        fake_mod, "InferenceSession", InferenceSession, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_mod, "OtherSession", OtherSession, raising=False)
+    pytest.MonkeyPatch().setattr(fake_mod, "dummy_util", dummy_util, raising=False)
+    pytest.MonkeyPatch().setattr(
+        fake_mod, "_private_func", _private_func, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_mod, "none_obj", None, raising=False)
+    pytest.MonkeyPatch().setattr(fake_mod, "raise_exc", lambda: None, raising=False)
+    pytest.MonkeyPatch().setattr(
+        fake_mod, "return_none_ref", lambda: None, raising=False
+    )
 
     def mock_import_fake(name: str, package: str | None = None) -> types.ModuleType:
         """Mock import returning fake onnxruntime.
@@ -220,9 +229,9 @@ def test_numpy_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> No
         """Fake exp."""
         pass
 
-    setattr(fake_np, "tanh", tanh)
-    setattr(fake_np, "exp", exp)
-    setattr(fake_np, "maximum", 42)
+    pytest.MonkeyPatch().setattr(fake_np, "tanh", tanh, raising=False)
+    pytest.MonkeyPatch().setattr(fake_np, "exp", exp, raising=False)
+    pytest.MonkeyPatch().setattr(fake_np, "maximum", 42, raising=False)
     # minimum is omitted so hasattr is False
 
     original_inspect = GhostInspector.inspect
@@ -259,9 +268,9 @@ def test_numpy_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> No
         """Fake add."""
         pass
 
-    setattr(fake_np_array, "abs", abs)
-    setattr(fake_np_array, "add", add)
-    setattr(fake_np_array, "all", "not_callable")
+    pytest.MonkeyPatch().setattr(fake_np_array, "abs", abs, raising=False)
+    pytest.MonkeyPatch().setattr(fake_np_array, "add", add, raising=False)
+    pytest.MonkeyPatch().setattr(fake_np_array, "all", "not_callable", raising=False)
     # remaining array_ops not defined -> hasattr False
 
     # linalg submodule:
@@ -284,12 +293,12 @@ def test_numpy_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> No
         pass
 
     fake_linalg = types.ModuleType("numpy.linalg")
-    setattr(fake_linalg, "_private", lambda: None)
-    setattr(fake_linalg, "LinAlgClass", LinAlgClass)
-    setattr(fake_linalg, "non_callable", 123)
-    setattr(fake_linalg, "det", det)
-    setattr(fake_linalg, "inv", inv)
-    setattr(fake_np_array, "linalg", fake_linalg)
+    pytest.MonkeyPatch().setattr(fake_linalg, "_private", lambda: None, raising=False)
+    pytest.MonkeyPatch().setattr(fake_linalg, "LinAlgClass", LinAlgClass, raising=False)
+    pytest.MonkeyPatch().setattr(fake_linalg, "non_callable", 123, raising=False)
+    pytest.MonkeyPatch().setattr(fake_linalg, "det", det, raising=False)
+    pytest.MonkeyPatch().setattr(fake_linalg, "inv", inv, raising=False)
+    pytest.MonkeyPatch().setattr(fake_np_array, "linalg", fake_linalg, raising=False)
 
     # fft submodule:
     # - private member
@@ -311,12 +320,12 @@ def test_numpy_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> No
         pass
 
     fake_fft_mod = types.ModuleType("numpy.fft")
-    setattr(fake_fft_mod, "_private", lambda: None)
-    setattr(fake_fft_mod, "FFTClass", FFTClass)
-    setattr(fake_fft_mod, "non_callable", 456)
-    setattr(fake_fft_mod, "fft", fft)
-    setattr(fake_fft_mod, "ifft", ifft)
-    setattr(fake_np_array, "fft", fake_fft_mod)
+    pytest.MonkeyPatch().setattr(fake_fft_mod, "_private", lambda: None, raising=False)
+    pytest.MonkeyPatch().setattr(fake_fft_mod, "FFTClass", FFTClass, raising=False)
+    pytest.MonkeyPatch().setattr(fake_fft_mod, "non_callable", 456, raising=False)
+    pytest.MonkeyPatch().setattr(fake_fft_mod, "fft", fft, raising=False)
+    pytest.MonkeyPatch().setattr(fake_fft_mod, "ifft", ifft, raising=False)
+    pytest.MonkeyPatch().setattr(fake_np_array, "fft", fake_fft_mod, raising=False)
 
     def mock_inspect_arr(obj: object, name: str, is_public: bool = True) -> GhostRef:
         """Mock inspect for array api.
@@ -344,7 +353,7 @@ def test_numpy_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> No
 
     # Also test when np does not have linalg or fft attributes
     fake_np_bare = types.ModuleType("numpy")
-    setattr(fake_np_bare, "abs", abs)
+    pytest.MonkeyPatch().setattr(fake_np_bare, "abs", abs, raising=False)
     mocker.patch.object(numpy_mod, "np", fake_np_bare)
     res_bare = numpy_mod.collect_api(SemanticTier.ARRAY_API)
     assert len(res_bare) == 1
@@ -413,9 +422,9 @@ def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None
     fake_fft = types.ModuleType("mlx.core.fft")
     fake_linalg = types.ModuleType("mlx.core.linalg")
 
-    setattr(fake_mlx, "nn", fake_nn)
-    setattr(fake_mlx, "optimizers", fake_optimizers)
-    setattr(fake_mlx, "core", fake_core)
+    pytest.MonkeyPatch().setattr(fake_mlx, "nn", fake_nn, raising=False)
+    pytest.MonkeyPatch().setattr(fake_mlx, "optimizers", fake_optimizers, raising=False)
+    pytest.MonkeyPatch().setattr(fake_mlx, "core", fake_core, raising=False)
 
     # LAYER category
     class UpperLayer:
@@ -437,15 +446,15 @@ def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None
         """Function not a class."""
         pass
 
-    setattr(fake_nn, "UpperLayer", UpperLayer)
-    setattr(fake_nn, "lower_layer", lower_layer)
-    setattr(fake_nn, "_PrivateLayer", _PrivateLayer)
-    setattr(fake_nn, "not_a_class", not_a_class)
+    pytest.MonkeyPatch().setattr(fake_nn, "UpperLayer", UpperLayer, raising=False)
+    pytest.MonkeyPatch().setattr(fake_nn, "lower_layer", lower_layer, raising=False)
+    pytest.MonkeyPatch().setattr(fake_nn, "_PrivateLayer", _PrivateLayer, raising=False)
+    pytest.MonkeyPatch().setattr(fake_nn, "not_a_class", not_a_class, raising=False)
 
     # ACTIVATION category
-    setattr(fake_nn, "relu", lambda x: x)
-    setattr(fake_nn, "_relu", lambda x: x)
-    setattr(fake_nn, "unrelated_act", lambda x: x)
+    pytest.MonkeyPatch().setattr(fake_nn, "relu", lambda x: x, raising=False)
+    pytest.MonkeyPatch().setattr(fake_nn, "_relu", lambda x: x, raising=False)
+    pytest.MonkeyPatch().setattr(fake_nn, "unrelated_act", lambda x: x, raising=False)
 
     # LOSS category
     def cross_entropy_loss() -> None:
@@ -461,12 +470,18 @@ def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None
         """Private loss function."""
         pass
 
-    setattr(fake_losses, "cross_entropy_loss", cross_entropy_loss)
-    setattr(fake_losses, "CustomLoss", CustomLoss)
-    setattr(fake_losses, "_private_loss", _private_loss)
-    setattr(fake_losses, "something_else", lambda: None)
-    setattr(fake_losses, "number_loss", 999)
-    setattr(fake_nn, "losses", fake_losses)
+    pytest.MonkeyPatch().setattr(
+        fake_losses, "cross_entropy_loss", cross_entropy_loss, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_losses, "CustomLoss", CustomLoss, raising=False)
+    pytest.MonkeyPatch().setattr(
+        fake_losses, "_private_loss", _private_loss, raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        fake_losses, "something_else", lambda: None, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_losses, "number_loss", 999, raising=False)
+    pytest.MonkeyPatch().setattr(fake_nn, "losses", fake_losses, raising=False)
 
     # OPTIMIZER category
     class Adam:
@@ -484,10 +499,16 @@ def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None
 
         pass
 
-    setattr(fake_optimizers, "Adam", Adam)
-    setattr(fake_optimizers, "adam_lower", adam_lower)
-    setattr(fake_optimizers, "_PrivateOptimizer", _PrivateOptimizer)
-    setattr(fake_optimizers, "optim_func", lambda: None)
+    pytest.MonkeyPatch().setattr(fake_optimizers, "Adam", Adam, raising=False)
+    pytest.MonkeyPatch().setattr(
+        fake_optimizers, "adam_lower", adam_lower, raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        fake_optimizers, "_PrivateOptimizer", _PrivateOptimizer, raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        fake_optimizers, "optim_func", lambda: None, raising=False
+    )
 
     # ARRAY_API category
     def fake_abs() -> None:
@@ -503,10 +524,14 @@ def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None
 
         pass
 
-    setattr(fake_core, "abs", fake_abs)
-    setattr(fake_core, "fake_core_exc", fake_core_exc)
-    setattr(fake_core, "CoreClass", CoreClass)
-    setattr(fake_core, "_private_core", lambda: None)
+    pytest.MonkeyPatch().setattr(fake_core, "abs", fake_abs, raising=False)
+    pytest.MonkeyPatch().setattr(
+        fake_core, "fake_core_exc", fake_core_exc, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_core, "CoreClass", CoreClass, raising=False)
+    pytest.MonkeyPatch().setattr(
+        fake_core, "_private_core", lambda: None, raising=False
+    )
 
     def fake_fft_fn() -> None:
         """Fake fft function."""
@@ -516,11 +541,11 @@ def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None
         """FFT function that triggers inspect exception."""
         pass
 
-    setattr(fake_fft, "fft", fake_fft_fn)
-    setattr(fake_fft, "fake_fft_exc", fake_fft_exc)
-    setattr(fake_fft, "ClassFFT", CoreClass)
-    setattr(fake_fft, "_private_fft", lambda: None)
-    setattr(fake_core, "fft", fake_fft)
+    pytest.MonkeyPatch().setattr(fake_fft, "fft", fake_fft_fn, raising=False)
+    pytest.MonkeyPatch().setattr(fake_fft, "fake_fft_exc", fake_fft_exc, raising=False)
+    pytest.MonkeyPatch().setattr(fake_fft, "ClassFFT", CoreClass, raising=False)
+    pytest.MonkeyPatch().setattr(fake_fft, "_private_fft", lambda: None, raising=False)
+    pytest.MonkeyPatch().setattr(fake_core, "fft", fake_fft, raising=False)
 
     def fake_linalg_fn() -> None:
         """Fake linalg function."""
@@ -530,11 +555,15 @@ def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None
         """Linalg function that triggers inspect exception."""
         pass
 
-    setattr(fake_linalg, "norm", fake_linalg_fn)
-    setattr(fake_linalg, "fake_linalg_exc", fake_linalg_exc)
-    setattr(fake_linalg, "ClassLinalg", CoreClass)
-    setattr(fake_linalg, "_private_linalg", lambda: None)
-    setattr(fake_core, "linalg", fake_linalg)
+    pytest.MonkeyPatch().setattr(fake_linalg, "norm", fake_linalg_fn, raising=False)
+    pytest.MonkeyPatch().setattr(
+        fake_linalg, "fake_linalg_exc", fake_linalg_exc, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_linalg, "ClassLinalg", CoreClass, raising=False)
+    pytest.MonkeyPatch().setattr(
+        fake_linalg, "_private_linalg", lambda: None, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_core, "linalg", fake_linalg, raising=False)
 
     mocker.patch.object(mlx_mod, "mlx", fake_mlx)
 
@@ -586,7 +615,7 @@ def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None
 
     del fake_nn.losses
     assert mlx_mod.collect_api(SemanticTier.LOSS) == []
-    setattr(fake_nn, "losses", fake_losses)
+    pytest.MonkeyPatch().setattr(fake_nn, "losses", fake_losses, raising=False)
 
     # OPTIMIZER: public vs nonpublic
     opt_pub = mlx_mod.collect_api(SemanticTier.OPTIMIZER, include_nonpublic=False)
@@ -616,7 +645,9 @@ def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None
     # Test ARRAY_API when fft and linalg submodules are missing from core (branches 117->131, 132->150)
     fake_mlx_no_sub = types.ModuleType("mlx")
     fake_core_no_sub = types.ModuleType("mlx.core")
-    setattr(fake_mlx_no_sub, "core", fake_core_no_sub)
+    pytest.MonkeyPatch().setattr(
+        fake_mlx_no_sub, "core", fake_core_no_sub, raising=False
+    )
     mocker.patch.object(mlx_mod, "mlx", fake_mlx_no_sub)
     assert mlx_mod.collect_api(SemanticTier.ARRAY_API) == []
 
@@ -647,7 +678,7 @@ def test_mlx_import_error_handling() -> None:
         },
     ):
         importlib.reload(mlx_mod)
-        assert getattr(mlx_mod, "mlx") is mock_mlx_root
+        assert operator.attrgetter("mlx")(mlx_mod) is mock_mlx_root
 
     # 2. Test simulated import failure of mlx
     real_import = builtins.__import__
@@ -680,7 +711,7 @@ def test_mlx_import_error_handling() -> None:
 
     with patch("builtins.__import__", side_effect=mock_import_fail):
         importlib.reload(mlx_mod)
-        assert getattr(mlx_mod, "mlx") is None
+        assert operator.attrgetter("mlx")(mlx_mod) is None
 
     # Restore clean reload
     importlib.reload(mlx_mod)
@@ -998,10 +1029,14 @@ def test_huggingface_collect_api_all_branches(
         assert len(res_tr) > 0
 
     fake_diff_lib = types.ModuleType("diffusers")
-    setattr(fake_diff_lib, "DiffusionPipeline", lambda: None)
+    pytest.MonkeyPatch().setattr(
+        fake_diff_lib, "DiffusionPipeline", lambda: None, raising=False
+    )
 
     fake_tok_lib = types.ModuleType("tokenizers")
-    setattr(fake_tok_lib, "TokenizerModel", lambda: None)
+    pytest.MonkeyPatch().setattr(
+        fake_tok_lib, "TokenizerModel", lambda: None, raising=False
+    )
 
     def mock_import_helpers(name: str, package: str | None = None) -> types.ModuleType:
         """Mock import for helper functions.
@@ -1038,13 +1073,13 @@ def test_tensorflow_collect_api_inspection_failures(
         None.
     """
     fake_math = types.ModuleType("tf.math")
-    setattr(fake_math, "abs", lambda: None)
+    pytest.MonkeyPatch().setattr(fake_math, "abs", lambda: None, raising=False)
 
     fake_linalg = types.ModuleType("tf.linalg")
-    setattr(fake_linalg, "matmul", lambda: None)
+    pytest.MonkeyPatch().setattr(fake_linalg, "matmul", lambda: None, raising=False)
 
     fake_raw_ops = types.ModuleType("tf.raw_ops")
-    setattr(fake_raw_ops, "raw_add", lambda: None)
+    pytest.MonkeyPatch().setattr(fake_raw_ops, "raw_add", lambda: None, raising=False)
 
     class FakeTensor:
         """Fake Tensor class."""
@@ -1061,13 +1096,15 @@ def test_tensorflow_collect_api_inspection_failures(
             pass
 
     fake_tf = types.ModuleType("tf")
-    setattr(fake_tf, "math", fake_math)
-    setattr(fake_tf, "linalg", fake_linalg)
-    setattr(fake_tf, "raw_ops", fake_raw_ops)
-    setattr(fake_tf, "concat", lambda: None)
-    setattr(fake_tf, "custom_tensor_op", lambda: None)
-    setattr(fake_tf, "Tensor", FakeTensor)
-    setattr(fake_tf, "Variable", FakeVariable)
+    pytest.MonkeyPatch().setattr(fake_tf, "math", fake_math, raising=False)
+    pytest.MonkeyPatch().setattr(fake_tf, "linalg", fake_linalg, raising=False)
+    pytest.MonkeyPatch().setattr(fake_tf, "raw_ops", fake_raw_ops, raising=False)
+    pytest.MonkeyPatch().setattr(fake_tf, "concat", lambda: None, raising=False)
+    pytest.MonkeyPatch().setattr(
+        fake_tf, "custom_tensor_op", lambda: None, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_tf, "Tensor", FakeTensor, raising=False)
+    pytest.MonkeyPatch().setattr(fake_tf, "Variable", FakeVariable, raising=False)
 
     mocker.patch.object(tf_fw, "tf", fake_tf)
     mocker.patch(
@@ -1119,10 +1156,12 @@ def test_jax_sharding_and_pallas_collection(mocker: pytest_mock.MockerFixture) -
         pass
 
     fake_sharding = types.ModuleType("jax.sharding")
-    setattr(fake_sharding, "Mesh", Mesh)
-    setattr(fake_sharding, "shard_map", shard_map)
-    setattr(fake_sharding, "_priv_sharding", _priv_sharding)
-    setattr(fake_sharding, "not_callable", 42)
+    pytest.MonkeyPatch().setattr(fake_sharding, "Mesh", Mesh, raising=False)
+    pytest.MonkeyPatch().setattr(fake_sharding, "shard_map", shard_map, raising=False)
+    pytest.MonkeyPatch().setattr(
+        fake_sharding, "_priv_sharding", _priv_sharding, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_sharding, "not_callable", 42, raising=False)
 
     def pallas_call() -> None:
         """Mock pallas_call kernel."""
@@ -1133,23 +1172,35 @@ def test_jax_sharding_and_pallas_collection(mocker: pytest_mock.MockerFixture) -
         pass
 
     fake_pallas = types.ModuleType("jax.experimental.pallas")
-    setattr(fake_pallas, "pallas_call", pallas_call)
-    setattr(fake_pallas, "_priv_pallas", _priv_pallas)
-    setattr(fake_pallas, "not_callable", 99)
+    pytest.MonkeyPatch().setattr(fake_pallas, "pallas_call", pallas_call, raising=False)
+    pytest.MonkeyPatch().setattr(
+        fake_pallas, "_priv_pallas", _priv_pallas, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_pallas, "not_callable", 99, raising=False)
 
     fake_experimental = types.ModuleType("jax.experimental")
-    setattr(fake_experimental, "pallas", fake_pallas)
+    pytest.MonkeyPatch().setattr(
+        fake_experimental, "pallas", fake_pallas, raising=False
+    )
 
     fake_jax = types.ModuleType("jax")
-    setattr(fake_jax, "sharding", fake_sharding)
-    setattr(fake_jax, "experimental", fake_experimental)
-    setattr(fake_jax, "lax", types.ModuleType("jax.lax"))
-    setattr(fake_jax, "random", types.ModuleType("jax.random"))
-    setattr(fake_jax, "Array", type("Array", (), {}))
+    pytest.MonkeyPatch().setattr(fake_jax, "sharding", fake_sharding, raising=False)
+    pytest.MonkeyPatch().setattr(
+        fake_jax, "experimental", fake_experimental, raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        fake_jax, "lax", types.ModuleType("jax.lax"), raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        fake_jax, "random", types.ModuleType("jax.random"), raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        fake_jax, "Array", type("Array", (), {}), raising=False
+    )
 
     fake_jnp = types.ModuleType("jax.numpy")
     fake_numpy = types.ModuleType("numpy")
-    setattr(fake_numpy, "float32", float)
+    pytest.MonkeyPatch().setattr(fake_numpy, "float32", float, raising=False)
 
     mocker.patch.dict(
         "sys.modules",
@@ -1190,13 +1241,13 @@ def test_jax_array_ops_inspect_exceptions(mocker: pytest_mock.MockerFixture) -> 
         None.
     """
     fake_jnp = types.ModuleType("jax.numpy")
-    setattr(fake_jnp, "abs", lambda: None)
+    pytest.MonkeyPatch().setattr(fake_jnp, "abs", lambda: None, raising=False)
 
     fake_lax = types.ModuleType("jax.lax")
-    setattr(fake_lax, "add", lambda: None)
+    pytest.MonkeyPatch().setattr(fake_lax, "add", lambda: None, raising=False)
 
     fake_random = types.ModuleType("jax.random")
-    setattr(fake_random, "uniform", lambda: None)
+    pytest.MonkeyPatch().setattr(fake_random, "uniform", lambda: None, raising=False)
 
     class FakeArray:
         """Fake Array class."""
@@ -1206,28 +1257,36 @@ def test_jax_array_ops_inspect_exceptions(mocker: pytest_mock.MockerFixture) -> 
             pass
 
     fake_sharding = types.ModuleType("jax.sharding")
-    setattr(fake_sharding, "shard_map", lambda: None)
+    pytest.MonkeyPatch().setattr(
+        fake_sharding, "shard_map", lambda: None, raising=False
+    )
 
     fake_pallas = types.ModuleType("jax.experimental.pallas")
-    setattr(fake_pallas, "pallas_call", lambda: None)
+    pytest.MonkeyPatch().setattr(
+        fake_pallas, "pallas_call", lambda: None, raising=False
+    )
 
     fake_experimental = types.ModuleType("jax.experimental")
-    setattr(fake_experimental, "pallas", fake_pallas)
+    pytest.MonkeyPatch().setattr(
+        fake_experimental, "pallas", fake_pallas, raising=False
+    )
 
     fake_jax = types.ModuleType("jax")
-    setattr(fake_jax, "lax", fake_lax)
-    setattr(fake_jax, "random", fake_random)
-    setattr(fake_jax, "sharding", fake_sharding)
-    setattr(fake_jax, "experimental", fake_experimental)
-    setattr(fake_jax, "jit", lambda fn: fn)
-    setattr(fake_jax, "grad", lambda fn: fn)
-    setattr(fake_jax, "vmap", lambda fn: fn)
-    setattr(fake_jax, "pmap", lambda fn: fn)
-    setattr(fake_jax, "checkpoint", lambda fn: fn)
-    setattr(fake_jax, "Array", FakeArray)
+    pytest.MonkeyPatch().setattr(fake_jax, "lax", fake_lax, raising=False)
+    pytest.MonkeyPatch().setattr(fake_jax, "random", fake_random, raising=False)
+    pytest.MonkeyPatch().setattr(fake_jax, "sharding", fake_sharding, raising=False)
+    pytest.MonkeyPatch().setattr(
+        fake_jax, "experimental", fake_experimental, raising=False
+    )
+    pytest.MonkeyPatch().setattr(fake_jax, "jit", lambda fn: fn, raising=False)
+    pytest.MonkeyPatch().setattr(fake_jax, "grad", lambda fn: fn, raising=False)
+    pytest.MonkeyPatch().setattr(fake_jax, "vmap", lambda fn: fn, raising=False)
+    pytest.MonkeyPatch().setattr(fake_jax, "pmap", lambda fn: fn, raising=False)
+    pytest.MonkeyPatch().setattr(fake_jax, "checkpoint", lambda fn: fn, raising=False)
+    pytest.MonkeyPatch().setattr(fake_jax, "Array", FakeArray, raising=False)
 
     fake_numpy = types.ModuleType("numpy")
-    setattr(fake_numpy, "float32", float)
+    pytest.MonkeyPatch().setattr(fake_numpy, "float32", float, raising=False)
 
     mocker.patch.dict(
         "sys.modules",
@@ -1278,12 +1337,18 @@ def test_jax_pallas_import_failure(mocker: pytest_mock.MockerFixture) -> None:
         None.
     """
     fake_jax = types.ModuleType("jax")
-    setattr(fake_jax, "lax", types.ModuleType("jax.lax"))
-    setattr(fake_jax, "random", types.ModuleType("jax.random"))
-    setattr(fake_jax, "Array", type("Array", (), {}))
+    pytest.MonkeyPatch().setattr(
+        fake_jax, "lax", types.ModuleType("jax.lax"), raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        fake_jax, "random", types.ModuleType("jax.random"), raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        fake_jax, "Array", type("Array", (), {}), raising=False
+    )
     fake_jnp = types.ModuleType("jax.numpy")
     fake_numpy = types.ModuleType("numpy")
-    setattr(fake_numpy, "float32", float)
+    pytest.MonkeyPatch().setattr(fake_numpy, "float32", float, raising=False)
 
     mocker.patch.dict(
         "sys.modules",

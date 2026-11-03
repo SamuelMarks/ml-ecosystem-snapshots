@@ -92,14 +92,12 @@ def _to_parsed_param_tuple(
     return ParsedParamTuple(item[0], item[1], item[2], item[3])
 
 
-class CExtensionSignature(pydantic.BaseModel):
+class CExtensionSignature:
     """Extracted signature parameter sequence for C-extensions with overloads support."""
 
-    model_config = pydantic.ConfigDict(extra="forbid")
-
-    params: list[ParsedParamTuple] = pydantic.Field(default_factory=list)
-    returns_type: str | None = None
-    overloads: list[CExtensionSignature] = pydantic.Field(default_factory=list)
+    params: list[ParsedParamTuple]
+    returns_type: str | None
+    overloads: list[CExtensionSignature]
 
     def __init__(
         self,
@@ -114,11 +112,9 @@ class CExtensionSignature(pydantic.BaseModel):
             returns_type: Optional return type annotation string.
             overloads: Optional list of secondary/tertiary overload signatures.
         """
-        super().__init__(
-            params=[_to_parsed_param_tuple(p) for p in params],
-            returns_type=returns_type,
-            overloads=overloads or [],
-        )
+        self.params = [_to_parsed_param_tuple(p) for p in params]
+        self.returns_type = returns_type
+        self.overloads = list(overloads) if overloads is not None else []
 
     def __len__(self) -> int:
         """Return the number of extracted parameters.
@@ -138,6 +134,14 @@ class CExtensionSignature(pydantic.BaseModel):
             Single `ParsedParamTuple` item.
         """
         return self.params[index]
+
+    def __iter__(self) -> typing.Iterator[ParsedParamTuple]:
+        """Iterate over the parameter tuples.
+
+        Returns:
+            Iterator of `ParsedParamTuple` items.
+        """
+        return iter(self.params)
 
     def iter_params(self) -> typing.Iterator[ParsedParamTuple]:
         """Iterate over the parameter tuples.
@@ -176,9 +180,6 @@ class CExtensionSignature(pydantic.BaseModel):
             Formatted representation string.
         """
         return repr([p.as_tuple() for p in self.params])
-
-
-setattr(CExtensionSignature, "__iter__", CExtensionSignature.iter_params)
 
 
 def _normalize_c_sig_args(args_str: str) -> str:
@@ -330,7 +331,7 @@ def _parse_c_extension_sig_str(
             return ast.unparse(node)
 
     num_defaults = len(args.defaults)
-    posonly_args = getattr(args, "posonlyargs", [])
+    posonly_args = args.posonlyargs
     posonly_count = len(posonly_args)
     combined_args = posonly_args + args.args
 

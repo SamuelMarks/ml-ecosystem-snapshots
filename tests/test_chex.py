@@ -249,8 +249,12 @@ def test_collect_chex_api_offline_and_live(
         """
         return x
 
-    fake_live.__dict__["custom_live_assert"] = custom_live_assert
-    fake_live.__dict__["assert_shape"] = custom_live_assert
+    pytest.MonkeyPatch().setattr(
+        fake_live, "custom_live_assert", custom_live_assert, raising=False
+    )
+    pytest.MonkeyPatch().setattr(
+        fake_live, "assert_shape", custom_live_assert, raising=False
+    )
 
     griffe_extra = GhostRef(
         name="griffe_discovered_assert",

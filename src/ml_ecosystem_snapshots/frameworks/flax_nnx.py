@@ -9,12 +9,21 @@ from __future__ import annotations
 
 import inspect
 import types
+import typing
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.frameworks.jax import collect_api as jax_collect_api
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.utils import get_all_members
+
+
+@typing.runtime_checkable
+class _NnxModuleProtocol(typing.Protocol):
+    """Protocol for `flax.nnx` exposing `.Module`."""
+
+    Module: type
+
 
 nnx: types.ModuleType | None = None
 
@@ -54,12 +63,14 @@ def _scan_nnx_layers(include_nonpublic: bool) -> list[GhostRef]:
     if not nnx_mod:
         return found
     try:
+        assert isinstance(nnx_mod, _NnxModuleProtocol)
+        base_mod = nnx_mod.Module
         for name, obj in get_all_members(nnx_mod):
             if not include_nonpublic and name.startswith("_"):
                 continue
             if inspect.isclass(obj) and name != "Module":
                 try:
-                    if issubclass(obj, getattr(nnx_mod, "Module")):
+                    if issubclass(obj, base_mod):
                         found.append(GhostInspector.inspect(obj, f"flax.nnx.{name}"))
                 except TypeError:
                     pass

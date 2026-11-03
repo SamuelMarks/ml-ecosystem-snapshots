@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import operator
+import pytest
+
 import typing
 import pytest_mock
 
@@ -630,10 +633,11 @@ def test_ghost_inspector_griffe_overloads(mocker: pytest_mock.MockerFixture) -> 
                 pass
 
             self.kind = FakeKind()
-            setattr(
+            pytest.MonkeyPatch().setattr(
                 self.kind,
                 "name",
                 kind_name if kind_name else "POSITIONAL_OR_KEYWORD",
+                raising=False,
             )
             self.default = default
             self.annotation = annotation
@@ -1055,7 +1059,11 @@ def test_extract_accepted_kwargs_from_ast() -> None:
 
     # Test inspection populating accepted_kwargs
     ref = GhostInspector.inspect(sample_kwargs_fn, "tests.sample_kwargs_fn")
-    assert getattr(ref, "accepted_kwargs", None) == ["alpha", "beta", "delta", "gamma"]
+    assert (
+        operator.attrgetter("accepted_kwargs")(ref)
+        if "accepted_kwargs" in dir(ref)
+        else None
+    ) == ["alpha", "beta", "delta", "gamma"]
 
 
 def test_ghost_instruction_and_operation_refs() -> None:

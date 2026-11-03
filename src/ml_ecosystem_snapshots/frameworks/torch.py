@@ -18,12 +18,66 @@ import pydantic
 
 from ml_ecosystem_snapshots.c_extension_sig import CExtensionSignature
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import (
-    InspectableTarget,
-    read_runtime_attr,
-)
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.utils import get_all_members
+
+
+@typing.runtime_checkable
+class TorchOptimWithSchedulerProtocol(typing.Protocol):
+    """Protocol for `torch.optim` exposing `.lr_scheduler`."""
+
+    lr_scheduler: types.ModuleType
+
+
+@typing.runtime_checkable
+class TorchNnWithInitProtocol(typing.Protocol):
+    """Protocol for `torch.nn` exposing `.init`."""
+
+    init: types.ModuleType
+
+
+@typing.runtime_checkable
+class TorchNnWithFunctionalProtocol(typing.Protocol):
+    """Protocol for `torch.nn` exposing `.functional`."""
+
+    functional: types.ModuleType
+
+
+@typing.runtime_checkable
+class TorchModuleWithNnProtocol(typing.Protocol):
+    """Protocol for `torch` exposing `.nn`."""
+
+    nn: TorchNnWithFunctionalProtocol
+
+
+@typing.runtime_checkable
+class TorchModuleWithTensorProtocol(typing.Protocol):
+    """Protocol for `torch` exposing `.Tensor`."""
+
+    Tensor: type
+
+
+@typing.runtime_checkable
+class TorchOpsContainerProtocol(typing.Protocol):
+    """Protocol for `torch.ops` exposing `.aten`."""
+
+    aten: types.ModuleType
+
+
+@typing.runtime_checkable
+class TorchModuleWithOpsProtocol(typing.Protocol):
+    """Protocol for `torch` exposing `.ops`."""
+
+    ops: TorchOpsContainerProtocol
+
+
+@typing.runtime_checkable
+class _NamedTargetProtocol(typing.Protocol):
+    """Protocol for runtime objects exposing a `__name__` attribute."""
+
+    __name__: str
+
 
 warnings.filterwarnings(
     "ignore",
@@ -201,7 +255,7 @@ def _scan_schedulers(include_nonpublic: bool) -> list[GhostRef]:
         A list of GhostRef objects representing found schedulers.
 
     """
-    if not optim or not hasattr(optim, "lr_scheduler"):
+    if not isinstance(optim, TorchOptimWithSchedulerProtocol):
         return []
     found: list[GhostRef] = []
     for name, obj in get_all_members(optim.lr_scheduler):
@@ -224,7 +278,7 @@ def _scan_initializers(include_nonpublic: bool) -> list[GhostRef]:
         A list of GhostRef objects representing found initializers.
 
     """
-    if not nn or not hasattr(nn, "init"):
+    if not isinstance(nn, TorchNnWithInitProtocol):
         return []
     found: list[GhostRef] = []
     for name, obj in get_all_members(nn.init):
@@ -352,17 +406,20 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
                     pass
 
         # 2-7. Submodule namespaces
+        torch_members: dict[str, types.ModuleType] = dict(inspect.getmembers(torch))
         for attr_name in ("linalg", "special", "fft", "autograd", "distributed"):
-            if hasattr(torch, attr_name):
+            if attr_name in torch_members:
                 found.extend(
                     _collect_torch_namespace(
-                        getattr(torch, attr_name),
+                        torch_members[attr_name],
                         f"torch.{attr_name}",
                         include_nonpublic,
                     )
                 )
 
-        if hasattr(torch, "nn") and hasattr(torch.nn, "functional"):
+        if isinstance(torch, TorchModuleWithNnProtocol) and isinstance(
+            torch.nn, TorchNnWithFunctionalProtocol
+        ):
             found.extend(
                 _collect_torch_namespace(
                     torch.nn.functional,
@@ -372,7 +429,7 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
             )
 
         # 8. torch.Tensor instance methods
-        if hasattr(torch, "Tensor"):
+        if isinstance(torch, TorchModuleWithTensorProtocol):
             for name, obj in inspect.getmembers(torch.Tensor):
                 if not include_nonpublic and name.startswith("_"):
                     continue
@@ -405,7 +462,9 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
                         pass
 
         # 9. torch.ops.aten operations
-        if hasattr(torch, "ops") and hasattr(torch.ops, "aten"):
+        if isinstance(torch, TorchModuleWithOpsProtocol) and isinstance(
+            torch.ops, TorchOpsContainerProtocol
+        ):
             for name, obj in inspect.getmembers(torch.ops.aten):
                 if not name.startswith("_"):
                     if callable(obj) and not inspect.isclass(obj):
@@ -764,7 +823,8 @@ class _JitTypeProto(typing.Protocol):
         ...
 
 
-class _JitSchemaArgProto(typing.Protocol):
+@typing.runtime_checkable
+class TorchJitArgProtocol(typing.Protocol):
     """Protocol representing a TorchScript JIT schema argument."""
 
     @property
@@ -795,6 +855,15 @@ class _JitSchemaArgProto(typing.Protocol):
         ...
 
     @property
+    def default_value(self) -> str | int | float | bool | None:
+        """Return argument default value.
+
+        Returns:
+            Default value or None.
+        """
+        ...
+
+    @property
     def is_out(self) -> bool:
         """Return whether argument is an output tensor.
 
@@ -812,7 +881,8 @@ class _JitSchemaArgProto(typing.Protocol):
         ...
 
 
-class _JitSchemaReturnProto(typing.Protocol):
+@typing.runtime_checkable
+class TorchJitReturnProtocol(typing.Protocol):
     """Protocol representing a TorchScript JIT schema return entry."""
 
     @property
@@ -825,7 +895,8 @@ class _JitSchemaReturnProto(typing.Protocol):
         ...
 
 
-class _JitSchemaProto(typing.Protocol):
+@typing.runtime_checkable
+class TorchJitSchemaProtocol(typing.Protocol):
     """Protocol representing a TorchScript JIT operator schema."""
 
     @property
@@ -847,7 +918,7 @@ class _JitSchemaProto(typing.Protocol):
         ...
 
     @property
-    def arguments(self) -> typing.Sequence[_JitSchemaArgProto]:
+    def arguments(self) -> typing.Sequence[TorchJitArgProtocol]:
         """Return operator arguments.
 
         Returns:
@@ -856,7 +927,7 @@ class _JitSchemaProto(typing.Protocol):
         ...
 
     @property
-    def returns(self) -> typing.Sequence[_JitSchemaReturnProto]:
+    def returns(self) -> typing.Sequence[TorchJitReturnProtocol]:
         """Return operator return specifications.
 
         Returns:
@@ -865,7 +936,58 @@ class _JitSchemaProto(typing.Protocol):
         ...
 
 
-_JIT_SCHEMAS_CACHE: dict[str, list[_JitSchemaProto]] | None = None
+@typing.runtime_checkable
+class TorchAtenOverloadVariantProtocol(typing.Protocol):
+    """Protocol representing a resolved ATen overload object carrying `._schema`."""
+
+    _schema: TorchJitSchemaProtocol | None
+
+
+@typing.runtime_checkable
+class TorchAtenOverloadPacketProtocol(typing.Protocol):
+    """Protocol representing a `torch.ops.aten.<op>` overload packet."""
+
+    def overloads(self) -> typing.Sequence[str]:
+        """Return overload variant names.
+
+        Returns:
+            Sequence of overload name strings.
+        """
+        ...
+
+
+@typing.runtime_checkable
+class TorchCModuleProtocol(typing.Protocol):
+    """Protocol representing `torch._C` with JIT schema lookup."""
+
+    def _jit_get_all_schemas(self) -> typing.Sequence[TorchJitSchemaProtocol]:
+        """Return all registered JIT operator schemas.
+
+        Returns:
+            Sequence of JIT schema objects.
+        """
+        ...
+
+
+@typing.runtime_checkable
+class TorchModuleWithCProtocol(typing.Protocol):
+    """Protocol representing the `torch` module exposing `._C`."""
+
+    _C: TorchCModuleProtocol
+
+
+@typing.runtime_checkable
+class TorchModuleProtocol(
+    TorchModuleWithCProtocol,
+    TorchModuleWithNnProtocol,
+    TorchModuleWithOpsProtocol,
+    TorchModuleWithTensorProtocol,
+    typing.Protocol,
+):
+    """Composite protocol for the `torch` top-level module."""
+
+
+_JIT_SCHEMAS_CACHE: dict[str, list[TorchJitSchemaProtocol]] | None = None
 
 
 def get_jit_schemas_for_op(op_name: str) -> list[AtenOpSchema]:
@@ -881,7 +1003,9 @@ def get_jit_schemas_for_op(op_name: str) -> list[AtenOpSchema]:
     try:
         import torch
 
-        if not hasattr(torch, "_C") or not hasattr(torch._C, "_jit_get_all_schemas"):
+        if not isinstance(torch, TorchModuleWithCProtocol) or not isinstance(
+            torch._C, TorchCModuleProtocol
+        ):
             return []
     except Exception:
         return []
@@ -889,9 +1013,9 @@ def get_jit_schemas_for_op(op_name: str) -> list[AtenOpSchema]:
     clean_op = op_name.split(".")[-1]
 
     if _JIT_SCHEMAS_CACHE is None:
-        cache: dict[str, list[_JitSchemaProto]] = {}
+        cache: dict[str, list[TorchJitSchemaProtocol]] = {}
         for s in torch._C._jit_get_all_schemas():
-            s_name = str(getattr(s, "name", ""))
+            s_name = str(s.name)
             s_short = s_name.split("::")[-1]
             cache.setdefault(s_name, []).append(s)
             cache.setdefault(s_short, []).append(s)
@@ -908,24 +1032,15 @@ def get_jit_schemas_for_op(op_name: str) -> list[AtenOpSchema]:
     results: list[AtenOpSchema] = []
     for schema in schemas:
         params: list[AtenSchemaArg] = []
-        raw_arguments: list[_JitSchemaArgProto] = list(getattr(schema, "arguments", []))
+        raw_arguments: list[TorchJitArgProtocol] = list(schema.arguments)
         for arg in raw_arguments:
-            p_kind = (
-                "KEYWORD_ONLY"
-                if bool(getattr(arg, "kwarg_only", False))
-                else "POSITIONAL_OR_KEYWORD"
-            )
-            raw_arg_name = str(getattr(arg, "name", ""))
+            p_kind = "KEYWORD_ONLY" if bool(arg.kwarg_only) else "POSITIONAL_OR_KEYWORD"
+            raw_arg_name = str(arg.name)
             p_name = "input" if raw_arg_name == "self" else raw_arg_name
-            has_def_fn = getattr(arg, "has_default_value", None)
-            def_val = getattr(arg, "default_value", None)
-            p_default = (
-                str(def_val)
-                if callable(has_def_fn) and bool(has_def_fn())
-                else (str(def_val) if def_val is not None else None)
-            )
-            p_anno = str(getattr(arg, "type", "Tensor"))
-            is_out = bool(getattr(arg, "is_out", False))
+            def_val = arg.default_value
+            p_default = str(def_val) if arg.has_default_value() else None
+            p_anno = str(arg.type)
+            is_out = bool(arg.is_out)
 
             dtypes, rank = infer_torch_dtype_and_rank(clean_op, p_name, p_anno)
 
@@ -943,11 +1058,9 @@ def get_jit_schemas_for_op(op_name: str) -> list[AtenOpSchema]:
                 )
             )
 
-        raw_returns: list[_JitSchemaReturnProto] = list(getattr(schema, "returns", []))
-        ret_type = (
-            str(getattr(raw_returns[0], "type", "Tensor")) if raw_returns else "Tensor"
-        )
-        ov_name = str(getattr(schema, "overload_name", "default") or "default")
+        raw_returns: list[TorchJitReturnProtocol] = list(schema.returns)
+        ret_type = str(raw_returns[0].type) if raw_returns else "Tensor"
+        ov_name = str(schema.overload_name or "default")
         results.append(
             AtenOpSchema(
                 overload_name=ov_name,
@@ -976,13 +1089,21 @@ def get_aten_op_schema(op_name: str) -> list[AtenOpSchema] | None:
         return None
 
     clean_op = op_name.split(".")[-1]
-    aten_op = getattr(torch.ops.aten, clean_op, None)
+    aten_members: dict[str, TorchAtenOverloadPacketProtocol | InspectableTarget] = dict(
+        inspect.getmembers(torch.ops.aten)
+    )
+    aten_op = aten_members.get(clean_op)
     results: list[AtenOpSchema] = []
 
-    if aten_op and hasattr(aten_op, "overloads"):
+    if isinstance(aten_op, TorchAtenOverloadPacketProtocol):
+        ov_members: dict[str, TorchAtenOverloadVariantProtocol | InspectableTarget] = (
+            dict(inspect.getmembers(aten_op))
+        )
         for ov_name in aten_op.overloads():
-            ov = getattr(aten_op, ov_name)
-            schema = getattr(ov, "_schema", None)
+            ov = ov_members.get(ov_name)
+            schema = (
+                ov._schema if isinstance(ov, TorchAtenOverloadVariantProtocol) else None
+            )
             if not schema:
                 continue
 
@@ -992,7 +1113,7 @@ def get_aten_op_schema(op_name: str) -> list[AtenOpSchema] | None:
                 p_name = "input" if arg.name == "self" else arg.name
                 p_default = str(arg.default_value) if arg.has_default_value() else None
                 p_anno = str(arg.type)
-                is_out = bool(getattr(arg, "is_out", False))
+                is_out = bool(arg.is_out)
 
                 dtypes, rank = infer_torch_dtype_and_rank(clean_op, p_name, p_anno)
 
@@ -1057,7 +1178,8 @@ def extract_aten_c_extension_signature(
     Returns:
         CExtensionSignature with primary parameters and overloads if found, else None.
     """
-    op_name = str(name or read_runtime_attr(target, "__name__", "") or "")
+    target_name = target.__name__ if isinstance(target, _NamedTargetProtocol) else ""
+    op_name = str(name or target_name or "")
     raw_schemas = get_aten_op_schema(op_name)
     if not raw_schemas:
         return None

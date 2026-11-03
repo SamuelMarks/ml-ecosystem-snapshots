@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 import sys
 import types
 import pytest
@@ -134,7 +136,7 @@ def test_get_pyarrow_compute_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     fake_pa = types.ModuleType("pyarrow")
     fake_pc = types.ModuleType("pyarrow.compute")
-    setattr(fake_pa, "compute", fake_pc)
+    pytest.MonkeyPatch().setattr(fake_pa, "compute", fake_pc, raising=False)
     monkeypatch.setitem(sys.modules, "pyarrow", fake_pa)
     monkeypatch.setitem(sys.modules, "pyarrow.compute", fake_pc)
     assert _get_pyarrow_compute() is fake_pc
@@ -148,7 +150,7 @@ def test_get_pyarrow_compute_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     import builtins
 
-    real_import = getattr(builtins, "__import__")
+    real_import = operator.attrgetter("__import__")(builtins)
 
     def mock_import(name: str, *args: object, **kwargs: object) -> object:
         """Mock import raising ImportError on pyarrow.

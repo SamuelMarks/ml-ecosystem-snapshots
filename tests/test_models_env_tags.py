@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 from ml_ecosystem_snapshots.introspection.inspector import (
     FRAMEWORK_CAPABILITIES,
     GhostInspector,
@@ -114,7 +116,7 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
         "custom_ir_tag": "llvm_lowered",
     }
     p = ExtendedGhostParam.model_validate(param_data)
-    assert getattr(p, "custom_ir_tag") == "llvm_lowered"
+    assert operator.attrgetter("custom_ir_tag")(p) == "llvm_lowered"
 
     from ml_ecosystem_snapshots.models import JsonValue
 
@@ -129,7 +131,7 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
     py_ref = GhostInspector.hydrate(ref_data)
     assert isinstance(py_ref, GhostPythonRef)
     assert py_ref.domain_type == "python"
-    assert getattr(py_ref, "custom_backend_meta") == {"cost": 10}
+    assert operator.attrgetter("custom_backend_meta")(py_ref) == {"cost": 10}
 
     isa_data: dict[str, JsonValue] = {
         "name": "FADD",

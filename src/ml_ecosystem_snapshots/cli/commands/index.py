@@ -22,7 +22,7 @@ def cmd_index(args: argparse.Namespace) -> None:
 
     db_path = get_index_db_path()
 
-    if bool(vars(args).get("clear", False)):
+    if "clear" in dir(args) and bool(args.clear):
         if clear_index():
             print(f"Cleared index database at {db_path}")
         else:

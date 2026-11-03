@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 import argparse
 import pytest
 
@@ -50,7 +52,11 @@ def test_cpp_runtime_op_properties_and_roles() -> None:
     blob_ref = op_map["from_blob"]
     assert blob_ref.operands is not None
     data_op = next(p for p in blob_ref.operands if p.name == "data")
-    assert getattr(data_op, "direction", None) == OperandDirection.WRITE
+    assert (
+        operator.attrgetter("direction")(data_op)
+        if "direction" in dir(data_op)
+        else None
+    ) == OperandDirection.WRITE
 
 
 def test_check_cpp_op_validation() -> None:

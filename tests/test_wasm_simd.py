@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 import argparse
 import pytest
 
@@ -52,7 +54,11 @@ def test_wasm_simd_op_properties_and_roles() -> None:
     assert store_ref.returns_type == "None"
     assert store_ref.operands is not None
     addr_op = next(p for p in store_ref.operands if p.name == "addr")
-    assert getattr(addr_op, "direction", None) == OperandDirection.WRITE
+    assert (
+        operator.attrgetter("direction")(addr_op)
+        if "direction" in dir(addr_op)
+        else None
+    ) == OperandDirection.WRITE
 
 
 def test_check_wasm_instruction_validation() -> None:
