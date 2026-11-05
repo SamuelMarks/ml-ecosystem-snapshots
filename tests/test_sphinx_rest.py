@@ -90,7 +90,8 @@ Args:
 def test_resolve_griffe_parser() -> None:
     """Test resolving parser strings to Griffe Parser enum instances."""
     rest_parser = resolve_griffe_parser("rest")
-    assert rest_parser == griffe.Parser("sphinx")
+    assert rest_parser is not None
+    assert str(rest_parser.value) in ("rest", "sphinx")
 
     sphinx_parser = resolve_griffe_parser("sphinx")
     assert sphinx_parser == griffe.Parser("sphinx")

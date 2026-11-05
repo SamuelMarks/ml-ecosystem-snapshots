@@ -27,15 +27,15 @@ repos:
         name: Ruff Lint
         args: ["--fix"]
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
-    hooks:
-      - id: mypy
-        additional_dependencies: ["pydantic", "griffe", "cdd-python", "pytest"]
-        args: ["--config-file", "pyproject.toml"]
-
   - repo: local
     hooks:
+      - id: mypy
+        name: mypy
+        entry: python3 -m mypy --config-file pyproject.toml
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
       - id: lint-typing
         name: Lint Typing & Anti-Reflection
         entry: python3 scripts/lint_typing.py

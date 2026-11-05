@@ -677,4 +677,5 @@ def test_ghost_inspector_aten_fallback_branches() -> None:
     # 2. Target with varargs in docstring (pk == VAR_POSITIONAL)
     op_varargs = MockTorchOp("varargs_op", "varargs_op(*args, **kwargs) -> Tensor\n")
     ref_varargs = GhostInspector.inspect(op_varargs, "torch.varargs_op")
+    assert ref_varargs.signature_completeness == "heuristic"
     assert any(p.kind == ParameterKind.VAR_POSITIONAL for p in ref_varargs.params)

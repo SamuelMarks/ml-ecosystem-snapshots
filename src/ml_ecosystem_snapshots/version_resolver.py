@@ -119,8 +119,8 @@ _STATIC_SPEC_VERSIONS: dict[str, str] = {
 }
 
 _LIVE_MODULE_VERSION_FALLBACKS: dict[str, tuple[str, str, str | None]] = {
-    "ir": ("ml_switcheroo_ir", "0.0.4", "ml-switcheroo-ir"),
-    "ml_switcheroo_ir": ("ml_switcheroo_ir", "0.0.4", "ml-switcheroo-ir"),
+    "ir": ("ml_switcheroo_ir", "0.0.5", "ml-switcheroo-ir"),
+    "ml_switcheroo_ir": ("ml_switcheroo_ir", "0.0.5", "ml-switcheroo-ir"),
     "scipy": ("scipy", "1.13.1", "scipy"),
     "torchvision": ("torchvision", "0.23.0", "torchvision"),
     "torchaudio": ("torchaudio", "2.8.0", "torchaudio"),

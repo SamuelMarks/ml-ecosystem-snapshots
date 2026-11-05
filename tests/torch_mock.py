@@ -125,6 +125,9 @@ class MockTorchOp:
     """Mock PyTorch C-extension callable operator without Python signature."""
 
     _op_name: str
+    __name__: str = ""
+    __doc__: str = ""
+    __module__: str = "torch"
 
     def __init__(self, name: str, doc: str) -> None:
         """Initialize mock callable operator.
@@ -138,6 +141,14 @@ class MockTorchOp:
         mp.setattr(self, "__name__", name, raising=False)
         mp.setattr(self, "__doc__", doc, raising=False)
         mp.setattr(self, "__module__", "torch", raising=False)
+
+    def __dir__(self) -> list[str]:
+        """Return member names excluding `__signature__` so `inspect.getmembers` succeeds.
+
+        Returns:
+            List of accessible attribute names on the mock operator.
+        """
+        return ["__doc__", "__module__", "__name__", "_op_name"]
 
     def __call__(self, *args: InspectableTarget, **kwargs: InspectableTarget) -> None:
         """Execute mock operator.
