@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import typing
-import typing_extensions
 
 import pydantic
+import typing_extensions
 
 from ml_ecosystem_snapshots.models import JsonValue
 
-ParamSignatureTuple: typing_extensions.TypeAlias = tuple[
-    str, str, "str | None", "str | None"
-]
+ParamSignatureTuple: typing_extensions.TypeAlias = tuple[str, str, "str | None", "str | None"]
 
 
 class ComplianceMismatchEntry(pydantic.BaseModel):
@@ -20,21 +18,15 @@ class ComplianceMismatchEntry(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="forbid")
 
     api_path: str
-    expected: list[tuple[str, str, str | None, str | None]] = pydantic.Field(
-        default_factory=list
-    )
-    actual: list[tuple[str, str, str | None, str | None]] = pydantic.Field(
-        default_factory=list
-    )
+    expected: list[tuple[str, str, str | None, str | None]] = pydantic.Field(default_factory=list)
+    actual: list[tuple[str, str, str | None, str | None]] = pydantic.Field(default_factory=list)
     reason: str | None = None
 
     @typing.overload
     def __getitem__(self, key: typing.Literal["api_path"]) -> str: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["expected", "actual"]
-    ) -> list[ParamSignatureTuple]: ...
+    def __getitem__(self, key: typing.Literal["expected", "actual"]) -> list[ParamSignatureTuple]: ...
 
     @typing.overload
     def __getitem__(self, key: typing.Literal["reason"]) -> str | None: ...
@@ -86,18 +78,12 @@ class ComplianceScoreReport(pydantic.BaseModel):
     ) -> list[str]: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["mismatched"]
-    ) -> list[ComplianceMismatchEntry]: ...
+    def __getitem__(self, key: typing.Literal["mismatched"]) -> list[ComplianceMismatchEntry]: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: str
-    ) -> float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue: ...
+    def __getitem__(self, key: str) -> float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue: ...
 
-    def __getitem__(
-        self, key: str
-    ) -> float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue:
+    def __getitem__(self, key: str) -> float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue:
         """Retrieve a compliance report field by dictionary key.
 
         Args:
@@ -106,19 +92,16 @@ class ComplianceScoreReport(pydantic.BaseModel):
         Returns:
             Field value.
         """
-        if key == "score_percentage":
-            return self.score_percentage
-        if key == "total_endpoints":
-            return self.total_endpoints
-        if key == "matched":
-            return self.matched
-        if key == "missing":
-            return self.missing
-        if key == "mismatched":
-            return self.mismatched
-        if key == "opaque_signatures":
-            return self.opaque_signatures
-        return self.warnings if key == "warnings" else None
+        field_map: dict[str, float | int | list[str] | list[ComplianceMismatchEntry]] = {
+            "score_percentage": self.score_percentage,
+            "total_endpoints": self.total_endpoints,
+            "matched": self.matched,
+            "missing": self.missing,
+            "mismatched": self.mismatched,
+            "opaque_signatures": self.opaque_signatures,
+            "warnings": self.warnings,
+        }
+        return field_map.get(key)
 
     @typing.overload
     def get(
@@ -152,17 +135,13 @@ class ComplianceScoreReport(pydantic.BaseModel):
     def get(
         self,
         key: str,
-        default: (
-            float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue
-        ) = None,
+        default: (float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue) = None,
     ) -> float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue: ...
 
     def get(
         self,
         key: str,
-        default: (
-            float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue
-        ) = None,
+        default: (float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue) = None,
     ) -> float | int | list[str] | list[ComplianceMismatchEntry] | JsonValue:
         """Retrieve a compliance report field by key with an optional default.
 

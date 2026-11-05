@@ -61,9 +61,7 @@ def test_mcp_protocol_models_and_stdio_loop() -> None:
     )
     assert spec.name == "sample"
 
-    in_buf = io.StringIO(
-        chr(10).join(["", '{"jsonrpc": "2.0", "id": 1, "method": "ping"}', "not_json"])
-    )
+    in_buf = io.StringIO(chr(10).join(["", '{"jsonrpc": "2.0", "id": 1, "method": "ping"}', "not_json"]))
     out_buf = io.StringIO()
 
     def handler(msg: typing.Mapping[str, JsonValue]) -> dict[str, JsonValue]:

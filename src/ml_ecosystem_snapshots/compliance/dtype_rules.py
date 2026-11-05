@@ -39,9 +39,7 @@ DTYPE_BITWIDTHS: dict[str, int] = {
 }
 
 
-def validate_broadcast_shapes(
-    shape_a: typing.Sequence[int | str], shape_b: typing.Sequence[int | str]
-) -> tuple[bool, list[int] | None, str | None]:
+def validate_broadcast_shapes(shape_a: typing.Sequence[int | str], shape_b: typing.Sequence[int | str]) -> tuple[bool, list[int] | None, str | None]:
     """Validate NumPy/PyTorch broadcasting compatibility between two tensor shapes.
 
     Rules:
@@ -92,6 +90,86 @@ def validate_broadcast_shapes(
     return True, list(reversed(result_shape)), None
 
 
+def _dims_conflict(dim_lhs: int | str, dim_rhs: int | str) -> bool:
+    """Check whether two contracting dimensions are concrete and unequal.
+
+    Args:
+        dim_lhs: Left-hand contracting dimension value or symbol.
+        dim_rhs: Right-hand contracting dimension value or symbol.
+
+    Returns:
+        True if both dimensions are concrete integers that do not match.
+    """
+    return str(dim_lhs) not in ("?", "-1") and str(dim_rhs) not in ("?", "-1") and int(dim_lhs) != int(dim_rhs)
+
+
+def _parse_dim_or_dynamic(dim: int | str) -> int:
+    """Convert a dimension value to an integer or `-1` if symbolic.
+
+    Args:
+        dim: Dimension value or symbolic marker.
+
+    Returns:
+        Parsed non-negative integer dimension or `-1` for symbolic dimensions.
+    """
+    return int(dim) if str(dim).isdigit() else -1
+
+
+def _validate_low_rank_matmul(
+    shape_a: typing.Sequence[int | str],
+    shape_b: typing.Sequence[int | str],
+) -> tuple[bool, list[int] | None, str | None]:
+    """Validate matrix multiplication when at least one operand has rank below 2.
+
+    Args:
+        shape_a: Shape sequence of the LHS tensor operand.
+        shape_b: Shape sequence of the RHS tensor operand.
+
+    Returns:
+        A tuple of `(is_compatible, output_shape, error_message)`.
+    """
+    if len(shape_a) == 1 and len(shape_b) == 1:
+        return (
+            (
+                False,
+                None,
+                f"1D vector dot product mismatch: {shape_a[0]} != {shape_b[0]}.",
+            )
+            if _dims_conflict(shape_a[0], shape_b[0])
+            else (True, [], None)
+        )
+
+    if len(shape_a) == 1 and len(shape_b) >= 2:
+        k_lhs = shape_a[0]
+        k_rhs = shape_b[-2]
+        if _dims_conflict(k_lhs, k_rhs):
+            return (
+                False,
+                None,
+                f"Vector-matrix multiplication contracting dimension mismatch: inner dimension {k_lhs} != {k_rhs} (shapes: {list(shape_a)} vs {list(shape_b)}).",
+            )
+        batch_res = [_parse_dim_or_dynamic(d) for d in shape_b[:-2]]
+        return True, batch_res + [_parse_dim_or_dynamic(shape_b[-1])], None
+
+    if len(shape_a) >= 2 and len(shape_b) == 1:
+        k_lhs = shape_a[-1]
+        k_rhs = shape_b[0]
+        if _dims_conflict(k_lhs, k_rhs):
+            return (
+                False,
+                None,
+                f"Matrix-vector multiplication contracting dimension mismatch: inner dimension {k_lhs} != {k_rhs} (shapes: {list(shape_a)} vs {list(shape_b)}).",
+            )
+        batch_res = [_parse_dim_or_dynamic(d) for d in shape_a[:-2]]
+        return True, batch_res + [_parse_dim_or_dynamic(shape_a[-2])], None
+
+    return (
+        False,
+        None,
+        f"Matrix multiplication requires at least 2D operands (got ranks {len(shape_a)} and {len(shape_b)}).",
+    )
+
+
 def validate_matmul_shapes(
     shape_a: typing.Sequence[int | str],
     shape_b: typing.Sequence[int | str],
@@ -113,86 +191,38 @@ def validate_matmul_shapes(
     Returns:
         A tuple of (is_compatible, output_shape, error_message).
     """
-    if strict_2d:
-        if len(shape_a) != 2 or len(shape_b) != 2:
-            return (
-                False,
-                None,
-                f"Strict 2D matmul error: both operands must have rank 2, got ranks {len(shape_a)} and {len(shape_b)}.",
-            )
-
-    if len(shape_a) == 1 and len(shape_b) == 1:
-        if str(shape_a[0]) not in ("?", "-1") and str(shape_b[0]) not in ("?", "-1"):
-            if int(shape_a[0]) != int(shape_b[0]):
-                return (
-                    False,
-                    None,
-                    f"1D vector dot product mismatch: {shape_a[0]} != {shape_b[0]}.",
-                )
-        return True, [], None
-
-    if len(shape_a) == 1 and len(shape_b) >= 2:
-        k_lhs = shape_a[0]
-        k_rhs = shape_b[-2]
-        if str(k_lhs) not in ("?", "-1") and str(k_rhs) not in ("?", "-1"):
-            if int(k_lhs) != int(k_rhs):
-                return (
-                    False,
-                    None,
-                    f"Vector-matrix multiplication contracting dimension mismatch: inner dimension {k_lhs} != {k_rhs} (shapes: {list(shape_a)} vs {list(shape_b)}).",
-                )
-        batch_res = [int(d) if str(d).isdigit() else -1 for d in shape_b[:-2]]
-        out_n = int(shape_b[-1]) if str(shape_b[-1]).isdigit() else -1
-        return True, batch_res + [out_n], None
-
-    if len(shape_a) >= 2 and len(shape_b) == 1:
-        k_lhs = shape_a[-1]
-        k_rhs = shape_b[0]
-        if str(k_lhs) not in ("?", "-1") and str(k_rhs) not in ("?", "-1"):
-            if int(k_lhs) != int(k_rhs):
-                return (
-                    False,
-                    None,
-                    f"Matrix-vector multiplication contracting dimension mismatch: inner dimension {k_lhs} != {k_rhs} (shapes: {list(shape_a)} vs {list(shape_b)}).",
-                )
-        batch_res = [int(d) if str(d).isdigit() else -1 for d in shape_a[:-2]]
-        out_m = int(shape_a[-2]) if str(shape_a[-2]).isdigit() else -1
-        return True, batch_res + [out_m], None
-
-    if len(shape_a) < 2 or len(shape_b) < 2:
+    if strict_2d and (len(shape_a) != 2 or len(shape_b) != 2):
         return (
             False,
             None,
-            f"Matrix multiplication requires at least 2D operands (got ranks {len(shape_a)} and {len(shape_b)}).",
+            f"Strict 2D matmul error: both operands must have rank 2, got ranks {len(shape_a)} and {len(shape_b)}.",
         )
+
+    if len(shape_a) < 2 or len(shape_b) < 2:
+        return _validate_low_rank_matmul(shape_a, shape_b)
 
     k_lhs = shape_a[-1]
     k_rhs = shape_b[-2]
-    if str(k_lhs) not in ("?", "-1") and str(k_rhs) not in ("?", "-1"):
-        if int(k_lhs) != int(k_rhs):
-            return (
-                False,
-                None,
-                f"Matrix multiplication contracting dimension mismatch: inner dimension {k_lhs} != {k_rhs} (shapes: {list(shape_a)} vs {list(shape_b)}).",
-            )
+    if _dims_conflict(k_lhs, k_rhs):
+        return (
+            False,
+            None,
+            f"Matrix multiplication contracting dimension mismatch: inner dimension {k_lhs} != {k_rhs} (shapes: {list(shape_a)} vs {list(shape_b)}).",
+        )
 
+    core_shape = [
+        _parse_dim_or_dynamic(shape_a[-2]),
+        _parse_dim_or_dynamic(shape_b[-1]),
+    ]
     batch_a = shape_a[:-2]
     batch_b = shape_b[:-2]
     if batch_a or batch_b:
         compat, b_shape, err = validate_broadcast_shapes(batch_a, batch_b)
         if not compat:
             return False, None, f"Batch dimension broadcasting error in matmul: {err}"
-        out_shape = (b_shape or []) + [
-            int(shape_a[-2]) if str(shape_a[-2]).isdigit() else -1,
-            int(shape_b[-1]) if str(shape_b[-1]).isdigit() else -1,
-        ]
-    else:
-        out_shape = [
-            int(shape_a[-2]) if str(shape_a[-2]).isdigit() else -1,
-            int(shape_b[-1]) if str(shape_b[-1]).isdigit() else -1,
-        ]
+        return True, (b_shape or []) + core_shape, None
 
-    return True, out_shape, None
+    return True, core_shape, None
 
 
 def get_dtype_bitwidth(dtype_name: str) -> int:
@@ -270,10 +300,7 @@ def validate_dtype_for_op(op_name: str, dtype_name: str) -> tuple[bool, str | No
             "object",
         )
         if any(clean_dt.startswith(p) for p in non_float_prefixes):
-            return False, (
-                f"Data type '{dtype_name}' is not supported for transcendental "
-                f"operation '{op_name}'. Floating-point or complex dtype required."
-            )
+            return False, (f"Data type '{dtype_name}' is not supported for transcendental operation '{op_name}'. Floating-point or complex dtype required.")
 
     return True, None
 

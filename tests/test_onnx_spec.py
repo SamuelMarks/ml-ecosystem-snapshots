@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import operator
-
 import argparse
 import sys
 import types
-import typing
 
 import pytest
-
+from ml_ecosystem_snapshots.cli import cmd_check_onnx
 from ml_ecosystem_snapshots.frameworks.onnx_spec import (
     CANONICAL_ONNX_OPS,
     _get_onnx_defs,
@@ -18,7 +15,6 @@ from ml_ecosystem_snapshots.frameworks.onnx_spec import (
     collect_api,
 )
 from ml_ecosystem_snapshots.mcp_server import check_onnx_op
-from ml_ecosystem_snapshots.cli import cmd_check_onnx
 from ml_switcheroo_ir.schema.ghost import (
     GhostOperationRef,
     IRParameterRole,
@@ -53,27 +49,18 @@ def test_onnx_op_properties_and_roles() -> None:
     add_ref = op_map["Add"]
     assert add_ref.api_path == "onnx.Add"
     assert add_ref.operands is not None and len(add_ref.operands) == 2
-    assert (
-        operator.attrgetter("role")(add_ref.operands[0])
-        if "role" in dir(add_ref.operands[0])
-        else None
-    ) == IRParameterRole.OPERAND
-    assert (
-        operator.attrgetter("role")(add_ref.operands[1])
-        if "role" in dir(add_ref.operands[1])
-        else None
-    ) == IRParameterRole.OPERAND
+    from ml_ecosystem_snapshots.models import ExtendedGhostParam
+
+    assert isinstance(add_ref.operands[0], ExtendedGhostParam)
+    assert add_ref.operands[0].role == IRParameterRole.OPERAND
+    assert isinstance(add_ref.operands[1], ExtendedGhostParam)
+    assert add_ref.operands[1].role == IRParameterRole.OPERAND
     assert add_ref.returns is not None and len(add_ref.returns) == 1
     assert add_ref.returns[0].name == "C"
 
     assert "Conv" in op_map
     conv_ref = op_map["Conv"]
-    attr_params = [
-        p
-        for p in conv_ref.params
-        if (operator.attrgetter("role")(p) if "role" in dir(p) else None)
-        == IRParameterRole.ATTRIBUTE
-    ]
+    attr_params = [p for p in conv_ref.params if isinstance(p, ExtendedGhostParam) and p.role == IRParameterRole.ATTRIBUTE]
     assert len(attr_params) > 0
 
 
@@ -97,9 +84,7 @@ def test_check_onnx_op_validation() -> None:
     # 4. Invalid attribute
     res_bad_attr = check_onnx_op("Conv", attributes=["nonexistent_attr"])
     assert res_bad_attr["is_valid"] is False
-    assert any(
-        "Attribute 'nonexistent_attr' is not valid" in e for e in res_bad_attr["errors"]
-    )
+    assert any("Attribute 'nonexistent_attr' is not valid" in e for e in res_bad_attr["errors"])
 
     # 5. Non-existent operator
     res_nonexistent = check_onnx_op("NonExistentOp")
@@ -207,39 +192,7 @@ def test_get_onnx_defs_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    import builtins
-
-    from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
-
-    real_import = builtins.__import__
-
-    def mock_import(
-        name: str,
-        globals: typing.Mapping[str, InspectableTarget] | None = None,
-        locals: typing.Mapping[str, InspectableTarget] | None = None,
-        fromlist: typing.Sequence[str] = (),
-        level: int = 0,
-    ) -> types.ModuleType:
-        """Mock import raising ImportError on onnx.
-
-        Args:
-            name: Module name.
-            globals: Globals dict.
-            locals: Locals dict.
-            fromlist: Import fromlist.
-            level: Relative import level.
-
-        Returns:
-            Imported module.
-
-        Raises:
-            ImportError: When importing onnx.
-        """
-        if "onnx" in name:
-            raise ImportError("Simulated onnx import error")
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", mock_import)
+    monkeypatch.setitem(sys.modules, "onnx", None)
     assert _get_onnx_defs() is None
 
 
@@ -267,9 +220,7 @@ def test_onnx_schema_attributes_with_defaults(monkeypatch: pytest.MonkeyPatch) -
     class FakeAttribute:
         """Mock Schema attribute with type and default value."""
 
-        def __init__(
-            self, typ: str, required: bool, default_val: float | int | str | None
-        ) -> None:
+        def __init__(self, typ: str, required: bool, default_val: float | int | str | None) -> None:
             """Initialize fake attribute.
 
             Args:

@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import operator
-
 import types
+import typing
 from unittest import mock
 from unittest.mock import patch
 
 import pytest
 import pytest_mock
-
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
@@ -50,190 +48,135 @@ def _stub_heavy_griffe_cache(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setitem(static_parsers._GRIFFE_CACHE, pkg, None)
 
 
+def _make_named_stub_fn(fn_name: str) -> typing.Callable[[InspectableTarget], InspectableTarget]:
+    """Construct a synthetic callable function stub with `__name__` set to `fn_name`.
+
+    Args:
+        fn_name: Desired `__name__` for the function stub.
+
+    Returns:
+        Fresh Python function with `__name__ == fn_name`.
+    """
+
+    def _stub(x: InspectableTarget = None) -> InspectableTarget:
+        """Accept an optional synthetic argument and return it unchanged.
+
+        Args:
+            x: Optional synthetic input argument.
+
+        Returns:
+            The input argument `x`.
+        """
+        return x
+
+    pytest.MonkeyPatch().setattr(_stub, "__name__", fn_name, raising=False)
+    return _stub
+
+
 def create_module(name: str, attrs: dict[str, InspectableTarget]) -> types.ModuleType:
-    """Execute helper create module.
+    """Construct a synthetic `types.ModuleType` populated with `attrs`.
 
     Args:
         name: Synthetic module name.
         attrs: Dictionary of module attributes to populate.
 
-
     Returns:
-        Computed result.
+        Populated `types.ModuleType` instance.
     """
     mod = types.ModuleType(name)
     for k, v in attrs.items():
+        if v is _noop_callable or (isinstance(v, types.FunctionType) and "<lambda>" in repr(v)):
+            v = _make_named_stub_fn(k)
         pytest.MonkeyPatch().setattr(mod, k, v, raising=False)
     return mod
 
 
-def test_torch_collect(mocker: pytest_mock.MockerFixture) -> None:
-    """Verify torch collect behavior.
+def _noop_callable() -> None:
+    """Provide a no-op callable stub for synthetic framework module tables."""
+    pass
 
-    Args:
-        mocker: Pytest mocker fixture.
+
+def _build_fake_torch_submodules() -> tuple[types.ModuleType, types.ModuleType, types.ModuleType, type]:
+    """Construct synthetic `torch.nn`, `torch.optim`, `torch.utils.data`, and `ReLU` class stubs.
+
+    Returns:
+        Four-element tuple containing `(fake_nn, fake_optim, fake_data, relu_cls)`.
     """
-    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
-
-    class Module:
-        """Mock or helper class Module for unit testing."""
-
-        pass
-
-    class MSELoss(Module):
-        """Mock or helper class MSELoss for unit testing."""
-
-        pass
-
-    class _Loss(Module):
-        """Mock or helper class _Loss for unit testing."""
-
-        pass
-
-    class _PrivateLoss(Module):
-        """Mock or helper class _PrivateLoss for unit testing."""
-
-        pass
-
-    class Optimizer:
-        """Mock or helper class Optimizer for unit testing."""
-
-        pass
-
-    class Adam(Optimizer):
-        """Mock or helper class Adam for unit testing."""
-
-        pass
-
-    class _PrivateOptim(Optimizer):
-        """Mock or helper class _PrivateOptim for unit testing."""
-
-        pass
-
-    class OtherClass:
-        """Mock or helper class OtherClass for unit testing."""
-
-        pass
-
-    class ReLU(Module):
-        """Mock or helper class ReLU for unit testing."""
-
-        pass
-
-    class Linear(Module):
-        """Mock or helper class Linear for unit testing."""
-
-        pass
-
-    class _PrivateLayer(Module):
-        """Mock or helper class _PrivateLayer for unit testing."""
-
-        pass
-
-    class NotModuleLoss:
-        """Mock or helper class NotModuleLoss for unit testing."""
-
-        pass
-
-    class LRScheduler:
-        """Mock or helper class LRScheduler for unit testing."""
-
-        pass
-
-    class StepLR(LRScheduler):
-        """Mock or helper class StepLR for unit testing."""
-
-        pass
-
-    class _PrivateScheduler(LRScheduler):
-        """Mock or helper class _PrivateScheduler for unit testing."""
-
-        pass
-
-    def xavier_uniform_() -> None:
-        """Execute helper xavier uniform ."""
-        pass
-
-    def _private_init() -> None:
-        """Execute helper private init."""
-        pass
-
-    class DataLoader:
-        """Mock or helper class DataLoader for unit testing."""
-
-        pass
-
-    class _PrivateLoader:
-        """Mock or helper class _PrivateLoader for unit testing."""
-
-        pass
+    module_cls = type("Module", (), {})
+    relu_cls = type("ReLU", (module_cls,), {})
+    optimizer_cls = type("Optimizer", (), {})
+    scheduler_cls = type("LRScheduler", (), {})
 
     fake_nn_init = create_module(
         "torch.nn.init",
-        {"xavier_uniform_": xavier_uniform_, "_private_init": _private_init},
+        {"xavier_uniform_": _noop_callable, "_private_init": _noop_callable},
     )
-
     fake_nn = create_module(
         "torch.nn",
         {
-            "Module": Module,
-            "MSELoss": MSELoss,
-            "_Loss": _Loss,
-            "_PrivateLoss": _PrivateLoss,
-            "ReLU": ReLU,
-            "Linear": Linear,
-            "_PrivateLayer": _PrivateLayer,
-            "NotModuleLoss": NotModuleLoss,
+            "Module": module_cls,
+            "MSELoss": type("MSELoss", (module_cls,), {}),
+            "_Loss": type("_Loss", (module_cls,), {}),
+            "_PrivateLoss": type("_PrivateLoss", (module_cls,), {}),
+            "ReLU": relu_cls,
+            "Linear": type("Linear", (module_cls,), {}),
+            "_PrivateLayer": type("_PrivateLayer", (module_cls,), {}),
+            "NotModuleLoss": type("NotModuleLoss", (), {}),
             "init": fake_nn_init,
         },
     )
-
     fake_lr_scheduler = create_module(
         "torch.optim.lr_scheduler",
         {
-            "LRScheduler": LRScheduler,
-            "StepLR": StepLR,
-            "_PrivateScheduler": _PrivateScheduler,
+            "LRScheduler": scheduler_cls,
+            "StepLR": type("StepLR", (scheduler_cls,), {}),
+            "_PrivateScheduler": type("_PrivateScheduler", (scheduler_cls,), {}),
         },
     )
-
     fake_optim = create_module(
         "torch.optim",
         {
-            "Optimizer": Optimizer,
-            "Adam": Adam,
-            "_PrivateOptim": _PrivateOptim,
-            "OtherClass": OtherClass,
+            "Optimizer": optimizer_cls,
+            "Adam": type("Adam", (optimizer_cls,), {}),
+            "_PrivateOptim": type("_PrivateOptim", (optimizer_cls,), {}),
+            "OtherClass": type("OtherClass", (), {}),
             "lr_scheduler": fake_lr_scheduler,
         },
     )
     fake_data = create_module(
-        "torch.utils.data", {"DataLoader": DataLoader, "_PrivateLoader": _PrivateLoader}
+        "torch.utils.data",
+        {
+            "DataLoader": type("DataLoader", (), {}),
+            "_PrivateLoader": type("_PrivateLoader", (), {}),
+        },
     )
+    return fake_nn, fake_optim, fake_data, relu_cls
 
+
+def _patch_fake_torch_env(mocker: pytest_mock.MockerFixture) -> None:
+    """Patch `torch` framework submodules and `sys.modules` with synthetic stubs.
+
+    Args:
+        mocker: Pytest mocker fixture used to apply module patches.
+    """
+    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
+
+    fake_nn, fake_optim, fake_data, relu_cls = _build_fake_torch_submodules()
     mocker.patch.object(torch_fw, "nn", fake_nn)
     mocker.patch.object(torch_fw, "optim", fake_optim)
     mocker.patch.object(torch_fw, "data", fake_data)
-
-    class Accuracy:
-        """Mock metric class."""
-
-        pass
-
-    class _HiddenMetric:
-        """Mock hidden metric class."""
-
-        pass
 
     mocker.patch.dict(
         "sys.modules",
         {
             "torchmetrics": create_module(
-                "torchmetrics", {"Accuracy": Accuracy, "_HiddenMetric": _HiddenMetric}
+                "torchmetrics",
+                {
+                    "Accuracy": type("Accuracy", (), {}),
+                    "_HiddenMetric": type("_HiddenMetric", (), {}),
+                },
             ),
-            "torch.nn.modules.activation": create_module(
-                "torch.nn.modules.activation", {"ReLU": ReLU}
-            ),
+            "torch.nn.modules.activation": create_module("torch.nn.modules.activation", {"ReLU": relu_cls}),
             "torch": create_module(
                 "torch",
                 {
@@ -292,7 +235,7 @@ def test_torch_collect(mocker: pytest_mock.MockerFixture) -> None:
                                 {
                                     "activation": create_module(
                                         "torch.nn.modules.activation",
-                                        {"ReLU": ReLU},
+                                        {"ReLU": relu_cls},
                                     )
                                 },
                             ),
@@ -302,6 +245,17 @@ def test_torch_collect(mocker: pytest_mock.MockerFixture) -> None:
             ),
         },
     )
+
+
+def test_torch_collect(mocker: pytest_mock.MockerFixture) -> None:
+    """Validate public symbol collection across PyTorch semantic tiers.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
+
+    _patch_fake_torch_env(mocker)
 
     losses = torch_fw.collect_api(SemanticTier.LOSS)
     lnames = [x.name for x in losses]
@@ -346,41 +300,37 @@ def test_torch_collect(mocker: pytest_mock.MockerFixture) -> None:
     assert "DataLoader" in dnames
     assert "_PrivateLoader" not in dnames
 
-    # test include_nonpublic
+
+def test_torch_collect_nonpublic_and_array(mocker: pytest_mock.MockerFixture) -> None:
+    """Validate non-public and array API symbol collection across PyTorch semantic tiers.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
+
+    _patch_fake_torch_env(mocker)
+
     priv_mets = torch_fw.collect_api(SemanticTier.METRIC, include_nonpublic=True)
     assert len(priv_mets) == 2
 
     priv_inits = torch_fw.collect_api(SemanticTier.INITIALIZER, include_nonpublic=True)
-    pinames = [x.name for x in priv_inits]
-    assert "_private_init" in pinames
+    assert "_private_init" in [x.name for x in priv_inits]
 
     priv_losses = torch_fw.collect_api(SemanticTier.LOSS, include_nonpublic=True)
-    plnames = [x.name for x in priv_losses]
-    assert "_PrivateLoss" in plnames
+    assert "_PrivateLoss" in [x.name for x in priv_losses]
 
     priv_layers = torch_fw.collect_api(SemanticTier.LAYER, include_nonpublic=True)
-    playnames = [x.name for x in priv_layers]
-    assert "_PrivateLayer" in playnames
+    assert "_PrivateLayer" in [x.name for x in priv_layers]
 
     priv_optims = torch_fw.collect_api(SemanticTier.OPTIMIZER, include_nonpublic=True)
-    popnames = [x.name for x in priv_optims]
-    assert "_PrivateOptim" in popnames
+    assert "_PrivateOptim" in [x.name for x in priv_optims]
 
     priv_scheds = torch_fw.collect_api(SemanticTier.SCHEDULER, include_nonpublic=True)
-    psnames = [x.name for x in priv_scheds]
-    assert "_PrivateScheduler" in psnames
+    assert "_PrivateScheduler" in [x.name for x in priv_scheds]
 
     priv_loaders = torch_fw.collect_api(SemanticTier.DATALOADER, include_nonpublic=True)
-    pdnames = [x.name for x in priv_loaders]
-    assert "_PrivateLoader" in pdnames
-
-    mets = torch_fw.collect_api(SemanticTier.METRIC)
-    assert len(mets) == 1
-
-    loaders = torch_fw.collect_api(SemanticTier.DATALOADER)
-    dnames = [x.name for x in loaders]
-    assert "DataLoader" in dnames
-    assert "_PrivateLoader" not in dnames
+    assert "_PrivateLoader" in [x.name for x in priv_loaders]
 
     arrays = torch_fw.collect_api(SemanticTier.ARRAY_API)
     assert any("abs" in x.api_path for x in arrays)
@@ -393,14 +343,14 @@ def test_torch_collect(mocker: pytest_mock.MockerFixture) -> None:
 
     assert torch_fw.collect_api(SemanticTier.UTIL) == []
 
-    # Branch coverage for missing fft and nn.functional
     mocker.patch.dict(
         "sys.modules",
         {
             "torch": create_module("torch", {"abs": lambda: None}),
         },
     )
-    torch_fw.collect_api(SemanticTier.ARRAY_API)
+    minimal_arrays = torch_fw.collect_api(SemanticTier.ARRAY_API)
+    assert any("abs" in x.api_path for x in minimal_arrays)
 
 
 def test_torch_collect_in_place_mutation_already_tagged(
@@ -476,8 +426,6 @@ def test_torch_typeerror(mocker: pytest_mock.MockerFixture) -> None:
 
         pass
 
-    BadLoss.__name__ = "BadLoss"
-
     fake_nn = create_module(
         "torch.nn",
         {
@@ -497,91 +445,57 @@ def test_torch_typeerror(mocker: pytest_mock.MockerFixture) -> None:
     assert torch_fw.collect_api(SemanticTier.UTIL) == []
 
 
-def test_tensorflow_collect(mocker: pytest_mock.MockerFixture) -> None:
-    """Verify tensorflow collect behavior.
+class _FakeTFTensor:
+    """Synthetic TensorFlow `Tensor` stub for method discovery."""
 
-    Args:
-        mocker: Pytest mocker fixture.
+    def get_shape(self) -> None:
+        """Return a placeholder tensor shape."""
+        pass
+
+    def _priv(self) -> None:
+        """Represent a non-public tensor method."""
+        pass
+
+
+class _FakeTFVariable:
+    """Synthetic TensorFlow `Variable` stub for method discovery."""
+
+    def assign(self) -> None:
+        """Assign a new value to the synthetic variable."""
+        pass
+
+    def _priv(self) -> None:
+        """Represent a non-public variable method."""
+        pass
+
+
+def _build_fake_tf_module() -> tuple[types.ModuleType, types.ModuleType]:
+    """Construct synthetic `tf` and `tf.linalg` modules for TensorFlow collector validation.
+
+    Returns:
+        Two-element pair containing `(fake_tf, fake_linalg)`.
     """
-    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
-
-    def relu() -> None:
-        """Execute helper relu."""
-        pass
-
-    class DenseLayer:
-        """Mock or helper class DenseLayer for unit testing."""
-
-        pass
-
-    class _PrivateLayer:
-        """Mock or helper class _PrivateLayer for unit testing."""
-
-        pass
-
-    class MSELoss:
-        """Mock or helper class MSELoss for unit testing."""
-
-        pass
-
-    class Adam:
-        """Mock or helper class Adam for unit testing."""
-
-        pass
-
-    class CosineDecay:
-        """Mock or helper class CosineDecay for unit testing."""
-
-        pass
-
-    class GlorotUniform:
-        """Mock or helper class GlorotUniform for unit testing."""
-
-        pass
-
-    class Accuracy:
-        """Mock or helper class Accuracy for unit testing."""
-
-        pass
-
-    class Dataset:
-        """Mock or helper class Dataset for unit testing."""
-
-        pass
-
-    class _PrivateDataset:
-        """Mock or helper class _PrivateDataset for unit testing."""
-
-        pass
-
-    def abs() -> None:
-        """Execute helper abs."""
-        pass
-
-    def matmul() -> None:
-        """Execute helper matmul."""
-        pass
-
-    fake_math = create_module("tf.math", {"abs": abs})
-    fake_linalg = create_module("tf.linalg", {"matmul": matmul})
-
-    fake_nn = create_module("tf.nn", {"relu": relu})
-
+    fake_math = create_module("tf.math", {"abs": _noop_callable})
+    fake_linalg = create_module("tf.linalg", {"matmul": _noop_callable})
+    fake_nn = create_module("tf.nn", {"relu": _noop_callable})
     fake_layers = create_module(
-        "tf.keras.layers", {"DenseLayer": DenseLayer, "_PrivateLayer": _PrivateLayer}
+        "tf.keras.layers",
+        {
+            "DenseLayer": type("DenseLayer", (), {}),
+            "_PrivateLayer": type("_PrivateLayer", (), {}),
+        },
     )
-    fake_losses = create_module("tf.keras.losses", {"MSELoss": MSELoss})
-
-    fake_schedules = create_module("schedules", {"CosineDecay": CosineDecay})
-
+    fake_losses = create_module("tf.keras.losses", {"MSELoss": type("MSELoss", (), {})})
+    fake_schedules = create_module("schedules", {"CosineDecay": type("CosineDecay", (), {})})
     fake_optims = create_module(
-        "tf.keras.optimizers", {"Adam": Adam, "schedules": fake_schedules}
+        "tf.keras.optimizers",
+        {"Adam": type("Adam", (), {}), "schedules": fake_schedules},
     )
     fake_inits = create_module(
-        "tf.keras.initializers", {"GlorotUniform": GlorotUniform}
+        "tf.keras.initializers",
+        {"GlorotUniform": type("GlorotUniform", (), {})},
     )
-    fake_metrics = create_module("tf.keras.metrics", {"Accuracy": Accuracy})
-
+    fake_metrics = create_module("tf.keras.metrics", {"Accuracy": type("Accuracy", (), {})})
     fake_keras = create_module(
         "tf.keras",
         {
@@ -593,48 +507,16 @@ def test_tensorflow_collect(mocker: pytest_mock.MockerFixture) -> None:
         },
     )
     fake_data = create_module(
-        "tf.data", {"Dataset": Dataset, "_PrivateDataset": _PrivateDataset}
+        "tf.data",
+        {
+            "Dataset": type("Dataset", (), {}),
+            "_PrivateDataset": type("_PrivateDataset", (), {}),
+        },
     )
-
-    def concat() -> None:
-        """Execute helper concat."""
-        pass
-
-    def Add() -> None:
-        """Execute helper Add."""
-        pass
-
-    def custom_tensor_op() -> None:
-        """Execute helper custom tensor op."""
-        pass
-
-    class FakeTensor:
-        """Fake Tensor class."""
-
-        def get_shape(self) -> None:
-            """Method docstring."""
-            pass
-
-        def _priv(self) -> None:
-            """Method docstring."""
-            pass
-
-    class FakeVariable:
-        """Fake Variable class."""
-
-        def assign(self) -> None:
-            """Method docstring."""
-            pass
-
-        def _priv(self) -> None:
-            """Method docstring."""
-            pass
-
     fake_raw_ops = create_module(
         "tf.raw_ops",
-        {"Add": Add, "_priv": lambda: None, "bad": 123},
+        {"Add": _noop_callable, "_priv": lambda: None, "bad": 123},
     )
-
     fake_tf = create_module(
         "tf",
         {
@@ -644,38 +526,35 @@ def test_tensorflow_collect(mocker: pytest_mock.MockerFixture) -> None:
             "math": fake_math,
             "linalg": fake_linalg,
             "raw_ops": fake_raw_ops,
-            "concat": concat,
-            "custom_tensor_op": custom_tensor_op,
+            "concat": _noop_callable,
+            "custom_tensor_op": _noop_callable,
             "_private_op": lambda: None,
             "stack": 123,
-            "Tensor": FakeTensor,
-            "Variable": FakeVariable,
+            "Tensor": _FakeTFTensor,
+            "Variable": _FakeTFVariable,
         },
     )
+    return fake_tf, fake_linalg
 
+
+def test_tensorflow_collect(mocker: pytest_mock.MockerFixture) -> None:
+    """Validate TensorFlow array API symbol collection and submodule fallback branches.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
+
+    fake_tf, fake_linalg = _build_fake_tf_module()
     mocker.patch.object(tf_fw, "tf", fake_tf)
 
-    assert any(x.name == "abs" for x in tf_fw.collect_api(SemanticTier.ARRAY_API))
-    assert any(x.name == "matmul" for x in tf_fw.collect_api(SemanticTier.ARRAY_API))
-    assert any(x.name == "concat" for x in tf_fw.collect_api(SemanticTier.ARRAY_API))
-    assert any(x.name == "Add" for x in tf_fw.collect_api(SemanticTier.ARRAY_API))
-    assert any(
-        x.name == "custom_tensor_op" for x in tf_fw.collect_api(SemanticTier.ARRAY_API)
-    )
-    assert any(
-        x.name == "get_shape" and x.kind == "method"
-        for x in tf_fw.collect_api(SemanticTier.ARRAY_API)
-    )
-    assert any(
-        x.name == "assign" and x.kind == "method"
-        for x in tf_fw.collect_api(SemanticTier.ARRAY_API)
-    )
-    assert any(
-        x.name == "_priv"
-        for x in tf_fw.collect_api(SemanticTier.ARRAY_API, include_nonpublic=True)
-    )
+    array_refs = tf_fw.collect_api(SemanticTier.ARRAY_API)
+    array_names = {x.name for x in array_refs}
+    assert {"abs", "matmul", "concat", "Add", "custom_tensor_op"} <= array_names
+    assert any(x.name == "get_shape" and x.kind == "method" for x in array_refs)
+    assert any(x.name == "assign" and x.kind == "method" for x in array_refs)
+    assert any(x.name == "_priv" for x in tf_fw.collect_api(SemanticTier.ARRAY_API, include_nonpublic=True))
 
-    # Test without math and without linalg for branch coverage
     fake_tf_no_math = create_module("tf", {"linalg": fake_linalg})
     mocker.patch.object(tf_fw, "tf", fake_tf_no_math)
     assert len(tf_fw.collect_api(SemanticTier.ARRAY_API)) > 0
@@ -684,33 +563,33 @@ def test_tensorflow_collect(mocker: pytest_mock.MockerFixture) -> None:
     mocker.patch.object(tf_fw, "tf", fake_tf_no_linalg)
     assert tf_fw.collect_api(SemanticTier.ARRAY_API) == []
 
+
+def test_tensorflow_collect_keras_and_data_tiers(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
+    """Validate TensorFlow Keras and Dataset semantic tier symbol collection.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
+
+    fake_tf, _ = _build_fake_tf_module()
     mocker.patch.object(tf_fw, "tf", fake_tf)
 
-    assert any(x.name == "MSELoss" for x in tf_fw.collect_api(SemanticTier.LOSS))
-    assert any(x.name == "Adam" for x in tf_fw.collect_api(SemanticTier.OPTIMIZER))
-    assert any(x.name == "relu" for x in tf_fw.collect_api(SemanticTier.ACTIVATION))
-    assert any(x.name == "DenseLayer" for x in tf_fw.collect_api(SemanticTier.LAYER))
-    assert any(
-        x.name == "CosineDecay" for x in tf_fw.collect_api(SemanticTier.SCHEDULER)
-    )
-    assert any(
-        x.name == "GlorotUniform" for x in tf_fw.collect_api(SemanticTier.INITIALIZER)
-    )
-    assert any(x.name == "Accuracy" for x in tf_fw.collect_api(SemanticTier.METRIC))
-    assert any(x.name == "Dataset" for x in tf_fw.collect_api(SemanticTier.DATALOADER))
-    assert not any(
-        x.name == "_PrivateLayer" for x in tf_fw.collect_api(SemanticTier.LAYER)
-    )
+    assert "MSELoss" in [x.name for x in tf_fw.collect_api(SemanticTier.LOSS)]
+    assert "Adam" in [x.name for x in tf_fw.collect_api(SemanticTier.OPTIMIZER)]
+    assert "relu" in [x.name for x in tf_fw.collect_api(SemanticTier.ACTIVATION)]
+    layer_names = [x.name for x in tf_fw.collect_api(SemanticTier.LAYER)]
+    assert "DenseLayer" in layer_names
+    assert "_PrivateLayer" not in layer_names
+    assert "CosineDecay" in [x.name for x in tf_fw.collect_api(SemanticTier.SCHEDULER)]
+    assert "GlorotUniform" in [x.name for x in tf_fw.collect_api(SemanticTier.INITIALIZER)]
+    assert "Accuracy" in [x.name for x in tf_fw.collect_api(SemanticTier.METRIC)]
+    assert "Dataset" in [x.name for x in tf_fw.collect_api(SemanticTier.DATALOADER)]
 
-    # test include_nonpublic
-    assert any(
-        x.name == "_PrivateLayer"
-        for x in tf_fw.collect_api(SemanticTier.LAYER, include_nonpublic=True)
-    )
-    assert any(
-        x.name == "_PrivateDataset"
-        for x in tf_fw.collect_api(SemanticTier.DATALOADER, include_nonpublic=True)
-    )
+    assert "_PrivateLayer" in [x.name for x in tf_fw.collect_api(SemanticTier.LAYER, include_nonpublic=True)]
+    assert "_PrivateDataset" in [x.name for x in tf_fw.collect_api(SemanticTier.DATALOADER, include_nonpublic=True)]
     assert tf_fw.collect_api(SemanticTier.MODEL) == []
 
 
@@ -721,6 +600,7 @@ def test_tf_raw_ops_none_env_tags(mocker: pytest_mock.MockerFixture) -> None:
         mocker: Pytest mocker fixture.
     """
     import types
+
     from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
     from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
@@ -753,6 +633,7 @@ def test_tf_raw_ops_inspect_exception(mocker: pytest_mock.MockerFixture) -> None
         mocker: Pytest mocker fixture.
     """
     import types
+
     from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
@@ -777,12 +658,13 @@ def test_tf_collect_outer_exception(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
+    import types
+
     from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
-    fake_tf = mocker.MagicMock()
-    type(fake_tf).raw_ops = mocker.PropertyMock(
-        side_effect=RuntimeError("Outer failure")
+    fake_tf = types.SimpleNamespace(
+        keras=types.SimpleNamespace(layers=types.SimpleNamespace()),
     )
     mocker.patch.object(tf_fw, "tf", fake_tf)
     res = tf_fw.collect_api(SemanticTier.UTIL)
@@ -809,154 +691,142 @@ def test_tf_collect_outer_exception(mocker: pytest_mock.MockerFixture) -> None:
     assert tf_fw.collect_api(SemanticTier.DATALOADER) == []
 
     mocker.patch.object(tf_fw, "tf", None)
+    mocker.patch.object(tf_fw, "_get_tf", return_value=None)
     assert tf_fw.collect_api(SemanticTier.LOSS) == []
 
 
+class _KerasGriffeMemberStub:
+    """Synthetic Griffe member entry for Keras static scanner unit checks."""
+
+    def __init__(self, is_class: bool = False, is_function: bool = False) -> None:
+        """Initialize the synthetic Griffe member flags.
+
+        Args:
+            is_class: Whether the member represents a class definition.
+            is_function: Whether the member represents a function definition.
+        """
+        self.is_class = is_class
+        self.is_function = is_function
+
+
+class _KerasGriffeModuleStub:
+    """Synthetic Griffe module container holding a dictionary of member stubs."""
+
+    def __init__(self, members: dict[str, _KerasGriffeMemberStub]) -> None:
+        """Initialize the synthetic Griffe module mapping.
+
+        Args:
+            members: Mapping of member names to `_KerasGriffeMemberStub` instances.
+        """
+        self.members = members
+
+
+def _mock_keras_griffe_load(path: str) -> _KerasGriffeModuleStub:
+    """Resolve a synthetic `_KerasGriffeModuleStub` for known Keras submodule paths.
+
+    Args:
+        path: Dotted Keras submodule path requested by Griffe.
+
+    Returns:
+        Populated `_KerasGriffeModuleStub` for the requested submodule.
+
+    Raises:
+        RuntimeError: When `path` is not in the synthetic Keras module table.
+    """
+    module_table: dict[str, dict[str, _KerasGriffeMemberStub]] = {
+        "keras.losses": {"MSELoss": _KerasGriffeMemberStub(is_class=True)},
+        "keras.optimizers": {"Adam": _KerasGriffeMemberStub(is_class=True)},
+        "keras.optimizers.schedules": {"CosineDecay": _KerasGriffeMemberStub(is_class=True)},
+        "keras.activations": {"relu": _KerasGriffeMemberStub(is_function=True)},
+        "keras.layers": {"DenseLayer": _KerasGriffeMemberStub(is_class=True)},
+        "keras.initializers": {"GlorotUniform": _KerasGriffeMemberStub(is_class=True)},
+        "keras.metrics": {"Accuracy": _KerasGriffeMemberStub(is_class=True)},
+        "keras.ops": {"add": _KerasGriffeMemberStub(is_function=True)},
+    }
+    if path in module_table:
+        return _KerasGriffeModuleStub(module_table[path])
+    raise RuntimeError(f"Unknown path: {path}")
+
+
 def test_keras_collect(mocker: pytest_mock.MockerFixture) -> None:
-    """Verify keras collect behavior.
+    """Validate Keras symbol collection across all supported semantic tiers.
 
     Args:
         mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import keras as keras_fw
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
 
-    class MockMember:
-        """Mock class for griffe member."""
+    mocker.patch.object(keras_fw.griffe, "load", _mock_keras_griffe_load)
 
-        def __init__(self, is_class: bool = False, is_function: bool = False) -> None:
-            """Initialize MockMember.
-
-            Args:
-                is_class: Is a class.
-                is_function: Is a function.
-            """
-            self.is_class = is_class
-            self.is_function = is_function
-
-    class MockModule:
-        """Mock class for griffe module."""
-
-        def __init__(self, members: dict[str, MockMember]) -> None:
-            """Initialize MockModule.
-
-            Args:
-                members: Dictionary of members.
-            """
-            self.members = members
-
-    def mock_load(path: str) -> MockModule:
-        """Mock griffe.load function.
-
-        Args:
-            path: Module path.
-
-        Returns:
-            MockModule: Mocked module.
-
-        Raises:
-            Exception: If path is unknown.
-        """
-        if path == "keras.losses":
-            return MockModule({"MSELoss": MockMember(is_class=True)})
-        if path == "keras.optimizers":
-            return MockModule({"Adam": MockMember(is_class=True)})
-        if path == "keras.optimizers.schedules":
-            return MockModule({"CosineDecay": MockMember(is_class=True)})
-        if path == "keras.activations":
-            return MockModule({"relu": MockMember(is_function=True)})
-        if path == "keras.layers":
-            return MockModule({"DenseLayer": MockMember(is_class=True)})
-        if path == "keras.initializers":
-            return MockModule({"GlorotUniform": MockMember(is_class=True)})
-        if path == "keras.metrics":
-            return MockModule({"Accuracy": MockMember(is_class=True)})
-        if path == "keras.ops":
-            return MockModule({"add": MockMember(is_function=True)})
-        raise Exception("Unknown path")
-
-    mocker.patch.object(keras_fw.griffe, "load", mock_load)
-
-    losses = keras_fw.collect_api(SemanticTier.LOSS)
-    assert any(x.name == "MSELoss" for x in losses)
-
-    optims = keras_fw.collect_api(SemanticTier.OPTIMIZER)
-    assert any(x.name == "Adam" for x in optims)
-
-    acts = keras_fw.collect_api(SemanticTier.ACTIVATION)
-    assert any(x.name == "relu" for x in acts)
-
-    layers = keras_fw.collect_api(SemanticTier.LAYER)
-    assert any(x.name == "DenseLayer" for x in layers)
-
-    scheds = keras_fw.collect_api(SemanticTier.SCHEDULER)
-    assert any(x.name == "CosineDecay" for x in scheds)
-
-    inits = keras_fw.collect_api(SemanticTier.INITIALIZER)
-    assert any(x.name == "GlorotUniform" for x in inits)
-
-    mets = keras_fw.collect_api(SemanticTier.METRIC)
-    assert any(x.name == "Accuracy" for x in mets)
+    assert "MSELoss" in [x.name for x in keras_fw.collect_api(SemanticTier.LOSS)]
+    assert "Adam" in [x.name for x in keras_fw.collect_api(SemanticTier.OPTIMIZER)]
+    assert "relu" in [x.name for x in keras_fw.collect_api(SemanticTier.ACTIVATION)]
+    assert "DenseLayer" in [x.name for x in keras_fw.collect_api(SemanticTier.LAYER)]
+    assert "CosineDecay" in [x.name for x in keras_fw.collect_api(SemanticTier.SCHEDULER)]
+    assert "GlorotUniform" in [x.name for x in keras_fw.collect_api(SemanticTier.INITIALIZER)]
+    assert "Accuracy" in [x.name for x in keras_fw.collect_api(SemanticTier.METRIC)]
 
     ops = keras_fw.collect_api(SemanticTier.ARRAY_API)
-    assert any(x.name == "add" for x in ops)
-    add_ref = next(x for x in ops if x.name == "add")
+    add_refs = [x for x in ops if x.name == "add"]
+    assert len(add_refs) == 1
+    add_ref = add_refs[0]
     assert add_ref.environment_tags is not None
     assert "backend:jax" in add_ref.environment_tags
     assert "backend:torch" in add_ref.environment_tags
     assert "backend:tensorflow" in add_ref.environment_tags
-
     assert keras_fw.collect_api(SemanticTier.UTIL) == []
 
-    # Test blocklist logic: module doesn't exist, block_list skipping, etc.
+
+def test_keras_collect_blocklist_and_error_branches(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
+    """Validate Keras blocklist filtering, missing modules, and exception fallbacks.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    from ml_ecosystem_snapshots.frameworks import keras as keras_fw
+
+    mocker.patch.object(keras_fw.griffe, "load", _mock_keras_griffe_load)
     assert keras_fw._scan_griffe_module("missing.module", "foo") == []
 
-    def mock_load_metrics(path: str) -> MockModule:
-        """Mock load for metrics.
+    def mock_load_metrics(path: str) -> _KerasGriffeModuleStub:
+        """Load synthetic `keras.metrics` containing base, private, and non-callable entries.
 
         Args:
-            path: Module path.
+            path: Dotted module path to load.
 
         Returns:
-            MockModule: Mocked module.
+            Synthetic `_KerasGriffeModuleStub` for `keras.metrics`.
 
         Raises:
-            Exception: If path is unknown.
+            RuntimeError: If `path` is not `keras.metrics`.
         """
         if path == "keras.metrics":
-            return MockModule(
+            return _KerasGriffeModuleStub(
                 {
-                    "Metric": MockMember(is_class=True),
-                    "_priv": MockMember(is_class=True),
-                    "neither": MockMember(is_class=False, is_function=False),
+                    "Metric": _KerasGriffeMemberStub(is_class=True),
+                    "_priv": _KerasGriffeMemberStub(is_class=True),
+                    "neither": _KerasGriffeMemberStub(is_class=False, is_function=False),
                 }
             )
-        raise Exception("Unknown path")
+        raise RuntimeError("Unknown path")
 
     mocker.patch.object(keras_fw.griffe, "load", mock_load_metrics)
     mets2 = keras_fw.collect_api(SemanticTier.METRIC)
-    assert not any(x.name == "Metric" for x in mets2)
+    assert "Metric" not in [x.name for x in mets2]
 
-    def mock_load_acts(path: str) -> MockModule:
-        """Mock load for activations.
-
-        Args:
-            path: Module path.
-
-        Returns:
-            MockModule: Mocked module.
-        """
-        return MockModule({"relu": MockMember(is_function=True)})
-
-    mocker.patch.object(keras_fw.griffe, "load", mock_load_acts)
+    mocker.patch.object(
+        keras_fw.griffe,
+        "load",
+        lambda _path: _KerasGriffeModuleStub({"relu": _KerasGriffeMemberStub(is_function=True)}),
+    )
     acts2 = keras_fw.collect_api(SemanticTier.ACTIVATION)
-    assert any(x.name == "relu" for x in acts2)
+    assert "relu" in [x.name for x in acts2]
 
-    # Exception branch coverage
     mocker.patch.object(keras_fw.griffe, "load", side_effect=Exception)
     assert keras_fw.collect_api(SemanticTier.LAYER) == []
 
-    # Missing griffe branch coverage
     mocker.patch.object(keras_fw, "griffe", None)
     assert keras_fw._scan_griffe_module("keras.losses", "keras.losses") == []
     assert keras_fw.collect_api(SemanticTier.LOSS) == []
@@ -1016,25 +886,17 @@ def test_mlx_collect(mocker: pytest_mock.MockerFixture) -> None:
 
     fake_losses = create_module("losses", {"mse_loss": mse_loss})
 
-    fake_nn = create_module(
-        "mlx.nn", {"Dense": Dense, "relu": relu, "losses": fake_losses}
-    )
+    fake_nn = create_module("mlx.nn", {"Dense": Dense, "relu": relu, "losses": fake_losses})
     fake_optims = create_module("mlx.optimizers", {"Adam": Adam})
 
-    fake_fft = create_module(
-        "mlx.core.fft", {"fft": lambda: None, "_priv": lambda: None}
-    )
-    fake_linalg = create_module(
-        "mlx.core.linalg", {"norm": lambda: None, "_priv": lambda: None}
-    )
+    fake_fft = create_module("mlx.core.fft", {"fft": lambda: None, "_priv": lambda: None})
+    fake_linalg = create_module("mlx.core.linalg", {"norm": lambda: None, "_priv": lambda: None})
     fake_core = create_module(
         "mlx.core",
         {"abs": lambda: None, "fft": fake_fft, "linalg": fake_linalg},
     )
 
-    fake_mlx = create_module(
-        "mlx", {"nn": fake_nn, "optimizers": fake_optims, "core": fake_core}
-    )
+    fake_mlx = create_module("mlx", {"nn": fake_nn, "optimizers": fake_optims, "core": fake_core})
 
     mocker.patch.object(mlx_fw, "mlx", fake_mlx)
 
@@ -1057,9 +919,7 @@ def test_mlx_collect(mocker: pytest_mock.MockerFixture) -> None:
     assert len(mlx_fw.collect_api(SemanticTier.ARRAY_API)) > 0
 
     # Test mlx.nn.losses coverage gaps (not a function/class, not containing 'loss')
-    fake_losses_gap = create_module(
-        "losses", {"not_a_callable": 123, "other_func": lambda x: x}
-    )
+    fake_losses_gap = create_module("losses", {"not_a_callable": 123, "other_func": lambda x: x})
     mocker.patch.object(
         mlx_fw,
         "mlx",
@@ -1088,8 +948,8 @@ def test_mlx_collect(mocker: pytest_mock.MockerFixture) -> None:
     assert mlx_fw.collect_api(SemanticTier.LAYER) == []
 
 
-def test_jax_collect(mocker: pytest_mock.MockerFixture) -> None:
-    """Verify jax collect behavior.
+def _patch_fake_jax_env(mocker: pytest_mock.MockerFixture) -> None:
+    """Configure synthetic `jax` and `OptaxScanner` mocks for JAX collector tests.
 
     Args:
         mocker: Pytest mocker fixture.
@@ -1097,67 +957,62 @@ def test_jax_collect(mocker: pytest_mock.MockerFixture) -> None:
     from ml_ecosystem_snapshots.frameworks import jax as jax_fw
     from ml_ecosystem_snapshots.frameworks.optax import OptaxScanner
 
-    def relu() -> None:
-        """Execute helper relu."""
-        pass
-
-    def _priv() -> None:
-        """Execute helper priv."""
-        pass
-
-    def glorot() -> None:
-        """Execute helper glorot."""
-        pass
-
     mocker.patch.object(jax_fw, "jax", True)
     fake_jax_nn = create_module(
-        "jax.nn", {"relu": relu, "_priv": _priv, "not_a_func": 123}
+        "jax.nn",
+        {"relu": _noop_callable, "_priv": _noop_callable, "not_a_func": 123},
     )
     fake_jax_init = create_module(
-        "jax.nn.initializers", {"glorot": glorot, "_priv": _priv, "not_a_func": 123}
+        "jax.nn.initializers",
+        {"glorot": _noop_callable, "_priv": _noop_callable, "not_a_func": 123},
     )
+    fake_lax = create_module("jax.lax", {"add": _noop_callable, "_priv": _noop_callable})
+    fake_random = create_module("jax.random", {"PRNGKey": _noop_callable, "_priv": _noop_callable})
+    fake_pallas = create_module("jax.experimental.pallas", {})
+    fake_experimental = create_module("jax.experimental", {"pallas": fake_pallas})
 
-    fake_lax = create_module("jax.lax", {"add": lambda: None, "_priv": lambda: None})
-    fake_random = create_module(
-        "jax.random", {"PRNGKey": lambda: None, "_priv": lambda: None}
+    def static_func(axis: int, data: InspectableTarget) -> None:
+        """Accept static axis and dynamic data payload for JAX static arg inspection.
+
+        Args:
+            axis: Reduction axis index.
+            data: Array operand payload.
+        """
+        pass
+
+    pytest.MonkeyPatch().setattr(static_func, "_static_argnums", (0,), raising=False)
+    pytest.MonkeyPatch().setattr(static_func, "_static_argnames", ("axis",), raising=False)
+
+    fake_jnp = create_module(
+        "jax.numpy",
+        {
+            "abs": _noop_callable,
+            "transpose": _noop_callable,
+            "static_func": static_func,
+            "_hidden": _noop_callable,
+            "not_callable": 123,
+        },
     )
     fake_jax = create_module(
         "jax",
         {
             "lax": fake_lax,
             "random": fake_random,
-            "jit": lambda fn: fn,
-            "grad": lambda fn: fn,
-            "vmap": lambda fn: fn,
-            "pmap": lambda fn: fn,
-            "checkpoint": lambda fn: fn,
+            "jit": _noop_callable,
+            "grad": _noop_callable,
+            "vmap": _noop_callable,
+            "pmap": _noop_callable,
+            "checkpoint": _noop_callable,
             "Array": type(
                 "Array",
                 (),
                 {
-                    "reshape": lambda self: None,
-                    "_priv_method": lambda self: None,
+                    "reshape": _make_named_stub_fn("reshape"),
+                    "_priv_method": _make_named_stub_fn("_priv_method"),
                 },
             ),
         },
     )
-
-    def static_func(axis: int, data: InspectableTarget) -> None:
-        """Static arg test function.
-
-        Args:
-            axis: Input axis parameter.
-            data: Input data payload.
-        """
-        pass
-
-    pytest.MonkeyPatch().setattr(static_func, "_static_argnums", (0,), raising=False)
-    pytest.MonkeyPatch().setattr(
-        static_func, "_static_argnames", ("axis",), raising=False
-    )
-
-    fake_pallas = create_module("jax.experimental.pallas", {})
-    fake_experimental = create_module("jax.experimental", {"pallas": fake_pallas})
     mocker.patch.dict(
         "sys.modules",
         {
@@ -1168,16 +1023,7 @@ def test_jax_collect(mocker: pytest_mock.MockerFixture) -> None:
             "jax.random": fake_random,
             "jax.experimental": fake_experimental,
             "jax.experimental.pallas": fake_pallas,
-            "jax.numpy": create_module(
-                "jax.numpy",
-                {
-                    "abs": lambda: None,
-                    "transpose": lambda: None,
-                    "static_func": static_func,
-                    "_hidden": lambda: None,
-                    "not_callable": 123,
-                },
-            ),
+            "jax.numpy": fake_jnp,
             "numpy": create_module("numpy", {"float32": 1}),
         },
     )
@@ -1197,6 +1043,19 @@ def test_jax_collect(mocker: pytest_mock.MockerFixture) -> None:
         "scan_schedulers",
         return_value=[GhostRef(name="cosine", api_path="o.c", kind="function")],
     )
+
+
+def test_jax_collect(mocker: pytest_mock.MockerFixture) -> None:
+    """Validate JAX symbol collection across neural, array, and delegated tiers.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    import sys
+
+    from ml_ecosystem_snapshots.frameworks import jax as jax_fw
+
+    _patch_fake_jax_env(mocker)
 
     assert len(jax_fw.collect_api(SemanticTier.LOSS)) == 1
     assert len(jax_fw.collect_api(SemanticTier.OPTIMIZER)) == 1
@@ -1219,13 +1078,10 @@ def test_jax_collect(mocker: pytest_mock.MockerFixture) -> None:
     priv_arrays = jax_fw.collect_api(SemanticTier.ARRAY_API, include_nonpublic=True)
     assert any(x.name == "_priv_method" for x in priv_arrays)
 
-    import sys
-
     del sys.modules["jax.numpy"].transpose
     arrays2 = jax_fw.collect_api(SemanticTier.ARRAY_API)
     assert not any("transpose" in x.api_path for x in arrays2)
 
-    # Test line 139 when transpose is on jnp but not yet in found
     fake_jnp_extra = create_module("jax.numpy", {"transpose": lambda a: a})
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.jax.get_all_members",
@@ -1376,9 +1232,7 @@ def test_flax_nnx_collect(mocker: pytest_mock.MockerFixture) -> None:
     assert flax_fw.collect_api(SemanticTier.LAYER) == []
 
     # TypeError branch coverage
-    pytest.MonkeyPatch().setattr(
-        fake_nnx, "Module", 1, raising=False
-    )  # Force TypeError
+    pytest.MonkeyPatch().setattr(fake_nnx, "Module", 1, raising=False)  # Force TypeError
     assert flax_fw.collect_api(SemanticTier.LAYER) == []
 
     mocker.patch.object(flax_fw, "nnx", None)
@@ -1386,83 +1240,38 @@ def test_flax_nnx_collect(mocker: pytest_mock.MockerFixture) -> None:
 
 
 def test_optax_collect(mocker: pytest_mock.MockerFixture) -> None:
-    """Verify optax shim collect behavior.
+    """Validate Optax scanner collection across optimizers, losses, and schedules.
 
     Args:
         mocker: Pytest mocker fixture.
     """
     import ml_ecosystem_snapshots.frameworks.optax as o_shim
 
-    def adam() -> None:
-        """Execute helper adam."""
-        pass
-
-    def sgd() -> None:
-        """Execute helper sgd."""
-        pass
-
-    def my_optimizer() -> None:
-        """Execute helper my optimizer."""
-        pass
-
-    def _priv() -> None:
-        """Execute helper priv."""
-        pass
-
-    def mse_loss() -> None:
-        """Execute helper mse loss."""
-        pass
-
-    def other_error() -> None:
-        """Execute helper other error."""
-        pass
-
-    def kl_entropy() -> None:
-        """Execute helper kl entropy."""
-        pass
-
-    def _priv_loss() -> None:
-        """Execute helper priv loss."""
-        pass
-
-    def some_other_func() -> None:
-        """Execute helper some other func."""
-        pass
-
-    def cosine() -> None:
-        """Execute helper cosine."""
-        pass
-
     fake_losses = create_module(
         "losses",
         {
-            "mse_loss": mse_loss,
-            "other_error": other_error,
-            "kl_entropy": kl_entropy,
-            "_priv_loss": _priv_loss,
+            "mse_loss": _noop_callable,
+            "other_error": _noop_callable,
+            "kl_entropy": _noop_callable,
+            "_priv_loss": _noop_callable,
             "not_a_func": 123,
-            "some_other_func": some_other_func,
+            "some_other_func": _noop_callable,
         },
     )
-
     fake_scheds = create_module(
-        "schedules", {"cosine": cosine, "_priv": _priv, "not_a_func": 123}
+        "schedules",
+        {"cosine": _noop_callable, "_priv": _noop_callable, "not_a_func": 123},
     )
-
-    def not_a_thing() -> None:
-        """Execute helper not a thing."""
-        pass
-
     fake_optax = create_module(
         "optax",
         {
-            "adam": adam,
-            "sgd": sgd,
-            "my_optimizer": my_optimizer,
-            "_priv": _priv,
+            "adam": _noop_callable,
+            "sgd": _noop_callable,
+            "my_optimizer": _noop_callable,
+            "_priv": _noop_callable,
             "losses": fake_losses,
             "schedules": fake_scheds,
-            "not_a_thing": not_a_thing,
+            "not_a_thing": _noop_callable,
             "not_a_func": 123,
         },
     )
@@ -1484,7 +1293,6 @@ def test_optax_collect(mocker: pytest_mock.MockerFixture) -> None:
     snames = [x.name for x in scheds]
     assert "cosine" in snames
 
-    # Exception branch coverage
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",
         side_effect=Exception,
@@ -1505,9 +1313,10 @@ def test_sklearn_collect(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
+    import types
+
     from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
-    import types
 
     class BaseEstimator:
         """Mock or helper class BaseEstimator for unit testing."""
@@ -1540,25 +1349,15 @@ def test_sklearn_collect(mocker: pytest_mock.MockerFixture) -> None:
         pass
 
     mock_sklearn = types.ModuleType("sklearn")
-    pytest.MonkeyPatch().setattr(
-        mock_sklearn, "base", types.ModuleType("sklearn.base"), raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        mock_sklearn.base, "BaseEstimator", BaseEstimator, raising=False
-    )
+    pytest.MonkeyPatch().setattr(mock_sklearn, "base", types.ModuleType("sklearn.base"), raising=False)
+    pytest.MonkeyPatch().setattr(mock_sklearn.base, "BaseEstimator", BaseEstimator, raising=False)
 
     mock_ensemble = types.ModuleType("sklearn.ensemble")
-    pytest.MonkeyPatch().setattr(
-        mock_ensemble, "RandomForestClassifier", RandomForestClassifier, raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        mock_ensemble, "NotAnEstimator", NotAnEstimator, raising=False
-    )
+    pytest.MonkeyPatch().setattr(mock_ensemble, "RandomForestClassifier", RandomForestClassifier, raising=False)
+    pytest.MonkeyPatch().setattr(mock_ensemble, "NotAnEstimator", NotAnEstimator, raising=False)
 
     mock_metrics = types.ModuleType("sklearn.metrics")
-    pytest.MonkeyPatch().setattr(
-        mock_metrics, "accuracy_score", accuracy_score, raising=False
-    )
+    pytest.MonkeyPatch().setattr(mock_metrics, "accuracy_score", accuracy_score, raising=False)
 
     sys_modules = {
         "sklearn": mock_sklearn,
@@ -1618,41 +1417,30 @@ def test_sklearn_module_import_error(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
+    import sys
+    import types
+
     from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
-    import types
-    import typing
-    import builtins
 
     mock_sklearn = types.ModuleType("sklearn")
     mocker.patch.object(sklearn_fw, "sklearn", mock_sklearn)
-
-    original_import = builtins.__import__
-
-    def mock_import(
-        name: str,
-        globals: typing.Mapping[str, InspectableTarget] | None = None,
-        locals: typing.Mapping[str, InspectableTarget] | None = None,
-        fromlist: typing.Sequence[str] = (),
-        level: int = 0,
-    ) -> types.ModuleType:
-        """Mock import function.
-
-        Args:
-            name: The module name.
-            globals: Globals dictionary.
-            locals: Locals dictionary.
-            fromlist: From-import list.
-            level: Relative import level.
-
-        Returns:
-            The imported module or raises.
-        """
-        if name.startswith("sklearn."):
-            raise ImportError("Mocked import error")
-        return original_import(name, globals, locals, fromlist, level)
-
-    mocker.patch("builtins.__import__", side_effect=mock_import)
+    mocker.patch.dict(
+        sys.modules,
+        {
+            "sklearn": mock_sklearn,
+            "sklearn.linear_model": None,
+            "sklearn.ensemble": None,
+            "sklearn.svm": None,
+            "sklearn.naive_bayes": None,
+            "sklearn.tree": None,
+            "sklearn.neighbors": None,
+            "sklearn.cluster": None,
+            "sklearn.decomposition": None,
+            "sklearn.preprocessing": None,
+            "sklearn.metrics": None,
+        },
+    )
 
     layers = sklearn_fw.collect_api(SemanticTier.LAYER)
     assert layers == []
@@ -1667,8 +1455,9 @@ def test_sklearn_scan_module_edge_cases(mocker: pytest_mock.MockerFixture) -> No
     Args:
         mocker: Pytest mocker fixture.
     """
-    from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
     import types
+
+    from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
 
     # 43: not module
     assert _scan_module(None, "prefix") == []
@@ -1691,7 +1480,7 @@ def test_sklearn_scan_module_edge_cases(mocker: pytest_mock.MockerFixture) -> No
 
     pytest.MonkeyPatch().setattr(mock_mod, "bad_obj", BadObj(), raising=False)
     mocker.patch(
-        "ml_ecosystem_snapshots.frameworks.tensorflow.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.sklearn.get_all_members",
         side_effect=Exception("mocked"),
     )
     assert _scan_module(mock_mod, "prefix") == []
@@ -1708,7 +1497,7 @@ def test_sklearn_scan_module_edge_cases(mocker: pytest_mock.MockerFixture) -> No
     pytest.MonkeyPatch().setattr(mock_mod2, "blocked", ValidObj, raising=False)
 
     mocker.patch(
-        "ml_ecosystem_snapshots.frameworks.tensorflow.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.sklearn.get_all_members",
         return_value=[("_private", ValidObj), ("blocked", ValidObj)],
     )
     mocker.patch("inspect.isclass", return_value=True)
@@ -1721,8 +1510,9 @@ def test_sklearn_scan_module_branches(mocker: pytest_mock.MockerFixture) -> None
     Args:
         mocker: Pytest mocker fixture.
     """
-    from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
     import types
+
+    from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
 
     mock_mod = types.ModuleType("mock_mod")
 
@@ -1740,7 +1530,7 @@ def test_sklearn_scan_module_branches(mocker: pytest_mock.MockerFixture) -> None
     pytest.MonkeyPatch().setattr(mock_mod, "valid_func", valid_func, raising=False)
 
     mocker.patch(
-        "ml_ecosystem_snapshots.frameworks.tensorflow.get_all_members",
+        "ml_ecosystem_snapshots.frameworks.sklearn.get_all_members",
         return_value=[
             ("ValidObj", ValidObj),
             ("valid_func", valid_func),
@@ -1761,8 +1551,9 @@ def test_sklearn_scan_module_exception(mocker: pytest_mock.MockerFixture) -> Non
     Args:
         mocker: Pytest mocker fixture.
     """
-    from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
     import types
+
+    from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
 
     mock_mod = types.ModuleType("mock_mod")
     mocker.patch(
@@ -1780,8 +1571,8 @@ def test_numpy_collect(mocker: pytest_mock.MockerFixture) -> None:
         mocker: Pytest mocker fixture.
     """
     import ml_ecosystem_snapshots.frameworks.numpy as np_shim
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     def tanh(x: float) -> float:
         """Compute hyperbolic tangent.
@@ -1828,9 +1619,7 @@ def test_numpy_collect(mocker: pytest_mock.MockerFixture) -> None:
 
     original_inspect = GhostInspector.inspect
 
-    def mock_inspect(
-        obj: InspectableTarget, api_path: str, is_public: bool | None = None
-    ) -> GhostRef:
+    def mock_inspect(obj: InspectableTarget, api_path: str, is_public: bool | None = None) -> GhostRef:
         """Mock inspect function delegating to real GhostInspector.inspect except on minimum.
 
         Args:
@@ -1886,8 +1675,8 @@ def test_orbax_collect(mocker: pytest_mock.MockerFixture) -> None:
         mocker: Pytest mocker fixture.
     """
     import ml_ecosystem_snapshots.frameworks.orbax_checkpoint as ocp_shim
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     def checkpoint(directory: str) -> bool:
         """Save checkpoint to directory.
@@ -1933,9 +1722,7 @@ def test_orbax_collect(mocker: pytest_mock.MockerFixture) -> None:
 
     original_inspect = GhostInspector.inspect
 
-    def mock_inspect(
-        obj: InspectableTarget, api_path: str, is_public: bool | None = None
-    ) -> GhostRef:
+    def mock_inspect(obj: InspectableTarget, api_path: str, is_public: bool | None = None) -> GhostRef:
         """Mock inspect function delegating to real GhostInspector.inspect except on error_func.
 
         Args:
@@ -1987,8 +1774,8 @@ def test_pax_collect(mocker: pytest_mock.MockerFixture) -> None:
         mocker: Pytest mocker fixture.
     """
     import ml_ecosystem_snapshots.frameworks.pax as pax_shim
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     class Linear:
         """Praxis Linear layer."""
@@ -2031,9 +1818,7 @@ def test_pax_collect(mocker: pytest_mock.MockerFixture) -> None:
 
     original_inspect = GhostInspector.inspect
 
-    def mock_inspect(
-        obj: InspectableTarget, api_path: str, is_public: bool | None = None
-    ) -> GhostRef:
+    def mock_inspect(obj: InspectableTarget, api_path: str, is_public: bool | None = None) -> GhostRef:
         """Mock inspect function delegating to real GhostInspector.inspect except on ErrorClass.
 
         Args:
@@ -2077,9 +1862,10 @@ def test_triton_collect(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
+    import importlib
+
     import ml_ecosystem_snapshots.frameworks.triton as triton_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
-    import importlib
 
     def cdiv(x: int, div: int) -> int:
         """Ceiling division.
@@ -2141,16 +1927,15 @@ def test_deepspeed_collect(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
+    import importlib
+
     import ml_ecosystem_snapshots.frameworks.deepspeed as ds_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
-    import importlib
 
     # Early return for unsupported category (line 26 -> 27)
     assert ds_shim.collect_api(SemanticTier.LOSS) == []
 
-    def initialize(
-        model: InspectableTarget, config_params: str = "ds_config.json"
-    ) -> tuple[InspectableTarget, str]:
+    def initialize(model: InspectableTarget, config_params: str = "ds_config.json") -> tuple[InspectableTarget, str]:
         """Initialize DeepSpeed engine.
 
         Args:
@@ -2173,9 +1958,7 @@ def test_deepspeed_collect(mocker: pytest_mock.MockerFixture) -> None:
         """
         return flag
 
-    fake_ds = create_module(
-        "deepspeed", {"initialize": initialize, "helper_util": helper_util}
-    )
+    fake_ds = create_module("deepspeed", {"initialize": initialize, "helper_util": helper_util})
 
     original_import = importlib.import_module
 
@@ -2221,9 +2004,10 @@ def test_onnxruntime_collect(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
+    import importlib
+
     import ml_ecosystem_snapshots.frameworks.onnxruntime as ort_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
-    import importlib
 
     # Early return for unsupported category (line 26 -> 27)
     assert ort_shim.collect_api(SemanticTier.LOSS) == []
@@ -2247,9 +2031,7 @@ def test_onnxruntime_collect(mocker: pytest_mock.MockerFixture) -> None:
         """
         return "CPU"
 
-    fake_ort = create_module(
-        "onnxruntime", {"InferenceSession": InferenceSession, "get_device": get_device}
-    )
+    fake_ort = create_module("onnxruntime", {"InferenceSession": InferenceSession, "get_device": get_device})
 
     original_import = importlib.import_module
 
@@ -2275,9 +2057,7 @@ def test_onnxruntime_collect(mocker: pytest_mock.MockerFixture) -> None:
     sess_ref = res[0]
     assert sess_ref.api_path == "onnxruntime.InferenceSession"
     assert sess_ref.kind == "class"
-    assert any(
-        p.name == "path_or_bytes" and p.annotation == "str" for p in sess_ref.params
-    )
+    assert any(p.name == "path_or_bytes" and p.annotation == "str" for p in sess_ref.params)
     assert any(p.name == "providers" for p in sess_ref.params)
 
     mocker.patch("importlib.import_module", side_effect=ImportError)
@@ -2290,9 +2070,10 @@ def test_huggingface_collect(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
+    import importlib
+
     import ml_ecosystem_snapshots.frameworks.huggingface as hf_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
-    import importlib
 
     class PreTrainedModel:
         """Base class for Hugging Face pretrained models."""
@@ -2322,9 +2103,7 @@ def test_huggingface_collect(mocker: pytest_mock.MockerFixture) -> None:
             self.model = model
             self.args = args
 
-    fake_transformers = create_module(
-        "transformers", {"PreTrainedModel": PreTrainedModel, "Trainer": Trainer}
-    )
+    fake_transformers = create_module("transformers", {"PreTrainedModel": PreTrainedModel, "Trainer": Trainer})
 
     original_import = importlib.import_module
 
@@ -2444,9 +2223,7 @@ def test_mlir_collect(mocker: pytest_mock.MockerFixture) -> None:
 
     import json
 
-    mocker.patch(
-        "builtins.open", mocker.mock_open(read_data=json.dumps(mock_json_data))
-    )
+    mocker.patch("builtins.open", mocker.mock_open(read_data=json.dumps(mock_json_data)))
 
     api = mlir_fw.collect_api(SemanticTier.UTIL)
     assert len(api) == 1
@@ -2472,9 +2249,7 @@ def test_mlir_collect(mocker: pytest_mock.MockerFixture) -> None:
             "description": "Floating point addition.",
         }
     ]
-    mocker.patch(
-        "builtins.open", mocker.mock_open(read_data=json.dumps(rich_json_data))
-    )
+    mocker.patch("builtins.open", mocker.mock_open(read_data=json.dumps(rich_json_data)))
     rich_api = mlir_fw.collect_api(SemanticTier.UTIL)
     assert len(rich_api) == 1
     assert rich_api[0].returns_type == "FloatType"
@@ -2498,7 +2273,7 @@ def test_mlir_collect(mocker: pytest_mock.MockerFixture) -> None:
 
 def test_static_dsl_extractors() -> None:
     """Test static DSL extractors."""
-    from ml_ecosystem_snapshots.frameworks import html_dsl, latex_dsl, tikz, nvidia_sass
+    from ml_ecosystem_snapshots.frameworks import html_dsl, latex_dsl, nvidia_sass, tikz
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     html_refs = html_dsl.collect_api(SemanticTier.UTIL)
@@ -2524,240 +2299,261 @@ def test_static_dsl_extractors() -> None:
     assert nvidia_sass.collect_api(SemanticTier.LAYER) == []
 
 
-def test_tensor_instance_methods_extraction() -> None:
-    """Test extraction of tensor core instance methods across Torch, JAX, and TensorFlow."""
-    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+class _FallbackTorchTensor:
+    """Fallback PyTorch `Tensor` stub when `torch` is unavailable."""
 
+    def view(self, *shape: int) -> _FallbackTorchTensor:
+        """Return a tensor view with the requested shape.
+
+        Args:
+            shape: Target view dimensions.
+
+        Returns:
+            Viewed tensor instance.
+        """
+        return self
+
+    def reshape(self, *shape: int) -> _FallbackTorchTensor:
+        """Return a reshaped tensor with the requested dimensions.
+
+        Args:
+            shape: Target reshape dimensions.
+
+        Returns:
+            Reshaped tensor instance.
+        """
+        return self
+
+    def permute(self, *dims: int) -> _FallbackTorchTensor:
+        """Permute tensor axes according to `dims`.
+
+        Args:
+            dims: Axis permutation indices.
+
+        Returns:
+            Permuted tensor instance.
+        """
+        return self
+
+    def transpose(self, dim0: int, dim1: int) -> _FallbackTorchTensor:
+        """Swap two tensor dimensions.
+
+        Args:
+            dim0: First dimension index.
+            dim1: Second dimension index.
+
+        Returns:
+            Transposed tensor instance.
+        """
+        return self
+
+    def repeat(self, *sizes: int) -> _FallbackTorchTensor:
+        """Repeat tensor elements along specified dimensions.
+
+        Args:
+            sizes: Repetition counts per axis.
+
+        Returns:
+            Repeated tensor instance.
+        """
+        return self
+
+    def to(self, *args: InspectableTarget, **kwargs: InspectableTarget) -> _FallbackTorchTensor:
+        """Convert tensor dtype or device placement.
+
+        Args:
+            args: Positional conversion arguments.
+            kwargs: Keyword conversion arguments.
+
+        Returns:
+            Converted tensor instance.
+        """
+        return self
+
+    def detach(self) -> _FallbackTorchTensor:
+        """Detach tensor from the autograd graph.
+
+        Returns:
+            Detached tensor instance.
+        """
+        return self
+
+
+class _FallbackJaxArray:
+    """Fallback JAX `Array` stub when `jax` is unavailable."""
+
+    def reshape(self, *args: InspectableTarget, **kwargs: InspectableTarget) -> _FallbackJaxArray:
+        """Reshape the array without changing its data.
+
+        Args:
+            args: Positional shape arguments.
+            kwargs: Keyword shape arguments.
+
+        Returns:
+            Reshaped array instance.
+        """
+        return self
+
+    def transpose(self, *args: InspectableTarget, **kwargs: InspectableTarget) -> _FallbackJaxArray:
+        """Permute array dimensions.
+
+        Args:
+            args: Positional axis arguments.
+            kwargs: Keyword axis arguments.
+
+        Returns:
+            Transposed array instance.
+        """
+        return self
+
+    def flatten(self, order: str = "C") -> _FallbackJaxArray:
+        """Collapse the array into a single dimension.
+
+        Args:
+            order: Memory traversal order (`'C'` or `'F'`).
+
+        Returns:
+            Flattened array instance.
+        """
+        return self
+
+
+class _FallbackTFTensor:
+    """Fallback TensorFlow `Tensor` stub when `tensorflow` is unavailable."""
+
+    def get_shape(self) -> tuple[int, ...]:
+        """Return the static shape of the tensor.
+
+        Returns:
+            Static dimension sizes.
+        """
+        return (1,)
+
+    def set_shape(self, shape: tuple[int, ...] | list[int] | None) -> None:
+        """Update the static shape of the tensor.
+
+        Args:
+            shape: Updated dimension specification.
+        """
+        pass
+
+
+class _FallbackTFVariable:
+    """Fallback TensorFlow `Variable` stub when `tensorflow` is unavailable."""
+
+    def assign(self, value: InspectableTarget) -> InspectableTarget:
+        """Assign a new value to the variable.
+
+        Args:
+            value: Replacement tensor value.
+
+        Returns:
+            Assigned variable value.
+        """
+        return value
+
+    def assign_add(self, delta: InspectableTarget) -> InspectableTarget:
+        """Add a delta to the variable in place.
+
+        Args:
+            delta: Increment tensor value.
+
+        Returns:
+            Updated variable value.
+        """
+        return delta
+
+
+def _resolve_torch_tensor_cls() -> type:
+    """Resolve `torch.Tensor` if available or return `_FallbackTorchTensor`.
+
+    Returns:
+        PyTorch `Tensor` class or `_FallbackTorchTensor`.
+    """
     try:
         import torch
 
-        if "Tensor" not in dir(torch) or "view" not in dir(torch.Tensor):
-            raise ImportError("torch has no Tensor.view")
-        torch_mod: types.ModuleType | types.SimpleNamespace = torch
-    except ImportError:
+        _ = torch.Tensor.view
+        torch_tensor_cls: type = torch.Tensor
+    except (ImportError, AttributeError):
+        torch_tensor_cls = _FallbackTorchTensor
+    return torch_tensor_cls
 
-        class MockTensor:
-            """Mock Tensor."""
 
-            def view(self, *shape: int) -> "MockTensor":
-                """View tensor.
+def _resolve_jax_array_cls() -> type:
+    """Resolve `jax.Array` if available or return `_FallbackJaxArray`.
 
-                Args:
-                    shape: Desired shape.
-
-                Returns:
-                    Viewed tensor.
-                """
-                return self
-
-            def reshape(self, *shape: int) -> "MockTensor":
-                """Reshape tensor.
-
-                Args:
-                    shape: Desired shape.
-
-                Returns:
-                    Reshaped tensor.
-                """
-                return self
-
-            def permute(self, *dims: int) -> "MockTensor":
-                """Permute tensor.
-
-                Args:
-                    dims: Dimension order.
-
-                Returns:
-                    Permuted tensor.
-                """
-                return self
-
-            def transpose(self, dim0: int, dim1: int) -> "MockTensor":
-                """Transpose dimensions.
-
-                Args:
-                    dim0: First dim.
-                    dim1: Second dim.
-
-                Returns:
-                    Transposed tensor.
-                """
-                return self
-
-            def repeat(self, *sizes: int) -> "MockTensor":
-                """Repeat tensor.
-
-                Args:
-                    sizes: Repeat sizes.
-
-                Returns:
-                    Repeated tensor.
-                """
-                return self
-
-            def to(
-                self, *args: InspectableTarget, **kwargs: InspectableTarget
-            ) -> "MockTensor":
-                """Cast tensor.
-
-                Args:
-                    args: Arguments.
-                    kwargs: Keyword arguments.
-
-                Returns:
-                    Casted tensor.
-                """
-                return self
-
-            def detach(self) -> "MockTensor":
-                """Detach tensor.
-
-                Returns:
-                    Detached tensor.
-                """
-                return self
-
-        torch_mod = types.SimpleNamespace(Tensor=MockTensor)
-
+    Returns:
+        JAX `Array` class or `_FallbackJaxArray`.
+    """
     try:
         import jax
 
-        jax_mod: types.ModuleType | types.SimpleNamespace = jax
-    except ImportError:
+        jax_array_cls: type = jax.Array
+    except (ImportError, AttributeError):
+        jax_array_cls = _FallbackJaxArray
+    return jax_array_cls
 
-        class MockArray:
-            """Mock JAX Array."""
 
-            def reshape(
-                self, *args: InspectableTarget, **kwargs: InspectableTarget
-            ) -> "MockArray":
-                """Reshape array.
+def _resolve_tf_tensor_and_var_cls() -> tuple[type, type]:
+    """Resolve `(tf.Tensor, tf.Variable)` if available or return fallback stubs.
 
-                Args:
-                    args: Arguments.
-                    kwargs: Keyword arguments.
-
-                Returns:
-                    Reshaped array.
-                """
-                return self
-
-            def transpose(
-                self, *args: InspectableTarget, **kwargs: InspectableTarget
-            ) -> "MockArray":
-                """Transpose array.
-
-                Args:
-                    args: Arguments.
-                    kwargs: Keyword arguments.
-
-                Returns:
-                    Transposed array.
-                """
-                return self
-
-            def flatten(self, order: str = "C") -> "MockArray":
-                """Flatten array.
-
-                Args:
-                    order: Flatten order.
-
-                Returns:
-                    Flattened array.
-                """
-                return self
-
-        jax_mod = types.SimpleNamespace(Array=MockArray)
-
+    Returns:
+        Pair of `(tensor_cls, variable_cls)` classes.
+    """
     try:
         import tensorflow as tf
 
-        tf_mod: types.ModuleType | types.SimpleNamespace = tf
-    except ImportError:
+        tf_tensor_cls: type = tf.Tensor
+        tf_var_cls: type = tf.Variable
+    except (ImportError, AttributeError):
+        tf_tensor_cls = _FallbackTFTensor
+        tf_var_cls = _FallbackTFVariable
+    return tf_tensor_cls, tf_var_cls
 
-        class MockTFTensor:
-            """Mock TensorFlow Tensor."""
 
-            def get_shape(self) -> tuple[int, ...]:
-                """Get tensor shape.
+def test_tensor_instance_methods_extraction() -> None:
+    """Validate extraction of core tensor instance methods across Torch, JAX, and TensorFlow."""
+    import inspect
 
-                Returns:
-                    Tensor shape.
-                """
-                return (1,)
+    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
-            def set_shape(self, shape: tuple[int, ...] | list[int] | None) -> None:
-                """Set tensor shape.
+    torch_tensor_cls = _resolve_torch_tensor_cls()
+    jax_array_cls = _resolve_jax_array_cls()
+    tf_tensor_cls, tf_var_cls = _resolve_tf_tensor_and_var_cls()
 
-                Args:
-                    shape: New shape.
-                """
-                pass
-
-        class MockTFVariable:
-            """Mock TensorFlow Variable."""
-
-            def assign(self, value: InspectableTarget) -> InspectableTarget:
-                """Assign variable value.
-
-                Args:
-                    value: Value to assign.
-
-                Returns:
-                    Updated variable.
-                """
-                return value
-
-            def assign_add(self, delta: InspectableTarget) -> InspectableTarget:
-                """Assign add variable value.
-
-                Args:
-                    delta: Value delta.
-
-                Returns:
-                    Updated variable.
-                """
-                return delta
-
-        tf_mod = types.SimpleNamespace(Tensor=MockTFTensor, Variable=MockTFVariable)
-
-    # 1. PyTorch Tensor methods
-    torch_tensor_cls = operator.attrgetter("Tensor")(torch_mod)
+    torch_members = dict(inspect.getmembers(torch_tensor_cls))
     for m in ("view", "reshape", "permute", "transpose", "repeat", "to"):
-        obj = operator.attrgetter(m)(torch_tensor_cls)
+        obj = torch_members[m]
         ref = GhostInspector.inspect(obj, f"torch.Tensor.{m}", kind="method")
         assert ref.kind == "method"
         assert ref.api_path == f"torch.Tensor.{m}"
         assert len(ref.params) > 0
 
-    detach_obj = operator.attrgetter("detach")(torch_tensor_cls)
-    detach_ref = GhostInspector.inspect(
-        detach_obj, "torch.Tensor.detach", kind="method"
-    )
+    detach_obj = torch_members["detach"]
+    detach_ref = GhostInspector.inspect(detach_obj, "torch.Tensor.detach", kind="method")
     assert detach_ref.kind == "method"
     assert detach_ref.api_path == "torch.Tensor.detach"
     assert len(detach_ref.params) == 0
 
-    # 2. JAX Array methods
-    jax_array_cls = operator.attrgetter("Array")(jax_mod)
+    jax_members = dict(inspect.getmembers(jax_array_cls))
     for m in ("reshape", "transpose", "flatten"):
-        obj = operator.attrgetter(m)(jax_array_cls)
+        obj = jax_members[m]
         ref = GhostInspector.inspect(obj, f"jax.Array.{m}", kind="method")
         assert ref.kind == "method"
         assert ref.api_path == f"jax.Array.{m}"
         assert len(ref.params) > 0
 
-    # 3. TensorFlow Tensor and Variable methods
-    tf_tensor_cls = operator.attrgetter("Tensor")(tf_mod)
+    tf_tensor_members = dict(inspect.getmembers(tf_tensor_cls))
     for m in ("get_shape", "set_shape"):
-        obj = operator.attrgetter(m)(tf_tensor_cls)
+        obj = tf_tensor_members[m]
         ref = GhostInspector.inspect(obj, f"tf.Tensor.{m}", kind="method")
         assert ref.kind == "method"
         assert ref.api_path == f"tf.Tensor.{m}"
 
-    tf_var_cls = operator.attrgetter("Variable")(tf_mod)
+    tf_var_members = dict(inspect.getmembers(tf_var_cls))
     for m in ("assign", "assign_add"):
-        obj = operator.attrgetter(m)(tf_var_cls)
+        obj = tf_var_members[m]
         ref = GhostInspector.inspect(obj, f"tf.Variable.{m}", kind="method")
         assert ref.kind == "method"
         assert ref.api_path == f"tf.Variable.{m}"
@@ -2771,16 +2567,25 @@ def test_keras_griffe_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     import importlib
     import sys
+
     import ml_ecosystem_snapshots.frameworks.keras as k_fw
+
+    def _get_griffe() -> types.ModuleType | None:
+        """Read `k_fw.griffe` after module reload.
+
+        Returns:
+            Current `k_fw.griffe` reference.
+        """
+        return k_fw.griffe
 
     monkeypatch.setitem(sys.modules, "griffe", None)
     importlib.reload(k_fw)
-    assert operator.attrgetter("griffe")(k_fw) is None
+    assert _get_griffe() is None
 
     # Restore
     monkeypatch.undo()
     importlib.reload(k_fw)
-    assert operator.attrgetter("griffe")(k_fw) is not None
+    assert _get_griffe() is not None
 
 
 def test_maxtext_import_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2792,18 +2597,27 @@ def test_maxtext_import_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     import importlib
     import sys
     import types
+
     import ml_ecosystem_snapshots.frameworks.maxtext as m_fw
+
+    def _get_maxtext() -> types.ModuleType | None:
+        """Read `m_fw.maxtext` after module reload.
+
+        Returns:
+            Current `m_fw.maxtext` reference.
+        """
+        return m_fw.maxtext
 
     # Available
     fake_mt = types.ModuleType("maxtext")
     monkeypatch.setitem(sys.modules, "maxtext", fake_mt)
     importlib.reload(m_fw)
-    assert operator.attrgetter("maxtext")(m_fw) is fake_mt
+    assert _get_maxtext() is fake_mt
 
     # Unavailable
     monkeypatch.setitem(sys.modules, "maxtext", None)
     importlib.reload(m_fw)
-    assert operator.attrgetter("maxtext")(m_fw) is None
+    assert _get_maxtext() is None
 
     # Restore
     monkeypatch.undo()

@@ -2,24 +2,23 @@
 
 from __future__ import annotations
 
-import operator
+import sys
 
 from ml_ecosystem_snapshots.introspection.inspector import (
     FRAMEWORK_CAPABILITIES,
     GhostInspector,
 )
 from ml_ecosystem_snapshots.models import (
-    OperandDirection,
-    IRParameterRole,
-    GhostResult,
     ExtendedGhostParam,
     ExtendedGhostRef,
-    GhostPythonRef,
     GhostIsaRef,
     GhostMlirRef,
+    GhostPythonRef,
+    GhostResult,
+    IRParameterRole,
+    OperandDirection,
 )
 from ml_switcheroo_ir.schema.ghost import GhostRef, ParameterKind
-import sys
 
 
 def test_ghostref_env_tags() -> None:
@@ -67,9 +66,7 @@ def test_ghostinspector_env_tags_explicit_override() -> None:
         pass
 
     custom_tags = ["cuda", "rocm", "custom_backend"]
-    ref = GhostInspector.inspect(
-        dummy, "torch.ops.custom", environment_tags=custom_tags
-    )
+    ref = GhostInspector.inspect(dummy, "torch.ops.custom", environment_tags=custom_tags)
     assert ref.environment_tags == custom_tags
 
 
@@ -116,7 +113,8 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
         "custom_ir_tag": "llvm_lowered",
     }
     p = ExtendedGhostParam.model_validate(param_data)
-    assert operator.attrgetter("custom_ir_tag")(p) == "llvm_lowered"
+    assert p.model_extra is not None
+    assert p.model_extra["custom_ir_tag"] == "llvm_lowered"
 
     from ml_ecosystem_snapshots.models import JsonValue
 
@@ -131,7 +129,8 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
     py_ref = GhostInspector.hydrate(ref_data)
     assert isinstance(py_ref, GhostPythonRef)
     assert py_ref.domain_type == "python"
-    assert operator.attrgetter("custom_backend_meta")(py_ref) == {"cost": 10}
+    assert py_ref.model_extra is not None
+    assert py_ref.model_extra["custom_backend_meta"] == {"cost": 10}
 
     isa_data: dict[str, JsonValue] = {
         "name": "FADD",
@@ -180,6 +179,11 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
     }
     base_ref = GhostInspector.hydrate(base_data)
     assert isinstance(base_ref, ExtendedGhostRef)
+
+
+def test_raw_dumps_hydration_synthesis() -> None:
+    """Test GhostInspector.hydrate synthesis on raw ISA and MLIR dictionary dumps."""
+    from ml_ecosystem_snapshots.models import JsonValue
 
     # 3. Raw dumps hydration synthesis
     raw_isa_data: dict[str, JsonValue] = {

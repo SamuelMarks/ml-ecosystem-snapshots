@@ -8,19 +8,16 @@ from __future__ import annotations
 
 import types
 
+import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     SemanticTier,
 )
-import pydantic
 
 from ml_ecosystem_snapshots.frameworks._base import CanonicalPythonOpSpec
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
-
-CANONICAL_SPARSE_OPS: list[CanonicalPythonOpSpec] = pydantic.TypeAdapter(
-    list[CanonicalPythonOpSpec]
-).validate_python(
+CANONICAL_SPARSE_OPS: list[CanonicalPythonOpSpec] = pydantic.TypeAdapter(list[CanonicalPythonOpSpec]).validate_python(
     [
         {
             "name": "COO",
@@ -150,9 +147,7 @@ def _get_sparse() -> types.ModuleType | None:
         return None
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect PyData Sparse array and operator definitions.
 
     Args:

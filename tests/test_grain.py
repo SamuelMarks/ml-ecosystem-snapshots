@@ -6,9 +6,7 @@ import argparse
 import types
 from unittest.mock import patch
 
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 import pytest
-
 from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli.commands.check import cmd_check_grain
 from ml_ecosystem_snapshots.frameworks import grain
@@ -20,6 +18,7 @@ from ml_ecosystem_snapshots.mcp.tools.hallucination import (
 )
 from ml_ecosystem_snapshots.mcp.tools.translation import translate_concept_arguments
 from ml_ecosystem_snapshots.utils import get_framework_docstring_parser
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 
 def test_grain_docstring_parser_and_version() -> None:
@@ -140,9 +139,7 @@ def test_collect_grain_api_offline_and_live(
         """
         return source
 
-    pytest.MonkeyPatch().setattr(
-        fake_core, "custom_loader", custom_loader, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_core, "custom_loader", custom_loader, raising=False)
     pytest.MonkeyPatch().setattr(fake_py, "custom_loader", custom_loader, raising=False)
     pytest.MonkeyPatch().setattr(fake_py, "DataLoader", custom_loader, raising=False)
 
@@ -227,9 +224,7 @@ def test_check_grain_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
     cmd_check_grain(args_ok)
     assert "Grain Operation 'DataLoader' is valid." in capsys.readouterr().out
 
-    args_fail = argparse.Namespace(
-        op_name="InvalidGrainOp", inputs_count=None, attributes=None
-    )
+    args_fail = argparse.Namespace(op_name="InvalidGrainOp", inputs_count=None, attributes=None)
     with pytest.raises(SystemExit):
         cmd_check_grain(args_fail)
 

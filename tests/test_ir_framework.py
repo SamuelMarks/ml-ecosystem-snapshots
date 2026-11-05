@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import operator
-
 import inspect
-import pytest
 
 import ml_switcheroo_ir as ir
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier, SnapshotEnvelope
+import pytest
 from ml_ecosystem_snapshots.api import (
     extract_snapshot,
     get_pkg_version,
     validate_snapshot_envelope,
 )
 from ml_ecosystem_snapshots.frameworks.ir import collect_api
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier, SnapshotEnvelope
 
 
 def test_collect_api_categories() -> None:
@@ -116,25 +114,21 @@ def test_ir_symbol_signatures_and_annotations() -> None:
 def test_ir_live_signature_reflection_parity() -> None:
     """Verify every extracted GhostRef in frameworks/ir.py matches live ml_switcheroo_ir signatures."""
     refs = collect_api(SemanticTier.NEURAL)
+    ir_members = dict(inspect.getmembers(ir))
     for ref in refs:
-        assert ref.name in dir(ir), f"Missing symbol {ref.name} in ml_switcheroo_ir"
-        obj = operator.attrgetter(ref.name)(ir)
+        assert ref.name in ir_members, f"Missing symbol {ref.name} in ml_switcheroo_ir"
+        obj = ir_members[ref.name]
         if ref.name == "DType":
             continue
+        assert callable(obj)
         sig = inspect.signature(obj)
         live_params = list(sig.parameters.values())
-        assert [p.name for p in ref.params] == [
-            p.name for p in live_params
-        ], f"Parameter name mismatch for {ref.name}"
+        assert [p.name for p in ref.params] == [p.name for p in live_params], f"Parameter name mismatch for {ref.name}"
         for ghost_p, live_p in zip(ref.params, live_params):
-            assert (
-                ghost_p.kind.value == live_p.kind.name
-            ), f"Parameter kind mismatch on {ref.name}.{ghost_p.name}"
+            assert ghost_p.kind.value == live_p.kind.name, f"Parameter kind mismatch on {ref.name}.{ghost_p.name}"
             has_live_default = live_p.default is not inspect.Parameter.empty
             has_ghost_default = ghost_p.default is not None
-            assert (
-                has_ghost_default == has_live_default
-            ), f"Default presence mismatch on {ref.name}.{ghost_p.name}"
+            assert has_ghost_default == has_live_default, f"Default presence mismatch on {ref.name}.{ghost_p.name}"
 
 
 def test_extract_snapshot_ir_envelope() -> None:
@@ -164,43 +158,15 @@ def test_get_pkg_version_ir() -> None:
     assert ver_sw == ver_ir
 
 
-def test_get_pkg_version_ir_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test get_pkg_version fallback when importing ml_switcheroo_ir raises Exception.
+def test_ir_version_resolution_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test get_pkg_version('ir') fallback when module import or metadata fails.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    import builtins
-    import types
-    import typing
-    from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+    import sys
 
-    real_import = builtins.__import__
-
-    def mock_import(
-        name: str,
-        globals: typing.Mapping[str, InspectableTarget] | None = None,
-        locals: typing.Mapping[str, InspectableTarget] | None = None,
-        fromlist: typing.Sequence[str] = (),
-        level: int = 0,
-    ) -> types.ModuleType:
-        """Mock import function.
-
-        Args:
-            name: The module name.
-            globals: Globals dictionary.
-            locals: Locals dictionary.
-            fromlist: From-import list.
-            level: Relative import level.
-
-        Returns:
-            The imported module or raises.
-        """
-        if name == "ml_switcheroo_ir":
-            raise ImportError("Simulated IR absent")
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", mock_import)
+    monkeypatch.setitem(sys.modules, "ml_switcheroo_ir", None)
     ver = get_pkg_version("ir")
     assert ver != "unknown"
 

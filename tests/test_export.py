@@ -2,24 +2,23 @@
 
 from __future__ import annotations
 
-import pytest_mock
 from unittest.mock import patch
 
 import pytest
-
-from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
-from ml_ecosystem_snapshots.models import JsonValue
+import pytest_mock
 from ml_ecosystem_snapshots.export import (
+    _ghost_to_cdd_ir,
+    export_llm_prompt_context,
+    export_mlir_prompt_context,
+    export_sass_prompt_context,
+    export_scoped_prompt_context,
     to_json_schema,
     to_openapi,
-    _ghost_to_cdd_ir,
-    to_pydantic,
     to_protobuf,
-    export_llm_prompt_context,
-    export_sass_prompt_context,
-    export_mlir_prompt_context,
-    export_scoped_prompt_context,
+    to_pydantic,
 )
+from ml_ecosystem_snapshots.models import JsonValue
+from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
 
 @pytest.fixture
@@ -149,18 +148,9 @@ def test_to_pydantic(sample_ghost_ref: GhostRef) -> None:
     assert "import pydantic" in code
     assert "class Linear(pydantic.BaseModel):" in code
     assert 'model_config = pydantic.ConfigDict(extra="forbid")' in code
-    assert (
-        'in_features: int = pydantic.Field(..., description="size of each input sample")'
-        in code
-    )
-    assert (
-        'out_features: int = pydantic.Field(..., description="size of each output sample")'
-        in code
-    )
-    assert (
-        "bias: bool = pydantic.Field(default=True, description=\"If set to 'False', the layer will not learn an additive bias.\")"
-        in code
-    )
+    assert 'in_features: int = pydantic.Field(..., description="size of each input sample")' in code
+    assert 'out_features: int = pydantic.Field(..., description="size of each output sample")' in code
+    assert "bias: bool = pydantic.Field(default=True, description=\"If set to 'False', the layer will not learn an additive bias.\")" in code
     assert "args" not in code  # VAR_POSITIONAL skipped
 
 
@@ -205,9 +195,7 @@ def test_to_protobuf_types() -> None:
                 kind=ParameterKind.POSITIONAL_ONLY,
                 annotation="dict[str, int]",
             ),
-            GhostParam(
-                name="f", kind=ParameterKind.POSITIONAL_ONLY, annotation="float"
-            ),
+            GhostParam(name="f", kind=ParameterKind.POSITIONAL_ONLY, annotation="float"),
             GhostParam(name="u", kind=ParameterKind.POSITIONAL_ONLY, annotation=None),
             GhostParam(
                 name="mode",
@@ -234,10 +222,10 @@ def test_to_protobuf_types() -> None:
 def test_export_branches() -> None:
     """Verify export branches behavior."""
     from ml_ecosystem_snapshots.export import (
-        _py_type_to_proto,
-        to_pydantic,
-        to_json_schema,
         _ghost_to_cdd_ir,
+        _py_type_to_proto,
+        to_json_schema,
+        to_pydantic,
     )
 
     assert _py_type_to_proto(None) == "string"
@@ -284,9 +272,7 @@ def test_export_branches() -> None:
     assert ir_empty["returns"] is not None
     assert ir_empty["returns"]["return_type"]["typ"] == "str"
 
-    r_ret_desc = GhostRef(
-        name="Z", api_path="Z", kind="function", params=[], returns_description="desc"
-    )
+    r_ret_desc = GhostRef(name="Z", api_path="Z", kind="function", params=[], returns_description="desc")
     ir_desc = _ghost_to_cdd_ir(r_ret_desc)
     assert ir_desc["returns"] is not None
     assert ir_desc["returns"]["return_type"]["doc"] == "desc"
@@ -295,12 +281,11 @@ def test_export_branches() -> None:
 def test_export_branches_more() -> None:
     """Verify Pydantic, OpenAPI, and JSON Schema export with keyword-only and variadic parameters."""
     from ml_ecosystem_snapshots.export import (
-        to_pydantic,
-        to_openapi,
         to_json_schema,
+        to_openapi,
+        to_pydantic,
     )
-    from ml_switcheroo_ir.schema.ghost import GhostParam
-    from ml_switcheroo_ir.schema.ghost import GhostRef
+    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef
 
     r = GhostRef(
         name="X",
@@ -380,10 +365,10 @@ def test_export_llm_prompt_context_full(sample_ghost_ref: GhostRef) -> None:
 def test_export_sass_prompt_context() -> None:
     """Test exporting SASS instruction prompt context with assembly syntax templates."""
     from ml_ecosystem_snapshots.models import (
-        ExtendedGhostRef,
         ExtendedGhostParam,
-        OperandDirection,
+        ExtendedGhostRef,
         IRParameterRole,
+        OperandDirection,
     )
 
     sass_ref = ExtendedGhostRef(
@@ -457,8 +442,8 @@ def test_export_sass_prompt_context() -> None:
 def test_export_mlir_prompt_context() -> None:
     """Test exporting MLIR/StableHLO prompt context with SSA syntax templates."""
     from ml_ecosystem_snapshots.models import (
-        ExtendedGhostRef,
         ExtendedGhostParam,
+        ExtendedGhostRef,
         GhostResult,
         IRParameterRole,
     )
@@ -545,9 +530,7 @@ def test_export_scoped_prompt_context(mocker: pytest_mock.MockerFixture) -> None
 
     orig_get_snap = mcp_server.get_framework_snapshot
 
-    def mock_get_snap(
-        framework: str, version: str | None = None
-    ) -> dict[str, JsonValue]:
+    def mock_get_snap(framework: str, version: str | None = None) -> dict[str, JsonValue]:
         """Mock framework snapshot getter returning mock torch snapshot.
 
         Args:
@@ -567,9 +550,7 @@ def test_export_scoped_prompt_context(mocker: pytest_mock.MockerFixture) -> None
     )
 
     # 1. Scoped torch context with module prefix
-    torch_ctx = export_scoped_prompt_context(
-        "torch", module_prefix="torch.nn", max_symbols=3
-    )
+    torch_ctx = export_scoped_prompt_context("torch", module_prefix="torch.nn", max_symbols=3)
     assert "# Framework Grounding Context: `torch`" in torch_ctx
     assert "## Index of Available Operations" in torch_ctx
     assert "## Detailed Operation Signatures" in torch_ctx
@@ -607,7 +588,6 @@ def test_export_scoped_prompt_context(mocker: pytest_mock.MockerFixture) -> None
 
 def test_export_extended_prompt_contexts_and_headers() -> None:
     """Test export_rdna_prompt_context, export_ptx_prompt_context, export_stablehlo_prompt_context, to_cpp_header, and to_typescript_interface."""
-    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
     from ml_ecosystem_snapshots.export import (
         export_ptx_prompt_context,
         export_rdna_prompt_context,
@@ -615,6 +595,7 @@ def test_export_extended_prompt_contexts_and_headers() -> None:
         to_cpp_header,
         to_typescript_interface,
     )
+    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     rdna_ref = GhostRef(
         name="v_add_f32",
@@ -734,25 +715,22 @@ def test_export_extended_prompt_contexts_and_headers() -> None:
 
 
 def test_export_coverage_hardening() -> None:
-    """Test edge cases across to_pydantic, to_protobuf, export_rdna_prompt_context, export_ptx_prompt_context, and export_scoped_prompt_context."""
-    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+    """Test edge cases across to_pydantic, to_protobuf, export_rdna_prompt_context, and export_ptx_prompt_context."""
     from ml_ecosystem_snapshots.export import (
         _py_type_to_proto,
         export_ptx_prompt_context,
         export_rdna_prompt_context,
-        export_scoped_prompt_context,
         to_protobuf,
         to_pydantic,
     )
+    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     # 1. to_pydantic with VAR_POSITIONAL, VAR_KEYWORD, defaults with description, and overloads with GhostRefs
     ov_ref = GhostRef(
         name="FnOverload",
         api_path="fn.overload",
         kind="function",
-        params=[
-            GhostParam(name="x", kind=ParameterKind.POSITIONAL_ONLY, annotation="int")
-        ],
+        params=[GhostParam(name="x", kind=ParameterKind.POSITIONAL_ONLY, annotation="int")],
         docstring="Variant docstring",
     )
     main_ref = GhostRef(
@@ -802,10 +780,7 @@ def test_export_coverage_hardening() -> None:
     assert _py_type_to_proto("int", param_name="reduction") == "ReductionType"
     assert _py_type_to_proto("int", param_name="padding") == "PaddingMode"
     assert _py_type_to_proto("int", param_name="layout") == "LayoutMode"
-    assert (
-        _py_type_to_proto("interpolation_mode", param_name="mode")
-        == "InterpolationMode"
-    )
+    assert _py_type_to_proto("interpolation_mode", param_name="mode") == "InterpolationMode"
     assert _py_type_to_proto("dict[str, int]") == "map<string, string>"
     assert _py_type_to_proto("bool") == "bool"
     assert _py_type_to_proto("str") == "string"
@@ -823,11 +798,7 @@ def test_export_coverage_hardening() -> None:
         name="ds_add_rtn_u32",
         api_path="ds_add_rtn_u32",
         kind="instruction",
-        params=[
-            GhostParam(
-                name="vdst", kind=ParameterKind.POSITIONAL_ONLY, annotation="vgpr"
-            )
-        ],
+        params=[GhostParam(name="vdst", kind=ParameterKind.POSITIONAL_ONLY, annotation="vgpr")],
         environment_tags=["DS_ADD", "gfx900"],
     )
     flat_ref = GhostRef(
@@ -872,6 +843,18 @@ def test_export_coverage_hardening() -> None:
     assert ".b32, .cta" in ptx_out
     assert "### `nop`" in ptx_out
 
+
+def test_export_scoped_and_constrained_prompt_context() -> None:
+    """Test export_scoped_prompt_context, constrained parameter formatting, and no-docstring headers."""
+    from ml_ecosystem_snapshots.export import (
+        export_llm_prompt_context,
+        export_scoped_prompt_context,
+        to_cpp_header,
+        to_typescript_interface,
+    )
+    from ml_ecosystem_snapshots.models import ExtendedGhostParam
+    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+
     # 5. export_scoped_prompt_context with module_prefix and non-dict items
     mock_mixed_snap = {
         "categories": {
@@ -910,13 +893,6 @@ def test_export_coverage_hardening() -> None:
         assert "SGD" not in scoped_nn
 
     # 6. export_llm_prompt_context constraints branch and no-docstring headers
-    from ml_ecosystem_snapshots.models import ExtendedGhostParam
-    from ml_ecosystem_snapshots.export import (
-        export_llm_prompt_context,
-        to_cpp_header,
-        to_typescript_interface,
-    )
-
     constrained_param = ExtendedGhostParam(
         name="input_t",
         kind=ParameterKind.POSITIONAL_ONLY,

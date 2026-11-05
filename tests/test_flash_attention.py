@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import argparse
 from unittest.mock import MagicMock, patch
-import pytest
 
+import pytest
 from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli import cmd_check_flash_attention
 from ml_ecosystem_snapshots.frameworks import flash_attention
@@ -106,9 +106,7 @@ def test_check_flash_attention_op_mcp() -> None:
     assert prefix_vllm["is_valid"] is True
 
     # Valid with prefix ml.switcheroo.custom.
-    prefix_custom = check_flash_attention_op(
-        "ml.switcheroo.custom.FlashAttention", inputs_count=3
-    )
+    prefix_custom = check_flash_attention_op("ml.switcheroo.custom.FlashAttention", inputs_count=3)
     assert prefix_custom["is_valid"] is True
 
     # Unknown operation
@@ -123,15 +121,11 @@ def test_check_flash_attention_op_mcp() -> None:
     assert "expects 3 positional inputs" in wrong_inputs["errors"][0]
 
     # Valid keyword arguments
-    valid_kw = check_flash_attention_op(
-        "flash_attn_func", attributes=["causal", "dropout_p"]
-    )
+    valid_kw = check_flash_attention_op("flash_attn_func", attributes=["causal", "dropout_p"])
     assert valid_kw["is_valid"] is True
 
     # Invalid keyword arguments
-    invalid_kw = check_flash_attention_op(
-        "flash_attn_func", attributes=["invalid_kwarg"]
-    )
+    invalid_kw = check_flash_attention_op("flash_attn_func", attributes=["invalid_kwarg"])
     assert invalid_kw["is_valid"] is False
     assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw["errors"][0]
 

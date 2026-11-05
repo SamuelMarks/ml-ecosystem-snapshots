@@ -403,7 +403,7 @@ def load_concept_map(
     if custom_path is not None:
         if os.path.exists(custom_path):
             try:
-                with open(custom_path, "r", encoding="utf-8") as f:
+                with open(custom_path, encoding="utf-8") as f:
                     data: JsonValue = json.load(f)
                     if isinstance(data, dict):
                         loaded_custom: dict[str, JsonValue] = dict(data)
@@ -413,12 +413,10 @@ def load_concept_map(
         return {}
 
     base_pkg_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    path = os.environ.get("ML_SNAPSHOTS_CONCEPT_MAP") or os.path.join(
-        base_pkg_dir, "concept_map.json"
-    )
+    path = os.environ.get("ML_SNAPSHOTS_CONCEPT_MAP") or os.path.join(base_pkg_dir, "concept_map.json")
     if os.path.exists(path):
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 data_bundled: JsonValue = json.load(f)
                 if isinstance(data_bundled, dict):
                     loaded_bundled: dict[str, JsonValue] = dict(data_bundled)
@@ -429,6 +427,125 @@ def load_concept_map(
 
 
 CONCEPT_ALIAS_MAP: dict[str, JsonValue] = load_concept_map()
+
+
+def _resolve_concept_translation_schema(
+    c_clean: str,
+    active_alias_map: typing.Mapping[str, JsonValue],
+) -> dict[str, JsonValue] | None:
+    """Resolve the parameter translation schema dictionary for a normalized concept name.
+
+    Args:
+        c_clean: Lowercased and stripped concept name.
+        active_alias_map: Active concept ontology dictionary.
+
+    Returns:
+        Matching parameter translation schema dictionary, or None if not found.
+    """
+    raw_pt = active_alias_map.get("_parameter_translations")
+    if not isinstance(raw_pt, dict):
+        raw_pt = DEFAULT_CONCEPT_MAP.get("_parameter_translations", {})
+    assert isinstance(raw_pt, dict)
+    param_translations: dict[str, JsonValue] = dict(raw_pt)
+
+    schema_key: str | None = None
+    if c_clean in param_translations:
+        schema_key = c_clean
+    elif "matmul" in c_clean or c_clean in ("mm", "bmm", "dot"):
+        schema_key = "matmul"
+    elif any(
+        k in c_clean
+        for k in (
+            "sum",
+            "mean",
+            "max",
+            "min",
+            "prod",
+            "argmax",
+            "argmin",
+            "reduction",
+            "softmax",
+        )
+    ):
+        schema_key = "reduction"
+    elif "conv" in c_clean:
+        schema_key = "convolution"
+    elif "norm" in c_clean:
+        schema_key = "normalization"
+
+    if schema_key is not None:
+        raw_entry = param_translations.get(schema_key)
+        assert isinstance(raw_entry, dict)
+        return dict(raw_entry)
+    return None
+
+
+def _resolve_role_source_keys(
+    fw_map: dict[str, JsonValue],
+    s_fw: str,
+) -> list[str]:
+    """Return candidate source parameter names for a concept role and source framework.
+
+    Args:
+        fw_map: Mapping of framework identifiers to parameter name lists for a single role.
+        s_fw: Lowercased source framework identifier.
+
+    Returns:
+        List of candidate source parameter names.
+    """
+    raw_src_keys = fw_map.get(s_fw)
+    if isinstance(raw_src_keys, list) and raw_src_keys:
+        return [str(k) for k in raw_src_keys]
+    all_keys: list[str] = []
+    for aliases in fw_map.values():
+        assert isinstance(aliases, list)
+        all_keys.extend(str(a) for a in aliases)
+    return all_keys
+
+
+def _apply_concept_role_translations(
+    schema: dict[str, JsonValue],
+    s_fw: str,
+    t_fw: str,
+    source_kwargs: typing.Mapping[str, JsonValue],
+) -> tuple[dict[str, JsonValue], set[str]]:
+    """Apply role mappings and target defaults from a concept schema to source kwargs.
+
+    Args:
+        schema: Parameter translation schema dictionary containing `roles` and optional `defaults`.
+        s_fw: Lowercased source framework identifier.
+        t_fw: Lowercased target framework identifier.
+        source_kwargs: Source keyword arguments passed by the caller.
+
+    Returns:
+        Tuple of `(translated_kwargs_dict, mapped_source_keys_set)`.
+    """
+    translated: dict[str, JsonValue] = {}
+    mapped_keys: set[str] = set()
+    roles = schema.get("roles")
+    assert isinstance(roles, dict)
+    for _role, fw_map in roles.items():
+        assert isinstance(fw_map, dict)
+        src_keys = _resolve_role_source_keys(fw_map, s_fw)
+        for sk in src_keys:
+            if sk in source_kwargs:
+                val = source_kwargs[sk]
+                raw_tgt_keys = fw_map.get(t_fw)
+                tgt_keys = [str(k) for k in raw_tgt_keys] if isinstance(raw_tgt_keys, list) else []
+                if tgt_keys:
+                    translated[tgt_keys[0]] = val
+                    mapped_keys.add(sk)
+                elif s_fw == t_fw:
+                    translated[sk] = val
+                    mapped_keys.add(sk)
+                break
+
+    raw_defaults = schema.get("defaults")
+    if isinstance(raw_defaults, dict) and t_fw in raw_defaults:
+        tgt_def = raw_defaults[t_fw]
+        assert isinstance(tgt_def, dict)
+        translated.update(tgt_def)
+    return translated, mapped_keys
 
 
 def translate_concept_arguments(
@@ -463,93 +580,18 @@ def translate_concept_arguments(
     s_fw = source_framework.lower().strip()
     t_fw = target_framework.lower().strip()
 
-    raw_pt = active_alias_map.get("_parameter_translations")
-    if not isinstance(raw_pt, dict):
-        raw_pt = DEFAULT_CONCEPT_MAP.get("_parameter_translations", {})
-    param_translations: dict[str, JsonValue] = (
-        dict(raw_pt) if isinstance(raw_pt, dict) else {}
-    )
-    schema: dict[str, JsonValue] | None = None
-
-    if c_clean in param_translations and isinstance(param_translations[c_clean], dict):
-        cand_schema = param_translations[c_clean]
-        assert isinstance(cand_schema, dict)
-        schema = dict(cand_schema)
-    elif "matmul" in c_clean or c_clean in ("mm", "bmm", "dot"):
-        raw_matmul = param_translations.get("matmul")
-        schema = dict(raw_matmul) if isinstance(raw_matmul, dict) else None
-    elif any(
-        k in c_clean
-        for k in (
-            "sum",
-            "mean",
-            "max",
-            "min",
-            "prod",
-            "argmax",
-            "argmin",
-            "reduction",
-            "softmax",
-        )
-    ):
-        raw_red = param_translations.get("reduction")
-        schema = dict(raw_red) if isinstance(raw_red, dict) else None
-    elif "conv" in c_clean:
-        raw_conv = param_translations.get("convolution")
-        schema = dict(raw_conv) if isinstance(raw_conv, dict) else None
-    elif "norm" in c_clean:
-        raw_norm = param_translations.get("normalization")
-        schema = dict(raw_norm) if isinstance(raw_norm, dict) else None
+    schema = _resolve_concept_translation_schema(c_clean, active_alias_map)
 
     translated: dict[str, JsonValue] = {}
     unmapped: dict[str, JsonValue] = {}
     mapped_keys: set[str] = set()
 
-    if schema and "roles" in schema and isinstance(schema["roles"], dict):
-        roles = schema["roles"]
-        for _role, fw_map in roles.items():
-            assert isinstance(fw_map, dict)
-            raw_src_keys = fw_map.get(s_fw)
-            src_keys: list[str] = (
-                [str(k) for k in raw_src_keys] if isinstance(raw_src_keys, list) else []
-            )
-            if not src_keys:
-                all_keys: list[str] = []
-                for aliases in fw_map.values():
-                    assert isinstance(aliases, list)
-                    all_keys.extend(str(a) for a in aliases)
-                src_keys = all_keys
-
-            for sk in src_keys:
-                if sk in source_kwargs:
-                    val = source_kwargs[sk]
-                    raw_tgt_keys = fw_map.get(t_fw)
-                    tgt_keys = (
-                        [str(k) for k in raw_tgt_keys]
-                        if isinstance(raw_tgt_keys, list)
-                        else []
-                    )
-                    if tgt_keys:
-                        translated[tgt_keys[0]] = val
-                        mapped_keys.add(sk)
-                    elif s_fw == t_fw:
-                        translated[sk] = val
-                        mapped_keys.add(sk)
-                    break
-
-        raw_defaults = schema.get("defaults")
-        if (
-            isinstance(raw_defaults, dict)
-            and t_fw in raw_defaults
-            and isinstance(raw_defaults[t_fw], dict)
-        ):
-            tgt_def = raw_defaults[t_fw]
-            assert isinstance(tgt_def, dict)
-            translated.update(tgt_def)
+    if schema is not None:
+        translated, mapped_keys = _apply_concept_role_translations(schema, s_fw, t_fw, source_kwargs)
 
     for k, v in source_kwargs.items():
         if k not in mapped_keys:
-            if s_fw == t_fw and schema:
+            if s_fw == t_fw and schema is not None:
                 translated[k] = v
             else:
                 unmapped[k] = v

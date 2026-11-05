@@ -30,7 +30,6 @@ from ml_ecosystem_snapshots.introspection.static_parsers import (
 )
 from ml_ecosystem_snapshots.network_env import is_offline_mode
 
-
 _CHEX_OP_DEFS: list[
     tuple[
         str,
@@ -850,19 +849,14 @@ def _build_chex_canonical_ops(
             api_path=api_path,
             kind=kind,
             submodule=submodule,
-            params=[
-                CanonicalParamSpec(name=pn, kind=pk, default=pd)
-                for pn, pk, pd in params
-            ],
+            params=[CanonicalParamSpec(name=pn, kind=pk, default=pd) for pn, pk, pd in params],
             docstring=doc,
         )
         for name, api_path, kind, submodule, params, doc in defs
     ]
 
 
-CANONICAL_CHEX_OPS: list[CanonicalSubmoduleOpSpec] = _build_chex_canonical_ops(
-    _CHEX_OP_DEFS
-)
+CANONICAL_CHEX_OPS: list[CanonicalSubmoduleOpSpec] = _build_chex_canonical_ops(_CHEX_OP_DEFS)
 
 
 def _get_chex_module() -> types.ModuleType | None:
@@ -912,9 +906,7 @@ def collect_chex_api(include_nonpublic: bool = False) -> list[GhostRef]:
                 include_nonpublic=include_nonpublic,
                 inspector_fn=GhostInspector.inspect,
             ):
-                ref.environment_tags = list(ref.environment_tags or ()) + [
-                    t for t in env_tags if t not in (ref.environment_tags or ())
-                ]
+                ref.environment_tags = list(ref.environment_tags or ()) + [t for t in env_tags if t not in (ref.environment_tags or ())]
                 results.append(ref)
                 seen_paths.add(ref.api_path)
 
@@ -946,9 +938,7 @@ def collect_chex_api(include_nonpublic: bool = False) -> list[GhostRef]:
     return results
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect Chex API definitions for the requested semantic tier.
 
     Args:

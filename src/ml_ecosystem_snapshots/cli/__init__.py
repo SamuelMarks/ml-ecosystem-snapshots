@@ -6,6 +6,7 @@ for generating, diffing, exporting, indexing, and verifying framework snapshots.
 
 from __future__ import annotations
 
+import contextlib
 import os
 
 from ml_ecosystem_snapshots.cli.commands import (
@@ -48,8 +49,9 @@ def main() -> None:
     """Parse CLI arguments and dispatch to the selected subcommand handler."""
     parser = build_parser()
     args = parser.parse_args()
-    if "offline" in dir(args) and bool(args.offline):
-        os.environ["ML_SNAPSHOTS_OFFLINE"] = "1"
+    with contextlib.suppress(AttributeError):
+        if bool(args.offline):
+            os.environ["ML_SNAPSHOTS_OFFLINE"] = "1"
     args.func(args)
 
 

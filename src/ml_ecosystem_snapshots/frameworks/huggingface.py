@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import inspect
-import operator
+import typing
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -20,6 +20,13 @@ from ml_ecosystem_snapshots.introspection.runtime_boundary import (
 from ml_ecosystem_snapshots.introspection.sanitize import sanitize_type_str
 
 
+@typing.runtime_checkable
+class _GeneratingModelProtocol(typing.Protocol):
+    """Protocol for Hugging Face model classes exposing a `generate` method."""
+
+    generate: InspectableTarget
+
+
 def _extract_generation_kwargs(obj: InspectableTarget, ref: GhostRef) -> None:
     """Extract generation keyword arguments from a model's `generate` method signature.
 
@@ -27,9 +34,7 @@ def _extract_generation_kwargs(obj: InspectableTarget, ref: GhostRef) -> None:
         obj: Target Hugging Face model class or callable exposing `generate`.
         ref: Populated `GhostRef` to augment with generation keyword arguments.
     """
-    gen_method: InspectableTarget = (
-        operator.attrgetter("generate")(obj) if "generate" in dir(obj) else None
-    )
+    gen_method: InspectableTarget = obj.generate if isinstance(obj, _GeneratingModelProtocol) else None
     try:
         sig = get_runtime_signature(gen_method)
         for param in sig.parameters.values():
@@ -39,16 +44,8 @@ def _extract_generation_kwargs(obj: InspectableTarget, ref: GhostRef) -> None:
             ):
                 continue
             if not any(p.name == param.name for p in ref.params):
-                default_str = (
-                    str(param.default)
-                    if param.default is not inspect.Parameter.empty
-                    else None
-                )
-                anno_str = (
-                    str(param.annotation)
-                    if param.annotation is not inspect.Parameter.empty
-                    else None
-                )
+                default_str = str(param.default) if param.default is not inspect.Parameter.empty else None
+                anno_str = str(param.annotation) if param.annotation is not inspect.Parameter.empty else None
                 anno_str = sanitize_type_str(anno_str) if anno_str else None
                 ref.params.append(
                     GhostParam(
@@ -69,11 +66,11 @@ def _parse_pretrained_config(obj: InspectableTarget, ref: GhostRef) -> None:
         obj: Target configuration class symbol.
         ref: Populated `GhostRef` to augment with configuration attributes.
     """
-    if "__annotations__" not in dir(obj):
+    obj_members = dict(inspect.getmembers(obj))
+    raw_annos = obj_members.get("__annotations__")
+    if not isinstance(raw_annos, dict):
         return
 
-    raw_annos: InspectableTarget = operator.attrgetter("__annotations__")(obj)
-    assert isinstance(raw_annos, dict)
     for attr_name, attr_type in raw_annos.items():
         if not any(p.name == attr_name for p in ref.params):
             anno_str = str(attr_type) if not isinstance(attr_type, str) else attr_type
@@ -107,6 +104,76 @@ def _handle_automodel_factory(obj: InspectableTarget, name: str, ref: GhostRef) 
         )
 
 
+def _is_transformers_fast_filter_match(name: str) -> bool:
+    """Check whether a symbol in a large `transformers` module matches core prefixes/suffixes.
+
+    Args:
+        name: Unqualified symbol name.
+
+    Returns:
+        True if the symbol matches core `transformers` API patterns.
+    """
+    prefixes = ("Auto", "TFAuto", "FlaxAuto", "pipeline", "PreTrained")
+    suffixes = ("Pipeline", "TokenizerFast", "Tokenizer")
+    return name.startswith(prefixes) or name.endswith(suffixes)
+
+
+def _classify_hf_symbol(name: str) -> SemanticTier:
+    """Classify a Hugging Face symbol into its `SemanticTier`.
+
+    Args:
+        name: Unqualified symbol name.
+
+    Returns:
+        Target `SemanticTier`.
+    """
+    if any(k in name for k in ("Config", "Model", "Pipeline", "Tokenizer")):
+        return SemanticTier.MODEL
+    if "Scheduler" in name:
+        return SemanticTier.OPTIMIZER
+    return SemanticTier.UTIL
+
+
+def _inspect_and_augment_hf_symbol(
+    obj: InspectableTarget,
+    name: str,
+    module_name: str,
+    inspector: GhostInspector,
+) -> GhostRef | None:
+    """Inspect a Hugging Face symbol and augment Config, AutoModel, and generate kwargs.
+
+    Args:
+        obj: Target symbol object.
+        name: Unqualified symbol name.
+        module_name: Top-level package name.
+        inspector: Active `GhostInspector` instance.
+
+    Returns:
+        Populated `GhostRef` or `None` if inspection fails.
+    """
+    try:
+        ref = inspector.inspect(obj, f"{module_name}.{name}")
+        if ref is not None:
+            if "Config" in name:
+                _parse_pretrained_config(obj, ref)
+            if name.startswith("AutoModel"):
+                _handle_automodel_factory(obj, name, ref)
+            if isinstance(obj, _GeneratingModelProtocol):
+                _extract_generation_kwargs(obj, ref)
+            return ref
+    except (
+        AttributeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        ImportError,
+        OSError,
+        RuntimeError,
+    ):
+        pass
+    return None
+
+
 def collect_huggingface(
     module_name: str,
     category_mapping: dict[SemanticTier, list[str]],
@@ -128,7 +195,6 @@ def collect_huggingface(
 
     results: list[GhostRef] = []
 
-    # Check if this category is handled
     if category not in category_mapping:
         return results
 
@@ -138,82 +204,25 @@ def collect_huggingface(
         return results
 
     inspector = GhostInspector()
+    mod_members: list[tuple[str, InspectableTarget]] = inspect.getmembers(mod)
+    is_large_module = len(mod_members) > 100
 
-    dir_mod = dir(mod)
-    is_large_module = len(dir_mod) > 100
-
-    for name in dir_mod:
-        if not include_nonpublic and name.startswith("_"):
+    for name, obj in mod_members:
+        if (not include_nonpublic and name.startswith("_")) or obj is None:
             continue
 
-        if is_large_module and module_name == "transformers":
-            if not (
-                name.startswith("Auto")
-                or name.startswith("TFAuto")
-                or name.startswith("FlaxAuto")
-                or name.startswith("pipeline")
-                or name.startswith("PreTrained")
-                or name.endswith("Pipeline")
-                or name.endswith("TokenizerFast")
-                or name.endswith("Tokenizer")
-            ):
-                continue
-
-        try:
-            obj: InspectableTarget = operator.attrgetter(name)(mod)
-        except (
-            AttributeError,
-            TypeError,
-            ValueError,
-            KeyError,
-            ImportError,
-            OSError,
-            RuntimeError,
-        ):
+        if is_large_module and module_name == "transformers" and not _is_transformers_fast_filter_match(name):
             continue
 
-        if obj is None:
-            continue
-
-        obj_cat = None
-        if "Config" in name:
-            obj_cat = SemanticTier.MODEL
-        elif "Model" in name or "Pipeline" in name or "Tokenizer" in name:
-            obj_cat = SemanticTier.MODEL
-        elif "Scheduler" in name:
-            obj_cat = SemanticTier.OPTIMIZER
-        else:
-            obj_cat = SemanticTier.UTIL
-
-        if obj_cat == category:
-            try:
-                ref = inspector.inspect(obj, f"{module_name}.{name}")
-                if ref is not None:
-                    if "Config" in name:
-                        _parse_pretrained_config(obj, ref)
-                    if name.startswith("AutoModel"):
-                        _handle_automodel_factory(obj, name, ref)
-                    if "generate" in dir(obj):
-                        _extract_generation_kwargs(obj, ref)
-
-                    results.append(ref)
-            except (
-                AttributeError,
-                TypeError,
-                ValueError,
-                KeyError,
-                ImportError,
-                OSError,
-                RuntimeError,
-            ):
-                pass
+        if _classify_hf_symbol(name) == category:
+            ref = _inspect_and_augment_hf_symbol(obj, name, module_name, inspector)
+            if ref is not None:
+                results.append(ref)
 
     return results
 
 
-def collect_transformers(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_transformers(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect Hugging Face `transformers` APIs.
 
     Args:
@@ -230,9 +239,7 @@ def collect_transformers(
     return collect_huggingface("transformers", mapping, category, include_nonpublic)
 
 
-def collect_diffusers(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_diffusers(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect Hugging Face `diffusers` APIs.
 
     Args:
@@ -250,9 +257,7 @@ def collect_diffusers(
     return collect_huggingface("diffusers", mapping, category, include_nonpublic)
 
 
-def collect_tokenizers(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_tokenizers(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect Hugging Face `tokenizers` APIs.
 
     Args:

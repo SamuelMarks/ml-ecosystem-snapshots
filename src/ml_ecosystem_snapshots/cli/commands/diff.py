@@ -18,9 +18,9 @@ def cmd_diff(args: argparse.Namespace) -> None:
     path1 = resolve_snapshot_path(args.json1)
     path2 = resolve_snapshot_path(args.json2)
 
-    with open(path1, "r", encoding="utf-8") as f:
+    with open(path1, encoding="utf-8") as f:
         snap1 = json.load(f)
-    with open(path2, "r", encoding="utf-8") as f:
+    with open(path2, encoding="utf-8") as f:
         snap2 = json.load(f)
 
     result = diff_snapshots(snap1, snap2)

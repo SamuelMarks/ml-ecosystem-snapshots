@@ -19,9 +19,7 @@ except Exception:
     da = None
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect dask API.
 
     Args:

@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import os
-
-import pytest
 from pathlib import Path
-from ml_ecosystem_snapshots.compliance import (
-    get_module_info_from_path,
-    extract_target_ast,
-    align_namespace,
-)
+
 import griffe
-from ml_ecosystem_snapshots.compliance import extract_target_refs, score_compliance
+import pytest
+from ml_ecosystem_snapshots.compliance import (
+    align_namespace,
+    extract_target_ast,
+    extract_target_refs,
+    get_module_info_from_path,
+    score_compliance,
+)
 from ml_ecosystem_snapshots.models import ExtendedGhostRef, JsonValue
 
 
@@ -105,9 +106,7 @@ def test_extract_target_ast(tmp_path: Path) -> None:
 
 def test_align_namespace() -> None:
     """Test namespace alignment."""
-    assert (
-        align_namespace("ml_switcheroo.jax.nn", "ml_switcheroo.jax", "jax") == "jax.nn"
-    )
+    assert align_namespace("ml_switcheroo.jax.nn", "ml_switcheroo.jax", "jax") == "jax.nn"
     assert align_namespace("ml_switcheroo.jax", "ml_switcheroo.jax", "jax") == "jax"
     assert align_namespace("other.module", "ml_switcheroo.jax", "jax") == "other.module"
 
@@ -387,9 +386,7 @@ def test_extract_target_refs_nested_import_error(tmp_path: Path) -> None:
 
     # Actually just a normal failure that is caught in `except Exception:` block:
     # We can mock this by trying to extract a fake file
-    sub_mod.write_text(
-        "import sys\nsys.modules['nested_pkg.api.broken'] = None\ndef broken(): pass"
-    )
+    sub_mod.write_text("import sys\nsys.modules['nested_pkg.api.broken'] = None\ndef broken(): pass")
     refs = extract_target_refs(str(sub_mod), "nested_pkg.api", "reference")
 
     # We only care that it doesn't crash and returns the parsed sys import
@@ -442,9 +439,7 @@ def test_extract_target_refs_catch_all_exception(tmp_path: Path) -> None:
     pkg_dir.mkdir()
     Path(os.path.join(pkg_dir, "__init__.py")).touch()
     sub_mod = Path(os.path.join(pkg_dir, "api.py"))
-    sub_mod.write_text(
-        "class BrokenClass:\n    @property\n    def prop(self): raise RuntimeError('Broken')"
-    )
+    sub_mod.write_text("class BrokenClass:\n    @property\n    def prop(self): raise RuntimeError('Broken')")
 
     refs = extract_target_refs(str(sub_mod), "broken_pkg.api", "reference")
     # Griffe parses it, GhostInspector will try to inspect and might fail, but it's wrapped in a general catch block.
@@ -458,8 +453,9 @@ def test_extract_target_refs_catch_inner_exception(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    from ml_ecosystem_snapshots.compliance import extract_target_refs
     from unittest.mock import patch
+
+    from ml_ecosystem_snapshots.compliance import extract_target_refs
 
     pkg_dir = Path(os.path.join(tmp_path, "inner_broken_pkg"))
     pkg_dir.mkdir()
@@ -473,9 +469,7 @@ def test_extract_target_refs_catch_inner_exception(tmp_path: Path) -> None:
 
     orig_inspect = ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect
 
-    def mock_inspect(
-        obj: InspectableTarget, api_path: str, is_public: bool | None = None
-    ) -> ExtendedGhostRef:
+    def mock_inspect(obj: InspectableTarget, api_path: str, is_public: bool | None = None) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -566,8 +560,9 @@ def test_derive_base_path_src(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    from ml_ecosystem_snapshots.compliance import get_module_info_from_path
     import os
+
+    from ml_ecosystem_snapshots.compliance import get_module_info_from_path
 
     src_dir = Path(os.path.join(tmp_path, "src"))
     src_dir.mkdir()
@@ -598,12 +593,7 @@ def test_map_target_to_reference_path_extra() -> None:
     """Verify map target to reference path extra behavior."""
     from ml_ecosystem_snapshots.compliance import align_namespace
 
-    assert (
-        align_namespace("zero_torch.jax.numpy.array", "zero_torch", "torch")
-        == "jax.numpy.array"
-    )
-    assert (
-        align_namespace("zero_torch.optax.adam", "zero_torch", "torch") == "optax.adam"
-    )
+    assert align_namespace("zero_torch.jax.numpy.array", "zero_torch", "torch") == "jax.numpy.array"
+    assert align_namespace("zero_torch.optax.adam", "zero_torch", "torch") == "optax.adam"
     assert align_namespace("zero_torch", "zero_torch", "torch") == "torch"
     assert align_namespace("zero.array", "zero", "np") == "np.array"

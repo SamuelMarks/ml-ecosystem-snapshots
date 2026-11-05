@@ -124,6 +124,8 @@ class MockAtenOp:
 class MockTorchOp:
     """Mock PyTorch C-extension callable operator without Python signature."""
 
+    _op_name: str
+
     def __init__(self, name: str, doc: str) -> None:
         """Initialize mock callable operator.
 
@@ -131,9 +133,11 @@ class MockTorchOp:
             name: Operator function identifier.
             doc: C-extension docstring containing signature.
         """
-        self.__name__ = name
-        self.__doc__ = doc
-        self.__module__ = "torch"
+        self._op_name = name
+        mp = pytest.MonkeyPatch()
+        mp.setattr(self, "__name__", name, raising=False)
+        mp.setattr(self, "__doc__", doc, raising=False)
+        mp.setattr(self, "__module__", "torch", raising=False)
 
     def __call__(self, *args: InspectableTarget, **kwargs: InspectableTarget) -> None:
         """Execute mock operator.
@@ -154,7 +158,7 @@ class MockTorchOp:
         Raises:
             ValueError: Always raised to match PyTorch C-extension behavior.
         """
-        raise ValueError(f"no signature found for builtin {self.__name__}")
+        raise ValueError(f"no signature found for builtin {self._op_name}")
 
 
 class MockTensor:
@@ -164,7 +168,7 @@ class MockTensor:
         """Initialize mock tensor."""
         pass
 
-    def add(self, other: "MockTensor" | int | float, *, alpha: int = 1) -> "MockTensor":
+    def add(self, other: MockTensor | int | float, *, alpha: int = 1) -> MockTensor:
         """Add tensor.
 
         Args:
@@ -176,9 +180,7 @@ class MockTensor:
         """
         return self
 
-    def add_(
-        self, other: "MockTensor" | int | float, *, alpha: int = 1
-    ) -> "MockTensor":
+    def add_(self, other: MockTensor | int | float, *, alpha: int = 1) -> MockTensor:
         """In-place add tensor.
 
         Args:
@@ -190,7 +192,7 @@ class MockTensor:
         """
         return self
 
-    def relu(self) -> "MockTensor":
+    def relu(self) -> MockTensor:
         """Apply ReLU.
 
         Returns:
@@ -198,7 +200,7 @@ class MockTensor:
         """
         return self
 
-    def matmul(self, other: "MockTensor") -> "MockTensor":
+    def matmul(self, other: MockTensor) -> MockTensor:
         """Matrix multiplication.
 
         Args:
@@ -209,7 +211,7 @@ class MockTensor:
         """
         return self
 
-    def sum(self) -> "MockTensor":
+    def sum(self) -> MockTensor:
         """Sum elements.
 
         Returns:
@@ -217,9 +219,7 @@ class MockTensor:
         """
         return self
 
-    def cat(
-        self, tensors: list["MockTensor"] | tuple["MockTensor", ...], dim: int = 0
-    ) -> "MockTensor":
+    def cat(self, tensors: list[MockTensor] | tuple[MockTensor, ...], dim: int = 0) -> MockTensor:
         """Concatenate tensors.
 
         Args:
@@ -231,7 +231,7 @@ class MockTensor:
         """
         return self
 
-    def mm(self, mat2: "MockTensor") -> "MockTensor":
+    def mm(self, mat2: MockTensor) -> MockTensor:
         """Matrix multiply.
 
         Args:
@@ -242,7 +242,7 @@ class MockTensor:
         """
         return self
 
-    def bmm(self, mat2: "MockTensor") -> "MockTensor":
+    def bmm(self, mat2: MockTensor) -> MockTensor:
         """Batch matrix multiply.
 
         Args:
@@ -253,7 +253,7 @@ class MockTensor:
         """
         return self
 
-    def detach(self) -> "MockTensor":
+    def detach(self) -> MockTensor:
         """Detach tensor.
 
         Returns:
@@ -553,9 +553,9 @@ def ensure_torch() -> types.ModuleType:
         import importlib
 
         torch_mod: types.ModuleType = importlib.import_module("torch")
-        if "ops" in dir(torch_mod) and "aten" in dir(torch_mod.ops):
-            return torch_mod
-    except (ImportError, Exception):
+        _ = torch_mod.ops.aten
+        return torch_mod
+    except (ImportError, AttributeError, Exception):
         pass
 
     return install_mock_torch()

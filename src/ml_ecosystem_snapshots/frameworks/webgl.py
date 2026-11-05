@@ -6,19 +6,16 @@ matrix operations (matrixCompMult, transpose), and transcendental functions.
 
 from __future__ import annotations
 
+import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     OperandDirection,
     SemanticTier,
 )
-import pydantic
 
 from ml_ecosystem_snapshots.frameworks._base import CanonicalSsaOpSpec
 
-
-CANONICAL_WEBGL_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(
-    list[CanonicalSsaOpSpec]
-).validate_python(
+CANONICAL_WEBGL_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(list[CanonicalSsaOpSpec]).validate_python(
     [
         # Texture Fetches & Sampling
         {
@@ -137,9 +134,7 @@ def _load_webgl_ops() -> list[CanonicalSsaOpSpec]:
     return CANONICAL_WEBGL_OPS
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect WebGL 2.0 and GLSL ES 3.00 compute shader intrinsics.
 
     Args:
@@ -163,9 +158,7 @@ def collect_api(
         ops=ops,
         api_prefix="webgl",
         name_key="name",
-        operand_annotation_fn=lambda op, inp: (
-            "vec4" if inp in ("x", "y", "a", "b", "c") else "any"
-        ),
+        operand_annotation_fn=lambda op, inp: "vec4" if inp in ("x", "y", "a", "b", "c") else "any",
         operand_description_fn=lambda op, inp: f"WebGL operand {inp}",
         operand_direction_fn=lambda op, inp: OperandDirection.READ,
         attr_description_prefix="WebGL attribute",

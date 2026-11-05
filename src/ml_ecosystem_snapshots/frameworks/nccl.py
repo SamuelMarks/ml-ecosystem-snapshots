@@ -8,18 +8,15 @@ from __future__ import annotations
 
 import ctypes
 
+import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     SemanticTier,
 )
-import pydantic
 
 from ml_ecosystem_snapshots.frameworks._base import CanonicalPythonOpSpec
 
-
-CANONICAL_NCCL_OPS: list[CanonicalPythonOpSpec] = pydantic.TypeAdapter(
-    list[CanonicalPythonOpSpec]
-).validate_python(
+CANONICAL_NCCL_OPS: list[CanonicalPythonOpSpec] = pydantic.TypeAdapter(list[CanonicalPythonOpSpec]).validate_python(
     [
         # Collective Reductions
         {
@@ -176,9 +173,7 @@ def _discover_nccl_library() -> ctypes.CDLL | None:
     return None
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect NVIDIA NCCL and AMD RCCL collective communication APIs.
 
     Args:

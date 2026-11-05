@@ -70,6 +70,17 @@ def _scan_griffe_module(
     return found
 
 
+_KERAS_TIER_SPECS: dict[SemanticTier, tuple[str, str, set[str] | None]] = {
+    SemanticTier.LOSS: ("keras.losses", "class", {"Loss", "Container"}),
+    SemanticTier.OPTIMIZER: ("keras.optimizers", "class", {"Optimizer", "TFOptimizer"}),
+    SemanticTier.ACTIVATION: ("keras.activations", "function", None),
+    SemanticTier.LAYER: ("keras.layers", "class", {"Layer"}),
+    SemanticTier.SCHEDULER: ("keras.optimizers.schedules", "class", {"LearningRateSchedule"}),
+    SemanticTier.INITIALIZER: ("keras.initializers", "class", {"Initializer"}),
+    SemanticTier.METRIC: ("keras.metrics", "class", {"Metric"}),
+}
+
+
 def _collect_static(category: SemanticTier, include_nonpublic: bool) -> list[GhostRef]:
     """Scan the Keras library for a specific API category via Griffe.
 
@@ -83,77 +94,18 @@ def _collect_static(category: SemanticTier, include_nonpublic: bool) -> list[Gho
     if not griffe:
         return []
 
-    results = []
-    if category == SemanticTier.LOSS:
-        results.extend(
-            _scan_griffe_module(
-                "keras.losses",
-                "keras.losses",
-                kind="class",
-                block_list={"Loss", "Container"},
-                include_nonpublic=include_nonpublic,
-            )
+    tier_spec = _KERAS_TIER_SPECS.get(category)
+    if tier_spec is not None:
+        mod_path, kind, blocked = tier_spec
+        return _scan_griffe_module(
+            mod_path,
+            mod_path,
+            kind=kind,
+            block_list=blocked,
+            include_nonpublic=include_nonpublic,
         )
-    elif category == SemanticTier.OPTIMIZER:
-        results.extend(
-            _scan_griffe_module(
-                "keras.optimizers",
-                "keras.optimizers",
-                kind="class",
-                block_list={"Optimizer", "TFOptimizer"},
-                include_nonpublic=include_nonpublic,
-            )
-        )
-    elif category == SemanticTier.ACTIVATION:
-        results.extend(
-            _scan_griffe_module(
-                "keras.activations",
-                "keras.activations",
-                kind="function",
-                include_nonpublic=include_nonpublic,
-            )
-        )
-    elif category == SemanticTier.LAYER:
-        results.extend(
-            _scan_griffe_module(
-                "keras.layers",
-                "keras.layers",
-                kind="class",
-                block_list={"Layer"},
-                include_nonpublic=include_nonpublic,
-            )
-        )
-    elif category == SemanticTier.SCHEDULER:
-        results.extend(
-            _scan_griffe_module(
-                "keras.optimizers.schedules",
-                "keras.optimizers.schedules",
-                kind="class",
-                block_list={"LearningRateSchedule"},
-                include_nonpublic=include_nonpublic,
-            )
-        )
-    elif category == SemanticTier.INITIALIZER:
-        results.extend(
-            _scan_griffe_module(
-                "keras.initializers",
-                "keras.initializers",
-                kind="class",
-                block_list={"Initializer"},
-                include_nonpublic=include_nonpublic,
-            )
-        )
-    elif category == SemanticTier.METRIC:
-        results.extend(
-            _scan_griffe_module(
-                "keras.metrics",
-                "keras.metrics",
-                kind="class",
-                block_list={"Metric"},
-                include_nonpublic=include_nonpublic,
-            )
-        )
-    elif category == SemanticTier.ARRAY_API:
+
+    if category == SemanticTier.ARRAY_API:
         ops_refs = _scan_griffe_module(
             "keras.ops",
             "keras.ops",
@@ -170,17 +122,13 @@ def _collect_static(category: SemanticTier, include_nonpublic: bool) -> list[Gho
         for ref in ops_refs:
             if ref.environment_tags is None:
                 ref.environment_tags = []
-            ref.environment_tags.extend(
-                ["backend:jax", "backend:torch", "backend:tensorflow"]
-            )
-        results.extend(ops_refs)
+            ref.environment_tags.extend(["backend:jax", "backend:torch", "backend:tensorflow"])
+        return ops_refs
 
-    return results
+    return []
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Entrypoint to collect the Keras API signature for a given category.
 
     Args:

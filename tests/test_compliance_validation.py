@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
 import pytest
 import pytest_mock
-import os
 
 
 def test_align_namespace_exact_mapping() -> None:
@@ -19,9 +20,8 @@ def test_align_namespace_exact_mapping() -> None:
 def test_score_compliance_sig_tuple_edge_cases() -> None:
     """Test compliance scoring with signature tuple matching and sanitized defaults."""
     from ml_ecosystem_snapshots.compliance import score_compliance
-    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
-
     from ml_ecosystem_snapshots.models import JsonValue
+    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     ref_snap: dict[str, JsonValue] = {
         "categories": {
@@ -253,9 +253,7 @@ def test_score_compliance_varargs_fallback_special_cases() -> None:
     }
 
 
-def test_extract_target_refs_single_sys_path_and_logging(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
-) -> None:
+def test_extract_target_refs_single_sys_path_and_logging(tmp_path: Path, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture) -> None:
     """Verify extract_target_refs_single restores sys.path cleanly and logs warnings instead of printing.
 
     Args:
@@ -265,15 +263,14 @@ def test_extract_target_refs_single_sys_path_and_logging(
     """
     import logging
     import sys
+
     from ml_ecosystem_snapshots.compliance import extract_target_refs_single
 
     pkg_dir = Path(os.path.join(tmp_path, "warn_pkg"))
     pkg_dir.mkdir()
     Path(os.path.join(pkg_dir, "__init__.py")).touch()
     sub_mod = Path(os.path.join(pkg_dir, "broken_mod.py"))
-    sub_mod.write_text(
-        "import nonexistent_dep_xyz_987\ndef broken_fn(x: int) -> int:\n    return x\n"
-    )
+    sub_mod.write_text("import nonexistent_dep_xyz_987\ndef broken_fn(x: int) -> int:\n    return x\n")
 
     before_sys_path = list(sys.path)
     with caplog.at_level(logging.WARNING, logger="ml_ecosystem_snapshots.compliance"):
@@ -283,9 +280,7 @@ def test_extract_target_refs_single_sys_path_and_logging(
     assert list(sys.path) == before_sys_path
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert any(
-        "Exception in walk for warn_pkg.broken_mod" in r.message for r in caplog.records
-    )
+    assert any("Exception in walk for warn_pkg.broken_mod" in r.message for r in caplog.records)
 
 
 def test_extract_target_refs_string_path(tmp_path: Path) -> None:
@@ -391,10 +386,7 @@ def test_check_sass_assembly_compliance() -> None:
     """
     res_invalid = check_sass_assembly_compliance(invalid_sass, sm_arch="sm_80")
     assert res_invalid["is_compliant"] is False
-    assert any(
-        "WGMMA instructions are strictly supported on sm_90+" in err
-        for err in res_invalid["errors"]
-    )
+    assert any("WGMMA instructions are strictly supported on sm_90+" in err for err in res_invalid["errors"])
 
     # 3. Comment lines starting with '#' and lines that do not match instruction regex
     sass_comments = "# A comment line\n// Another comment\n@@ invalid label !@#\n\n"
@@ -432,7 +424,7 @@ def test_check_rdna_assembly_compliance() -> None:
 
 
 def test_validate_broadcast_and_matmul_shapes() -> None:
-    """Test validate_broadcast_shapes and validate_matmul_shapes rules and error branches."""
+    """Test validate_broadcast_shapes and basic 1D/strict-2D validate_matmul_shapes rules."""
     from ml_ecosystem_snapshots.compliance import (
         validate_broadcast_shapes,
         validate_matmul_shapes,
@@ -461,15 +453,11 @@ def test_validate_broadcast_and_matmul_shapes() -> None:
     assert res_str == [-1]
 
     # 2. Matmul strict 2D
-    compat_s2d, _, err_s2d = validate_matmul_shapes(
-        [2, 3, 4], [2, 4, 5], strict_2d=True
-    )
+    compat_s2d, _, err_s2d = validate_matmul_shapes([2, 3, 4], [2, 4, 5], strict_2d=True)
     assert compat_s2d is False
     assert "Strict 2D matmul error" in (err_s2d or "")
 
-    compat_s2d_ok, res_s2d_ok, _ = validate_matmul_shapes(
-        [2, 3], [3, 4], strict_2d=True
-    )
+    compat_s2d_ok, res_s2d_ok, _ = validate_matmul_shapes([2, 3], [3, 4], strict_2d=True)
     assert compat_s2d_ok is True
     assert res_s2d_ok == [2, 4]
 
@@ -489,6 +477,11 @@ def test_validate_broadcast_and_matmul_shapes() -> None:
     compat_1d_err, _, err_1d = validate_matmul_shapes([4], [5])
     assert compat_1d_err is False
     assert "dot product mismatch" in (err_1d or "")
+
+
+def test_validate_matmul_vector_and_batch_shapes() -> None:
+    """Test validate_matmul_shapes for vector-matrix, matrix-vector, 2D, and batched shapes."""
+    from ml_ecosystem_snapshots.compliance import validate_matmul_shapes
 
     # Vector-matrix (1D x 2D) and Matrix-vector (2D x 1D)
     compat_vm, res_vm, _ = validate_matmul_shapes([4], [4, 5])
@@ -520,15 +513,11 @@ def test_validate_broadcast_and_matmul_shapes() -> None:
     # Contracting mismatch in vector-matrix / matrix-vector
     compat_vm_err, _, err_vm = validate_matmul_shapes([4], [5, 6])
     assert compat_vm_err is False
-    assert "Vector-matrix multiplication contracting dimension mismatch" in (
-        err_vm or ""
-    )
+    assert "Vector-matrix multiplication contracting dimension mismatch" in (err_vm or "")
 
     compat_mv_err, _, err_mv = validate_matmul_shapes([3, 4], [5])
     assert compat_mv_err is False
-    assert "Matrix-vector multiplication contracting dimension mismatch" in (
-        err_mv or ""
-    )
+    assert "Matrix-vector multiplication contracting dimension mismatch" in (err_mv or "")
 
     # Rank < 1 error (e.g. scalar operand)
     compat_r0, _, err_r0 = validate_matmul_shapes([], [4, 5])
@@ -540,7 +529,7 @@ def test_validate_broadcast_and_matmul_shapes() -> None:
     assert compat_2d is True
     assert res_2d == [2, 4]
 
-    compat_2d_sym, res_2d_sym, _ = validate_matmul_shapes([2, "?"], [3, 4])
+    compat_2d_sym, _res_2d_sym, _ = validate_matmul_shapes([2, "?"], [3, 4])
     assert compat_2d_sym is True
 
     compat_k_err, _, err_k = validate_matmul_shapes([2, 3], [4, 5])
@@ -570,10 +559,7 @@ def test_compliance_edge_branches(tmp_path: Path) -> None:
 
     # Test exact mapping match where api_path != target_prefix
     assert align_namespace("zero_chex", "custom_target", "custom_ref") == "chex"
-    assert (
-        align_namespace("zero_chex.assert_shape", "custom_target", "custom_ref")
-        == "chex.assert_shape"
-    )
+    assert align_namespace("zero_chex.assert_shape", "custom_target", "custom_ref") == "chex.assert_shape"
     assert align_namespace("zero_orbax", "custom_target", "custom_ref") == "orbax"
     assert align_namespace("zero_grain", "custom_target", "custom_ref") == "grain"
 
@@ -609,9 +595,8 @@ def test_compliance_edge_branches(tmp_path: Path) -> None:
 def test_score_compliance_opaque_c_extensions() -> None:
     """Test opaque C-extension signature matching and strict rejection."""
     from ml_ecosystem_snapshots.compliance import score_compliance
-    from ml_switcheroo_ir.schema.ghost import GhostRef
-
     from ml_ecosystem_snapshots.models import JsonValue
+    from ml_switcheroo_ir.schema.ghost import GhostRef
 
     ref_snap: dict[str, JsonValue] = {
         "categories": {
@@ -644,9 +629,7 @@ def test_score_compliance_opaque_c_extensions() -> None:
     assert any(m["api_path"] == "test.opaque" for m in res_strict["mismatched"])
 
 
-def test_extract_target_refs_single_root_function(
-    tmp_path: Path, mocker: pytest_mock.MockerFixture
-) -> None:
+def test_extract_target_refs_single_root_function(tmp_path: Path, mocker: pytest_mock.MockerFixture) -> None:
     """Test extract_target_refs_single when root node is a Function.
 
     Args:

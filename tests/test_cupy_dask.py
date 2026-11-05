@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import operator
-import pytest
-
 import sys
-import pytest_mock
 import types
 
-from ml_switcheroo_ir.schema.ghost import SemanticTier
+import ml_ecosystem_snapshots.frameworks.cupy as cupy_fw
+import ml_ecosystem_snapshots.frameworks.dask as dask_fw
+import pytest
+import pytest_mock
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
-import ml_ecosystem_snapshots.frameworks.cupy as cupy_fw
-import ml_ecosystem_snapshots.frameworks.dask as dask_fw
+from ml_switcheroo_ir.schema.ghost import SemanticTier
 
 
 def create_module(name: str, attrs: dict[str, InspectableTarget]) -> types.ModuleType:
@@ -64,9 +62,7 @@ def test_cupy_collect(mocker: pytest_mock.MockerFixture) -> None:
             "maximum": 42,
             "_private": fake_private,
             "not_callable": 42,
-            "error_func": lambda: (
-                None
-            ),  # We'll mock GhostInspector.inspect to raise exception for this
+            "error_func": lambda: None,  # We'll mock GhostInspector.inspect to raise exception for this
         },
     )
     mocker.patch("ml_ecosystem_snapshots.frameworks.cupy.cp", fake_cp)
@@ -74,9 +70,7 @@ def test_cupy_collect(mocker: pytest_mock.MockerFixture) -> None:
     # Test ACTIVATION
     orig_inspect = GhostInspector.inspect
 
-    def mock_inspect(
-        obj: InspectableTarget, fqn: str, is_public: bool
-    ) -> ExtendedGhostRef:
+    def mock_inspect(obj: InspectableTarget, fqn: str, is_public: bool) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -141,9 +135,7 @@ def test_dask_collect(mocker: pytest_mock.MockerFixture) -> None:
 
     orig_inspect = GhostInspector.inspect
 
-    def mock_inspect(
-        obj: InspectableTarget, fqn: str, is_public: bool
-    ) -> ExtendedGhostRef:
+    def mock_inspect(obj: InspectableTarget, fqn: str, is_public: bool) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -191,9 +183,7 @@ def test_dask_collect(mocker: pytest_mock.MockerFixture) -> None:
     assert len(res_util_nonpublic) >= len(res_util)
 
     # Test UTIL tier when dask import raises
-    def mock_import_raise(
-        *args: InspectableTarget, **kwargs: InspectableTarget
-    ) -> types.ModuleType:
+    def mock_import_raise(*args: InspectableTarget, **kwargs: InspectableTarget) -> types.ModuleType:
         """Mock import raising error when importing dask.
 
         Args:
@@ -265,19 +255,28 @@ def test_dask_import_error(mocker: pytest_mock.MockerFixture) -> None:
     import importlib
     import sys
     import types
+
     import ml_ecosystem_snapshots.frameworks.dask as d_fw
+
+    def _get_da() -> types.ModuleType | None:
+        """Read current `d_fw.da` reference after module reload.
+
+        Returns:
+            Current `d_fw.da` value.
+        """
+        return d_fw.da
 
     # 1. Available
     fake_dask = types.ModuleType("dask")
     fake_da = types.ModuleType("dask.array")
     mocker.patch.dict(sys.modules, {"dask": fake_dask, "dask.array": fake_da})
     importlib.reload(d_fw)
-    assert operator.attrgetter("da")(d_fw) is fake_da
+    assert _get_da() is fake_da
 
     # 2. Unavailable
     mocker.patch.dict(sys.modules, {"dask": None, "dask.array": None})
     importlib.reload(d_fw)
-    assert operator.attrgetter("da")(d_fw) is None
+    assert _get_da() is None
     assert d_fw.collect_api(SemanticTier.UTIL) == []
 
     # Restore

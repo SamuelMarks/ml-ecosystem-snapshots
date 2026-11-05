@@ -2,127 +2,127 @@
 
 from __future__ import annotations
 
+import importlib
+import types
+
 import pytest
-
-from unittest.mock import patch, MagicMock
-from ml_switcheroo_ir.schema.ghost import SemanticTier
-from ml_ecosystem_snapshots.frameworks.triton import collect_api as triton_collect
-from ml_ecosystem_snapshots.frameworks.onnxruntime import collect_api as onnx_collect
 from ml_ecosystem_snapshots.frameworks.deepspeed import collect_api as ds_collect
+from ml_ecosystem_snapshots.frameworks.onnxruntime import collect_api as onnx_collect
+from ml_ecosystem_snapshots.frameworks.triton import collect_api as triton_collect
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 
-def test_triton_collect() -> None:
-    """Verify triton collect behavior."""
-    mock_tl = MagicMock()
-    pytest.MonkeyPatch().setattr(
-        mock_tl,
-        "__dir__",
-        lambda self: [
-            "constexpr",
-            "tensor",
-            "_priv",
-            "not_callable",
-        ],
-        raising=False,
-    )
+def test_triton_collect(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify triton collect behavior.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    mock_triton = types.ModuleType("triton")
+    mock_tl = types.ModuleType("triton.language")
 
     def constexpr() -> None:
         """Execute helper constexpr."""
-        pass
-
-    constexpr.__module__ = "triton.language"
-    constexpr.__name__ = "constexpr"
 
     def tensor() -> None:
         """Execute helper tensor."""
-        pass
 
-    tensor.__module__ = "triton.language"
-    tensor.__name__ = "tensor"
+    def _priv() -> None:
+        """Execute helper _priv."""
 
-    mock_tl.constexpr = constexpr
-    mock_tl.tensor = tensor
-    mock_tl.not_callable = 123
-    mock_tl._priv = lambda: None
-
-    import types
-    from ml_switcheroo_ir.schema.ghost import GhostRef
+    monkeypatch.setattr(mock_tl, "constexpr", constexpr, raising=False)
+    monkeypatch.setattr(mock_tl, "tensor", tensor, raising=False)
+    monkeypatch.setattr(mock_tl, "not_callable", 123, raising=False)
+    monkeypatch.setattr(mock_tl, "_priv", _priv, raising=False)
 
     mock_math = types.ModuleType("triton.language.math")
-    pytest.MonkeyPatch().setattr(mock_math, "a_bad", 123, raising=False)
-    pytest.MonkeyPatch().setattr(mock_math, "sin", lambda: None, raising=False)
-    pytest.MonkeyPatch().setattr(mock_math, "_priv", lambda: None, raising=False)
-    pytest.MonkeyPatch().setattr(mock_math, "bad", 123, raising=False)
-    mock_tl.math = mock_math
+    monkeypatch.setattr(mock_math, "a_bad", 123, raising=False)
+    monkeypatch.setattr(mock_math, "sin", lambda: None, raising=False)
+    monkeypatch.setattr(mock_math, "_priv", lambda: None, raising=False)
+    monkeypatch.setattr(mock_math, "bad", 123, raising=False)
+    monkeypatch.setattr(mock_tl, "math", mock_math, raising=False)
 
-    with patch(
-        "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect"
-    ) as mock_inspect:
-        mock_inspect.side_effect = lambda obj, path, **kw: GhostRef(
+    def fake_inspect(obj: InspectableTarget, path: str, **kw: InspectableTarget) -> GhostRef:
+        """Return a stub GhostRef for the given path.
+
+        Args:
+            obj: Target callable.
+            path: Dotted API path.
+            kw: Extra keyword arguments.
+
+        Returns:
+            Stub `GhostRef`.
+        """
+        return GhostRef(
             name=path.split(".")[-1],
             api_path=path,
             kind="function",
             params=[],
             docstring="",
         )
-        with patch("importlib.import_module") as mock_import:
 
-            def side_effect(name: str) -> types.ModuleType | MagicMock:
-                """Execute helper side effect.
+    def fake_import_module(name: str, package: str | None = None) -> types.ModuleType:
+        """Return fake triton modules for import_module.
 
-                Args:
-                    name: Attribute name requested on dynamic module.
+        Args:
+            name: Module name.
+            package: Optional package anchor.
+
+        Returns:
+            Fake module object.
+
+        Raises:
+            ImportError: If an unknown module is requested.
+        """
+        if name == "triton":
+            return mock_triton
+        if name == "triton.language":
+            return mock_tl
+        raise ImportError(name)
+
+    monkeypatch.setattr(GhostInspector, "inspect", staticmethod(fake_inspect))
+    monkeypatch.setattr(importlib, "import_module", fake_import_module)
+
+    res = triton_collect(SemanticTier.UTIL)
+    assert len(res) == 3
+    assert {r.api_path for r in res} == {
+        "triton.language.constexpr",
+        "triton.language.tensor",
+        "triton.language.math.sin",
+    }
+
+    res_priv = triton_collect(SemanticTier.UTIL, include_nonpublic=True)
+    assert len(res_priv) == 5
 
 
-                Raises:
-                    ImportError: Exception.
+def test_onnx_collect(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify onnx collect behavior.
 
-                Returns:
-                    Computed result.
-                """
-                if name == "triton":
-                    return MagicMock()
-                elif name == "triton.language":
-                    return mock_tl
-                raise ImportError(name)
-
-            mock_import.side_effect = side_effect
-
-            res = triton_collect(SemanticTier.UTIL)
-            assert len(res) == 3
-            assert {r.api_path for r in res} == {
-                "triton.language.constexpr",
-                "triton.language.tensor",
-                "triton.language.math.sin",
-            }
-
-            res_priv = triton_collect(SemanticTier.UTIL, include_nonpublic=True)
-            assert len(res_priv) == 5
-
-
-def test_onnx_collect() -> None:
-    """Verify onnx collect behavior."""
-    mock_onnx = MagicMock()
-    pytest.MonkeyPatch().setattr(
-        mock_onnx, "__dir__", lambda self: ["InferenceSession", "utils"], raising=False
-    )
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    mock_onnx = types.ModuleType("onnxruntime")
 
     class InferenceSession:
         """Mock or helper class InferenceSession for unit testing."""
 
-        pass
+    monkeypatch.setattr(mock_onnx, "InferenceSession", InferenceSession, raising=False)
+    monkeypatch.setattr(mock_onnx, "utils", 123, raising=False)
 
-    mock_onnx.InferenceSession = InferenceSession
+    def fake_inspect(self: GhostInspector, obj: InspectableTarget, path: str) -> GhostRef:
+        """Return a stub GhostRef for ONNX Runtime symbols.
 
-    with (
-        patch("importlib.import_module", return_value=mock_onnx),
-        patch(
-            "ml_ecosystem_snapshots.frameworks.onnxruntime.GhostInspector"
-        ) as MockInspector,
-    ):
-        from ml_switcheroo_ir.schema.ghost import GhostRef
+        Args:
+            self: GhostInspector instance.
+            obj: Target symbol.
+            path: Dotted API path.
 
-        MockInspector.return_value.inspect.side_effect = lambda obj, path: GhostRef(
+        Returns:
+            Stub `GhostRef`.
+        """
+        return GhostRef(
             name=path.split(".")[-1],
             api_path=path,
             kind="function",
@@ -130,34 +130,41 @@ def test_onnx_collect() -> None:
             docstring="",
         )
 
-        res = onnx_collect(SemanticTier.MODEL)
-        assert len(res) == 1
-        assert res[0].name == "InferenceSession"
-        assert any(p.name == "providers" for p in res[0].params)
+    monkeypatch.setattr(importlib, "import_module", lambda _name: mock_onnx)
+    monkeypatch.setattr(GhostInspector, "inspect", fake_inspect)
+
+    res = onnx_collect(SemanticTier.MODEL)
+    assert len(res) == 1
+    assert res[0].name == "InferenceSession"
+    assert any(p.name == "providers" for p in res[0].params)
 
 
-def test_ds_collect() -> None:
-    """Verify ds collect behavior."""
-    mock_ds = MagicMock()
-    pytest.MonkeyPatch().setattr(
-        mock_ds, "__dir__", lambda self: ["initialize", "utils"], raising=False
-    )
+def test_ds_collect(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify ds collect behavior.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    mock_ds = types.ModuleType("deepspeed")
 
     def initialize() -> None:
         """Execute helper initialize."""
-        pass
 
-    mock_ds.initialize = initialize
+    monkeypatch.setattr(mock_ds, "initialize", initialize, raising=False)
+    monkeypatch.setattr(mock_ds, "utils", 123, raising=False)
 
-    with (
-        patch("importlib.import_module", return_value=mock_ds),
-        patch(
-            "ml_ecosystem_snapshots.frameworks.deepspeed.GhostInspector"
-        ) as MockInspector,
-    ):
-        from ml_switcheroo_ir.schema.ghost import GhostRef
+    def fake_inspect(self: GhostInspector, obj: InspectableTarget, path: str) -> GhostRef:
+        """Return a stub GhostRef for DeepSpeed symbols.
 
-        MockInspector.return_value.inspect.side_effect = lambda obj, path: GhostRef(
+        Args:
+            self: GhostInspector instance.
+            obj: Target symbol.
+            path: Dotted API path.
+
+        Returns:
+            Stub `GhostRef`.
+        """
+        return GhostRef(
             name=path.split(".")[-1],
             api_path=path,
             kind="function",
@@ -165,7 +172,10 @@ def test_ds_collect() -> None:
             docstring="",
         )
 
-        res = ds_collect(SemanticTier.MODEL)
-        assert len(res) == 1
-        assert res[0].name == "initialize"
-        assert any(p.name == "config_params" for p in res[0].params)
+    monkeypatch.setattr(importlib, "import_module", lambda _name: mock_ds)
+    monkeypatch.setattr(GhostInspector, "inspect", fake_inspect)
+
+    res = ds_collect(SemanticTier.MODEL)
+    assert len(res) == 1
+    assert res[0].name == "initialize"
+    assert any(p.name == "config_params" for p in res[0].params)

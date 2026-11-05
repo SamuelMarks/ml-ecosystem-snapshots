@@ -6,19 +6,16 @@ memory access operators (v128.load, v128.store), and lane swizzles.
 
 from __future__ import annotations
 
+import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     OperandDirection,
     SemanticTier,
 )
-import pydantic
 
 from ml_ecosystem_snapshots.frameworks._base import CanonicalSsaOpSpec
 
-
-CANONICAL_WASM_SIMD_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(
-    list[CanonicalSsaOpSpec]
-).validate_python(
+CANONICAL_WASM_SIMD_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(list[CanonicalSsaOpSpec]).validate_python(
     [
         # 32-bit Floating-Point SIMD (f32x4)
         {
@@ -149,9 +146,7 @@ def _load_wasm_simd_ops() -> list[CanonicalSsaOpSpec]:
     return CANONICAL_WASM_SIMD_OPS
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect WebAssembly SIMD instructions and memory operators.
 
     Args:
@@ -177,11 +172,7 @@ def collect_api(
         name_key="mnemonic",
         operand_annotation_fn=lambda op, inp: "v128" if inp != "addr" else "i32",
         operand_description_fn=lambda op, inp: f"WASM operand {inp}",
-        operand_direction_fn=lambda op, inp: (
-            OperandDirection.WRITE
-            if op["mnemonic"] == "v128.store" and inp == "addr"
-            else OperandDirection.READ
-        ),
+        operand_direction_fn=lambda op, inp: OperandDirection.WRITE if op["mnemonic"] == "v128.store" and inp == "addr" else OperandDirection.READ,
         attr_description_prefix="WASM immediate/attribute",
         result_type="v128",
         empty_return_type="None",

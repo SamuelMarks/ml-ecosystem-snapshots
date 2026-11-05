@@ -12,7 +12,7 @@ from ml_ecosystem_snapshots.grounding.models import (
     DiagnosticSeverity,
     GroundingReport,
 )
-from ml_ecosystem_snapshots.introspection.runtime_boundary import read_runtime_attr
+from ml_ecosystem_snapshots.models import JsonValue
 
 
 class SassControlCodeSpec(pydantic.BaseModel):
@@ -27,15 +27,63 @@ class SassControlCodeSpec(pydantic.BaseModel):
     wait_barrier_mask: int | str = 0
 
 
+def _check_sass_operands(
+    clean_mnemonic: str,
+    clean_arch: str,
+    operands: list[str],
+    domain_meta: typing.Mapping[str, JsonValue],
+    report: GroundingReport,
+) -> None:
+    """Validate SASS operand counts, register syntax, and operand directionality.
+
+    Args:
+        clean_mnemonic: Uppercase stripped SASS instruction mnemonic.
+        clean_arch: Lowercase stripped SM architecture string.
+        operands: List of operand strings passed to the instruction.
+        domain_meta: Domain metadata dictionary from the instruction reference.
+        report: Mutable `GroundingReport` to record diagnostics on.
+    """
+    from ml_ecosystem_snapshots.frameworks.nvidia_sass import (
+        validate_sass_operand_directionality,
+        validate_sass_register,
+    )
+
+    raw_allowed_sigs = domain_meta.get("operand_signatures")
+    allowed_sigs = [sig for sig in raw_allowed_sigs if isinstance(sig, list)] if isinstance(raw_allowed_sigs, list) else []
+    if allowed_sigs:
+        matching_count_sig = [sig for sig in allowed_sigs if len(sig) == len(operands)]
+        if not matching_count_sig:
+            allowed_counts = sorted(list({len(sig) for sig in allowed_sigs}))
+            report.add_diagnostic(
+                field="operands",
+                message=(f"Instruction '{clean_mnemonic}' expects {allowed_counts} operands, but received {len(operands)}: {operands}."),
+                severity=DiagnosticSeverity.ERROR,
+            )
+
+    for i, op in enumerate(operands):
+        role = "dst" if i == 0 else f"src{i - 1}"
+        for reg_err in validate_sass_register(op, role=role, sm_arch=clean_arch if clean_arch else None):
+            report.add_diagnostic(
+                field=f"operands[{i}]",
+                message=reg_err,
+                severity=DiagnosticSeverity.ERROR,
+            )
+
+    for dir_err in validate_sass_operand_directionality(operands, clean_mnemonic):
+        report.add_diagnostic(
+            field="operands",
+            message=dir_err,
+            severity=DiagnosticSeverity.ERROR,
+        )
+
+
 def validate_sass_instruction(
     mnemonic: str,
     architecture: str,
     operands: list[str],
     modifiers: list[str] | None = None,
     engine: GroundingEngine | None = None,
-    control_codes: (
-        SassControlCodeSpec | typing.Mapping[str, int | bool | str] | None
-    ) = None,
+    control_codes: (SassControlCodeSpec | typing.Mapping[str, int | bool | str] | None) = None,
 ) -> GroundingReport:
     """Verify an NVIDIA SASS instruction against the ground-truth offline ISA catalog.
 
@@ -56,8 +104,6 @@ def validate_sass_instruction(
     from ml_ecosystem_snapshots.frameworks.nvidia_sass import (
         validate_sass_control_code,
         validate_sass_modifiers,
-        validate_sass_operand_directionality,
-        validate_sass_register,
     )
 
     eng = engine or GroundingEngine()
@@ -88,19 +134,14 @@ def validate_sass_instruction(
     if clean_arch not in valid_archs and valid_archs:
         report.add_diagnostic(
             field="architecture",
-            message=(
-                f"Instruction '{clean_mnemonic}' is not supported on target architecture '{clean_arch}'. "
-                f"Supported architectures: {', '.join(valid_archs)}"
-            ),
+            message=(f"Instruction '{clean_mnemonic}' is not supported on target architecture '{clean_arch}'. Supported architectures: {', '.join(valid_archs)}"),
             severity=DiagnosticSeverity.ERROR,
             suggested_fix=valid_archs[-1] if valid_archs else None,
         )
 
     domain_meta = ref.domain_metadata or {}
     raw_allowed_mods = domain_meta.get("modifiers")
-    allowed_modifiers = (
-        [str(m) for m in raw_allowed_mods] if isinstance(raw_allowed_mods, list) else []
-    )
+    allowed_modifiers = [str(m) for m in raw_allowed_mods] if isinstance(raw_allowed_mods, list) else []
     for mod in mods:
         if allowed_modifiers and mod not in allowed_modifiers:
             report.add_diagnostic(
@@ -116,49 +157,10 @@ def validate_sass_instruction(
                 severity=DiagnosticSeverity.ERROR,
             )
 
-    raw_allowed_sigs = domain_meta.get("operand_signatures")
-    allowed_sigs = (
-        [sig for sig in raw_allowed_sigs if isinstance(sig, list)]
-        if isinstance(raw_allowed_sigs, list)
-        else []
-    )
-    if allowed_sigs:
-        matching_count_sig = [sig for sig in allowed_sigs if len(sig) == len(operands)]
-        if not matching_count_sig:
-            allowed_counts = sorted(list({len(sig) for sig in allowed_sigs}))
-            report.add_diagnostic(
-                field="operands",
-                message=(
-                    f"Instruction '{clean_mnemonic}' expects {allowed_counts} operands, "
-                    f"but received {len(operands)}: {operands}."
-                ),
-                severity=DiagnosticSeverity.ERROR,
-            )
-
-    for i, op in enumerate(operands):
-        role = "dst" if i == 0 else f"src{i - 1}"
-        for reg_err in validate_sass_register(
-            op, role=role, sm_arch=clean_arch if clean_arch else None
-        ):
-            report.add_diagnostic(
-                field=f"operands[{i}]",
-                message=reg_err,
-                severity=DiagnosticSeverity.ERROR,
-            )
-
-    for dir_err in validate_sass_operand_directionality(operands, clean_mnemonic):
-        report.add_diagnostic(
-            field="operands",
-            message=dir_err,
-            severity=DiagnosticSeverity.ERROR,
-        )
+    _check_sass_operands(clean_mnemonic, clean_arch, operands, domain_meta, report)
 
     if control_codes is not None:
-        cc_dict: dict[str, int | bool | str | None] = (
-            control_codes.model_dump()
-            if isinstance(control_codes, SassControlCodeSpec)
-            else dict(control_codes)
-        )
+        cc_dict: dict[str, int | bool | str | None] = control_codes.model_dump() if isinstance(control_codes, SassControlCodeSpec) else dict(control_codes)
         for cc_err in validate_sass_control_code(
             clean_mnemonic,
             cc_dict,
@@ -171,6 +173,69 @@ def validate_sass_instruction(
             )
 
     return report
+
+
+def _check_rdna_operands(
+    clean_mnemonic: str,
+    gfx_arch: str,
+    operands: list[str],
+    actual_encoding: str | None,
+    domain_meta: typing.Mapping[str, JsonValue],
+    report: GroundingReport,
+) -> None:
+    """Validate AMD RDNA operand counts, register alignment/legality, and constant bus usage.
+
+    Args:
+        clean_mnemonic: Uppercase stripped RDNA instruction mnemonic.
+        gfx_arch: Target GFX architecture string.
+        operands: List of operand strings passed to the instruction.
+        actual_encoding: Resolved instruction encoding string (e.g., 'VOP2', 'VOP3').
+        domain_meta: Domain metadata dictionary from the instruction reference.
+        report: Mutable `GroundingReport` to record diagnostics on.
+    """
+    from ml_ecosystem_snapshots.frameworks.amd_rdna import (
+        validate_rdna_constant_bus,
+        validate_rdna_register,
+    )
+
+    raw_op_sigs = domain_meta.get("operand_signatures")
+    op_sigs = [s for s in raw_op_sigs if isinstance(s, list)] if isinstance(raw_op_sigs, list) else []
+    if op_sigs and not any(":" in op for op in operands):
+        matching_len = [sig for sig in op_sigs if len(sig) == len(operands)]
+        if not matching_len:
+            report.add_diagnostic(
+                field="operands",
+                message=(f"Operand count mismatch for '{clean_mnemonic}': got {len(operands)}, expected {[len(s) for s in op_sigs]}"),
+                severity=DiagnosticSeverity.ERROR,
+            )
+
+    even_reg_pattern = re.compile(r"^[vs]\[(\d+):(\d+)\]$", re.IGNORECASE)
+    for idx, op in enumerate(operands):
+        match = even_reg_pattern.match(op.strip())
+        if match:
+            start_reg = int(match.group(1))
+            end_reg = int(match.group(2))
+            if end_reg - start_reg == 1 and (start_reg % 2 != 0):
+                report.add_diagnostic(
+                    field=f"operands[{idx}]",
+                    message=(f"64-bit register pair '{op}' must be even-aligned. Register index {start_reg} is odd."),
+                    severity=DiagnosticSeverity.ERROR,
+                    suggested_fix=f"v[{start_reg - 1}:{start_reg}]",
+                )
+                continue
+        for reg_err in validate_rdna_register(op, gfx_arch=gfx_arch):
+            report.add_diagnostic(
+                field=f"operands[{idx}]",
+                message=reg_err,
+                severity=DiagnosticSeverity.ERROR,
+            )
+
+    for cbus_err in validate_rdna_constant_bus(operands, encoding=actual_encoding, gfx_arch=gfx_arch):
+        report.add_diagnostic(
+            field="operands",
+            message=cbus_err,
+            severity=DiagnosticSeverity.ERROR,
+        )
 
 
 def validate_rdna_instruction(
@@ -202,10 +267,8 @@ def validate_rdna_instruction(
     """
     from ml_ecosystem_snapshots.frameworks.amd_rdna import (
         resolve_gfx_architectures,
-        validate_rdna_constant_bus,
         validate_rdna_microarchitecture,
         validate_rdna_modifiers,
-        validate_rdna_register,
     )
 
     eng = engine or GroundingEngine()
@@ -230,54 +293,34 @@ def validate_rdna_instruction(
 
     report.matched_ref = ref
     domain_meta = ref.domain_metadata or {}
-    raw_enc = read_runtime_attr(ref, "encoding", None) or domain_meta.get("encoding")
+    extra_meta = ref.model_extra or {}
+    raw_enc = extra_meta.get("encoding") or domain_meta.get("encoding")
     actual_encoding = str(raw_enc) if raw_enc is not None else None
-    raw_arch = read_runtime_attr(ref, "architecture", None) or domain_meta.get(
-        "architecture"
-    )
+    raw_arch = extra_meta.get("architecture") or domain_meta.get("architecture")
     arch_str = str(raw_arch) if raw_arch is not None else None
     raw_supp = domain_meta.get("valid_architectures")
-    supported_archs: list[str] = (
-        [str(a) for a in raw_supp]
-        if isinstance(raw_supp, list)
-        else list(ref.environment_tags or resolve_gfx_architectures(arch_str))
-    )
+    supported_archs: list[str] = [str(a) for a in raw_supp] if isinstance(raw_supp, list) else list(ref.environment_tags or resolve_gfx_architectures(arch_str))
 
     if gfx_arch and supported_archs:
         norm_gfx = gfx_arch.strip()
-        if not any(
-            norm_gfx.upper() == a.upper() or a.upper().startswith(norm_gfx.upper())
-            for a in supported_archs
-        ):
+        if not any(norm_gfx.upper() == a.upper() or a.upper().startswith(norm_gfx.upper()) for a in supported_archs):
             report.add_diagnostic(
                 field="gfx_arch",
-                message=(
-                    f"Instruction '{clean_mnemonic}' is not supported on '{gfx_arch}'. "
-                    f"Supported: {', '.join(supported_archs)}"
-                ),
+                message=(f"Instruction '{clean_mnemonic}' is not supported on '{gfx_arch}'. Supported: {', '.join(supported_archs)}"),
                 severity=DiagnosticSeverity.ERROR,
             )
 
-    for uarch_err in validate_rdna_microarchitecture(
-        clean_mnemonic.lower(), gfx_arch=gfx_arch, wave_size=wave_size
-    ):
+    for uarch_err in validate_rdna_microarchitecture(clean_mnemonic.lower(), gfx_arch=gfx_arch, wave_size=wave_size):
         report.add_diagnostic(
             field="gfx_arch",
             message=uarch_err,
             severity=DiagnosticSeverity.ERROR,
         )
 
-    if (
-        encoding
-        and actual_encoding
-        and encoding.upper() != str(actual_encoding).upper()
-    ):
+    if encoding and actual_encoding and encoding.upper() != str(actual_encoding).upper():
         report.add_diagnostic(
             field="encoding",
-            message=(
-                f"Encoding mismatch for '{clean_mnemonic}': specified '{encoding}', "
-                f"actual '{actual_encoding}'"
-            ),
+            message=(f"Encoding mismatch for '{clean_mnemonic}': specified '{encoding}', actual '{actual_encoding}'"),
             severity=DiagnosticSeverity.ERROR,
         )
 
@@ -289,56 +332,7 @@ def validate_rdna_instruction(
                 severity=DiagnosticSeverity.ERROR,
             )
 
-    raw_op_sigs = domain_meta.get("operand_signatures")
-    op_sigs = (
-        [s for s in raw_op_sigs if isinstance(s, list)]
-        if isinstance(raw_op_sigs, list)
-        else []
-    )
-    if op_sigs and not any(":" in op for op in operands):
-        matching_len = [sig for sig in op_sigs if len(sig) == len(operands)]
-        if not matching_len:
-            report.add_diagnostic(
-                field="operands",
-                message=(
-                    f"Operand count mismatch for '{clean_mnemonic}': got {len(operands)}, "
-                    f"expected {[len(s) for s in op_sigs]}"
-                ),
-                severity=DiagnosticSeverity.ERROR,
-            )
-
-    even_reg_pattern = re.compile(r"^[vs]\[(\d+):(\d+)\]$", re.IGNORECASE)
-    for idx, op in enumerate(operands):
-        match = even_reg_pattern.match(op.strip())
-        if match:
-            start_reg = int(match.group(1))
-            end_reg = int(match.group(2))
-            if end_reg - start_reg == 1 and (start_reg % 2 != 0):
-                report.add_diagnostic(
-                    field=f"operands[{idx}]",
-                    message=(
-                        f"64-bit register pair '{op}' must be even-aligned. "
-                        f"Register index {start_reg} is odd."
-                    ),
-                    severity=DiagnosticSeverity.ERROR,
-                    suggested_fix=f"v[{start_reg - 1}:{start_reg}]",
-                )
-                continue
-        for reg_err in validate_rdna_register(op, gfx_arch=gfx_arch):
-            report.add_diagnostic(
-                field=f"operands[{idx}]",
-                message=reg_err,
-                severity=DiagnosticSeverity.ERROR,
-            )
-
-    for cbus_err in validate_rdna_constant_bus(
-        operands, encoding=actual_encoding, gfx_arch=gfx_arch
-    ):
-        report.add_diagnostic(
-            field="operands",
-            message=cbus_err,
-            severity=DiagnosticSeverity.ERROR,
-        )
+    _check_rdna_operands(clean_mnemonic, gfx_arch, operands, actual_encoding, domain_meta, report)
 
     return report
 
@@ -370,6 +364,8 @@ def validate_ptx_instruction(
     """
     from ml_ecosystem_snapshots.frameworks.nvidia_ptx import (
         _load_exhaustive_ptx,
+    )
+    from ml_ecosystem_snapshots.frameworks.nvidia_ptx import (
         validate_ptx_instruction as raw_validate_ptx,
     )
 

@@ -103,20 +103,16 @@ def main() -> None:
     test_cov = get_test_coverage()
     doc_cov = get_doc_coverage()
 
-    with open("README.md", "r") as f:
+    with open("README.md") as f:
         content = f.read()
 
     test_badge = f"[![Test Coverage](https://img.shields.io/badge/test%20coverage-{test_cov}%25-{get_color(test_cov)}.svg)]()"
     doc_badge = f"[![Docs](https://img.shields.io/badge/docs-{doc_cov}%25-{get_color(doc_cov)}.svg)]()"
 
     if re.search(r"\[\!\[(?:Test Coverage|Tests)\]", content):
-        content = re.sub(
-            r"\[\!\[(?:Test Coverage|Tests)\].*?\]\([^\)]*\)", test_badge, content
-        )
+        content = re.sub(r"\[\!\[(?:Test Coverage|Tests)\].*?\]\([^\)]*\)", test_badge, content)
     else:
-        content = re.sub(
-            r"(\[\!\[License\][^\n]+\n)", r"\1" + test_badge + "\n", content, count=1
-        )
+        content = re.sub(r"(\[\!\[License\][^\n]+\n)", r"\1" + test_badge + "\n", content, count=1)
 
     if "![Docs]" in content:
         content = re.sub(r"\[\!\[Docs\].*?\]\([^\)]*\)", doc_badge, content)

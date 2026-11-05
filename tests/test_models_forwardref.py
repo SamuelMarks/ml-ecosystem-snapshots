@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
-
 import sys
+
+import pytest
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
 
@@ -14,7 +14,7 @@ class TensorRef:
     pass
 
 
-def forward(x: "TensorRef") -> "TensorRef":
+def forward(x: TensorRef) -> TensorRef:
     """Execute helper forward.
 
     Args:
@@ -27,9 +27,7 @@ def forward(x: "TensorRef") -> "TensorRef":
     return x
 
 
-pytest.MonkeyPatch().setattr(
-    sys.modules[__name__], "TensorRef", TensorRef, raising=False
-)
+pytest.MonkeyPatch().setattr(sys.modules[__name__], "TensorRef", TensorRef, raising=False)
 
 
 def test_resolve_forward_ref() -> None:

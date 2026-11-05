@@ -93,10 +93,7 @@ def test_to_pydantic_variable_positional_tuple() -> None:
     code = to_pydantic(ref, validate_varargs=True)
     assert "class VarOp(pydantic.BaseModel):" in code
     assert "args: tuple[int, ...] = pydantic.Field(default=(), description=" in code
-    assert (
-        "kwargs: dict[str, object] = pydantic.Field(default_factory=dict, description="
-        in code
-    )
+    assert "kwargs: dict[str, object] = pydantic.Field(default_factory=dict, description=" in code
 
 
 def test_to_protobuf_structured_types_and_enums() -> None:

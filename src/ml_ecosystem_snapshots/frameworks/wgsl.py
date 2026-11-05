@@ -7,20 +7,17 @@ from __future__ import annotations
 
 import json
 
+import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     OperandDirection,
     SemanticTier,
 )
-import pydantic
 
 from ml_ecosystem_snapshots.frameworks._base import CanonicalSsaOpSpec
 from ml_ecosystem_snapshots.models import JsonValue
 
-
-CANONICAL_WGSL_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(
-    list[CanonicalSsaOpSpec]
-).validate_python(
+CANONICAL_WGSL_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(list[CanonicalSsaOpSpec]).validate_python(
     [
         {
             "name": "storageStore",
@@ -120,27 +117,20 @@ def _load_wgsl_ops() -> list[CanonicalSsaOpSpec]:
     """
     try:
         import importlib.resources as pkg_resources
+
         import ml_switcheroo_ir.schema as ir_schema
 
         fpath = pkg_resources.files(ir_schema).joinpath("wgsl_ops.json")
         with fpath.open("r", encoding="utf-8") as f:
             data: JsonValue = json.load(f)
-            if (
-                isinstance(data, dict)
-                and isinstance(data.get("ops"), list)
-                and data["ops"]
-            ):
-                return pydantic.TypeAdapter(list[CanonicalSsaOpSpec]).validate_python(
-                    data["ops"]
-                )
+            if isinstance(data, dict) and isinstance(data.get("ops"), list) and data["ops"]:
+                return pydantic.TypeAdapter(list[CanonicalSsaOpSpec]).validate_python(data["ops"])
     except Exception:
         pass
     return CANONICAL_WGSL_OPS
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect WGSL operations for the specified semantic tier.
 
     Args:
@@ -166,11 +156,7 @@ def collect_api(
         name_key="name",
         operand_annotation_fn=lambda _op, _inp: "Value",
         operand_description_fn=lambda _op, inp: f"WGSL operand {inp}",
-        operand_direction_fn=lambda op, inp: (
-            OperandDirection.WRITE
-            if "store" in str(op["name"]).lower() and inp == "value"
-            else OperandDirection.READ
-        ),
+        operand_direction_fn=lambda op, inp: OperandDirection.WRITE if "store" in str(op["name"]).lower() and inp == "value" else OperandDirection.READ,
         attr_description_prefix="WGSL attribute",
         result_type="Value",
         empty_return_type="None",

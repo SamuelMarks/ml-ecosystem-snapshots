@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import enum
 import inspect
-import operator
 import types
 import typing
+
 import typing_extensions
 
 from ml_ecosystem_snapshots.models import JsonValue, ScalarValue
@@ -20,6 +20,26 @@ try:
     import griffe
 except ImportError:  # pragma: no cover
     pass
+
+
+@typing.runtime_checkable
+class NamedKindProtocol(typing.Protocol):
+    """Structural protocol for parameter kind enums/objects exposing a `.name` attribute."""
+
+    @property
+    def name(self) -> str:
+        """Return parameter kind name."""
+        ...
+
+
+@typing.runtime_checkable
+class GriffeDocstringProtocol(typing.Protocol):
+    """Structural protocol for a Griffe docstring object exposing a `.value` string."""
+
+    @property
+    def value(self) -> str:
+        """Return docstring text value."""
+        ...
 
 
 @typing.runtime_checkable
@@ -43,11 +63,71 @@ class GriffeParameterProtocol(typing.Protocol):
 
 
 @typing.runtime_checkable
+class GriffeParameterWithKindProtocol(typing.Protocol):
+    """Structural protocol for a Griffe parameter exposing a `.kind` attribute."""
+
+    @property
+    def kind(self) -> NamedKindProtocol | str | None:
+        """Return parameter kind."""
+        ...
+
+
+@typing.runtime_checkable
 class GriffeObjectProtocol(typing.Protocol):
     """Structural protocol for a Griffe AST object with `name` and `is_public`."""
 
     name: str
     is_public: bool
+
+
+@typing.runtime_checkable
+class GriffeMembersProtocol(typing.Protocol):
+    """Structural protocol for a Griffe node exposing a `members` mapping."""
+
+    @property
+    def members(self) -> typing.Mapping[str, InspectableTarget]:
+        """Return members mapping."""
+        ...
+
+
+@typing.runtime_checkable
+class GriffeParametersProtocol(typing.Protocol):
+    """Structural protocol for a Griffe node exposing a `parameters` iterable."""
+
+    @property
+    def parameters(self) -> typing.Iterable[GriffeParameterProtocol]:
+        """Return function parameters."""
+        ...
+
+
+@typing.runtime_checkable
+class GriffeOverloadsProtocol(typing.Protocol):
+    """Structural protocol for a Griffe node exposing an `overloads` sequence."""
+
+    @property
+    def overloads(self) -> list[InspectableTarget]:
+        """Return function overloads list."""
+        ...
+
+
+@typing.runtime_checkable
+class GriffeReturnsProtocol(typing.Protocol):
+    """Structural protocol for a Griffe node exposing a `returns` annotation."""
+
+    @property
+    def returns(self) -> InspectableTarget:
+        """Return function return annotation."""
+        ...
+
+
+@typing.runtime_checkable
+class GriffeDocstringNodeProtocol(typing.Protocol):
+    """Structural protocol for a Griffe node exposing a `docstring` object."""
+
+    @property
+    def docstring(self) -> GriffeDocstringProtocol | str | None:
+        """Return attached docstring object."""
+        ...
 
 
 @typing.runtime_checkable
@@ -103,6 +183,27 @@ class GriffeInspectableNodeProtocol(typing.Protocol):
 
 
 @typing.runtime_checkable
+class PythonFunctionWrapperProtocol(typing.Protocol):
+    """Structural protocol for TensorFlow `@tf.function` wrappers exposing `_python_function`."""
+
+    _python_function: InspectableTarget
+
+
+@typing.runtime_checkable
+class OriginalFnWrapperProtocol(typing.Protocol):
+    """Structural protocol for decorator wrappers exposing `_original_fn`."""
+
+    _original_fn: InspectableTarget
+
+
+@typing.runtime_checkable
+class OrigModWrapperProtocol(typing.Protocol):
+    """Structural protocol for `torch.compile` wrappers exposing `_orig_mod`."""
+
+    _orig_mod: InspectableTarget
+
+
+@typing.runtime_checkable
 class InspectableCallableProtocol(typing.Protocol):
     """Structural protocol for callable Python runtime targets."""
 
@@ -122,9 +223,7 @@ class InspectableCallableProtocol(typing.Protocol):
 class DescriptorProtocol(typing.Protocol):
     """Structural protocol for Python descriptors (`property`, `classmethod`, `staticmethod`, C-descriptors)."""
 
-    def __get__(
-        self, instance: ScalarValue, owner: type | None = None
-    ) -> InspectableCallableProtocol | ScalarValue:
+    def __get__(self, instance: InspectableTarget, owner: type | None = None) -> InspectableCallableProtocol | ScalarValue:
         """Retrieve the descriptor value from `instance` or `owner`.
 
         Args:
@@ -160,9 +259,20 @@ InspectableTarget: typing_extensions.TypeAlias = (
     " | InspectableCallableProtocol"
     " | DescriptorProtocol"
     " | WrappedTargetProtocol"
+    " | PythonFunctionWrapperProtocol"
+    " | OriginalFnWrapperProtocol"
+    " | OrigModWrapperProtocol"
+    " | NamedKindProtocol"
+    " | GriffeDocstringProtocol"
     " | GriffeNodeProtocol"
     " | GriffeInspectableNodeProtocol"
     " | GriffeParameterProtocol"
+    " | GriffeParameterWithKindProtocol"
+    " | GriffeMembersProtocol"
+    " | GriffeParametersProtocol"
+    " | GriffeOverloadsProtocol"
+    " | GriffeReturnsProtocol"
+    " | GriffeDocstringNodeProtocol"
     " | typing.Iterable[GriffeParameterProtocol]"
     " | GriffeObjectProtocol"
     " | GriffeClassProtocol"
@@ -180,44 +290,53 @@ InspectableTarget: typing_extensions.TypeAlias = (
 
 DefaultValueInput: typing_extensions.TypeAlias = InspectableTarget
 
+_SourceInspectableType: typing_extensions.TypeAlias = "types.ModuleType | type | types.MethodType | types.FunctionType | types.TracebackType | types.FrameType | types.CodeType"
 
-def read_runtime_attr(
+
+def _is_source_inspectable(
     target: InspectableTarget,
-    attr_name: str,
-    default: InspectableTarget = None,
-) -> InspectableTarget:
-    """Safely read a named attribute from a live runtime target.
+) -> typing_extensions.TypeGuard[_SourceInspectableType]:
+    """Narrow `target` for `inspect.getsource`.
 
     Args:
-        target: Runtime symbol or module to inspect.
-        attr_name: Attribute name to look up.
-        default: Fallback value returned if the attribute is absent or raises.
+        target: Runtime symbol to inspect.
 
     Returns:
-        Attribute value or `default`.
+        True if `target` is non-None.
     """
-    try:
-        val: InspectableTarget = operator.attrgetter(attr_name)(target)
-        return val
-    except Exception:
-        return default
+    return target is not None
 
 
-def has_runtime_attr(target: InspectableTarget, attr_name: str) -> bool:
-    """Safely check whether a live runtime target exposes `attr_name`.
+def _is_signature_inspectable(
+    target: InspectableTarget,
+) -> typing_extensions.TypeGuard[typing.Callable[..., InspectableTarget]]:
+    """Narrow `target` for `inspect.signature`.
 
     Args:
-        target: Runtime symbol or module to inspect.
-        attr_name: Attribute name to check.
+        target: Runtime symbol to inspect.
 
     Returns:
-        True if the attribute exists on `target`, False otherwise.
+        True if `target` is non-None.
     """
+    return target is not None
+
+
+def get_member_dict(target: InspectableTarget) -> dict[str, InspectableTarget]:
+    """Return a dictionary of accessible members on `target` via `inspect.getmembers`.
+
+    Args:
+        target: Runtime symbol, module, or AST node to inspect.
+
+    Returns:
+        Dictionary mapping member names to their values.
+    """
+    if target is None:
+        return {}
     try:
-        operator.attrgetter(attr_name)(target)
-        return True
+        raw: list[tuple[str, InspectableTarget]] = inspect.getmembers(target)
+        return dict(raw)
     except Exception:
-        return False
+        return {}
 
 
 def get_runtime_source(target: InspectableTarget) -> str:
@@ -228,11 +347,13 @@ def get_runtime_source(target: InspectableTarget) -> str:
 
     Returns:
         Python source string from `inspect.getsource`.
+
+    Raises:
+        TypeError: If `target` is None or not a source-inspectable object.
     """
-    getsource_fn: typing.Callable[[InspectableTarget], str] = operator.attrgetter(
-        "getsource"
-    )(inspect)
-    return getsource_fn(target)
+    if not _is_source_inspectable(target):
+        raise TypeError("Cannot retrieve source for None")
+    return inspect.getsource(target)
 
 
 def get_runtime_signature(target: InspectableTarget) -> inspect.Signature:
@@ -243,27 +364,39 @@ def get_runtime_signature(target: InspectableTarget) -> inspect.Signature:
 
     Returns:
         Resolved `inspect.Signature` instance.
+
+    Raises:
+        TypeError: If `target` is None or not callable.
     """
-    sig_fn: typing.Callable[[InspectableTarget], inspect.Signature] = (
-        operator.attrgetter("signature")(inspect)
-    )
-    return sig_fn(target)
+    if not _is_signature_inspectable(target):
+        raise TypeError("Cannot retrieve signature for None")
+    return inspect.signature(target)
 
 
 __all__ = [
     "DefaultValueInput",
     "DescriptorProtocol",
     "GriffeClassProtocol",
+    "GriffeDocstringNodeProtocol",
+    "GriffeDocstringProtocol",
     "GriffeFunctionProtocol",
     "GriffeInspectableNodeProtocol",
+    "GriffeMembersProtocol",
     "GriffeNodeProtocol",
     "GriffeObjectProtocol",
+    "GriffeOverloadsProtocol",
     "GriffeParameterProtocol",
+    "GriffeParameterWithKindProtocol",
+    "GriffeParametersProtocol",
+    "GriffeReturnsProtocol",
     "InspectableCallableProtocol",
     "InspectableTarget",
+    "NamedKindProtocol",
+    "OrigModWrapperProtocol",
+    "OriginalFnWrapperProtocol",
+    "PythonFunctionWrapperProtocol",
     "WrappedTargetProtocol",
+    "get_member_dict",
     "get_runtime_signature",
     "get_runtime_source",
-    "has_runtime_attr",
-    "read_runtime_attr",
 ]

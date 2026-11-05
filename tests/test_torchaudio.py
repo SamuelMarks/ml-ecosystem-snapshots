@@ -10,8 +10,8 @@ import argparse
 import sys
 import types
 from unittest.mock import patch
-import pytest
 
+import pytest
 from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli import cmd_check_torchaudio
 from ml_ecosystem_snapshots.frameworks import torchaudio
@@ -61,9 +61,7 @@ def test_collect_api_live_mode() -> None:
     """Verify that collect_api works when torchaudio submodules are discovered."""
     import types
 
-    fake_func = types.SimpleNamespace(
-        melscale_fbanks=lambda n_freqs, f_min, f_max, n_mels, sample_rate: n_freqs
-    )
+    fake_func = types.SimpleNamespace(melscale_fbanks=lambda n_freqs, f_min, f_max, n_mels, sample_rate: n_freqs)
     fake_trans = types.SimpleNamespace(MFCC=lambda: None)
 
     def fake_get_submodule(sub: str) -> types.SimpleNamespace | None:
@@ -129,9 +127,7 @@ def test_check_torchaudio_op_mcp() -> None:
     assert valid_res["op_exists"] is True
 
     # Valid with prefix
-    prefix_res = check_torchaudio_op(
-        "torchaudio.functional.spectrogram", inputs_count=8
-    )
+    prefix_res = check_torchaudio_op("torchaudio.functional.spectrogram", inputs_count=8)
     assert prefix_res["is_valid"] is True
 
     # Unknown operation

@@ -14,25 +14,25 @@ flag 100% of synthetic LLM hallucinations:
 from __future__ import annotations
 
 import io
-from pathlib import Path
-import pytest_mock
 import json
 import os
+from pathlib import Path
 from unittest.mock import patch
-import pytest
 
+import pytest
+import pytest_mock
 from ml_ecosystem_snapshots.compliance import score_compliance
 from ml_ecosystem_snapshots.diff import diff_snapshots
 from ml_ecosystem_snapshots.export import export_llm_prompt_context
 from ml_ecosystem_snapshots.mcp_server import (
-    get_api_signature,
-    search_apis,
     check_hallucination,
-    check_sass_instruction,
-    check_rdna_instruction,
     check_mlir_op,
+    check_rdna_instruction,
+    check_sass_instruction,
+    get_api_signature,
     handle_mcp_message,
     run_mcp_server,
+    search_apis,
 )
 from ml_ecosystem_snapshots.models import ExtendedGhostRef, JsonValue
 from ml_ecosystem_snapshots.stubs import validate_pyi_stub
@@ -192,23 +192,14 @@ def test_hallucination_invalid_sass_instructions() -> None:
             name="FADD_QUAD",
             api_path="nvidia_sass.inst.FADD_QUAD",
             kind="function",
-            params=[
-                GhostParam(
-                    name="op0", annotation="R", kind=ParameterKind.POSITIONAL_ONLY
-                )
-            ],
+            params=[GhostParam(name="op0", annotation="R", kind=ParameterKind.POSITIONAL_ONLY)],
         ),
         # Real instruction but with hallucinated 5 operands (illegal for FADD)
         GhostRef(
             name="FADD",
             api_path="nvidia_sass.inst.FADD",
             kind="function",
-            params=[
-                GhostParam(
-                    name=f"op{i}", annotation="R", kind=ParameterKind.POSITIONAL_ONLY
-                )
-                for i in range(5)
-            ],
+            params=[GhostParam(name=f"op{i}", annotation="R", kind=ParameterKind.POSITIONAL_ONLY) for i in range(5)],
         ),
     ]
 
@@ -230,9 +221,7 @@ def test_hallucination_invalid_sass_instructions() -> None:
                     "name": "FADD",
                     "api_path": "nvidia_sass.inst.FADD",
                     "kind": "function",
-                    "params": [
-                        {"name": f"op{i}", "kind": "POSITIONAL_ONLY"} for i in range(5)
-                    ],
+                    "params": [{"name": f"op{i}", "kind": "POSITIONAL_ONLY"} for i in range(5)],
                 },
             ]
         }
@@ -574,16 +563,12 @@ def test_mcp_server_branches(mocker: pytest_mock.MockerFixture) -> None:
     assert search_apis("torch", "zzzzzz_totally_unknown_12345") == []
 
     # Check hallucination with VAR_KEYWORD: strict_kwargs=True by default flags unconstrained kwargs
-    var_check_strict = check_hallucination(
-        "torch", "test.op1", kwargs=["any_arg", "another_arg"]
-    )
+    var_check_strict = check_hallucination("torch", "test.op1", kwargs=["any_arg", "another_arg"])
     assert var_check_strict["is_hallucinated"] is True
     assert "any_arg" in var_check_strict["invalid_kwargs"]
 
     # When strict_kwargs=False is explicitly opted-in, unconstrained kwargs are permitted
-    var_check_opt_in = check_hallucination(
-        "torch", "test.op1", kwargs=["any_arg", "another_arg"], strict_kwargs=False
-    )
+    var_check_opt_in = check_hallucination("torch", "test.op1", kwargs=["any_arg", "another_arg"], strict_kwargs=False)
     assert var_check_opt_in["is_hallucinated"] is False
     assert var_check_opt_in["has_unconstrained_kwargs"] is True
 
@@ -594,9 +579,7 @@ def test_mcp_server_branches(mocker: pytest_mock.MockerFixture) -> None:
     _SNAPSHOT_CACHE.clear()
 
 
-def test_get_framework_snapshot_list_format(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_get_framework_snapshot_list_format(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test get_framework_snapshot when the disk file contains a JSON list.
 
     Args:
@@ -639,9 +622,7 @@ def test_export_llm_prompt_context_minimal() -> None:
 def test_check_sass_instruction() -> None:
     """Test validating NVIDIA SASS assembly instructions via check_sass_instruction."""
     # Valid FADD on sm_70
-    res = check_sass_instruction(
-        "FADD", operands=["R", "R", "R"], sm_arch="sm_70", modifiers=[".SAT"]
-    )
+    res = check_sass_instruction("FADD", operands=["R", "R", "R"], sm_arch="sm_70", modifiers=[".SAT"])
     assert res["is_valid"] is True
     assert res["mnemonic_exists"] is True
 
@@ -691,15 +672,11 @@ def test_check_mlir_op() -> None:
     assert res_mismatch["is_valid"] is False
 
     # stablehlo.dot_general with dot_dimension_numbers attribute
-    res_dot_gen = check_mlir_op(
-        "stablehlo.dot_general", attributes=["dot_dimension_numbers"]
-    )
+    res_dot_gen = check_mlir_op("stablehlo.dot_general", attributes=["dot_dimension_numbers"])
     assert res_dot_gen["is_valid"] is True
 
     # Invalid attribute
-    res_bad_attr = check_mlir_op(
-        "stablehlo.dot_general", attributes=["hallucinated_attribute"]
-    )
+    res_bad_attr = check_mlir_op("stablehlo.dot_general", attributes=["hallucinated_attribute"])
     assert res_bad_attr["is_valid"] is False
 
     # Nonexistent op
@@ -906,9 +883,7 @@ def test_check_hallucination_strict_and_max_args(
     )
 
     # strict_kwargs=True with unrecognized kwargs (line 189)
-    res_strict = check_hallucination(
-        "pkg", "pkg.calc", kwargs=["unknown_kw"], strict_kwargs=True
-    )
+    res_strict = check_hallucination("pkg", "pkg.calc", kwargs=["unknown_kw"], strict_kwargs=True)
     assert res_strict["is_hallucinated"] is True
     assert "unknown_kw" in res_strict["invalid_kwargs"]
 
@@ -961,9 +936,7 @@ def test_check_hallucination_pytorch_factory_strict_kwargs(
     assert res_valid["is_hallucinated"] is False
 
     # Illegal kwarg passed to torch.empty (e.g. non_existent=1 or illegal_opt=True)
-    res_illegal = check_hallucination(
-        "torch", "torch.empty", kwargs=["dtype", "non_existent_kw"]
-    )
+    res_illegal = check_hallucination("torch", "torch.empty", kwargs=["dtype", "non_existent_kw"])
     assert res_illegal["is_hallucinated"] is True
     assert "non_existent_kw" in res_illegal["invalid_kwargs"]
 
@@ -1184,7 +1157,7 @@ def test_check_mlir_op_structured_attributes_and_type_constraints(
     """Validate check_mlir_op with ODS type constraints and structured attributes.
 
     Args:
-        mocker: Parameter fixture.
+        mocker: Pytest mocker fixture.
     """
     mock_snap = {
         "categories": {
@@ -1226,8 +1199,7 @@ def test_check_mlir_op_structured_attributes_and_type_constraints(
     )
 
     # 1. Valid operand types for arith.addi
-    res_addi_valid = check_mlir_op("arith.addi", operand_types=["i32", "i32"])
-    assert res_addi_valid["is_valid"] is True
+    assert check_mlir_op("arith.addi", operand_types=["i32", "i32"])["is_valid"] is True
 
     # Invalid operand types: float passed to AnyInteger
     res_addi_invalid = check_mlir_op("arith.addi", operand_types=["f32", "f32"])
@@ -1237,148 +1209,61 @@ def test_check_mlir_op_structured_attributes_and_type_constraints(
     # Trait violation: SameTypeOperands mismatch
     res_addi_trait = check_mlir_op("arith.addi", operand_types=["i32", "i64"])
     assert res_addi_trait["is_valid"] is False
-    assert any(
-        "SameTypeOperands requires all operand types to match" in err
-        for err in res_addi_trait["errors"]
-    )
+    assert any("SameTypeOperands requires all operand types to match" in err for err in res_addi_trait["errors"])
 
-    # 2. Valid DotDimensionNumbersAttr
+    # 2. Valid and invalid DotDimensionNumbersAttr
     valid_dot_dims: dict[str, JsonValue] = {
         "lhs_batch_dimensions": [0],
         "rhs_batch_dimensions": [0],
         "lhs_contracting_dimensions": [2],
         "rhs_contracting_dimensions": [1],
     }
-    res_dot_valid = check_mlir_op(
-        "stablehlo.dot_general",
-        structured_attributes={"dot_dimension_numbers": valid_dot_dims},
+    assert (
+        check_mlir_op(
+            "stablehlo.dot_general",
+            structured_attributes={"dot_dimension_numbers": valid_dot_dims},
+        )["is_valid"]
+        is True
     )
-    assert res_dot_valid["is_valid"] is True
-
-    # Missing required field in DotDimensionNumbersAttr
-    invalid_dot_dims: dict[str, JsonValue] = {
-        "lhs_batch_dimensions": [0],
-        "rhs_batch_dimensions": [0],
-    }
     res_dot_invalid = check_mlir_op(
         "stablehlo.dot_general",
-        structured_attributes={"dot_dimension_numbers": invalid_dot_dims},
+        structured_attributes={"dot_dimension_numbers": {"lhs_batch_dimensions": [0], "rhs_batch_dimensions": [0]}},
     )
     assert res_dot_invalid["is_valid"] is False
-    assert any(
-        "DotDimensionNumbersAttr missing required fields" in err
-        for err in res_dot_invalid["errors"]
-    )
+    assert any("DotDimensionNumbersAttr missing required fields" in err for err in res_dot_invalid["errors"])
 
-    # 3. ComparisonDirectionAttr valid and invalid
-    res_cmp_valid = check_mlir_op(
-        "stablehlo.compare",
-        structured_attributes={"comparison_direction": "EQ"},
-    )
-    assert res_cmp_valid["is_valid"] is True
-
-    res_cmp_invalid = check_mlir_op(
-        "stablehlo.compare",
-        structured_attributes={"comparison_direction": "INVALID_DIR"},
-    )
+    # 3. ComparisonDirectionAttr and PrecisionAttr
+    assert check_mlir_op("stablehlo.compare", structured_attributes={"comparison_direction": "EQ"})["is_valid"] is True
+    res_cmp_invalid = check_mlir_op("stablehlo.compare", structured_attributes={"comparison_direction": "INVALID_DIR"})
     assert res_cmp_invalid["is_valid"] is False
-    assert any(
-        "Invalid ComparisonDirectionAttr" in err for err in res_cmp_invalid["errors"]
-    )
+    assert any("Invalid ComparisonDirectionAttr" in err for err in res_cmp_invalid["errors"])
 
-    # 4. PrecisionAttr valid and invalid
-    res_prec_valid = check_mlir_op(
-        "stablehlo.compare",
-        structured_attributes={"precision": "HIGH"},
-    )
-    assert res_prec_valid["is_valid"] is True
-
-    res_prec_invalid = check_mlir_op(
-        "stablehlo.compare",
-        structured_attributes={"precision": "SUPER_PRECISION"},
-    )
+    assert check_mlir_op("stablehlo.compare", structured_attributes={"precision": "HIGH"})["is_valid"] is True
+    res_prec_invalid = check_mlir_op("stablehlo.compare", structured_attributes={"precision": "SUPER_PRECISION"})
     assert res_prec_invalid["is_valid"] is False
     assert any("Invalid PrecisionAttr" in err for err in res_prec_invalid["errors"])
 
-    # 5. ConvDimensionNumbersAttr valid and invalid
-    valid_conv_dims: dict[str, JsonValue] = {
-        "input_batch_dimension": 0,
-        "input_feature_dimension": 1,
-        "input_spatial_dimensions": [2, 3],
-        "kernel_input_feature_dimension": 0,
-        "kernel_output_feature_dimension": 1,
-        "kernel_spatial_dimensions": [2, 3],
-        "output_batch_dimension": 0,
-        "output_feature_dimension": 1,
-        "output_spatial_dimensions": [2, 3],
-    }
-    res_conv_valid = check_mlir_op(
-        "stablehlo.compare",
-        structured_attributes={"dimension_numbers": valid_conv_dims},
-    )
-    assert res_conv_valid["is_valid"] is True
 
-    res_conv_invalid = check_mlir_op(
-        "stablehlo.compare",
-        structured_attributes={"dimension_numbers": {"input_batch_dimension": 0}},
-    )
-    assert res_conv_invalid["is_valid"] is False
-    assert any(
-        "ConvDimensionNumbersAttr missing required fields" in err
-        for err in res_conv_invalid["errors"]
-    )
+def test_check_mlir_op_conv_scatter_gather_and_float_types(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
+    """Validate check_mlir_op for conv/scatter/gather attributes and float/tensor/index constraints.
 
-    # 6. ScatterDimensionNumbersAttr and GatherDimensionNumbersAttr
-    valid_scatter_dims: dict[str, JsonValue] = {
-        "update_window_dims": [1],
-        "inserted_window_dims": [0],
-        "scatter_dims_to_operand_dims": [0],
-        "index_vector_dim": 1,
-    }
-    res_scatter_valid = check_mlir_op(
-        "stablehlo.compare",
-        structured_attributes={"scatter_dimension_numbers": valid_scatter_dims},
-    )
-    assert res_scatter_valid["is_valid"] is True
-
-    res_scatter_invalid = check_mlir_op(
-        "stablehlo.compare",
-        structured_attributes={"scatter_dimension_numbers": {}},
-    )
-    assert res_scatter_invalid["is_valid"] is False
-
-    valid_gather_dims: dict[str, JsonValue] = {
-        "offset_dims": [1],
-        "collapsed_slice_dims": [0],
-        "start_index_map": [0],
-        "index_vector_dim": 1,
-    }
-    res_gather_valid = check_mlir_op(
-        "stablehlo.compare",
-        structured_attributes={"gather_dimension_numbers": valid_gather_dims},
-    )
-    assert res_gather_valid["is_valid"] is True
-
-    res_gather_invalid = check_mlir_op(
-        "stablehlo.compare",
-        structured_attributes={"gather_dimension_numbers": {}},
-    )
-    assert res_gather_invalid["is_valid"] is False
-
-    # 7. Non-dictionary structured attributes
-    res_not_dict = check_mlir_op(
-        "stablehlo.compare",
-        structured_attributes={
-            "dot_dimension_numbers": "not_a_dict",
-            "conv_dimension_numbers": 123,
-        },
-    )
-    assert res_not_dict["is_valid"] is False
-
-    # 8. Extra type constraints (AnyFloat, AnyTensor, Index)
-    float_op = {
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    mock_snap = {
         "categories": {
             "dialect": [
+                {
+                    "name": "stablehlo.compare",
+                    "api_path": "stablehlo.compare",
+                    "operands": [
+                        {"name": "lhs", "type": "AnyTensor"},
+                        {"name": "rhs", "type": "AnyTensor"},
+                    ],
+                    "attributes": [{"name": "comparison_direction"}],
+                },
                 {
                     "name": "math.sin",
                     "api_path": "math.sin",
@@ -1399,23 +1284,59 @@ def test_check_mlir_op_structured_attributes_and_type_constraints(
     }
     mocker.patch(
         "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
-        return_value=float_op,
+        return_value=mock_snap,
     )
-    # Valid float
+
+    # 5. ConvDimensionNumbersAttr valid and invalid
+    valid_conv_dims: dict[str, JsonValue] = {
+        "input_batch_dimension": 0,
+        "input_feature_dimension": 1,
+        "input_spatial_dimensions": [2, 3],
+        "kernel_input_feature_dimension": 0,
+        "kernel_output_feature_dimension": 1,
+        "kernel_spatial_dimensions": [2, 3],
+        "output_batch_dimension": 0,
+        "output_feature_dimension": 1,
+        "output_spatial_dimensions": [2, 3],
+    }
+    assert check_mlir_op("stablehlo.compare", structured_attributes={"dimension_numbers": valid_conv_dims})["is_valid"] is True
+    res_conv_invalid = check_mlir_op("stablehlo.compare", structured_attributes={"dimension_numbers": {"input_batch_dimension": 0}})
+    assert res_conv_invalid["is_valid"] is False
+    assert any("ConvDimensionNumbersAttr missing required fields" in err for err in res_conv_invalid["errors"])
+
+    # 6. ScatterDimensionNumbersAttr and GatherDimensionNumbersAttr
+    valid_scatter_dims: dict[str, JsonValue] = {
+        "update_window_dims": [1],
+        "inserted_window_dims": [0],
+        "scatter_dims_to_operand_dims": [0],
+        "index_vector_dim": 1,
+    }
+    assert check_mlir_op("stablehlo.compare", structured_attributes={"scatter_dimension_numbers": valid_scatter_dims})["is_valid"] is True
+    assert check_mlir_op("stablehlo.compare", structured_attributes={"scatter_dimension_numbers": {}})["is_valid"] is False
+
+    valid_gather_dims: dict[str, JsonValue] = {
+        "offset_dims": [1],
+        "collapsed_slice_dims": [0],
+        "start_index_map": [0],
+        "index_vector_dim": 1,
+    }
+    assert check_mlir_op("stablehlo.compare", structured_attributes={"gather_dimension_numbers": valid_gather_dims})["is_valid"] is True
+    assert check_mlir_op("stablehlo.compare", structured_attributes={"gather_dimension_numbers": {}})["is_valid"] is False
+
+    # 7. Non-dictionary structured attributes
+    res_not_dict = check_mlir_op(
+        "stablehlo.compare",
+        structured_attributes={"dot_dimension_numbers": "not_a_dict", "conv_dimension_numbers": 123},
+    )
+    assert res_not_dict["is_valid"] is False
+
+    # 8. Extra type constraints (AnyFloat, AnyTensor, Index)
     assert check_mlir_op("math.sin", operand_types=["f32"])["is_valid"] is True
-    # Invalid float: integer passed
     res_sin_bad = check_mlir_op("math.sin", operand_types=["i32"])
     assert res_sin_bad["is_valid"] is False
     assert any("expected float type" in err for err in res_sin_bad["errors"])
 
-    # Valid AnyTensor and Index
-    assert (
-        check_mlir_op("memref.dim", operand_types=["tensor<2xf32>", "index"])[
-            "is_valid"
-        ]
-        is True
-    )
-    # Invalid: non-tensor and non-index
+    assert check_mlir_op("memref.dim", operand_types=["tensor<2xf32>", "index"])["is_valid"] is True
     res_dim_bad = check_mlir_op("memref.dim", operand_types=["i32", "f32"])
     assert res_dim_bad["is_valid"] is False
     assert any("expected tensor type" in err for err in res_dim_bad["errors"])
@@ -1425,31 +1346,18 @@ def test_check_mlir_op_structured_attributes_and_type_constraints(
 def test_check_sass_instruction_architecture_and_ur_guards() -> None:
     """Test SASS architecture guards, UR operand restriction to sm_75+, and WGMMA restriction to sm_90+."""
     # 1. UR register on sm_70 is rejected
-    res_ur_sm70 = check_sass_instruction(
-        "FADD", operands=["UR0", "UR1", "R0"], sm_arch="sm_70"
-    )
+    res_ur_sm70 = check_sass_instruction("FADD", operands=["UR0", "UR1", "R0"], sm_arch="sm_70")
     assert res_ur_sm70["is_valid"] is False
-    assert any(
-        "Uniform registers (UR) are only supported on sm_75+" in err
-        for err in res_ur_sm70["errors"]
-    )
+    assert any("Uniform registers (UR) are only supported on sm_75+" in err for err in res_ur_sm70["errors"])
 
     # UR register on sm_75 is allowed
-    res_ur_sm75 = check_sass_instruction(
-        "FADD", operands=["UR0", "UR1", "R0"], sm_arch="sm_75"
-    )
-    assert not any(
-        "Uniform registers (UR) are only supported on sm_75+" in err
-        for err in res_ur_sm75["errors"]
-    )
+    res_ur_sm75 = check_sass_instruction("FADD", operands=["UR0", "UR1", "R0"], sm_arch="sm_75")
+    assert not any("Uniform registers (UR) are only supported on sm_75+" in err for err in res_ur_sm75["errors"])
 
     # 2. WGMMA rejected on sm_80 or sm_70, allowed on sm_90
     res_wgmma_sm80 = check_sass_instruction("WGMMA", sm_arch="sm_80")
     assert res_wgmma_sm80["is_valid"] is False
-    assert any(
-        "WGMMA instructions are strictly supported on sm_90+" in err
-        for err in res_wgmma_sm80["errors"]
-    )
+    assert any("WGMMA instructions are strictly supported on sm_90+" in err for err in res_wgmma_sm80["errors"])
 
     res_wgmma_sm90 = check_sass_instruction("WGMMA", sm_arch="sm_90")
     assert res_wgmma_sm90["is_valid"] is True
@@ -1460,28 +1368,19 @@ def test_check_rdna_instruction_register_alignment_and_microarch() -> None:
     # 1. 64-bit pair alignment: v[1:2] is unaligned (odd), v[0:1] is aligned (even)
     res_unaligned = check_rdna_instruction("v_add_f32", operands=["v[1:2]", "v0", "v1"])
     assert res_unaligned["is_valid"] is False
-    assert any(
-        "Register alignment error: 64-bit register pair" in err
-        for err in res_unaligned["errors"]
-    )
+    assert any("Register alignment error: 64-bit register pair" in err for err in res_unaligned["errors"])
 
     res_aligned = check_rdna_instruction("v_add_f32", operands=["v[0:1]", "v0", "v1"])
     assert not any("Register alignment error" in err for err in res_aligned["errors"])
 
     # 2. CDNA matrix accumulator a[0:3] rejected on GFX11/RDNA3
-    res_acc_rdna = check_rdna_instruction(
-        "v_add_f32", operands=["a[0:3]", "v0", "v1"], gfx_arch="GFX11/RDNA3"
-    )
+    res_acc_rdna = check_rdna_instruction("v_add_f32", operands=["a[0:3]", "v0", "v1"], gfx_arch="GFX11/RDNA3")
     assert res_acc_rdna["is_valid"] is False
     assert any("Matrix accumulator operand" in err for err in res_acc_rdna["errors"])
 
     # CDNA matrix accumulator allowed on GFX9/CDNA
-    res_acc_cdna = check_rdna_instruction(
-        "v_add_f32", operands=["a[0:3]", "v0", "v1"], gfx_arch="GFX9/CDNA"
-    )
-    assert not any(
-        "Matrix accumulator operand" in err for err in res_acc_cdna["errors"]
-    )
+    res_acc_cdna = check_rdna_instruction("v_add_f32", operands=["a[0:3]", "v0", "v1"], gfx_arch="GFX9/CDNA")
+    assert not any("Matrix accumulator operand" in err for err in res_acc_cdna["errors"])
 
     # 3. Dual-issue v_dual_* rejected on GFX9/CDNA
     res_dual_gfx9 = check_rdna_instruction("v_dual_add_f32", gfx_arch="GFX9/CDNA")
@@ -1553,32 +1452,16 @@ def test_check_hallucination_string_enum_values(
         kwarg_values={"reduction": "average"},
     )
     assert res_hallucinated["is_hallucinated"] is True
-    assert (
-        "Invalid enum value 'average' for parameter 'reduction'"
-        in res_hallucinated["reason"]
-    )
+    assert "Invalid enum value 'average' for parameter 'reduction'" in res_hallucinated["reason"]
 
 
-def test_synthetic_hallucination_benchmark_suite(
-    mocker: pytest_mock.MockerFixture,
-) -> None:
-    """Benchmark suite verifying 100% detection rate across 500+ synthetic hallucinations.
+def _build_api_and_sass_hallucination_cases() -> list[tuple[JsonValue, ...]]:
+    """Build synthetic hallucination cases for PyTorch API kwargs and NVIDIA SASS instructions.
 
-    Args:
-        mocker: Parameter fixture.
+    Returns:
+        List of synthetic hallucination case tuples.
     """
-    from ml_ecosystem_snapshots import mcp_server
-    from ml_ecosystem_snapshots.mcp_server import (
-        check_hallucination,
-        check_sass_instruction,
-        check_ptx_instruction,
-        check_rdna_instruction,
-        check_mlir_op,
-    )
-
-    hallucination_cases: list[tuple[JsonValue, ...]] = []
-
-    # Category 1: Argument swapping (dim vs axis, keepdim vs keepdims) (100 cases)
+    cases: list[tuple[JsonValue, ...]] = []
     swap_apis = [
         "torch.sum",
         "torch.mean",
@@ -1632,74 +1515,37 @@ def test_synthetic_hallucination_benchmark_suite(
         "torch.split",
     ]
     for api in swap_apis:
-        hallucination_cases.append(("api_kwarg", "torch", api, ["axis"]))
-        hallucination_cases.append(("api_kwarg", "torch", api, ["keepdims"]))
-
-    # Category 2: Non-existent kwargs in factory & math methods (100 cases)
+        cases.append(("api_kwarg", "torch", api, ["axis"]))
+        cases.append(("api_kwarg", "torch", api, ["keepdims"]))
     for i in range(100):
-        hallucination_cases.append(
-            ("api_kwarg", "torch", f"torch.factory_op_{i}", [f"fabricated_param_{i}"])
-        )
-
-    # Category 3: GPU SASS microarchitecture & UR register mismatches (100 cases)
+        cases.append(("api_kwarg", "torch", f"torch.factory_op_{i}", [f"fabricated_param_{i}"]))
     for i in range(50):
-        hallucination_cases.append(
-            ("sass", f"OP_CUSTOM_{i}", ["UR0", "UR1", "R0"], "sm_70")
-        )
+        cases.append(("sass", f"OP_CUSTOM_{i}", ["UR0", "UR1", "R0"], "sm_70"))
     for sm in ("sm_70", "sm_75", "sm_80", "sm_86", "sm_89"):
-        for mnem in (
-            "WGMMA",
-            "WGMMA_MMA_ASYNC",
-            "TMA",
-            "TMA_LOAD",
-            "TMA_STORE",
-            "WGMMA_F16",
-        ):
-            hallucination_cases.append(("sass", mnem, None, sm))
+        for mnem in ("WGMMA", "WGMMA_MMA_ASYNC", "TMA", "TMA_LOAD", "TMA_STORE", "WGMMA_F16"):
+            cases.append(("sass", mnem, None, sm))
     for reg_idx in range(256, 276):
-        hallucination_cases.append(
-            ("sass", "FADD", [f"R{reg_idx}", "R0", "R1"], "sm_80")
-        )
+        cases.append(("sass", "FADD", [f"R{reg_idx}", "R0", "R1"], "sm_80"))
+    return cases
 
-    # Category 4: NVIDIA PTX invalid types, state spaces, and registers (100 cases)
-    # Arithmetic ops with disallowed state space (30 cases)
-    for i in range(30):
-        hallucination_cases.append(
-            ("ptx", "add", [".f32"], ["%f0", "%f1", "%f2"], ".global", "sm_70")
-        )
-    # Illegal type combinations (30 cases)
-    for i in range(30):
-        hallucination_cases.append(
-            ("ptx", "fma", [".u16"], ["%r0", "%r1", "%r2", "%r3"], None, "sm_70")
-        )
-    # Operand count mismatches (20 cases)
-    for i in range(20):
-        hallucination_cases.append(("ptx", "add", [".f32"], ["%f0"], None, "sm_70"))
-    # Out-of-bounds predicate registers (20 cases)
+
+def _build_ptx_mlir_rdna_hallucination_cases() -> list[tuple[JsonValue, ...]]:
+    """Build synthetic hallucination cases for PTX, MLIR/StableHLO, and AMD RDNA targets.
+
+    Returns:
+        List of synthetic hallucination case tuples.
+    """
+    cases: list[tuple[JsonValue, ...]] = []
+    cases.extend([("ptx", "add", [".f32"], ["%f0", "%f1", "%f2"], ".global", "sm_70")] * 30)
+    cases.extend([("ptx", "fma", [".u16"], ["%r0", "%r1", "%r2", "%r3"], None, "sm_70")] * 30)
+    cases.extend([("ptx", "add", [".f32"], ["%f0"], None, "sm_70")] * 20)
     for p_idx in range(64, 84):
-        hallucination_cases.append(
-            ("ptx", "setp", [".u32"], [f"%p{p_idx}", "%r0", "%r1"], None, "sm_70")
-        )
+        cases.append(("ptx", "setp", [".u32"], [f"%p{p_idx}", "%r0", "%r1"], None, "sm_70"))
 
-    # Category 5: StableHLO / MLIR invalid attributes & type mismatches (100 cases)
-    # Bad comparison directions (20 cases)
     for i in range(20):
-        hallucination_cases.append(
-            (
-                "mlir",
-                "stablehlo.compare",
-                None,
-                {"comparison_direction": f"BAD_DIRECTION_{i}"},
-            )
-        )
-    # Bad precisions (20 cases)
-    for i in range(20):
-        hallucination_cases.append(
-            ("mlir", "stablehlo.compare", None, {"precision": f"BAD_PRECISION_{i}"})
-        )
-    # Dot general rank bounds violations (20 cases)
-    for i in range(20):
-        hallucination_cases.append(
+        cases.append(("mlir", "stablehlo.compare", None, {"comparison_direction": f"BAD_DIRECTION_{i}"}))
+        cases.append(("mlir", "stablehlo.compare", None, {"precision": f"BAD_PRECISION_{i}"}))
+        cases.append(
             (
                 "mlir",
                 "stablehlo.dot_general",
@@ -1714,85 +1560,113 @@ def test_synthetic_hallucination_benchmark_suite(
                 },
             )
         )
-    # Convolution with missing keys (20 cases)
-    for i in range(20):
-        hallucination_cases.append(
-            (
-                "mlir",
-                "stablehlo.convolution",
-                None,
-                {"dimension_numbers": {f"bad_{i}": 1}},
-            )
-        )
-    # Illegal operand types (20 cases)
-    for i in range(20):
-        hallucination_cases.append(("mlir", "arith.addf", ["i32", "i32"], None))
+        cases.append(("mlir", "stablehlo.convolution", None, {"dimension_numbers": {f"bad_{i}": 1}}))
+        cases.append(("mlir", "arith.addf", ["i32", "i32"], None))
 
-    # Category 6: AMD RDNA register alignment & microarch mismatches (50 cases)
-    # 64-bit pair on odd VGPR index (20 cases)
     for odd_idx in range(1, 40, 2):
-        hallucination_cases.append(
-            ("rdna", "v_add_f32", [f"v[{odd_idx}:{odd_idx + 1}]", "v0", "v1"], None)
-        )
-    # 128-bit quad non-modulo-4 VGPR index (10 cases)
+        cases.append(("rdna", "v_add_f32", [f"v[{odd_idx}:{odd_idx + 1}]", "v0", "v1"], None))
     for bad_q in (1, 2, 3, 5, 6, 7, 9, 10, 11, 13):
-        hallucination_cases.append(
-            ("rdna", "v_add_f32", [f"v[{bad_q}:{bad_q + 3}]", "v0", "v1"], None)
-        )
-    # 256-bit oct non-modulo-8 CDNA accumulator (10 cases)
+        cases.append(("rdna", "v_add_f32", [f"v[{bad_q}:{bad_q + 3}]", "v0", "v1"], None))
     for bad_oct in (1, 2, 3, 4, 5, 6, 7, 9, 10, 11):
-        hallucination_cases.append(
-            (
-                "rdna",
-                "v_add_f32",
-                [f"a[{bad_oct}:{bad_oct + 7}]", "v0", "v1"],
-                "GFX9/CDNA",
-            )
-        )
-    # 512-bit hex non-modulo-16 CDNA accumulator (5 cases)
+        cases.append(("rdna", "v_add_f32", [f"a[{bad_oct}:{bad_oct + 7}]", "v0", "v1"], "GFX9/CDNA"))
     for bad_hex in (1, 2, 3, 4, 5):
-        hallucination_cases.append(
-            (
-                "rdna",
-                "v_add_f32",
-                [f"a[{bad_hex}:{bad_hex + 15}]", "v0", "v1"],
-                "GFX9/CDNA",
-            )
-        )
-    # VOPD dual-issue invalid architecture (5 cases)
+        cases.append(("rdna", "v_add_f32", [f"a[{bad_hex}:{bad_hex + 15}]", "v0", "v1"], "GFX9/CDNA"))
     for i in range(5):
-        hallucination_cases.append(("rdna", f"v_dual_invalid_{i}", None, "GFX9/CDNA"))
+        cases.append(("rdna", f"v_dual_invalid_{i}", None, "GFX9/CDNA"))
+    return cases
 
+
+def _is_hallucination_case_detected(case: tuple[JsonValue, ...]) -> bool:
+    """Evaluate a single synthetic hallucination case tuple and return whether it was flagged.
+
+    Args:
+        case: Synthetic benchmark case tuple.
+
+    Returns:
+        True if the validator detected the hallucination, False otherwise.
+    """
+    from ml_ecosystem_snapshots.mcp_server import (
+        check_hallucination,
+        check_mlir_op,
+        check_ptx_instruction,
+        check_rdna_instruction,
+        check_sass_instruction,
+    )
+
+    kind = case[0]
+    if kind == "api_kwarg":
+        _, fw, c_api, kw = case
+        assert isinstance(fw, str) and isinstance(c_api, str) and isinstance(kw, list)
+        return bool(check_hallucination(fw, c_api, kwargs=[str(k) for k in kw], strict_kwargs=True).get("is_hallucinated"))
+    if kind == "sass":
+        _, s_mnem, ops, s_arch = case
+        assert isinstance(s_mnem, str) and (ops is None or isinstance(ops, list)) and isinstance(s_arch, str)
+        sass_ops = [str(o) for o in ops] if ops is not None else None
+        return not bool(check_sass_instruction(s_mnem, operands=sass_ops, sm_arch=s_arch).get("is_valid"))
+    if kind == "ptx":
+        _, p_mnem, types, ops, state_space, p_arch = case
+        assert isinstance(p_mnem, str) and isinstance(types, list) and isinstance(ops, list)
+        assert (state_space is None or isinstance(state_space, str)) and isinstance(p_arch, str)
+        return not bool(
+            check_ptx_instruction(
+                p_mnem,
+                types=[str(t) for t in types],
+                operands=[str(o) for o in ops],
+                state_space=state_space,
+                sm_arch=p_arch,
+            ).get("is_valid")
+        )
+    if kind == "mlir":
+        _, op_name, op_types, struct_attrs = case
+        assert isinstance(op_name, str) and (op_types is None or isinstance(op_types, list))
+        assert struct_attrs is None or isinstance(struct_attrs, dict)
+        mlir_op_types = [str(t) for t in op_types] if op_types is not None else None
+        return not bool(check_mlir_op(op_name, operand_types=mlir_op_types, structured_attributes=struct_attrs).get("is_valid"))
+    _, r_mnem, ops, garch = case
+    assert isinstance(r_mnem, str) and (ops is None or isinstance(ops, list)) and (garch is None or isinstance(garch, str))
+    rdna_ops = [str(o) for o in ops] if ops is not None else None
+    return not bool(check_rdna_instruction(r_mnem, operands=rdna_ops, gfx_arch=garch).get("is_valid"))
+
+
+def test_synthetic_hallucination_benchmark_suite(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
+    """Benchmark suite verifying 100% detection rate across 500+ synthetic hallucinations.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    from ml_ecosystem_snapshots import mcp_server
+
+    hallucination_cases = _build_api_and_sass_hallucination_cases() + _build_ptx_mlir_rdna_hallucination_cases()
     assert len(hallucination_cases) >= 500
 
     torch_ops: list[JsonValue] = []
     for case in hallucination_cases:
         if case[0] == "api_kwarg" and case[1] == "torch":
             _, _fw, _api, _kw = case
-            assert isinstance(_api, str)
-            assert isinstance(_kw, list)
+            assert isinstance(_api, str) and isinstance(_kw, list)
             name = _api.split(".")[-1]
-            if "axis" in _kw or "keepdims" in _kw:
-                params: list[JsonValue] = [
+            params: list[JsonValue] = (
+                [
                     {"name": "input", "kind": "POSITIONAL_OR_KEYWORD"},
                     {"name": "dim", "kind": "KEYWORD_ONLY"},
                     {"name": "keepdim", "kind": "KEYWORD_ONLY"},
                 ]
-            else:
-                params = [
+                if ("axis" in _kw or "keepdims" in _kw)
+                else [
                     {"name": "size", "kind": "POSITIONAL_OR_KEYWORD"},
                     {"name": "dtype", "kind": "KEYWORD_ONLY"},
                     {"name": "device", "kind": "KEYWORD_ONLY"},
                 ]
+            )
             torch_ops.append({"name": name, "api_path": _api, "params": params})
 
     mock_torch_snap: dict[str, JsonValue] = {"categories": {"ops": torch_ops}}
     orig_get_snap = mcp_server.get_framework_snapshot
 
-    def mock_get_snap(
-        framework: str, version: str | None = None
-    ) -> dict[str, JsonValue]:
-        """Mock framework snapshot getter returning mock torch snapshot when requested.
+    def mock_get_snap(framework: str, version: str | None = None) -> dict[str, JsonValue]:
+        """Return mocked torch snapshot when requested or delegate to original getter.
 
         Args:
             framework: Name of the framework.
@@ -1809,78 +1683,10 @@ def test_synthetic_hallucination_benchmark_suite(
         "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         side_effect=mock_get_snap,
     )
-    mocker.patch(
-        "ml_ecosystem_snapshots.index.lookup_symbol",
-        return_value=None,
-    )
+    mocker.patch("ml_ecosystem_snapshots.index.lookup_symbol", return_value=None)
 
-    detected = 0
-    for case in hallucination_cases:
-        kind = case[0]
-        if kind == "api_kwarg":
-            _, fw, c_api, kw = case
-            assert isinstance(fw, str)
-            assert isinstance(c_api, str)
-            assert isinstance(kw, list)
-            kw_strs = [str(k) for k in kw]
-            if check_hallucination(fw, c_api, kwargs=kw_strs, strict_kwargs=True).get(
-                "is_hallucinated"
-            ):
-                detected += 1
-        elif kind == "sass":
-            _, s_mnem, ops, s_arch = case
-            assert isinstance(s_mnem, str)
-            assert ops is None or isinstance(ops, list)
-            assert isinstance(s_arch, str)
-            sass_ops = [str(o) for o in ops] if ops is not None else None
-            if not check_sass_instruction(
-                s_mnem, operands=sass_ops, sm_arch=s_arch
-            ).get("is_valid"):
-                detected += 1
-        elif kind == "ptx":
-            _, p_mnem, types, ops, state_space, p_arch = case
-            assert isinstance(p_mnem, str)
-            assert isinstance(types, list)
-            assert isinstance(ops, list)
-            assert state_space is None or isinstance(state_space, str)
-            assert isinstance(p_arch, str)
-            ptx_types = [str(t) for t in types]
-            ptx_ops = [str(o) for o in ops]
-            if not check_ptx_instruction(
-                p_mnem,
-                types=ptx_types,
-                operands=ptx_ops,
-                state_space=state_space,
-                sm_arch=p_arch,
-            ).get("is_valid"):
-                detected += 1
-        elif kind == "mlir":
-            _, op_name, op_types, struct_attrs = case
-            assert isinstance(op_name, str)
-            assert op_types is None or isinstance(op_types, list)
-            assert struct_attrs is None or isinstance(struct_attrs, dict)
-            mlir_op_types = [str(t) for t in op_types] if op_types is not None else None
-            if not check_mlir_op(
-                op_name,
-                operand_types=mlir_op_types,
-                structured_attributes=struct_attrs,
-            ).get("is_valid"):
-                detected += 1
-        elif kind == "rdna":
-            _, r_mnem, ops, garch = case
-            assert isinstance(r_mnem, str)
-            assert ops is None or isinstance(ops, list)
-            assert garch is None or isinstance(garch, str)
-            rdna_ops = [str(o) for o in ops] if ops is not None else None
-            if not check_rdna_instruction(
-                r_mnem, operands=rdna_ops, gfx_arch=garch
-            ).get("is_valid"):
-                detected += 1
-
-    # Verify 100% detection rate across all 500+ synthetic hallucinations
-    assert detected == len(
-        hallucination_cases
-    ), f"Detection rate: {detected}/{len(hallucination_cases)}"
+    detected = sum(1 for case in hallucination_cases if _is_hallucination_case_detected(case))
+    assert detected == len(hallucination_cases), f"Detection rate: {detected}/{len(hallucination_cases)}"
 
 
 def test_mcp_server_remaining_branches(mocker: pytest_mock.MockerFixture) -> None:
@@ -1890,11 +1696,11 @@ def test_mcp_server_remaining_branches(mocker: pytest_mock.MockerFixture) -> Non
         mocker: Parameter fixture.
     """
     from ml_ecosystem_snapshots.mcp_server import (
-        search_apis,
         check_hallucination,
-        check_sass_instruction,
-        check_rdna_instruction,
         check_mlir_op,
+        check_rdna_instruction,
+        check_sass_instruction,
+        search_apis,
     )
 
     # 1. search_apis with limit=1 in concept alias loop (line 159)
@@ -1936,9 +1742,7 @@ def test_mcp_server_remaining_branches(mocker: pytest_mock.MockerFixture) -> Non
         "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap_lit,
     ):
-        res_lit = check_hallucination(
-            "test", "test.op_lit", kwarg_values={"custom_opt": "gamma"}
-        )
+        res_lit = check_hallucination("test", "test.op_lit", kwarg_values={"custom_opt": "gamma"})
         assert res_lit["is_hallucinated"] is True
         assert "Invalid literal value" in res_lit["reason"]
 
@@ -1952,24 +1756,17 @@ def test_mcp_server_remaining_branches(mocker: pytest_mock.MockerFixture) -> Non
     # 3. check_sass_instruction unsupported architecture branch (line 414)
     res_sass_arch = check_sass_instruction("HMMA16816", sm_arch="sm_70")
     assert res_sass_arch["is_valid"] is False
-    assert any(
-        "is not supported on target architecture 'sm_70'" in err
-        for err in res_sass_arch["errors"]
-    )
+    assert any("is not supported on target architecture 'sm_70'" in err for err in res_sass_arch["errors"])
 
     # 4. check_rdna_instruction unsupported gfx architecture branch (line 507)
     res_rdna_arch = check_rdna_instruction("v_add_f32", gfx_arch="GFX99/UNKNOWN")
     assert res_rdna_arch["is_valid"] is False
-    assert any(
-        "is not supported on 'GFX99/UNKNOWN'" in err for err in res_rdna_arch["errors"]
-    )
+    assert any("is not supported on 'GFX99/UNKNOWN'" in err for err in res_rdna_arch["errors"])
 
     # 5. check_mlir_op operand types count mismatch (lines 635-640)
     res_mlir_count = check_mlir_op("arith.addf", operand_types=["f32"])
     assert res_mlir_count["is_valid"] is False
-    assert any(
-        "Operand types count mismatch" in err for err in res_mlir_count["errors"]
-    )
+    assert any("Operand types count mismatch" in err for err in res_mlir_count["errors"])
 
     # MLIR variadic operand type count mismatch bypass
     mock_snap_mlir = {
@@ -1997,20 +1794,14 @@ def test_mcp_server_remaining_branches(mocker: pytest_mock.MockerFixture) -> Non
         structured_attributes={"scatter_dimension_numbers": "not_a_dict"},
     )
     assert res_scatter_invalid["is_valid"] is False
-    assert any(
-        "ScatterDimensionNumbersAttr must be structured dictionary" in e
-        for e in res_scatter_invalid["errors"]
-    )
+    assert any("ScatterDimensionNumbersAttr must be structured dictionary" in e for e in res_scatter_invalid["errors"])
 
     res_gather_invalid = check_mlir_op(
         "stablehlo.gather",
         structured_attributes={"gather_dimension_numbers": "not_a_dict"},
     )
     assert res_gather_invalid["is_valid"] is False
-    assert any(
-        "GatherDimensionNumbersAttr must be structured dictionary" in e
-        for e in res_gather_invalid["errors"]
-    )
+    assert any("GatherDimensionNumbersAttr must be structured dictionary" in e for e in res_gather_invalid["errors"])
 
     res_scatter_valid = check_mlir_op(
         "stablehlo.scatter",
@@ -2024,9 +1815,7 @@ def test_mcp_server_remaining_branches(mocker: pytest_mock.MockerFixture) -> Non
             "other_unrelated_attr": 42,
         },
     )
-    assert not any(
-        "ScatterDimensionNumbersAttr" in e for e in res_scatter_valid["errors"]
-    )
+    assert not any("ScatterDimensionNumbersAttr" in e for e in res_scatter_valid["errors"])
 
     res_gather_valid = check_mlir_op(
         "stablehlo.gather",
@@ -2039,9 +1828,7 @@ def test_mcp_server_remaining_branches(mocker: pytest_mock.MockerFixture) -> Non
             }
         },
     )
-    assert not any(
-        "GatherDimensionNumbersAttr" in e for e in res_gather_valid["errors"]
-    )
+    assert not any("GatherDimensionNumbersAttr" in e for e in res_gather_valid["errors"])
 
     # 6. check_mlir_op where operands is None and extracted from params (lines 600-607)
     mock_snap_no_operands = {
@@ -2099,9 +1886,7 @@ def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
                         {
                             "name": "sdpa",
                             "api_path": "torch.nn.functional.scaled_dot_product_attention",
-                            "params": [
-                                {"name": "query", "kind": "POSITIONAL_OR_KEYWORD"}
-                            ],
+                            "params": [{"name": "query", "kind": "POSITIONAL_OR_KEYWORD"}],
                         }
                     ]
                 }
@@ -2235,10 +2020,7 @@ def test_opaque_c_extension_guardrails(mocker: pytest_mock.MockerFixture) -> Non
     assert res_perm["is_hallucinated"] is False
     perm_warning = res_perm["warning"]
     assert perm_warning is not None
-    assert (
-        "WARNING: API has opaque C-extension signature; cannot definitively confirm argument validity"
-        in perm_warning
-    )
+    assert "WARNING: API has opaque C-extension signature; cannot definitively confirm argument validity" in perm_warning
     assert res_perm["signature_completeness"] == "opaque"
     assert res_perm["is_c_extension"] is True
 
@@ -2268,9 +2050,7 @@ def test_opaque_c_extension_guardrails(mocker: pytest_mock.MockerFixture) -> Non
         )
     ]
     # Non-strict: matches with warning
-    score_relaxed = score_compliance(
-        mock_snap, target_opaque, strict_c_extensions=False
-    )
+    score_relaxed = score_compliance(mock_snap, target_opaque, strict_c_extensions=False)
     assert "torch.opaque_func" in score_relaxed["matched"]
     assert "torch.opaque_func" in score_relaxed["opaque_signatures"]
     assert any("opaque" in w.lower() for w in score_relaxed["warnings"])
@@ -2278,12 +2058,7 @@ def test_opaque_c_extension_guardrails(mocker: pytest_mock.MockerFixture) -> Non
     # Strict: rejected as mismatch
     score_strict = score_compliance(mock_snap, target_opaque, strict_c_extensions=True)
     assert "torch.opaque_func" not in score_strict["matched"]
-    assert any(
-        m["api_path"] == "torch.opaque_func"
-        and m["reason"] is not None
-        and "Opaque C-extension" in m["reason"]
-        for m in score_strict["mismatched"]
-    )
+    assert any(m["api_path"] == "torch.opaque_func" and m["reason"] is not None and "Opaque C-extension" in m["reason"] for m in score_strict["mismatched"])
 
     # 4. Opaque function with recognized named argument -> reason == 'Valid API call with warning: ...'
     mock_snap_named = {
@@ -2384,18 +2159,12 @@ def test_framework_agnostic_dtype_validation(mocker: pytest_mock.MockerFixture) 
         kwarg_dtypes={"a": "tf.int32"},
     )
     assert res_invalid_dtype["is_hallucinated"] is True
-    assert any(
-        "Dtype 'tf.int32' is not supported" in err
-        for err in res_invalid_dtype.get("dtype_errors", [])
-    )
+    assert any("Dtype 'tf.int32' is not supported" in err for err in res_invalid_dtype.get("dtype_errors", []))
 
 
 def test_translate_concept_arguments() -> None:
     """Test translate_concept_arguments across core operations and frameworks."""
-    from ml_ecosystem_snapshots.mcp_server import (
-        handle_mcp_message,
-        translate_concept_arguments,
-    )
+    from ml_ecosystem_snapshots.mcp_server import translate_concept_arguments
 
     # 1. Matmul: torch -> stablehlo
     shlo_res = translate_concept_arguments(
@@ -2519,6 +2288,16 @@ def test_translate_concept_arguments() -> None:
     assert conv_jax["translated_kwargs"]["lhs"] == "X"
     assert conv_jax["translated_kwargs"]["rhs"] == "W"
 
+
+def test_translate_concept_arguments_norm_rpc_and_edge_cases() -> None:
+    """Test translate_concept_arguments for normalization, JSON-RPC dispatch, and unmapped branches."""
+    from ml_ecosystem_snapshots.mcp_server import (
+        check_rdna_instruction,
+        check_sass_instruction,
+        handle_mcp_message,
+        translate_concept_arguments,
+    )
+
     # 7b. Normalization: torch -> jax, tf, stablehlo
     norm_jax = translate_concept_arguments(
         concept="normalization",
@@ -2562,8 +2341,7 @@ def test_translate_concept_arguments() -> None:
     assert content["translated_kwargs"]["lhs"] == "A"
 
     # 9. Full branch coverage for unmapped/identity/empty branches
-    empty_matmul = translate_concept_arguments("matmul", "torch", "custom_fw", {})
-    assert empty_matmul["translated_kwargs"] == {}
+    assert translate_concept_arguments("matmul", "torch", "custom_fw", {})["translated_kwargs"] == {}
 
     custom_red = translate_concept_arguments(
         "reduce_sum",
@@ -2576,72 +2354,43 @@ def test_translate_concept_arguments() -> None:
     assert custom_red["translated_kwargs"]["keepdim"] is True
     assert custom_red["translated_kwargs"]["keepdims"] is False
 
-    custom_sm = translate_concept_arguments(
-        "softmax", "custom_fw", "custom_fw", {"dim": 0, "axis": 1}
-    )
+    custom_sm = translate_concept_arguments("softmax", "custom_fw", "custom_fw", {"dim": 0, "axis": 1})
     assert custom_sm["translated_kwargs"]["dim"] == 0
     assert custom_sm["translated_kwargs"]["axis"] == 1
 
-    empty_conv = translate_concept_arguments("conv2d", "torch", "custom_fw", {})
-    assert empty_conv["translated_kwargs"] == {}
-
-    generic_norm = translate_concept_arguments(
-        "generic_norm", "torch", "jax", {"weight": "w"}
-    )
-    assert generic_norm["translated_kwargs"]["scale"] == "w"
+    assert translate_concept_arguments("conv2d", "torch", "custom_fw", {})["translated_kwargs"] == {}
+    assert translate_concept_arguments("generic_norm", "torch", "jax", {"weight": "w"})["translated_kwargs"]["scale"] == "w"
 
     # Partial matmul and conv operands for 100% branch coverage
     partial_mm = translate_concept_arguments("matmul", "torch", "torch", {"other": "B"})
     assert "input" not in partial_mm["translated_kwargs"]
     assert partial_mm["translated_kwargs"]["other"] == "B"
 
-    partial_mm2 = translate_concept_arguments(
-        "matmul", "torch", "torch", {"input": "A"}
-    )
+    partial_mm2 = translate_concept_arguments("matmul", "torch", "torch", {"input": "A"})
     assert partial_mm2["translated_kwargs"]["input"] == "A"
     assert "other" not in partial_mm2["translated_kwargs"]
 
-    partial_conv = translate_concept_arguments(
-        "conv2d", "torch", "torch", {"input": "X"}
-    )
+    partial_conv = translate_concept_arguments("conv2d", "torch", "torch", {"input": "X"})
     assert partial_conv["translated_kwargs"]["input"] == "X"
     assert "weight" not in partial_conv["translated_kwargs"]
 
-    partial_conv_no_inp = translate_concept_arguments(
-        "conv2d", "torch", "torch", {"weight": "W"}
-    )
+    partial_conv_no_inp = translate_concept_arguments("conv2d", "torch", "torch", {"weight": "W"})
     assert "input" not in partial_conv_no_inp["translated_kwargs"]
     assert partial_conv_no_inp["translated_kwargs"]["weight"] == "W"
 
-    unknown_conv = translate_concept_arguments(
-        "conv2d", "torch", "custom_fw", {"input": "X"}
-    )
+    unknown_conv = translate_concept_arguments("conv2d", "torch", "custom_fw", {"input": "X"})
     assert unknown_conv["translated_kwargs"] == {}
     assert unknown_conv["unmapped_kwargs"]["input"] == "X"
 
-    # Completely unrecognized concept falling through all branches
-    unknown_concept = translate_concept_arguments(
-        "unrecognized_op", "torch", "jax", {"foo": "bar"}
-    )
+    unknown_concept = translate_concept_arguments("unrecognized_op", "torch", "jax", {"foo": "bar"})
     assert unknown_concept["translated_kwargs"] == {}
     assert unknown_concept["unmapped_kwargs"]["foo"] == "bar"
 
     # SASS and RDNA modifier branch tests
-    from ml_ecosystem_snapshots.mcp_server import (
-        check_sass_instruction,
-        check_rdna_instruction,
-    )
-
     assert check_sass_instruction("FADD.FTZ", modifiers=[".FTZ"])["is_valid"] is True
-    assert (
-        check_rdna_instruction("v_add_f32_e32", modifiers=["_e32"])["is_valid"] is True
-    )
-    assert (
-        check_rdna_instruction("v_add_f32_e64", modifiers=["_e64"])["is_valid"] is True
-    )
-    # Test line 1023: append extracted suffix when modifiers is already provided but does not include suffix
-    res_comb = check_rdna_instruction("v_add_f32_e32", modifiers=["_e64"])
-    assert res_comb["mnemonic_exists"] is True
+    assert check_rdna_instruction("v_add_f32_e32", modifiers=["_e32"])["is_valid"] is True
+    assert check_rdna_instruction("v_add_f32_e64", modifiers=["_e64"])["is_valid"] is True
+    assert check_rdna_instruction("v_add_f32_e32", modifiers=["_e64"])["mnemonic_exists"] is True
 
 
 def test_check_hallucination_parameter_allowed_values_error(

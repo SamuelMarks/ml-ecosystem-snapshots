@@ -2,101 +2,171 @@
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import os
+import runpy
 import sys
-import pytest
-from unittest.mock import patch, MagicMock
 
-# Add the root directory to sys.path so we can import scripts.generate_all_snapshots
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import pytest
+from ml_ecosystem_snapshots.models import JsonValue
 
 import scripts.generate_all_snapshots as generate_all_snapshots
 
 
-@patch("sys.argv", ["generate_all_snapshots.py"])
-@patch("scripts.generate_all_snapshots.os.makedirs")
-@patch("scripts.generate_all_snapshots.extract_snapshot")
-@patch("scripts.generate_all_snapshots.write_snapshot")
-@patch("builtins.print")
+def _get_script_path() -> str:
+    """Resolve the filesystem path to scripts/generate_all_snapshots.py without dunder access.
+
+    Returns:
+        Absolute filesystem path string.
+    """
+    spec = importlib.util.find_spec("scripts.generate_all_snapshots")
+    assert spec is not None and spec.origin is not None
+    return spec.origin
+
+
 def test_main_success(
-    mock_print: MagicMock,
-    mock_write: MagicMock,
-    mock_extract: MagicMock,
-    mock_makedirs: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test the main function for successful snapshot generation.
 
     Args:
-        mock_print: Mock for builtins.print.
-        mock_write: Mock for write_snapshot.
-        mock_extract: Mock for extract_snapshot.
-        mock_makedirs: Mock for os.makedirs.
+        monkeypatch: Pytest monkeypatch fixture.
+        capsys: Pytest stdout/stderr capture fixture.
     """
-    mock_extract.return_value = {"mock": "data"}
+    makedirs_calls: list[tuple[str, bool]] = []
+    extract_calls: list[str] = []
+    write_calls: list[tuple[str, dict[str, JsonValue], str]] = []
+
+    def fake_makedirs(path: str, exist_ok: bool = False) -> None:
+        """Record os.makedirs invocation.
+
+        Args:
+            path: Target directory path.
+            exist_ok: Whether existing directory is allowed.
+        """
+        makedirs_calls.append((path, exist_ok))
+
+    def fake_extract(fw: str) -> dict[str, JsonValue]:
+        """Record extract_snapshot invocation.
+
+        Args:
+            fw: Framework identifier.
+
+        Returns:
+            Dummy snapshot dictionary.
+        """
+        extract_calls.append(fw)
+        return {"mock": "data"}
+
+    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> str:
+        """Record write_snapshot invocation.
+
+        Args:
+            fw: Framework identifier.
+            data: Snapshot payload.
+            out_dir: Output directory path.
+
+        Returns:
+            Dummy written path.
+        """
+        write_calls.append((fw, data, out_dir))
+        return os.path.join(out_dir, f"{fw}.json")
+
+    monkeypatch.setattr(sys, "argv", ["generate_all_snapshots.py"])
+    monkeypatch.setattr(os, "makedirs", fake_makedirs)
+    monkeypatch.setattr(generate_all_snapshots, "extract_snapshot", fake_extract)
+    monkeypatch.setattr(generate_all_snapshots, "write_snapshot", fake_write)
 
     generate_all_snapshots.main()
 
-    mock_makedirs.assert_called_once_with(
-        os.path.join("src", "ml_ecosystem_snapshots", "snapshots"), exist_ok=True
-    )
+    assert makedirs_calls == [(os.path.join("src", "ml_ecosystem_snapshots", "snapshots"), True)]
 
     frameworks = generate_all_snapshots.all_frameworks
+    assert extract_calls == list(frameworks)
+    assert len(write_calls) == len(frameworks)
 
-    assert mock_extract.call_count == len(frameworks)
-    assert mock_write.call_count == len(frameworks)
-
+    captured = capsys.readouterr()
     for fw in frameworks:
-        mock_extract.assert_any_call(fw)
-        mock_write.assert_any_call(
+        assert (
             fw,
             {"mock": "data"},
             os.path.join("src", "ml_ecosystem_snapshots", "snapshots"),
-        )
-        mock_print.assert_any_call(f"Building snapshot for {fw}...")
-        mock_print.assert_any_call("  -> Saved")
+        ) in write_calls
+        assert f"Building snapshot for {fw}..." in captured.out
+    assert "  -> Saved" in captured.out
 
 
-@patch("sys.argv", ["generate_all_snapshots.py"])
-@patch("scripts.generate_all_snapshots.os.makedirs")
-@patch("scripts.generate_all_snapshots.extract_snapshot")
-@patch("scripts.generate_all_snapshots.write_snapshot")
-@patch("builtins.print")
 def test_main_failure(
-    mock_print: MagicMock,
-    mock_write: MagicMock,
-    mock_extract: MagicMock,
-    mock_makedirs: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test the main function when snapshot extraction fails.
 
     Args:
-        mock_print: Mock for builtins.print.
-        mock_write: Mock for write_snapshot.
-        mock_extract: Mock for extract_snapshot.
-        mock_makedirs: Mock for os.makedirs.
+        monkeypatch: Pytest monkeypatch fixture.
+        capsys: Pytest stdout/stderr capture fixture.
     """
-    mock_extract.side_effect = Exception("Mock exception")
+    extract_calls: list[str] = []
+    write_calls: list[str] = []
+
+    def fake_makedirs(path: str, exist_ok: bool = False) -> None:
+        """No-op directory creation.
+
+        Args:
+            path: Target directory path.
+            exist_ok: Whether existing directory is allowed.
+        """
+
+    def fake_extract(fw: str) -> dict[str, JsonValue]:
+        """Raise an error during snapshot extraction.
+
+        Args:
+            fw: Framework identifier.
+
+        Raises:
+            RuntimeError: Simulated extraction failure.
+        """
+        extract_calls.append(fw)
+        raise RuntimeError("Mock exception")
+
+    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> str:
+        """Record unexpected write calls.
+
+        Args:
+            fw: Framework identifier.
+            data: Snapshot payload.
+            out_dir: Output directory.
+
+        Returns:
+            Dummy path.
+        """
+        write_calls.append(fw)
+        return ""
+
+    monkeypatch.setattr(sys, "argv", ["generate_all_snapshots.py"])
+    monkeypatch.setattr(os, "makedirs", fake_makedirs)
+    monkeypatch.setattr(generate_all_snapshots, "extract_snapshot", fake_extract)
+    monkeypatch.setattr(generate_all_snapshots, "write_snapshot", fake_write)
 
     with pytest.raises(SystemExit):
         generate_all_snapshots.main()
 
     frameworks = generate_all_snapshots.all_frameworks
+    assert extract_calls == list(frameworks)
+    assert write_calls == []
 
-    assert mock_extract.call_count == len(frameworks)
-    assert mock_write.call_count == 0
-
+    captured = capsys.readouterr()
     for fw in frameworks:
-        mock_print.assert_any_call(f"Building snapshot for {fw}...")
-        mock_print.assert_any_call("  -> Failed: Mock exception")
+        assert f"Building snapshot for {fw}..." in captured.out
+    assert "  -> Failed: Mock exception" in captured.out
 
 
 def test_sys_path_insert() -> None:
-    """Test module reload when _src_dir is not in sys.path to cover line 8."""
-    import importlib
-
-    _src_dir = os.path.abspath(
-        os.path.join(os.path.dirname(generate_all_snapshots.__file__), "..", "src")
-    )
+    """Test module reload when _src_dir is not in sys.path."""
+    script_path = _get_script_path()
+    _src_dir = os.path.abspath(os.path.join(os.path.dirname(script_path), "..", "src"))
     orig_path = list(sys.path)
     try:
         sys.path = [p for p in sys.path if p != _src_dir]
@@ -106,87 +176,178 @@ def test_sys_path_insert() -> None:
         sys.path = orig_path
 
 
-@patch("sys.argv", ["generate_all_snapshots.py", "torch", "jax"])
-@patch.dict(os.environ, {"ISOLATE_EXTRACTION": "1"})
-@patch("scripts.generate_all_snapshots.os.makedirs")
-@patch("scripts.generate_all_snapshots.extract_snapshot_isolated")
-@patch("scripts.generate_all_snapshots.write_snapshot")
-@patch("builtins.print")
 def test_main_custom_args_and_isolated_success(
-    mock_print: MagicMock,
-    mock_write: MagicMock,
-    mock_extract_iso: MagicMock,
-    mock_makedirs: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test main function with CLI arguments and successful isolated extraction.
 
     Args:
-        mock_print: Mock for builtins.print.
-        mock_write: Mock for write_snapshot.
-        mock_extract_iso: Mock for extract_snapshot_isolated.
-        mock_makedirs: Mock for os.makedirs.
+        monkeypatch: Pytest monkeypatch fixture.
     """
-    mock_extract_iso.return_value = {"custom": "snap"}
+    iso_calls: list[str] = []
+    write_calls: list[str] = []
+
+    def fake_makedirs(path: str, exist_ok: bool = False) -> None:
+        """No-op directory creation.
+
+        Args:
+            path: Target directory path.
+            exist_ok: Whether existing directory is allowed.
+        """
+
+    def fake_extract_iso(fw: str) -> dict[str, JsonValue]:
+        """Record isolated extraction call.
+
+        Args:
+            fw: Framework identifier.
+
+        Returns:
+            Dummy snapshot payload.
+        """
+        iso_calls.append(fw)
+        return {"custom": "snap"}
+
+    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> str:
+        """Record write call.
+
+        Args:
+            fw: Framework identifier.
+            data: Snapshot payload.
+            out_dir: Output directory.
+
+        Returns:
+            Dummy path.
+        """
+        write_calls.append(fw)
+        return ""
+
+    monkeypatch.setattr(sys, "argv", ["generate_all_snapshots.py", "torch", "jax"])
+    monkeypatch.setenv("ISOLATE_EXTRACTION", "1")
+    monkeypatch.setattr(os, "makedirs", fake_makedirs)
+    monkeypatch.setattr(generate_all_snapshots, "extract_snapshot_isolated", fake_extract_iso)
+    monkeypatch.setattr(generate_all_snapshots, "write_snapshot", fake_write)
 
     generate_all_snapshots.main()
 
-    assert mock_extract_iso.call_count == 2
-    mock_extract_iso.assert_any_call("torch")
-    mock_extract_iso.assert_any_call("jax")
-    assert mock_write.call_count == 2
+    assert iso_calls == ["torch", "jax"]
+    assert write_calls == ["torch", "jax"]
 
 
-@patch("sys.argv", ["generate_all_snapshots.py", "torch"])
-@patch.dict(os.environ, {"ISOLATE_EXTRACTION": "1"})
-@patch("scripts.generate_all_snapshots.os.makedirs")
-@patch("scripts.generate_all_snapshots.extract_snapshot_isolated")
-@patch("scripts.generate_all_snapshots.extract_snapshot")
-@patch("scripts.generate_all_snapshots.write_snapshot")
-@patch("builtins.print")
 def test_main_isolated_fallback(
-    mock_print: MagicMock,
-    mock_write: MagicMock,
-    mock_extract: MagicMock,
-    mock_extract_iso: MagicMock,
-    mock_makedirs: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test main function when isolated extraction returns empty snapshot and falls back to in-process.
 
     Args:
-        mock_print: Mock for builtins.print.
-        mock_write: Mock for write_snapshot.
-        mock_extract: Mock for extract_snapshot.
-        mock_extract_iso: Mock for extract_snapshot_isolated.
-        mock_makedirs: Mock for os.makedirs.
+        monkeypatch: Pytest monkeypatch fixture.
     """
-    mock_extract_iso.return_value = {}
-    mock_extract.return_value = {"fallback": "data"}
+    iso_calls: list[str] = []
+    extract_calls: list[str] = []
+    write_calls: list[str] = []
+
+    def fake_makedirs(path: str, exist_ok: bool = False) -> None:
+        """No-op directory creation.
+
+        Args:
+            path: Target directory path.
+            exist_ok: Whether existing directory is allowed.
+        """
+
+    def fake_extract_iso(fw: str) -> dict[str, JsonValue]:
+        """Return empty dict to trigger fallback.
+
+        Args:
+            fw: Framework identifier.
+
+        Returns:
+            Empty dict.
+        """
+        iso_calls.append(fw)
+        return {}
+
+    def fake_extract(fw: str) -> dict[str, JsonValue]:
+        """Return fallback snapshot payload.
+
+        Args:
+            fw: Framework identifier.
+
+        Returns:
+            Fallback payload.
+        """
+        extract_calls.append(fw)
+        return {"fallback": "data"}
+
+    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> str:
+        """Record write call.
+
+        Args:
+            fw: Framework identifier.
+            data: Snapshot payload.
+            out_dir: Output directory.
+
+        Returns:
+            Dummy path.
+        """
+        write_calls.append(fw)
+        return ""
+
+    monkeypatch.setattr(sys, "argv", ["generate_all_snapshots.py", "torch"])
+    monkeypatch.setenv("ISOLATE_EXTRACTION", "1")
+    monkeypatch.setattr(os, "makedirs", fake_makedirs)
+    monkeypatch.setattr(generate_all_snapshots, "extract_snapshot_isolated", fake_extract_iso)
+    monkeypatch.setattr(generate_all_snapshots, "extract_snapshot", fake_extract)
+    monkeypatch.setattr(generate_all_snapshots, "write_snapshot", fake_write)
 
     generate_all_snapshots.main()
 
-    mock_extract_iso.assert_called_once_with("torch")
-    mock_extract.assert_called_once_with("torch")
-    assert mock_write.call_count == 1
+    assert iso_calls == ["torch"]
+    assert extract_calls == ["torch"]
+    assert write_calls == ["torch"]
 
 
-@patch("sys.argv", ["generate_all_snapshots.py", "tikz"])
-@patch("ml_ecosystem_snapshots.api.extract_snapshot", return_value={"categories": {}})
-@patch("ml_ecosystem_snapshots.api.write_snapshot")
-@patch("builtins.print")
 def test_generate_all_snapshots_main_entrypoint(
-    mock_print: MagicMock,
-    mock_write: MagicMock,
-    mock_extract: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test running scripts/generate_all_snapshots.py as __main__.
 
     Args:
-        mock_print: Mock for builtins.print.
-        mock_write: Mock for write_snapshot.
-        mock_extract: Mock for extract_snapshot.
+        monkeypatch: Pytest monkeypatch fixture.
     """
-    import runpy
+    import ml_ecosystem_snapshots.api as api_mod
 
-    runpy.run_path(generate_all_snapshots.__file__, run_name="__main__")
-    mock_extract.assert_called_once_with("tikz")
-    mock_write.assert_called_once()
+    extract_calls: list[str] = []
+    write_calls: list[str] = []
+
+    def fake_extract(fw: str) -> dict[str, JsonValue]:
+        """Record extract_snapshot call from __main__.
+
+        Args:
+            fw: Framework identifier.
+
+        Returns:
+            Empty categories dict.
+        """
+        extract_calls.append(fw)
+        return {"categories": {}}
+
+    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> str:
+        """Record write_snapshot call from __main__.
+
+        Args:
+            fw: Framework identifier.
+            data: Snapshot payload.
+            out_dir: Output directory.
+
+        Returns:
+            Dummy path.
+        """
+        write_calls.append(fw)
+        return ""
+
+    monkeypatch.setattr(sys, "argv", ["generate_all_snapshots.py", "tikz"])
+    monkeypatch.setattr(api_mod, "extract_snapshot", fake_extract)
+    monkeypatch.setattr(api_mod, "write_snapshot", fake_write)
+
+    runpy.run_path(_get_script_path(), run_name="__main__")
+    assert extract_calls == ["tikz"]
+    assert write_calls == ["tikz"]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import logging
 
 from ml_switcheroo_ir.schema.ghost import (
@@ -13,14 +14,51 @@ from ml_switcheroo_ir.schema.ghost import (
 )
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import read_runtime_attr
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def _inspect_ort_symbol(obj: InspectableTarget, name: str, inspector: GhostInspector) -> GhostRef | None:
+    """Inspect a single ONNX Runtime symbol and inject `providers` on `InferenceSession`.
+
+    Args:
+        obj: Target ONNX Runtime symbol.
+        name: Unqualified symbol name.
+        inspector: Active `GhostInspector` instance.
+
+    Returns:
+        Populated `GhostRef` or `None` if inspection fails.
+    """
+    try:
+        ref: GhostRef | None = inspector.inspect(obj, f"onnxruntime.{name}")
+    except (
+        AttributeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        IndexError,
+        SyntaxError,
+        OSError,
+        ImportError,
+        RuntimeError,
+    ) as exc:
+        _LOGGER.debug("Skipping onnxruntime.%s: %s", name, exc)
+        return None
+
+    if ref is not None and name == "InferenceSession" and not any(p.name == "providers" for p in ref.params):
+        ref.params.append(
+            GhostParam(
+                name="providers",
+                kind=ParameterKind.POSITIONAL_OR_KEYWORD,
+                default="None",
+                annotation="Sequence[str | tuple[str, dict[str, Any]]] | None",
+            )
+        )
+    return ref
+
+
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect ONNX Runtime API symbols for the requested semantic tier.
 
     Args:
@@ -43,43 +81,15 @@ def collect_api(
 
     inspector = GhostInspector()
 
-    for name in dir(mod):
-        if not include_nonpublic and name.startswith("_"):
-            continue
-
-        obj = read_runtime_attr(mod, name, None)
-        if obj is None:
+    for name, obj in inspect.getmembers(mod):
+        if (not include_nonpublic and name.startswith("_")) or obj is None:
             continue
 
         obj_cat = SemanticTier.MODEL if "Session" in name else SemanticTier.UTIL
 
         if obj_cat == category:
-            try:
-                ref = inspector.inspect(obj, f"onnxruntime.{name}")
-                if ref is not None:
-                    if name == "InferenceSession":
-                        has_providers = any(p.name == "providers" for p in ref.params)
-                        if not has_providers:
-                            ref.params.append(
-                                GhostParam(
-                                    name="providers",
-                                    kind=ParameterKind.POSITIONAL_OR_KEYWORD,
-                                    default="None",
-                                    annotation="Sequence[str | tuple[str, dict[str, Any]]] | None",
-                                )
-                            )
-                    results.append(ref)
-            except (
-                AttributeError,
-                TypeError,
-                ValueError,
-                KeyError,
-                IndexError,
-                SyntaxError,
-                OSError,
-                ImportError,
-                RuntimeError,
-            ) as exc:
-                _LOGGER.debug("Skipping onnxruntime.%s: %s", name, exc)
+            ref = _inspect_ort_symbol(obj, name, inspector)
+            if ref is not None:
+                results.append(ref)
 
     return results

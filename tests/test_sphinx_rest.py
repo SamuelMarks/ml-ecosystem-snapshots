@@ -2,23 +2,20 @@
 
 from __future__ import annotations
 
-import operator
-
-import types
-import pytest_mock
 import unittest.mock as mock
 
+import griffe
+import pytest_mock
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.introspection.sanitize import sanitize_type_str
 from ml_ecosystem_snapshots.utils import (
-    get_framework_docstring_parser,
-    resolve_griffe_parser,
-    parse_docstring_with_griffe,
     extract_griffe_docstring_metadata,
+    get_framework_docstring_parser,
+    parse_docstring_with_griffe,
+    resolve_griffe_parser,
     strip_sphinx_roles,
 )
-import griffe
 
 
 def test_griffe_rest_sphinx_field_lists() -> None:
@@ -93,26 +90,19 @@ Args:
 def test_resolve_griffe_parser() -> None:
     """Test resolving parser strings to Griffe Parser enum instances."""
     rest_parser = resolve_griffe_parser("rest")
-    assert rest_parser in (
-        (
-            operator.attrgetter("rest")(griffe.Parser)
-            if "rest" in dir(griffe.Parser)
-            else griffe.Parser.sphinx
-        ),
-        griffe.Parser.sphinx,
-    )
+    assert rest_parser == griffe.Parser("sphinx")
 
     sphinx_parser = resolve_griffe_parser("sphinx")
-    assert sphinx_parser == griffe.Parser.sphinx
+    assert sphinx_parser == griffe.Parser("sphinx")
 
     google_parser = resolve_griffe_parser("google")
-    assert google_parser == griffe.Parser.google
+    assert google_parser == griffe.Parser("google")
 
     numpy_parser = resolve_griffe_parser("numpy")
-    assert numpy_parser == griffe.Parser.numpy
+    assert numpy_parser == griffe.Parser("numpy")
 
     auto_parser = resolve_griffe_parser("auto")
-    assert auto_parser == griffe.Parser.auto
+    assert auto_parser == griffe.Parser("auto")
 
     invalid_parser = resolve_griffe_parser("invalid_style_123")
     assert invalid_parser is None
@@ -155,15 +145,7 @@ Raises:
     # Ask for rest, but document is in Google style -> dynamic fallback should succeed
     sections = parse_docstring_with_griffe(google_doc, parser_name="rest")
     assert len(sections) > 1
-    has_params = any(
-        (
-            operator.attrgetter("value")(s.kind)
-            if "value" in dir(s.kind)
-            else str(s.kind)
-        )
-        == "parameters"
-        for s in sections
-    )
+    has_params = any(s.kind.value == "parameters" for s in sections)
     assert has_params
 
     numpy_doc = """Perform matrix multiplication.
@@ -188,15 +170,7 @@ ValueError
     # Ask for rest, but document is in NumPy style -> dynamic fallback should succeed
     sections_np = parse_docstring_with_griffe(numpy_doc, parser_name="rest")
     assert len(sections_np) > 1
-    has_params_np = any(
-        (
-            operator.attrgetter("value")(s.kind)
-            if "value" in dir(s.kind)
-            else str(s.kind)
-        )
-        == "parameters"
-        for s in sections_np
-    )
+    has_params_np = any(s.kind.value == "parameters" for s in sections_np)
     assert has_params_np
 
     # Plain text docstring has no structured sections but returns plain section
@@ -222,7 +196,9 @@ def test_ghost_inspector_sphinx_docstring() -> None:
         """
         pass
 
-    dummy_op.__annotations__.clear()
+    import pytest
+
+    pytest.MonkeyPatch().setattr(dummy_op, "__annotations__", {})
     ref = GhostInspector.inspect(dummy_op, "torch.ops.dummy_op")
 
     assert ref.name == "dummy_op"
@@ -283,14 +259,10 @@ def test_ghost_inspector_merge_branches(mocker: pytest_mock.MockerFixture) -> No
     assert not ref.has_arg("ValueError")
 
     # Test hydrate with and without schema_version
-    hydrated_with = GhostInspector.hydrate(
-        {"name": "op", "api_path": "op", "kind": "function", "schema_version": "2.0.0"}
-    )
+    hydrated_with = GhostInspector.hydrate({"name": "op", "api_path": "op", "kind": "function", "schema_version": "2.0.0"})
     assert hydrated_with.schema_version == "2.0.0"
 
-    hydrated_without = GhostInspector.hydrate(
-        {"name": "op", "api_path": "op", "kind": "function"}
-    )
+    hydrated_without = GhostInspector.hydrate({"name": "op", "api_path": "op", "kind": "function"})
     assert hydrated_without.schema_version == "2.0.0"
 
 
@@ -480,14 +452,9 @@ def test_strip_sphinx_roles() -> None:
     assert strip_sphinx_roles(None) is None
     assert strip_sphinx_roles(":class:`torch.Tensor`") == "torch.Tensor"
     assert strip_sphinx_roles(":class:`~torch.Tensor`") == "torch.Tensor"
-    assert (
-        strip_sphinx_roles(":func:`~torch.nn.functional.relu`")
-        == "torch.nn.functional.relu"
-    )
+    assert strip_sphinx_roles(":func:`~torch.nn.functional.relu`") == "torch.nn.functional.relu"
     assert strip_sphinx_roles(":obj:`None`") == "None"
-    assert (
-        strip_sphinx_roles(":meth:`~torch.Tensor.backward`") == "torch.Tensor.backward"
-    )
+    assert strip_sphinx_roles(":meth:`~torch.Tensor.backward`") == "torch.Tensor.backward"
     assert strip_sphinx_roles(":attr:`data`") == "data"
     assert strip_sphinx_roles("plain text without roles") == "plain text without roles"
 
@@ -495,13 +462,8 @@ def test_strip_sphinx_roles() -> None:
 def test_sanitize_type_str_with_sphinx_roles() -> None:
     """Test that sanitize_type_str cleans Sphinx roles before parsing type hints."""
     assert sanitize_type_str(":class:`~torch.Tensor`") == "torch.Tensor"
-    assert (
-        sanitize_type_str("Union[:class:`torch.Tensor`, :obj:`None`]")
-        == "torch.Tensor | None"
-    )
-    assert (
-        sanitize_type_str("Optional[:class:`~torch.Tensor`]") == "torch.Tensor | None"
-    )
+    assert sanitize_type_str("Union[:class:`torch.Tensor`, :obj:`None`]") == "torch.Tensor | None"
+    assert sanitize_type_str("Optional[:class:`~torch.Tensor`]") == "torch.Tensor | None"
 
 
 def test_promote_documented_kwargs() -> None:
@@ -545,9 +507,9 @@ def test_pytorch_modules_kwargs_promotion() -> None:
     try:
         import torch.nn as nn
 
-        if "Linear" not in dir(nn) or "Conv2d" not in dir(nn):
-            raise ImportError("torch.nn has no Linear or Conv2d")
-    except ImportError:
+        linear_cls: type = nn.Linear
+        conv2d_cls: type = nn.Conv2d
+    except (ImportError, AttributeError):
 
         class Linear:
             """Linear layer.
@@ -560,9 +522,7 @@ def test_pytorch_modules_kwargs_promotion() -> None:
             :type bias: bool
             """
 
-            def __init__(
-                self, in_features: int, out_features: int, bias: bool = True
-            ) -> None:
+            def __init__(self, in_features: int, out_features: int, bias: bool = True) -> None:
                 """Initialize Linear layer.
 
                 Args:
@@ -583,9 +543,7 @@ def test_pytorch_modules_kwargs_promotion() -> None:
             :type kernel_size: int
             """
 
-            def __init__(
-                self, in_channels: int, out_channels: int, kernel_size: int
-            ) -> None:
+            def __init__(self, in_channels: int, out_channels: int, kernel_size: int) -> None:
                 """Initialize Conv2d layer.
 
                 Args:
@@ -595,23 +553,16 @@ def test_pytorch_modules_kwargs_promotion() -> None:
                 """
                 pass
 
-        nn_mod: types.ModuleType | types.SimpleNamespace = types.SimpleNamespace(
-            Linear=Linear, Conv2d=Conv2d
-        )
-    else:
-        nn_mod = nn
+        linear_cls = Linear
+        conv2d_cls = Conv2d
 
-    linear_ref = GhostInspector.inspect(
-        operator.attrgetter("Linear")(nn_mod), "torch.nn.Linear", kind="class"
-    )
+    linear_ref = GhostInspector.inspect(linear_cls, "torch.nn.Linear", kind="class")
     linear_param_names = {p.name for p in linear_ref.params}
     assert "in_features" in linear_param_names
     assert "out_features" in linear_param_names
     assert "bias" in linear_param_names
 
-    conv_ref = GhostInspector.inspect(
-        operator.attrgetter("Conv2d")(nn_mod), "torch.nn.Conv2d", kind="class"
-    )
+    conv_ref = GhostInspector.inspect(conv2d_cls, "torch.nn.Conv2d", kind="class")
     conv_param_names = {p.name for p in conv_ref.params}
     assert "in_channels" in conv_param_names
     assert "out_channels" in conv_param_names
@@ -630,7 +581,7 @@ def test_extract_griffe_docstring_metadata_duplicate_and_missing_params() -> Non
     assert meta["raises"] == ["DuplicateError"]
 
     fake_param_section = mock.MagicMock()
-    fake_param_section.kind.value = "parameters"
+    fake_param_section.kind = "parameters"
     fake_param_item = mock.MagicMock()
     fake_param_item.name = "MisclassifiedError"
     fake_param_item.annotation = None
@@ -642,16 +593,10 @@ def test_extract_griffe_docstring_metadata_duplicate_and_missing_params() -> Non
         "ml_ecosystem_snapshots.utils.parse_docstring_with_griffe",
         return_value=[fake_param_section],
     ):
-        meta_misclassified = extract_griffe_docstring_metadata(
-            ":raises MisclassifiedError: Doc.", parser_name="rest"
-        )
+        meta_misclassified = extract_griffe_docstring_metadata(":raises MisclassifiedError: Doc.", parser_name="rest")
         assert "MisclassifiedError" not in meta_misclassified["params"]
         assert "MisclassifiedError" in meta_misclassified["raises"]
 
-    with mock.patch(
-        "ml_ecosystem_snapshots.utils.parse_docstring_with_griffe", return_value=[]
-    ):
-        meta_empty = extract_griffe_docstring_metadata(
-            ":raises SoloError: Doc.", parser_name="rest"
-        )
+    with mock.patch("ml_ecosystem_snapshots.utils.parse_docstring_with_griffe", return_value=[]):
+        meta_empty = extract_griffe_docstring_metadata(":raises SoloError: Doc.", parser_name="rest")
         assert meta_empty["raises"] == ["SoloError"]

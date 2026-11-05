@@ -7,13 +7,11 @@ operate strictly without network access, querying bundled ground-truth JSON file
 
 from __future__ import annotations
 
-import operator
-
 import socket
 import typing
 from unittest import mock
-import pytest
 
+import pytest
 from ml_ecosystem_snapshots import mcp_server
 
 
@@ -168,12 +166,12 @@ def test_offline_mlir_decoupled_operands_and_regions() -> None:
         validate_mlir_region,
         validate_mlir_successors,
     )
-    from ml_switcheroo_ir.schema.ghost import ParameterKind
     from ml_ecosystem_snapshots.models import (
         ExtendedGhostParam,
         GhostMlirRef,
         IRParameterRole,
     )
+    from ml_switcheroo_ir.schema.ghost import ParameterKind
 
     op_param = ExtendedGhostParam(
         name="lhs",
@@ -212,14 +210,10 @@ def test_offline_mlir_decoupled_operands_and_regions() -> None:
     reg_errs_empty_arg = validate_mlir_region("scf.for", "body", [], [])
     assert any("must be 'index' type" in e for e in reg_errs_empty_arg)
 
-    reg_errs_iter_match = validate_mlir_region(
-        "scf.for", "body", ["index", "f32"], ["f32"]
-    )
+    reg_errs_iter_match = validate_mlir_region("scf.for", "body", ["index", "f32"], ["f32"])
     assert len(reg_errs_iter_match) == 0
 
-    reg_errs_iter_mismatch = validate_mlir_region(
-        "scf.for", "body", ["index", "f32"], ["i32"]
-    )
+    reg_errs_iter_mismatch = validate_mlir_region("scf.for", "body", ["index", "f32"], ["i32"])
     assert any("must match loop-carried iter_args" in e for e in reg_errs_iter_mismatch)
 
     reg_errs_for_non_body = validate_mlir_region("scf.for", "other", ["index"], ["f32"])
@@ -228,17 +222,13 @@ def test_offline_mlir_decoupled_operands_and_regions() -> None:
     reg_errs_while_valid = validate_mlir_region("scf.while", "before", [], ["i1"])
     assert len(reg_errs_while_valid) == 0
 
-    reg_errs_while_invalid = validate_mlir_region(
-        "scf.while", "before", [], ["tensor<f32>"]
-    )
+    reg_errs_while_invalid = validate_mlir_region("scf.while", "before", [], ["tensor<f32>"])
     assert any("condition boolean i1" in e for e in reg_errs_while_invalid)
 
     reg_errs_while_empty = validate_mlir_region("scf.while", "before", [], [])
     assert any("condition boolean i1" in e for e in reg_errs_while_empty)
 
-    reg_errs_while_non_before = validate_mlir_region(
-        "scf.while", "after", ["f32"], ["f32"]
-    )
+    reg_errs_while_non_before = validate_mlir_region("scf.while", "after", ["f32"], ["f32"])
     assert len(reg_errs_while_non_before) == 0
 
     reg_errs_other_op = validate_mlir_region("arith.addf", "body", [], [])
@@ -260,16 +250,10 @@ def test_offline_mlir_decoupled_operands_and_regions() -> None:
     succ_errs_cond_valid = validate_mlir_successors("cf.cond_br", ["^bb1", "^bb2"])
     assert len(succ_errs_cond_valid) == 0
 
-    succ_errs_expected_count_mismatch = validate_mlir_successors(
-        "custom.op", ["^bb1"], expected_count=2
-    )
-    assert any(
-        "Successor count mismatch" in e for e in succ_errs_expected_count_mismatch
-    )
+    succ_errs_expected_count_mismatch = validate_mlir_successors("custom.op", ["^bb1"], expected_count=2)
+    assert any("Successor count mismatch" in e for e in succ_errs_expected_count_mismatch)
 
-    succ_errs_expected_count_match = validate_mlir_successors(
-        "custom.op", ["^bb1"], expected_count=1
-    )
+    succ_errs_expected_count_match = validate_mlir_successors("custom.op", ["^bb1"], expected_count=1)
     assert len(succ_errs_expected_count_match) == 0
 
     succ_errs_other_op = validate_mlir_successors("custom.op", ["^bb1"])
@@ -423,6 +407,7 @@ def test_offline_index_db_in_memory_fallback(monkeypatch: pytest.MonkeyPatch) ->
         monkeypatch: Pytest monkeypatch fixture.
     """
     import os
+
     from ml_ecosystem_snapshots.index import init_db
 
     def mock_makedirs_fail(path: str, exist_ok: bool = True) -> None:
@@ -452,8 +437,8 @@ def test_offline_index_db_in_memory_fallback(monkeypatch: pytest.MonkeyPatch) ->
 
 def test_offline_ghost_isa_structured_modifiers() -> None:
     """Verify GhostIsaRef handles structured modifiers and VOPD profiles."""
-    from ml_switcheroo_ir.schema.ghost import VopdProfileSpec
     from ml_ecosystem_snapshots.models import GhostIsaRef
+    from ml_switcheroo_ir.schema.ghost import VopdProfileSpec
 
     isa_ref = GhostIsaRef(
         name="FADD",
@@ -465,5 +450,6 @@ def test_offline_ghost_isa_structured_modifiers() -> None:
     )
     assert isa_ref.structured_modifiers is not None
     assert isa_ref.structured_modifiers["rounding"] == ".RN"
-    assert isa_ref.vopd_profile is not None
-    assert operator.attrgetter("supported")(isa_ref.vopd_profile) is False
+    assert isinstance(isa_ref.vopd_profile, VopdProfileSpec)
+    assert isa_ref.vopd_profile.model_extra is not None
+    assert isa_ref.vopd_profile.model_extra["supported"] is False

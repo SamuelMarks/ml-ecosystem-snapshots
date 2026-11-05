@@ -6,19 +6,16 @@ and PyBind11/LibTorch tensor buffer access functions.
 
 from __future__ import annotations
 
+import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     OperandDirection,
     SemanticTier,
 )
-import pydantic
 
 from ml_ecosystem_snapshots.frameworks._base import CanonicalSsaOpSpec
 
-
-CANONICAL_CPP_RUNTIME_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(
-    list[CanonicalSsaOpSpec]
-).validate_python(
+CANONICAL_CPP_RUNTIME_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(list[CanonicalSsaOpSpec]).validate_python(
     [
         # C++ STL <cmath> / <algorithm>
         {
@@ -103,9 +100,7 @@ def _load_cpp_runtime_ops() -> list[CanonicalSsaOpSpec]:
     return CANONICAL_CPP_RUNTIME_OPS
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect C++17 and PyBind11 native runtime operations.
 
     Args:
@@ -129,15 +124,9 @@ def collect_api(
         ops=ops,
         api_prefix="cpp",
         name_key="name",
-        operand_annotation_fn=lambda op, inp: (
-            "float" if inp in ("v", "lo", "hi", "x", "y", "z", "arg") else "auto"
-        ),
+        operand_annotation_fn=lambda op, inp: "float" if inp in ("v", "lo", "hi", "x", "y", "z", "arg") else "auto",
         operand_description_fn=lambda op, inp: f"C++ operand {inp}",
-        operand_direction_fn=lambda op, inp: (
-            OperandDirection.WRITE
-            if op["name"] in ("from_blob", "data_ptr") and inp == "data"
-            else OperandDirection.READ
-        ),
+        operand_direction_fn=lambda op, inp: OperandDirection.WRITE if op["name"] in ("from_blob", "data_ptr") and inp == "data" else OperandDirection.READ,
         attr_description_prefix="C++ attribute",
         result_type="auto",
         empty_return_type="void",

@@ -58,9 +58,7 @@ class HallucinationCheckResult(_McpResultModel):
     @typing.overload
     def __getitem__(
         self,
-        key: typing.Literal[
-            "reason", "snapshot_source", "signature_completeness", "warning"
-        ],
+        key: typing.Literal["reason", "snapshot_source", "signature_completeness", "warning"],
     ) -> str: ...
 
     @typing.overload
@@ -106,9 +104,7 @@ class HallucinationCheckResult(_McpResultModel):
     @typing.overload
     def get(
         self,
-        key: typing.Literal[
-            "reason", "snapshot_source", "signature_completeness", "warning"
-        ],
+        key: typing.Literal["reason", "snapshot_source", "signature_completeness", "warning"],
         default: str = "",
     ) -> str: ...
 
@@ -224,22 +220,16 @@ class CodeBlockCheckResult(_McpResultModel):
     findings: list[CodeBlockFinding] = pydantic.Field(default_factory=list)
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["total_analyzed", "hallucinations_detected"]
-    ) -> int: ...
+    def __getitem__(self, key: typing.Literal["total_analyzed", "hallucinations_detected"]) -> int: ...
 
     @typing.overload
     def __getitem__(self, key: typing.Literal["is_valid"]) -> bool: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["findings"]
-    ) -> list[CodeBlockFinding]: ...
+    def __getitem__(self, key: typing.Literal["findings"]) -> list[CodeBlockFinding]: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: str
-    ) -> int | bool | list[CodeBlockFinding] | JsonValue: ...
+    def __getitem__(self, key: str) -> int | bool | list[CodeBlockFinding] | JsonValue: ...
 
     def __getitem__(self, key: str) -> int | bool | list[CodeBlockFinding] | JsonValue:
         """Retrieve a result field by dictionary key.
@@ -252,9 +242,7 @@ class CodeBlockCheckResult(_McpResultModel):
         """
         if key == "findings":
             return self.findings
-        dumped: dict[str, int | bool | list[CodeBlockFinding] | JsonValue] = (
-            self.model_dump()
-        )
+        dumped: dict[str, int | bool | list[CodeBlockFinding] | JsonValue] = self.model_dump()
         return dumped[key]
 
 
@@ -272,9 +260,7 @@ class IsaCheckResult(_McpResultModel):
     errors: list[str] = pydantic.Field(default_factory=list)
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["is_valid", "mnemonic_exists"]
-    ) -> bool: ...
+    def __getitem__(self, key: typing.Literal["is_valid", "mnemonic_exists"]) -> bool: ...
 
     @typing.overload
     def __getitem__(
@@ -288,9 +274,7 @@ class IsaCheckResult(_McpResultModel):
     ) -> list[str]: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["encoding", "category", "min_sm"]
-    ) -> str | None: ...
+    def __getitem__(self, key: typing.Literal["encoding", "category", "min_sm"]) -> str | None: ...
 
     @typing.overload
     def __getitem__(self, key: str) -> list[str] | JsonValue: ...
@@ -368,23 +352,15 @@ class IrCheckResult(_McpResultModel):
     def __getitem__(self, key: typing.Literal["is_valid", "op_exists"]) -> bool: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["expected_operands"]
-    ) -> list[str | dict[str, JsonValue]]: ...
+    def __getitem__(self, key: typing.Literal["expected_operands"]) -> list[str | dict[str, JsonValue]]: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["expected_attributes", "errors"]
-    ) -> list[str]: ...
+    def __getitem__(self, key: typing.Literal["expected_attributes", "errors"]) -> list[str]: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: str
-    ) -> list[str] | list[str | dict[str, JsonValue]] | JsonValue: ...
+    def __getitem__(self, key: str) -> list[str] | list[str | dict[str, JsonValue]] | JsonValue: ...
 
-    def __getitem__(
-        self, key: str
-    ) -> bool | list[str] | list[str | dict[str, JsonValue]] | JsonValue:
+    def __getitem__(self, key: str) -> bool | list[str] | list[str | dict[str, JsonValue]] | JsonValue:
         """Retrieve an IR check field by dictionary key.
 
         Args:
@@ -393,9 +369,7 @@ class IrCheckResult(_McpResultModel):
         Returns:
             Field value.
         """
-        dumped: dict[
-            str, bool | list[str] | list[str | dict[str, JsonValue]] | JsonValue
-        ] = self.model_dump()
+        dumped: dict[str, bool | list[str] | list[str | dict[str, JsonValue]] | JsonValue] = self.model_dump()
         return dumped[key]
 
     @typing.overload
@@ -420,16 +394,12 @@ class IrCheckResult(_McpResultModel):
     ) -> list[str]: ...
 
     @typing.overload
-    def get(
-        self, key: str, default: JsonValue = None
-    ) -> list[str] | list[str | dict[str, JsonValue]] | JsonValue: ...
+    def get(self, key: str, default: JsonValue = None) -> list[str] | list[str | dict[str, JsonValue]] | JsonValue: ...
 
     def get(
         self,
         key: str,
-        default: (
-            bool | list[str] | list[str | dict[str, JsonValue]] | JsonValue
-        ) = None,
+        default: (bool | list[str] | list[str | dict[str, JsonValue]] | JsonValue) = None,
     ) -> bool | list[str] | list[str | dict[str, JsonValue]] | JsonValue:
         """Retrieve an IR check field by key with default.
 
@@ -440,9 +410,7 @@ class IrCheckResult(_McpResultModel):
         Returns:
             Field value or `default`.
         """
-        dumped: dict[
-            str, bool | list[str] | list[str | dict[str, JsonValue]] | JsonValue
-        ] = self.model_dump()
+        dumped: dict[str, bool | list[str] | list[str | dict[str, JsonValue]] | JsonValue] = self.model_dump()
         val = dumped.get(key, default)
         return val if val is not None else default
 
@@ -535,9 +503,7 @@ class ConceptTranslationResult(_McpResultModel):
     ) -> str: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["translated_kwargs", "unmapped_kwargs"]
-    ) -> dict[str, JsonValue]: ...
+    def __getitem__(self, key: typing.Literal["translated_kwargs", "unmapped_kwargs"]) -> dict[str, JsonValue]: ...
 
     @typing.overload
     def __getitem__(self, key: str) -> JsonValue: ...

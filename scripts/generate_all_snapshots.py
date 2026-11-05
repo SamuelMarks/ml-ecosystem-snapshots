@@ -79,9 +79,7 @@ all_frameworks = [
 
 def main() -> None:
     """Generate and save API snapshots for supported ML frameworks."""
-    os.makedirs(
-        os.path.join("src", "ml_ecosystem_snapshots", "snapshots"), exist_ok=True
-    )
+    os.makedirs(os.path.join("src", "ml_ecosystem_snapshots", "snapshots"), exist_ok=True)
     frameworks = sys.argv[1:] if len(sys.argv) > 1 else all_frameworks
     use_isolated = os.environ.get("ISOLATE_EXTRACTION", "0") == "1"
     has_error = False
@@ -95,9 +93,7 @@ def main() -> None:
                     snapshot = extract_snapshot(fw)
             else:
                 snapshot = extract_snapshot(fw)
-            write_snapshot(
-                fw, snapshot, os.path.join("src", "ml_ecosystem_snapshots", "snapshots")
-            )
+            write_snapshot(fw, snapshot, os.path.join("src", "ml_ecosystem_snapshots", "snapshots"))
             print("  -> Saved")
         except Exception as e:
             print(f"  -> Failed: {e}")

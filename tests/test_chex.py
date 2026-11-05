@@ -6,9 +6,7 @@ import argparse
 import types
 from unittest.mock import patch
 
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 import pytest
-
 from ml_ecosystem_snapshots.api import (
     _extract_version_with_griffe,
     extract_snapshot,
@@ -29,6 +27,7 @@ from ml_ecosystem_snapshots.mcp.tools.hallucination import (
 )
 from ml_ecosystem_snapshots.mcp.tools.translation import translate_concept_arguments
 from ml_ecosystem_snapshots.utils import get_framework_docstring_parser
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 
 class _FakeGriffeMember:
@@ -249,12 +248,8 @@ def test_collect_chex_api_offline_and_live(
         """
         return x
 
-    pytest.MonkeyPatch().setattr(
-        fake_live, "custom_live_assert", custom_live_assert, raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        fake_live, "assert_shape", custom_live_assert, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_live, "custom_live_assert", custom_live_assert, raising=False)
+    pytest.MonkeyPatch().setattr(fake_live, "assert_shape", custom_live_assert, raising=False)
 
     griffe_extra = GhostRef(
         name="griffe_discovered_assert",
@@ -309,9 +304,7 @@ def test_check_chex_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
     Args:
         capsys: Pytest stdout/stderr capture fixture.
     """
-    res_valid = check_chex_op(
-        "chex.assert_shape", inputs_count=2, attributes=["custom_message"]
-    )
+    res_valid = check_chex_op("chex.assert_shape", inputs_count=2, attributes=["custom_message"])
     assert res_valid["is_valid"] is True
 
     res_bad = check_chex_op("chex.nonexistent_assert")
@@ -324,15 +317,11 @@ def test_check_chex_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
     )
     assert "result" in rpc_res
 
-    args_ok = argparse.Namespace(
-        op_name="assert_shape", inputs_count=2, attributes="custom_message"
-    )
+    args_ok = argparse.Namespace(op_name="assert_shape", inputs_count=2, attributes="custom_message")
     cmd_check_chex(args_ok)
     assert "Chex Operation 'assert_shape' is valid." in capsys.readouterr().out
 
-    args_fail = argparse.Namespace(
-        op_name="unknown_chex_op", inputs_count=None, attributes=None
-    )
+    args_fail = argparse.Namespace(op_name="unknown_chex_op", inputs_count=None, attributes=None)
     with pytest.raises(SystemExit):
         cmd_check_chex(args_fail)
 

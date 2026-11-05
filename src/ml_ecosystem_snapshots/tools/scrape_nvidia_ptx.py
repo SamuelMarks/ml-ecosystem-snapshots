@@ -16,9 +16,7 @@ import typing
 
 from ml_ecosystem_snapshots.models import IsaInstructionRecordModel, JsonValue
 
-LLVM_NVPTX_BASE_URL = (
-    "https://raw.githubusercontent.com/llvm/llvm-project/main/llvm/lib/Target/NVPTX"
-)
+LLVM_NVPTX_BASE_URL = "https://raw.githubusercontent.com/llvm/llvm-project/main/llvm/lib/Target/NVPTX"
 NVPTX_TD_FILES = [
     "NVPTXInstrInfo.td",
     "NVPTXIntrinsics.td",
@@ -39,7 +37,7 @@ def fetch_nvptx_td_file(filename: str, local_dir: str | None = None) -> str:
     if resolved_dir:
         candidate = os.path.join(resolved_dir, filename)
         if os.path.isfile(candidate):
-            with open(candidate, "r", encoding="utf-8") as f:
+            with open(candidate, encoding="utf-8") as f:
                 return f.read()
 
     url = f"{LLVM_NVPTX_BASE_URL}/{filename}"
@@ -62,9 +60,7 @@ def parse_nvptx_td_content(content: str) -> list[IsaInstructionRecordModel]:
         List of parsed instruction dictionaries.
     """
     instructions: list[IsaInstructionRecordModel] = []
-    pattern = re.compile(
-        r'def\s+([A-Za-z0-9_]+)\s*:\s*[A-Za-z0-9_]*\s*<.*?"([a-z0-9_\.]+)"'
-    )
+    pattern = re.compile(r'def\s+([A-Za-z0-9_]+)\s*:\s*[A-Za-z0-9_]*\s*<.*?"([a-z0-9_\.]+)"')
     for match in pattern.finditer(content):
         _def_name = match.group(1)
         mnemonic = match.group(2)
@@ -910,9 +906,7 @@ def build_exhaustive_ptx_catalog(
             "supported_types": [".u32"],
             "vector_widths": [],
             "state_spaces": [],
-            "operands": [
-                {"name": "name", "role": "src0", "description": "Barrier index"}
-            ],
+            "operands": [{"name": "name", "role": "src0", "description": "Barrier index"}],
             "min_sm": "sm_50",
         },
         {
@@ -1234,9 +1228,7 @@ def main(argv: list[str] | None = None) -> None:
     Args:
         argv: Optional list of command-line arguments.
     """
-    parser = argparse.ArgumentParser(
-        description="Scrape exhaustive NVIDIA PTX ISA definitions."
-    )
+    parser = argparse.ArgumentParser(description="Scrape exhaustive NVIDIA PTX ISA definitions.")
     parser.add_argument(
         "--isa-version",
         type=str,

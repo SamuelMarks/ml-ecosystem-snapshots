@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import operator
-import pytest
-
 import importlib
-import pytest_mock
 import types
 from unittest.mock import patch
 
+import pytest
+import pytest_mock
 from ml_ecosystem_snapshots.frameworks.torch import (
     _scan_array_api,
     _scan_metrics,
@@ -17,7 +15,6 @@ from ml_ecosystem_snapshots.frameworks.torch import (
     get_jit_schemas_for_op,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import GhostPythonRef
 
 
@@ -30,53 +27,31 @@ def test_torch_module_import_reload() -> None:
     from torch_mock import ensure_torch
 
     ensure_torch()
+    import sys
+
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
-    importlib.reload(torch_fw)
-    assert operator.attrgetter("nn")(torch_fw) is not None
-    assert operator.attrgetter("optim")(torch_fw) is not None
-    assert operator.attrgetter("data")(torch_fw) is not None
-
-    import builtins
-    import typing
-
-    real_import = builtins.__import__
-
-    def mock_import(
-        name: str,
-        globals: typing.Mapping[str, InspectableTarget] | None = None,
-        locals: typing.Mapping[str, InspectableTarget] | None = None,
-        fromlist: typing.Sequence[str] = (),
-        level: int = 0,
-    ) -> types.ModuleType:
-        """Mock import raising ImportError on torch submodules.
-
-        Args:
-            name: Module name.
-            globals: Globals dictionary.
-            locals: Locals dictionary.
-            fromlist: From-import list.
-            level: Relative import level.
-
-        Raises:
-            ImportError: Simulated import error for torch submodules.
+    def _get_submods() -> tuple[types.ModuleType | None, types.ModuleType | None, types.ModuleType | None]:
+        """Return current `(nn, optim, data)` references from `torch_fw`.
 
         Returns:
-            Imported module.
+            Tuple of `(nn, optim, data)` module references.
         """
-        if name in ("torch.nn", "torch.optim", "torch.utils.data"):
-            raise ImportError(f"simulated {name} import failure")
-        return real_import(name, globals, locals, fromlist, level)
+        return (torch_fw.nn, torch_fw.optim, torch_fw.data)
 
-    with patch("builtins.__import__", side_effect=mock_import):
+    importlib.reload(torch_fw)
+    assert all(m is not None for m in _get_submods())
+
+    with patch.dict(
+        sys.modules,
+        {"torch.nn": None, "torch.optim": None, "torch.utils.data": None},
+    ):
         importlib.reload(torch_fw)
-        assert operator.attrgetter("nn")(torch_fw) is None
-        assert operator.attrgetter("optim")(torch_fw) is None
-        assert operator.attrgetter("data")(torch_fw) is None
+        assert _get_submods() == (None, None, None)
 
     # Restore clean reload
     importlib.reload(torch_fw)
-    assert operator.attrgetter("nn")(torch_fw) is not None
+    assert _get_submods()[0] is not None
 
 
 def test_torch_scan_metrics_inspect_exception(
@@ -97,9 +72,7 @@ def test_torch_scan_metrics_inspect_exception(
         pass
 
     fake_metrics = types.ModuleType("torchmetrics")
-    pytest.MonkeyPatch().setattr(
-        fake_metrics, "DummyMetric", DummyMetric, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_metrics, "DummyMetric", DummyMetric, raising=False)
 
     with patch.dict("sys.modules", {"torchmetrics": fake_metrics}):
         mocker.patch.object(
@@ -163,7 +136,7 @@ def test_torch_scan_array_api_inspect_exceptions(
     class MockTensor:
         """Mock Tensor class."""
 
-        def add_(self, other: "MockTensor") -> "MockTensor":
+        def add_(self, other: MockTensor) -> MockTensor:
             """In-place add.
 
             Args:
@@ -216,7 +189,7 @@ def test_torch_scan_array_api_tensor_inplace_tags_none(
     class MockTensor:
         """Mock Tensor class."""
 
-        def add_(self, other: "MockTensor") -> "MockTensor":
+        def add_(self, other: MockTensor) -> MockTensor:
             """In-place add.
 
             Args:
@@ -280,16 +253,9 @@ def test_torch_numpy_warning_ignored() -> None:
     """
     import importlib
     import warnings
+
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     importlib.reload(torch_fw)
-    matching = [
-        f
-        for f in warnings.filters
-        if f[0] == "ignore"
-        and f[2] is UserWarning
-        and f[1] is not None
-        and "Failed to initialize NumPy"
-        in (operator.attrgetter("pattern")(f[1]) if "pattern" in dir(f[1]) else "")
-    ]
+    matching = [f for f in warnings.filters if f[0] == "ignore" and f[2] is UserWarning and "Failed to initialize NumPy" in str(f[1])]
     assert len(matching) > 0

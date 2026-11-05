@@ -11,9 +11,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from pathlib import Path
 import sys
 import typing
+from pathlib import Path
 
 _src_dir = str(Path(__file__).resolve().parent.parent.parent)
 if _src_dir not in sys.path:
@@ -34,42 +34,84 @@ SPEC_URL = "https://raw.githubusercontent.com/openxla/stablehlo/main/docs/spec.m
 TABLEGEN_URL = "https://raw.githubusercontent.com/openxla/stablehlo/main/stablehlo/dialect/StablehloOps.td"
 
 
-def extract_ops(
-    source_content: str | typing.Mapping[str, JsonValue] | None = None,
-) -> list[TableGenRecordModel]:
-    """Download and parse StableHLO TableGen or spec.md to extract ops.
+def _resolve_stablehlo_content(
+    source_content: str | typing.Mapping[str, JsonValue] | None,
+) -> str | typing.Mapping[str, JsonValue]:
+    """Resolve StableHLO source content from argument or upstream network URLs.
 
     Args:
-        source_content: Optional raw string content (TableGen, JSON, or markdown spec) or parsed dict.
+        source_content: Optional raw string content or parsed JSON mapping.
 
     Returns:
-        List of parsed operations as dictionary objects.
+        Non-empty StableHLO source string or JSON mapping.
+
+    Raises:
+        RuntimeError: If fetching from both upstream TableGen and markdown URLs fails.
+    """
+    if source_content is not None:
+        return source_content
+
+    from ml_ecosystem_snapshots.network_env import fetch_url
+
+    fetched = fetch_url(TABLEGEN_URL, timeout=10)
+    if fetched is None:
+        fetched = fetch_url(SPEC_URL)
+        if fetched is None:
+            raise RuntimeError("Failed to fetch StableHLO sources")
+    return fetched
+
+
+def _parse_spec_table_row(
+    line: str,
+    current_section: str,
+    op_inputs: list[tuple[str, str]],
+    op_outputs: list[tuple[str, str]],
+) -> None:
+    """Parse a markdown table row from the StableHLO specification into input or output tuples.
+
+    Args:
+        line: Raw markdown table row line starting with `|`.
+        current_section: Active section name (`"inputs"` or `"outputs"`).
+        op_inputs: Mutable list of `(name, type_str)` pairs for operation inputs.
+        op_outputs: Mutable list of `(name, type_str)` pairs for operation outputs.
+    """
+    parts = [p.strip() for p in line.split("|")[1:-1]]
+    if len(parts) < 2 or "---" in parts[0] or "Label" in parts[0] or "Name" in parts[0]:
+        return
+
+    if current_section == "inputs":
+        if len(parts) >= 3 and parts[0].startswith("("):
+            name, type_str = parts[1], parts[2]
+        else:
+            name, type_str = parts[0], parts[1]
+    else:
+        name = parts[0]
+        type_str = parts[1] if len(parts) > 1 else ""
+
+    clean_name = name.replace("`", "")
+    if clean_name:
+        if current_section == "inputs":
+            op_inputs.append((clean_name, type_str))
+        else:
+            op_outputs.append((clean_name, type_str))
+
+
+def _parse_spec_markdown_sections(
+    content: str,
+) -> tuple[
+    dict[str, list[tuple[str, str]]],
+    dict[str, list[tuple[str, str]]],
+    dict[str, list[str]],
+]:
+    """Parse StableHLO markdown specification text into per-op inputs, outputs, and semantics.
+
+    Args:
+        content: Raw markdown specification text.
+
+    Returns:
+        Three-element tuple of `(ops_inputs, ops_outputs, ops_semantics)` dictionaries.
     """
     nl = chr(10)
-    content = source_content
-    if content is None:
-        from ml_ecosystem_snapshots.network_env import fetch_url
-
-        content = fetch_url(TABLEGEN_URL, timeout=10)
-        if content is None:
-            content = fetch_url(SPEC_URL)
-            if content is None:
-                raise RuntimeError("Failed to fetch StableHLO sources")
-
-    assert content is not None
-
-    if isinstance(content, typing.Mapping):
-        return parse_stablehlo_llvm_tblgen_json(content)
-
-    stripped = content.strip()
-    if stripped.startswith("{") and (
-        "!instanceof" in stripped or "StableHLO" in stripped
-    ):
-        return parse_stablehlo_llvm_tblgen_json(stripped)
-
-    if "StableHLO_" in content:
-        return parse_stablehlo_tablegen(content)
-
     ops_inputs: dict[str, list[tuple[str, str]]] = {}
     ops_outputs: dict[str, list[tuple[str, str]]] = {}
     ops_semantics: dict[str, list[str]] = {}
@@ -85,96 +127,113 @@ def extract_ops(
                 ops_outputs[current_op] = []
                 ops_semantics[current_op] = []
                 current_section = None
-
         elif line.startswith("#### "):
-            section_name = line.strip()[5:]
-            if section_name.lower() in ("inputs", "outputs", "semantics"):
-                current_section = section_name.lower()
-            else:
-                current_section = None
+            section_name = line.strip()[5:].lower()
+            current_section = section_name if section_name in ("inputs", "outputs", "semantics") else None
         elif current_op and current_section == "semantics":
             if line.strip() and not line.startswith("####"):
                 ops_semantics[current_op].append(line)
-        elif (
-            line.startswith("|")
-            and current_section in ("inputs", "outputs")
-            and current_op
-        ):
-            parts = [p.strip() for p in line.split("|")[1:-1]]
-            if (
-                len(parts) >= 2
-                and "---" not in parts[0]
-                and "Label" not in parts[0]
-                and "Name" not in parts[0]
-            ):
-                if current_section == "inputs":
-                    if len(parts) >= 3 and parts[0].startswith("("):
-                        name = parts[1]
-                        type_str = parts[2]
-                    else:
-                        name = parts[0]
-                        type_str = parts[1]
-                else:
-                    name = parts[0]
-                    type_str = parts[1] if len(parts) > 1 else ""
+        elif line.startswith("|") and current_section in ("inputs", "outputs") and current_op:
+            _parse_spec_table_row(
+                line,
+                current_section,
+                ops_inputs[current_op],
+                ops_outputs[current_op],
+            )
 
-                name = name.replace("`", "")
-                if name:
-                    if current_section == "inputs":
-                        ops_inputs[current_op].append((name, type_str))
-                    else:
-                        ops_outputs[current_op].append((name, type_str))
+    return ops_inputs, ops_outputs, ops_semantics
 
+
+def _build_spec_op_record(
+    op_name: str,
+    in_list: list[tuple[str, str]],
+    out_list: list[tuple[str, str]],
+    sem_list: list[str],
+) -> TableGenRecordModel:
+    """Build a structured `TableGenRecordModel` from parsed markdown specification sections.
+
+    Args:
+        op_name: Unqualified StableHLO operation name.
+        in_list: List of `(name, type_str)` pairs for operation inputs.
+        out_list: List of `(name, type_str)` pairs for operation outputs.
+        sem_list: List of markdown lines describing operation semantics.
+
+    Returns:
+        Structured `TableGenRecordModel` representing the StableHLO operation.
+    """
+    nl = chr(10)
+    params: list[JsonValue] = []
+    for name, type_str in in_list:
+        kind = "KEYWORD_ONLY" if is_attribute(type_str) else "POSITIONAL_OR_KEYWORD"
+        params.append(
+            {
+                "name": name,
+                "annotation": type_str,
+                "default": None,
+                "kind": kind,
+                "description": None,
+                "standardized_name": None,
+            }
+        )
+
+    returns_type: str | None = None
+    if out_list:
+        returns_type = ", ".join(t for _, t in out_list if t)
+        if len(out_list) > 1:
+            returns_type = f"tuple[{returns_type}]"
+
+    docstring = nl.join(sem_list).strip()
+
+    return TableGenRecordModel(
+        {
+            "api_path": f"stablehlo.{op_name}",
+            "name": op_name,
+            "kind": "function",
+            "is_public": True,
+            "has_varargs": False,
+            "environment_tags": [],
+            "aliases": [],
+            "overloads": [],
+            "params": params,
+            "returns_type": returns_type,
+            "returns_description": None,
+            "raises": [],
+            "docstring": docstring if docstring else None,
+        }
+    )
+
+
+def extract_ops(
+    source_content: str | typing.Mapping[str, JsonValue] | None = None,
+) -> list[TableGenRecordModel]:
+    """Download and parse StableHLO TableGen or spec.md to extract ops.
+
+    Args:
+        source_content: Optional raw string content (TableGen, JSON, or markdown spec) or parsed dict.
+
+    Returns:
+        List of parsed operations as dictionary objects.
+    """
+    content = _resolve_stablehlo_content(source_content)
+
+    if isinstance(content, typing.Mapping):
+        return parse_stablehlo_llvm_tblgen_json(content)
+
+    stripped = content.strip()
+    if stripped.startswith("{") and ("!instanceof" in stripped or "StableHLO" in stripped):
+        return parse_stablehlo_llvm_tblgen_json(stripped)
+
+    if "StableHLO_" in content:
+        return parse_stablehlo_tablegen(content)
+
+    ops_inputs, ops_outputs, ops_semantics = _parse_spec_markdown_sections(content)
     ghost_refs: list[TableGenRecordModel] = []
 
-    for op_name in ops_inputs:
-        in_list = ops_inputs[op_name]
+    for op_name, in_list in ops_inputs.items():
         out_list = ops_outputs[op_name]
-        sem_list = ops_semantics[op_name]
         if not in_list and not out_list:
             continue
-
-        params: list[JsonValue] = []
-        for name, type_str in in_list:
-            kind = "KEYWORD_ONLY" if is_attribute(type_str) else "POSITIONAL_OR_KEYWORD"
-            params.append(
-                {
-                    "name": name,
-                    "annotation": type_str,
-                    "default": None,
-                    "kind": kind,
-                    "description": None,
-                    "standardized_name": None,
-                }
-            )
-
-        returns_type: str | None = None
-        if out_list:
-            returns_type = ", ".join(t for _, t in out_list if t)
-            if len(out_list) > 1:
-                returns_type = f"tuple[{returns_type}]"
-
-        docstring = nl.join(sem_list).strip()
-
-        ghost_refs.append(
-            TableGenRecordModel(
-                {
-                    "api_path": f"stablehlo.{op_name}",
-                    "name": op_name,
-                    "kind": "function",
-                    "is_public": True,
-                    "has_varargs": False,
-                    "environment_tags": [],
-                    "aliases": [],
-                    "overloads": [],
-                    "params": params,
-                    "returns_type": returns_type,
-                    "returns_description": None,
-                    "raises": [],
-                    "docstring": docstring if docstring else None,
-                }
-            )
-        )
+        ghost_refs.append(_build_spec_op_record(op_name, in_list, out_list, ops_semantics[op_name]))
 
     return ghost_refs
 
@@ -186,9 +245,7 @@ def main(argv: list[str] | None = None) -> None:
         argv: Optional list of command-line arguments.
     """
     nl = chr(10)
-    parser = argparse.ArgumentParser(
-        description="Build StableHLO Ground Truth Snapshot."
-    )
+    parser = argparse.ArgumentParser(description="Build StableHLO Ground Truth Snapshot.")
     parser.add_argument(
         "--tag",
         type=str,

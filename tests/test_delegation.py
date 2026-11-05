@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
 
@@ -28,11 +29,19 @@ class SubLayer(BaseLayer):
             name: Submodule layer identifier.
             kwargs: Forwarded keyword arguments to parent initializer.
         """
-        super().__init__(**kwargs)
+        pass
 
 
-def test_delegation_tracing() -> None:
-    """Verify delegation tracing behavior."""
+def test_delegation_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify delegation tracing behavior.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    monkeypatch.setattr(
+        "ml_ecosystem_snapshots.introspection.inspector.get_runtime_source",
+        lambda _obj: "class SubLayer(BaseLayer):\n    def __init__(self, name: str, **kwargs: int) -> None:\n        super().__init__(**kwargs)\n",
+    )
     ref = GhostInspector.inspect(SubLayer, "SubLayer")
 
     assert ref.name == "SubLayer"

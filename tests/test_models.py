@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import operator
-import pytest
-
 import typing
+
+import pytest
 import pytest_mock
-
-
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import (
@@ -46,9 +43,7 @@ def test_ghost_ref_has_arg() -> None:
     assert ref.has_arg("y") is False
 
 
-def dummy_func(
-    a: int, b: int = 2, *args: InspectableTarget, **kwargs: InspectableTarget
-) -> None:
+def dummy_func(a: int, b: int = 2, *args: InspectableTarget, **kwargs: InspectableTarget) -> None:
     """Docstring for dummy_func. a: int, b: int, args: tuple, kwargs: dict.
 
     # noqa: DAR101
@@ -90,9 +85,7 @@ def test_ghost_inspector_function() -> None:
     assert "Docstring for dummy_func." in ref.docstring
     assert ref.has_varargs is True
 
-    assert (
-        len(ref.params) == 4
-    )  # a, b (args/kwargs aren't counted explicitly as params here? Wait, *args is VAR_POSITIONAL)
+    assert len(ref.params) == 4  # a, b (args/kwargs aren't counted explicitly as params here? Wait, *args is VAR_POSITIONAL)
     assert ref.has_arg("a")
     assert ref.has_arg("b")
 
@@ -157,9 +150,7 @@ def test_ghost_inspector_hydrate() -> None:
                 "name": "bar",
                 "api_path": "bar",
                 "kind": "function",
-                "params": [
-                    {"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "dtypes": ["f32"]}
-                ],
+                "params": [{"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "dtypes": ["f32"]}],
             }
         )
 
@@ -178,7 +169,9 @@ def test_unrepresentable_default() -> None:
             """
             raise Exception("no")
 
-    def f(a: Unrepresentable = Unrepresentable()) -> None:
+    default_unrep = Unrepresentable()
+
+    def f(a: Unrepresentable = default_unrep) -> None:
         """Execute helper f. a.
 
         Args:
@@ -198,7 +191,9 @@ def test_memory_address_default() -> None:
 
         pass
 
-    def f(a: MemoryDefault = MemoryDefault()) -> None:
+    default_mem = MemoryDefault()
+
+    def f(a: MemoryDefault = default_mem) -> None:
         """Execute helper f. a.
 
         Args:
@@ -251,7 +246,9 @@ def test_ghost_inspector_str_throws() -> None:
             """
             raise Exception("no")
 
-    def f(a: StrThrows = StrThrows()) -> None:
+    default_str_throws = StrThrows()
+
+    def f(a: StrThrows = default_str_throws) -> None:
         """Execute helper f. a.
 
         Args:
@@ -305,7 +302,9 @@ def test_ghost_inspector_str_has_address() -> None:
             """
             return "something at 0x1234"
 
-    def f(a: StrAddr = StrAddr()) -> None:
+    default_str_addr = StrAddr()
+
+    def f(a: StrAddr = default_str_addr) -> None:
         """Execute helper f. a.
 
         Args:
@@ -403,7 +402,7 @@ def test_ghost_inspector_cdd_fallback() -> None:
         """
         pass
 
-    del dummy_func_cdd.__annotations__["x"]
+    pytest.MonkeyPatch().setattr(dummy_func_cdd, "__annotations__", {"return": None})
     ref = GhostInspector.inspect(dummy_func_cdd, "dummy_func_cdd")
     assert ref.params[0].annotation == "int"
 
@@ -453,7 +452,7 @@ def test_ghost_inspector_annotation_name_mock(
         """
         pass
 
-    dummy_func_anno.__annotations__ = {"x": MyType, "return": None}
+    pytest.MonkeyPatch().setattr(dummy_func_anno, "__annotations__", {"x": MyType, "return": None})
     ref = GhostInspector.inspect(dummy_func_anno, "dummy_func_anno")
     assert ref.params[0].annotation == "MyType"
 
@@ -474,7 +473,7 @@ def test_ghost_inspector_annotation_str_mock(mocker: pytest_mock.MockerFixture) 
         """
         pass
 
-    dummy_func_anno_str.__annotations__ = {"x": "str", "return": None}
+    pytest.MonkeyPatch().setattr(dummy_func_anno_str, "__annotations__", {"x": "str", "return": None})
     ref = GhostInspector.inspect(dummy_func_anno_str, "dummy_func_anno_str")
     assert ref.params[0].annotation == "str"
 
@@ -495,7 +494,7 @@ def test_ghost_inspector_cdd_anno_fallback() -> None:
         """
         pass
 
-    del dummy_func_no_anno.__annotations__["x"]
+    pytest.MonkeyPatch().setattr(dummy_func_no_anno, "__annotations__", {"return": None})
     ref = GhostInspector.inspect(dummy_func_no_anno, "dummy_func_no_anno")
     assert ref.params[0].annotation == "int"
     assert ref.params[0].description == "The value."
@@ -1062,20 +1061,16 @@ def test_extract_accepted_kwargs_from_ast() -> None:
 
     # Test inspection populating accepted_kwargs
     ref = GhostInspector.inspect(sample_kwargs_fn, "tests.sample_kwargs_fn")
-    assert (
-        operator.attrgetter("accepted_kwargs")(ref)
-        if "accepted_kwargs" in dir(ref)
-        else None
-    ) == ["alpha", "beta", "delta", "gamma"]
+    assert ref.accepted_kwargs == ["alpha", "beta", "delta", "gamma"]
 
 
 def test_ghost_instruction_and_operation_refs() -> None:
     """Test first-class GhostInstructionRef and GhostOperationRef schemas and hydration."""
     from ml_ecosystem_snapshots.models import (
+        ExtendedGhostParam,
         GhostInstructionRef,
         GhostOperationRef,
         GhostResult,
-        ExtendedGhostParam,
         IRParameterRole,
     )
 
@@ -1169,9 +1164,7 @@ def test_ghost_inspector_griffe_param_not_in_cdd(
     )
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.extract_griffe_docstring_metadata",
-        return_value={
-            "params": {"extra_param": {"doc": "extra param doc", "typ": "int"}}
-        },
+        return_value={"params": {"extra_param": {"doc": "extra param doc", "typ": "int"}}},
     )
 
     ref = GhostInspector.inspect(sample_func, "sample_func")

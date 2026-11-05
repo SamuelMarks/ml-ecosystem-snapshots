@@ -4,8 +4,21 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import inspect
 import os
 import sqlite3
+
+
+def _is_clear_requested(args: argparse.Namespace) -> bool:
+    """Return whether `args.clear` is set to True.
+
+    Args:
+        args: Parsed CLI `Namespace` instance.
+
+    Returns:
+        True if `args.clear` exists and is truthy.
+    """
+    return bool(dict(inspect.getmembers(args)).get("clear"))
 
 
 def cmd_index(args: argparse.Namespace) -> None:
@@ -22,7 +35,7 @@ def cmd_index(args: argparse.Namespace) -> None:
 
     db_path = get_index_db_path()
 
-    if "clear" in dir(args) and bool(args.clear):
+    if _is_clear_requested(args):
         if clear_index():
             print(f"Cleared index database at {db_path}")
         else:

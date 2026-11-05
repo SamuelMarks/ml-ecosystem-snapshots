@@ -2,9 +2,23 @@
 
 from __future__ import annotations
 
-from unittest import mock
+import importlib.util
 
+import pytest
+import pytest_mock
+from ml_ecosystem_snapshots import network_env
 from ml_ecosystem_snapshots.tools import build_stablehlo_snapshot
+
+
+def _get_stablehlo_module_path() -> str:
+    """Resolve the filesystem path to build_stablehlo_snapshot.py without dunder access.
+
+    Returns:
+        Absolute filesystem path string.
+    """
+    spec = importlib.util.find_spec("ml_ecosystem_snapshots.tools.build_stablehlo_snapshot")
+    assert spec is not None and spec.origin is not None
+    return spec.origin
 
 
 def test_is_attribute() -> None:
@@ -17,12 +31,11 @@ def test_is_attribute() -> None:
     assert not build_stablehlo_snapshot.is_attribute("tensor or quantized tensor")
 
 
-@mock.patch("ml_ecosystem_snapshots.network_env.fetch_url")
-def test_extract_ops(mock_urlopen: mock.MagicMock) -> None:
+def test_extract_ops(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test extract ops.
 
     Args:
-        mock_urlopen: Mocked urlopen.
+        monkeypatch: Pytest monkeypatch fixture.
     """
     # Mock spec.md content
     mock_content = b"""
@@ -77,7 +90,7 @@ Dot general op.
 | `result` | tensor | (C1) |
 
 """
-    mock_urlopen.return_value = mock_content.decode("utf-8")
+    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: mock_content.decode("utf-8"))
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 3
@@ -88,10 +101,7 @@ Dot general op.
     assert len(abs_op["params"]) == 1
     assert abs_op["params"][0]["name"] == "operand"
     assert "tensor of signed integer" in abs_op["params"][0]["annotation"]
-    assert (
-        abs_op["returns_type"]
-        == "tensor of signed integer or floating-point type or per-tensor quantized tensor"
-    )
+    assert abs_op["returns_type"] == "tensor of signed integer or floating-point type or per-tensor quantized tensor"
     assert abs_op["docstring"] == "Performs element-wise abs operation."
 
     # Check add
@@ -108,34 +118,32 @@ Dot general op.
     assert dot_op["params"][2]["kind"] == "KEYWORD_ONLY"
 
 
-@mock.patch("ml_ecosystem_snapshots.tools.build_stablehlo_snapshot.extract_ops")
-@mock.patch("builtins.open", new_callable=mock.mock_open)
-def test_main(mock_open: mock.MagicMock, mock_extract: mock.MagicMock) -> None:
+def test_main(mocker: pytest_mock.MockerFixture) -> None:
     """Test main.
 
     Args:
-        mock_open: Mocked open.
-        mock_extract: Mocked extract.
+        mocker: Pytest mocker fixture.
     """
-    mock_extract.return_value = [{"name": "fake_op"}]
+    mock_open = mocker.patch("builtins.open", mocker.mock_open())
+    mock_extract = mocker.patch(
+        "ml_ecosystem_snapshots.tools.build_stablehlo_snapshot.extract_ops",
+        return_value=[{"name": "fake_op"}],
+    )
     build_stablehlo_snapshot.main()
     mock_extract.assert_called_once()
     assert mock_open.call_count == 2
 
     # Assert JSON was written
-    written_content = "".join(
-        call.args[0] for call in mock_open.return_value.write.call_args_list
-    )
+    written_content = "".join(call.args[0] for call in mock_open.return_value.write.call_args_list)
     assert "stablehlo_op" in written_content
     assert "fake_op" in written_content
 
 
-@mock.patch("ml_ecosystem_snapshots.network_env.fetch_url")
-def test_extract_ops_empty_op(mock_urlopen: mock.MagicMock) -> None:
+def test_extract_ops_empty_op(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test extract ops empty op.
 
     Args:
-        mock_urlopen: Mocked urlopen.
+        monkeypatch: Pytest monkeypatch fixture.
     """
     # Mock spec.md content with no inputs/outputs
     mock_content = b"""
@@ -146,18 +154,17 @@ def test_extract_ops_empty_op(mock_urlopen: mock.MagicMock) -> None:
 #### Semantics
 Empty op.
 """
-    mock_urlopen.return_value = mock_content.decode("utf-8")
+    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: mock_content.decode("utf-8"))
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 0
 
 
-@mock.patch("ml_ecosystem_snapshots.network_env.fetch_url")
-def test_extract_ops_missing_semantics(mock_urlopen: mock.MagicMock) -> None:
+def test_extract_ops_missing_semantics(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test extract ops missing semantics.
 
     Args:
-        mock_urlopen: Mocked urlopen.
+        monkeypatch: Pytest monkeypatch fixture.
     """
     # Mock spec.md content with no semantics
     mock_content = b"""
@@ -171,19 +178,18 @@ def test_extract_ops_missing_semantics(mock_urlopen: mock.MagicMock) -> None:
 |-------|------|------|-------------|
 | (I1) | `lhs` | tensor | (C1) |
 """
-    mock_urlopen.return_value = mock_content.decode("utf-8")
+    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: mock_content.decode("utf-8"))
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
     assert ghost_refs[0]["docstring"] is None
 
 
-@mock.patch("ml_ecosystem_snapshots.network_env.fetch_url")
-def test_extract_ops_multi_output(mock_urlopen: mock.MagicMock) -> None:
+def test_extract_ops_multi_output(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test extract ops multi output.
 
     Args:
-        mock_urlopen: Mocked urlopen.
+        monkeypatch: Pytest monkeypatch fixture.
     """
     mock_content = b"""
 # StableHLO Specification
@@ -203,19 +209,18 @@ def test_extract_ops_multi_output(mock_urlopen: mock.MagicMock) -> None:
 | `res1` | tensor |
 | `res2` | tensor |
 """
-    mock_urlopen.return_value = mock_content.decode("utf-8")
+    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: mock_content.decode("utf-8"))
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
     assert ghost_refs[0]["returns_type"] == "tuple[tensor, tensor]"
 
 
-@mock.patch("ml_ecosystem_snapshots.network_env.fetch_url")
-def test_extract_ops_ignore_unnamed_columns(mock_urlopen: mock.MagicMock) -> None:
+def test_extract_ops_ignore_unnamed_columns(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test extract ops ignore unnamed columns.
 
     Args:
-        mock_urlopen: Mocked urlopen.
+        monkeypatch: Pytest monkeypatch fixture.
     """
     # Tests a case where parts don't meet len >= 2 or contain "---" or "Label"
     mock_content = b"""
@@ -234,19 +239,20 @@ def test_extract_ops_ignore_unnamed_columns(mock_urlopen: mock.MagicMock) -> Non
 | Label | Name | Type | Constraints |
 | (I1) | `res` | tensor | (C1) |
 """
-    mock_urlopen.return_value = mock_content.decode("utf-8")
+    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: mock_content.decode("utf-8"))
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
     assert ghost_refs[0]["returns_type"] in ["tensor", "", "`res`", None]
 
 
-@mock.patch("ml_ecosystem_snapshots.network_env.fetch_url")
-def test_extract_ops_missing_type_column_outputs(mock_urlopen: mock.MagicMock) -> None:
+def test_extract_ops_missing_type_column_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test extract ops missing type column outputs.
 
     Args:
-        mock_urlopen: Mocked urlopen.
+        monkeypatch: Pytest monkeypatch fixture.
     """
     # Tests an output row that only has a Name
     mock_content = b"""
@@ -264,19 +270,18 @@ def test_extract_ops_missing_type_column_outputs(mock_urlopen: mock.MagicMock) -
 |------|
 | `res` |
 """
-    mock_urlopen.return_value = mock_content.decode("utf-8")
+    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: mock_content.decode("utf-8"))
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
     assert ghost_refs[0]["returns_type"] in ["tensor", "", "`res`", None]
 
 
-@mock.patch("ml_ecosystem_snapshots.network_env.fetch_url")
-def test_extract_ops_unmatched_lines(mock_urlopen: mock.MagicMock) -> None:
+def test_extract_ops_unmatched_lines(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test extract_ops handling of unmatched lines and HTTP error fallbacks.
 
     Args:
-        mock_urlopen: Mocked urlopen.
+        monkeypatch: Pytest monkeypatch fixture.
     """
     # Tests a case with an invalid op name and an unknown section
     mock_content = b"""
@@ -300,7 +305,7 @@ def test_extract_ops_unmatched_lines(mock_urlopen: mock.MagicMock) -> None:
 Some extra text
 
 """
-    mock_urlopen.return_value = mock_content.decode("utf-8")
+    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: mock_content.decode("utf-8"))
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
@@ -371,10 +376,7 @@ def StableHLO_WhileOp : StableHLO_Op<"while", []> {
     while_op = next(r for r in refs if r["name"] == "while")
     assert "cond" in while_op["regions"]
     assert "body" in while_op["regions"]
-    assert (
-        while_op["returns_type"]
-        == "tuple[Variadic<HLO_TensorOrToken>, Variadic<HLO_TensorOrToken>]"
-    )
+    assert while_op["returns_type"] == "tuple[Variadic<HLO_TensorOrToken>, Variadic<HLO_TensorOrToken>]"
 
     # Test TableGen edge cases: colon without dollar, single unnamed region, empty results/args, trailing commas
     edge_tablegen = """
@@ -537,26 +539,11 @@ def test_parse_stablehlo_tablegen_verification_rules() -> None:
     refs = build_stablehlo_snapshot.parse_stablehlo_tablegen(tablegen_source)
     ref_map = {r["name"]: r for r in refs}
 
-    assert (
-        ref_map["dot_general"]["verification_rules"]["dimension_numbers"]
-        == "DotDimensionNumbersAttr"
-    )
-    assert (
-        ref_map["convolution"]["verification_rules"]["dimension_numbers"]
-        == "ConvDimensionNumbersAttr"
-    )
-    assert (
-        ref_map["scatter"]["verification_rules"]["dimension_numbers"]
-        == "ScatterDimensionNumbersAttr"
-    )
-    assert (
-        ref_map["gather"]["verification_rules"]["dimension_numbers"]
-        == "GatherDimensionNumbersAttr"
-    )
-    assert (
-        ref_map["broadcast_in_dim"]["verification_rules"]["broadcast"]
-        == "broadcast_dimensions"
-    )
+    assert ref_map["dot_general"]["verification_rules"]["dimension_numbers"] == "DotDimensionNumbersAttr"
+    assert ref_map["convolution"]["verification_rules"]["dimension_numbers"] == "ConvDimensionNumbersAttr"
+    assert ref_map["scatter"]["verification_rules"]["dimension_numbers"] == "ScatterDimensionNumbersAttr"
+    assert ref_map["gather"]["verification_rules"]["dimension_numbers"] == "GatherDimensionNumbersAttr"
+    assert ref_map["broadcast_in_dim"]["verification_rules"]["broadcast"] == "broadcast_dimensions"
     assert "comparator" in ref_map["sort"]["region_signatures"]
 
 
@@ -565,9 +552,7 @@ def test_parse_stablehlo_llvm_tblgen_json() -> None:
     from ml_ecosystem_snapshots.models import JsonValue
 
     mock_json: dict[str, JsonValue] = {
-        "!instanceof": {
-            "Op": ["StableHLO_DotGeneralOp", "StableHLO_ReduceOp", "StableHLO_WhileOp"]
-        },
+        "!instanceof": {"Op": ["StableHLO_DotGeneralOp", "StableHLO_ReduceOp", "StableHLO_WhileOp"]},
         "StableHLO_DotGeneralOp": {
             "!name": "StableHLO_DotGeneralOp",
             "!superclasses": ["StableHLO_Op", "Op"],
@@ -646,9 +631,7 @@ def test_parse_stablehlo_llvm_tblgen_json() -> None:
     # String input
     import json
 
-    refs_str = build_stablehlo_snapshot.parse_stablehlo_llvm_tblgen_json(
-        json.dumps(mock_json)
-    )
+    refs_str = build_stablehlo_snapshot.parse_stablehlo_llvm_tblgen_json(json.dumps(mock_json))
     assert len(refs_str) == 3
 
     # Test extract_ops with dict and string JSON
@@ -660,12 +643,7 @@ def test_parse_stablehlo_llvm_tblgen_json_all_rules() -> None:
     """Test parse_stablehlo_llvm_tblgen_json with all verification rules, list args/results, and nameless records."""
     from ml_ecosystem_snapshots.models import JsonValue
 
-    assert (
-        build_stablehlo_snapshot.strip_tablegen_comments(
-            "/* block */ int x = 1; // comment\n"
-        ).strip()
-        == "int x = 1;"
-    )
+    assert build_stablehlo_snapshot.strip_tablegen_comments("/* block */ int x = 1; // comment\n").strip() == "int x = 1;"
 
     mock_json: dict[str, JsonValue] = {
         "!meta": "some_metadata",
@@ -726,22 +704,10 @@ def test_parse_stablehlo_llvm_tblgen_json_all_rules() -> None:
     assert len(refs) == 6
 
     ref_map = {r["name"]: r for r in refs}
-    assert (
-        ref_map["convolution"]["verification_rules"]["dimension_numbers"]
-        == "ConvDimensionNumbersAttr"
-    )
-    assert (
-        ref_map["scatter"]["verification_rules"]["dimension_numbers"]
-        == "ScatterDimensionNumbersAttr"
-    )
-    assert (
-        ref_map["gather"]["verification_rules"]["dimension_numbers"]
-        == "GatherDimensionNumbersAttr"
-    )
-    assert (
-        ref_map["broadcast_in_dim"]["verification_rules"]["broadcast"]
-        == "broadcast_dimensions"
-    )
+    assert ref_map["convolution"]["verification_rules"]["dimension_numbers"] == "ConvDimensionNumbersAttr"
+    assert ref_map["scatter"]["verification_rules"]["dimension_numbers"] == "ScatterDimensionNumbersAttr"
+    assert ref_map["gather"]["verification_rules"]["dimension_numbers"] == "GatherDimensionNumbersAttr"
+    assert ref_map["broadcast_in_dim"]["verification_rules"]["broadcast"] == "broadcast_dimensions"
     assert "comparator" in ref_map["sort"]["region_signatures"]
     assert ref_map["custom_bare"]["class_name"] == "CustomBareOp"
 
@@ -839,12 +805,10 @@ def test_build_stablehlo_snapshot_sys_path_insert() -> None:
         None.
     """
     import importlib
-    from pathlib import Path
     import sys
+    from pathlib import Path
 
-    _src_dir = str(
-        Path(build_stablehlo_snapshot.__file__).resolve().parent.parent.parent
-    )
+    _src_dir = str(Path(_get_stablehlo_module_path()).resolve().parent.parent.parent)
     orig_path = list(sys.path)
     try:
         sys.path = [p for p in sys.path if p != _src_dir]
@@ -854,7 +818,9 @@ def test_build_stablehlo_snapshot_sys_path_insert() -> None:
         sys.path = orig_path
 
 
-def test_extract_ops_tablegen_failure_fallback(mocker: mock.MagicMock) -> None:
+def test_extract_ops_tablegen_failure_fallback(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test extract_ops falls back to SPEC_URL when TABLEGEN_URL fails.
 
     Args:
@@ -864,10 +830,7 @@ def test_extract_ops_tablegen_failure_fallback(mocker: mock.MagicMock) -> None:
         "ml_ecosystem_snapshots.network_env.fetch_url",
         side_effect=[
             None,
-            (
-                "# StableHLO Spec\n### abs\n#### Semantics\nAbs op.\n#### Inputs\n"
-                "| (I1) | `x` | tensor | (C1) |\n#### Outputs\n| `res` | tensor | (C1) |\n"
-            ),
+            ("# StableHLO Spec\n### abs\n#### Semantics\nAbs op.\n#### Inputs\n| (I1) | `x` | tensor | (C1) |\n#### Outputs\n| `res` | tensor | (C1) |\n"),
         ],
     )
     ops = build_stablehlo_snapshot.extract_ops()
@@ -875,7 +838,7 @@ def test_extract_ops_tablegen_failure_fallback(mocker: mock.MagicMock) -> None:
     assert mock_urlopen.call_count == 2
 
 
-def test_main_entrypoint(mocker: mock.MagicMock) -> None:
+def test_main_entrypoint(mocker: pytest_mock.MockerFixture) -> None:
     """Test running build_stablehlo_snapshot as __main__ invokes file output.
 
     Args:
@@ -886,7 +849,7 @@ def test_main_entrypoint(mocker: mock.MagicMock) -> None:
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
     mocker.patch("ml_ecosystem_snapshots.network_env.fetch_url", return_value="")
     res = runpy.run_path(
-        build_stablehlo_snapshot.__file__,
+        _get_stablehlo_module_path(),
         run_name="__main__",
     )
     assert "main" in res

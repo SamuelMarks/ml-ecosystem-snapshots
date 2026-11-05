@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import os
+from pathlib import Path
 
 from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.stubs import generate_stubs
@@ -95,10 +95,7 @@ def test_generate_stubs(tmp_path: Path) -> None:
     content = nn_init.read_text()
     assert "import typing" in content
     assert "class Linear:" in content
-    assert (
-        "def __init__(self, in_features: int, out_features: int) -> None: ..."
-        in content
-    )
+    assert "def __init__(self, in_features: int, out_features: int) -> None: ..." in content
     assert "class EmptyClass:" in content
     assert "def __init__(self) -> object: ..." in content
 
@@ -383,10 +380,7 @@ def test_generate_stubs_overloads_and_dsl(tmp_path: Path) -> None:
     assert ops_pyi.exists()
     ops_text = ops_pyi.read_text()
     assert "@typing.overload" in ops_text
-    assert (
-        "def __init__(self, units: int, activation: str = 'relu') -> None: ..."
-        in ops_text
-    )
+    assert "def __init__(self, units: int, activation: str = 'relu') -> None: ..." in ops_text
 
     # DSL instruction with single token api_path
     sass_pyi = Path(os.path.join(out_dir, "nvidia_sass", "__init__.pyi"))

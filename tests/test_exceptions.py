@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from ml_ecosystem_snapshots.cli.resolver import resolve_snapshot_path
 from ml_ecosystem_snapshots.exceptions import (
     CExtensionSignatureError,

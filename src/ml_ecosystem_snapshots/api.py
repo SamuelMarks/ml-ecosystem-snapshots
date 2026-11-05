@@ -11,11 +11,12 @@ import datetime
 import inspect
 import json
 import os
-from pathlib import Path
 import sys
 import typing
-import typing_extensions
+from pathlib import Path
 
+import pydantic
+import typing_extensions
 from ml_switcheroo_ir.schema.ghost import (
     ExtendedGhostParam,
     ExtendedGhostRef,
@@ -27,7 +28,6 @@ from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     SemanticTier,
 )
-import pydantic
 
 from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
@@ -41,6 +41,8 @@ from ml_ecosystem_snapshots.models import (
 from ml_ecosystem_snapshots.network_env import ZstdModuleProtocol
 from ml_ecosystem_snapshots.version_resolver import (
     _extract_version_with_griffe as _resolve_version_with_griffe,
+)
+from ml_ecosystem_snapshots.version_resolver import (
     get_pkg_version as _resolve_pkg_version,
 )
 
@@ -60,9 +62,7 @@ def _extract_version_with_griffe(module_name: str) -> str | None:
 class CollectorFn(typing.Protocol):
     """Protocol for framework snapshot collector callables."""
 
-    def __call__(
-        self, category: SemanticTier, include_nonpublic: bool = False
-    ) -> list[GhostRef]:
+    def __call__(self, category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
         """Collect API symbols for a given semantic tier.
 
         Args:
@@ -75,9 +75,7 @@ class CollectorFn(typing.Protocol):
         ...
 
 
-HashableKey: typing_extensions.TypeAlias = (
-    'str | int | float | bool | None | tuple["HashableKey", ...]'
-)
+HashableKey: typing_extensions.TypeAlias = 'str | int | float | bool | None | tuple["HashableKey", ...]'
 
 
 class ProvenanceMetadata(pydantic.BaseModel):
@@ -111,9 +109,7 @@ class ProvenanceMetadata(pydantic.BaseModel):
         return res
 
 
-def _make_lazy_collector(
-    module_name: str, func_name: str = "collect_api"
-) -> CollectorFn:
+def _make_lazy_collector(module_name: str, func_name: str = "collect_api") -> CollectorFn:
     """Create a lazy loader for a framework collection function to defer heavy C runtime imports.
 
     Args:
@@ -124,9 +120,7 @@ def _make_lazy_collector(
         Callable function forwarding arguments to the dynamically loaded collector.
     """
 
-    def _collector(
-        category: SemanticTier, include_nonpublic: bool = False
-    ) -> list[GhostRef]:
+    def _collector(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
         """Dynamically load module and execute target collection function.
 
         Args:
@@ -142,7 +136,7 @@ def _make_lazy_collector(
             full_mod = f"ml_ecosystem_snapshots.frameworks.{module_name}"
         else:
             full_mod = module_name
-        mod = importlib.import_module(full_mod)
+        mod: InspectableTarget = importlib.import_module(full_mod)
         members: dict[str, CollectorFn] = dict(inspect.getmembers(mod, callable))
         func = members[func_name]
         return func(category, include_nonpublic)
@@ -206,21 +200,20 @@ def get_available_frameworks() -> dict[str, CollectorFn]:
     Returns:
         A dictionary mapping framework identifiers to their collection functions.
     """
+    import importlib.util
     import pkgutil
-    import ml_ecosystem_snapshots.frameworks as frameworks_pkg
 
     collectors: dict[str, CollectorFn] = {}
 
-    package = frameworks_pkg
-    for _, module_name, _ in pkgutil.iter_modules(package.__path__):
+    pkg_spec = importlib.util.find_spec("ml_ecosystem_snapshots.frameworks")
+    search_paths = list(pkg_spec.submodule_search_locations) if pkg_spec is not None and pkg_spec.submodule_search_locations is not None else []
+    for _, module_name, _ in pkgutil.iter_modules(search_paths):
         if module_name.startswith("_"):
             continue
         try:
             import importlib
 
-            mod = importlib.import_module(
-                f"ml_ecosystem_snapshots.frameworks.{module_name}"
-            )
+            mod = importlib.import_module(f"ml_ecosystem_snapshots.frameworks.{module_name}")
             found_any = False
             members: list[tuple[str, CollectorFn]] = inspect.getmembers(mod, callable)
             for name, obj in members:
@@ -232,9 +225,7 @@ def get_available_frameworks() -> dict[str, CollectorFn]:
                         identifier = f"{module_name}_{name[8:]}"
                     collectors[identifier] = obj
             if not found_any:
-                collectors[module_name] = _make_lazy_collector(
-                    module_name, "collect_api"
-                )
+                collectors[module_name] = _make_lazy_collector(module_name, "collect_api")
         except Exception:
             collectors[module_name] = _make_lazy_collector(module_name, "collect_api")
 
@@ -301,22 +292,13 @@ def _consolidate_aliases(refs: list[GhostRef]) -> list[GhostRef]:
                 p.annotation,
                 str(p.direction if isinstance(p, ExtendedGhostParam) else None),
                 str(p.role if isinstance(p, ExtendedGhostParam) else None),
-                tuple(
-                    str(dt)
-                    for dt in (
-                        (p.allowed_dtypes or ())
-                        if isinstance(p, ExtendedGhostParam)
-                        else ()
-                    )
-                ),
+                tuple(str(dt) for dt in ((p.allowed_dtypes or ()) if isinstance(p, ExtendedGhostParam) else ())),
                 str(p.rank_constraint if isinstance(p, ExtendedGhostParam) else None),
             )
             for p in ref.params
         )
         returns = ref.returns if isinstance(ref, ExtendedGhostRef) else None
-        returns_sig = (
-            tuple((str(r.name), str(r.type)) for r in returns) if returns else None
-        )
+        returns_sig = tuple((str(r.name), str(r.type)) for r in returns) if returns else None
         domain_type = str(
             ref.domain_type
             if isinstance(
@@ -331,9 +313,7 @@ def _consolidate_aliases(refs: list[GhostRef]) -> list[GhostRef]:
             )
             else None
         )
-        domain_metadata_key = _domain_meta_to_key(
-            ref.domain_metadata if isinstance(ref, ExtendedGhostRef) else None
-        )
+        domain_metadata_key = _domain_meta_to_key(ref.domain_metadata if isinstance(ref, ExtendedGhostRef) else None)
 
         key: HashableKey = (
             ref.name,
@@ -444,9 +424,39 @@ FRAMEWORK_PROVENANCE_METADATA: dict[str, ProvenanceMetadata] = {
 }
 
 
-def extract_snapshot(
-    framework_name: str, include_nonpublic: bool = False
-) -> SnapshotEnvelopeDict:
+def _serialize_category_refs(
+    collect_func: CollectorFn,
+    cat: SemanticTier,
+    include_nonpublic: bool,
+) -> tuple[str, list[SnapshotSymbolDict]]:
+    """Collect, consolidate, and serialize all API symbols for a semantic tier.
+
+    Args:
+        collect_func: Framework category collector callable.
+        cat: The `SemanticTier` enum category to extract.
+        include_nonpublic: Whether to include non-public APIs.
+
+    Returns:
+        A tuple of `(category_name, serialized_ghost_ref_dicts)`.
+    """
+    try:
+        refs = collect_func(cat, include_nonpublic)
+        if refs:
+            refs = _consolidate_aliases(refs)
+            refs.sort(key=lambda x: x.name)
+            dumped_refs: list[SnapshotSymbolDict] = []
+            for r in refs:
+                d: dict[str, JsonValue] = r.model_dump(exclude_unset=True)
+                kwargs_list: list[JsonValue] = [p.name for p in r.params if p.kind in ("KEYWORD_ONLY", "POSITIONAL_OR_KEYWORD", "VAR_KEYWORD")]
+                d["kwargs"] = kwargs_list
+                dumped_refs.append(SnapshotSymbolDict(d))
+            return cat.value, dumped_refs
+    except Exception:
+        pass
+    return cat.value, []
+
+
+def extract_snapshot(framework_name: str, include_nonpublic: bool = False) -> SnapshotEnvelopeDict:
     """Extract a snapshot dictionary for a specific framework.
 
     Args:
@@ -483,42 +493,8 @@ def extract_snapshot(
                 snapshot_data[k] = v
     found_any = False
 
-    def _process_category(
-        cat: SemanticTier,
-    ) -> tuple[str, list[SnapshotSymbolDict]]:
-        """Collect, consolidate, and serialize all API symbols for a semantic tier.
-
-        Args:
-            cat: The `SemanticTier` enum category to extract.
-
-        Returns:
-            A tuple of `(category_name, serialized_ghost_ref_dicts)`.
-        """
-        try:
-            refs = collect_func(cat, include_nonpublic)
-            if refs:
-                refs = _consolidate_aliases(refs)
-                refs.sort(key=lambda x: x.name)
-                dumped_refs: list[SnapshotSymbolDict] = []
-                for r in refs:
-                    d: dict[str, JsonValue] = r.model_dump(exclude_unset=True)
-                    kwargs_list: list[JsonValue] = [
-                        p.name
-                        for p in r.params
-                        if p.kind
-                        in ("KEYWORD_ONLY", "POSITIONAL_OR_KEYWORD", "VAR_KEYWORD")
-                    ]
-                    d["kwargs"] = kwargs_list
-                    dumped_refs.append(SnapshotSymbolDict(d))
-                return cat.value, dumped_refs
-        except Exception:
-            pass
-        return cat.value, []
-
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        future_to_cat = {
-            executor.submit(_process_category, cat): cat for cat in SemanticTier
-        }
+        future_to_cat = {executor.submit(_serialize_category_refs, collect_func, cat, include_nonpublic): cat for cat in SemanticTier}
         for future in concurrent.futures.as_completed(future_to_cat):
             cat_val, dumped_refs = future.result()
             if dumped_refs:
@@ -531,9 +507,7 @@ def extract_snapshot(
     return snapshot_data
 
 
-def extract_snapshot_isolated(
-    framework: str, include_nonpublic: bool = False, timeout: int = 300
-) -> SnapshotEnvelopeDict:
+def extract_snapshot_isolated(framework: str, include_nonpublic: bool = False, timeout: int = 300) -> SnapshotEnvelopeDict:
     """Extract a framework snapshot within an isolated child subprocess.
 
     Prevents CUDA/Metal memory pre-allocation locks, framework-level C-extension
@@ -560,12 +534,7 @@ def extract_snapshot_isolated(
     cmd = [
         sys.executable,
         "-c",
-        (
-            "import json, sys; "
-            "from ml_ecosystem_snapshots.api import extract_snapshot; "
-            f"snap = extract_snapshot({repr(framework)}, include_nonpublic={include_nonpublic}); "
-            "sys.stdout.write(json.dumps(snap))"
-        ),
+        (f"import json, sys; from ml_ecosystem_snapshots.api import extract_snapshot; snap = extract_snapshot({repr(framework)}, include_nonpublic={include_nonpublic}); sys.stdout.write(json.dumps(snap))"),
     ]
 
     try:
@@ -582,16 +551,12 @@ def extract_snapshot_isolated(
             assert isinstance(parsed_snap, dict)
             return SnapshotEnvelopeDict(parsed_snap)
     except Exception as e:
-        logging.getLogger(__name__).warning(
-            "Subprocess extraction failed for %s: %s", framework, e
-        )
+        logging.getLogger(__name__).warning("Subprocess extraction failed for %s: %s", framework, e)
 
     return SnapshotEnvelopeDict()
 
 
-def extract_all_snapshots(
-    include_nonpublic: bool = False, isolated: bool = False
-) -> dict[str, SnapshotEnvelopeDict]:
+def extract_all_snapshots(include_nonpublic: bool = False, isolated: bool = False) -> dict[str, SnapshotEnvelopeDict]:
     """Extract snapshots for all supported and installed frameworks.
 
     Args:
@@ -632,31 +597,21 @@ def write_snapshot(
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    snap_dict: dict[str, JsonValue] = (
-        snapshot_data.model_dump()
-        if isinstance(snapshot_data, SnapshotEnvelope)
-        else dict(snapshot_data)
-    )
+    snap_dict: dict[str, JsonValue] = snapshot_data.model_dump() if isinstance(snapshot_data, SnapshotEnvelope) else dict(snapshot_data)
     raw_version = snap_dict.get("version")
     version = str(raw_version) if raw_version is not None else "unknown"
     safe_ver = version.replace("+", "_").replace(" ", "_")
 
     if compress in ("gzip", "gz"):
-        file_path = Path(
-            os.path.join(out_path, f"{framework_name}_v{safe_ver}.json.gz")
-        )
+        file_path = Path(os.path.join(out_path, f"{framework_name}_v{safe_ver}.json.gz"))
         import gzip
 
         with gzip.open(file_path, "wt", encoding="utf-8", newline="\n") as f:
             json.dump(snap_dict, f, indent=2, sort_keys=True)
             f.write("\n")
     elif compress == "zstd":
-        file_path = Path(
-            os.path.join(out_path, f"{framework_name}_v{safe_ver}.json.zst")
-        )
-        raw_bytes = (
-            json.dumps(snap_dict, indent=2, sort_keys=True).encode("utf-8") + b"\n"
-        )
+        file_path = Path(os.path.join(out_path, f"{framework_name}_v{safe_ver}.json.zst"))
+        raw_bytes = json.dumps(snap_dict, indent=2, sort_keys=True).encode("utf-8") + b"\n"
         try:
             import importlib
 
@@ -669,9 +624,7 @@ def write_snapshot(
         except Exception:
             import gzip
 
-            file_path = Path(
-                os.path.join(out_path, f"{framework_name}_v{safe_ver}.json.gz")
-            )
+            file_path = Path(os.path.join(out_path, f"{framework_name}_v{safe_ver}.json.gz"))
             with gzip.open(file_path, "wt", encoding="utf-8", newline="\n") as f:
                 json.dump(snap_dict, f, indent=2, sort_keys=True)
                 f.write("\n")
@@ -705,9 +658,7 @@ def validate_snapshot_envelope(
     envelope_data.setdefault("target", target)
     envelope_data.setdefault("schema_version", "1.0.0")
     if "generated_at" not in envelope_data or not envelope_data["generated_at"]:
-        envelope_data["generated_at"] = datetime.datetime.now(
-            datetime.timezone.utc
-        ).isoformat()
+        envelope_data["generated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     try:
         return SnapshotEnvelope.model_validate(envelope_data)
     except (ValueError, TypeError) as exc:

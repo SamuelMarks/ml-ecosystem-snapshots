@@ -48,7 +48,7 @@ def _load_snapshot_items(path: str) -> list[dict[str, JsonValue]]:
     Returns:
         List of item dictionaries.
     """
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
     if isinstance(data, dict):
         if "categories" in data and isinstance(data["categories"], dict):
@@ -76,29 +76,21 @@ def test_no_raw_unparsed_tokens() -> None:
     ]
 
     for json_path in _get_all_json_snapshots():
-        with open(json_path, "r", encoding="utf-8") as f:
+        with open(json_path, encoding="utf-8") as f:
             content = f.read()
 
         for token in banned_tokens:
-            assert (
-                token not in content
-            ), f"Found banned token '{token}' in snapshot {os.path.basename(json_path)}"
+            assert token not in content, f"Found banned token '{token}' in snapshot {os.path.basename(json_path)}"
 
         # Ensure <class ' does not leak into types, parameter annotations, or defaults
         for item in _load_snapshot_items(json_path):
-            assert "<class '" not in str(
-                item.get("returns_type", "")
-            ), f"Leaked type representation in returns_type of {item.get('api_path')}"
+            assert "<class '" not in str(item.get("returns_type", "")), f"Leaked type representation in returns_type of {item.get('api_path')}"
             raw_params = item.get("params", [])
             if isinstance(raw_params, list):
                 for p in raw_params:
                     if isinstance(p, dict):
-                        assert (
-                            "<class '" not in str(p.get("annotation", ""))
-                        ), f"Leaked type representation in annotation of parameter {p.get('name')}"
-                        assert (
-                            "<class '" not in str(p.get("default", ""))
-                        ), f"Leaked type representation in default of parameter {p.get('name')}"
+                        assert "<class '" not in str(p.get("annotation", "")), f"Leaked type representation in annotation of parameter {p.get('name')}"
+                        assert "<class '" not in str(p.get("default", "")), f"Leaked type representation in default of parameter {p.get('name')}"
 
 
 def test_no_uniform_duplicate_operands_rdna() -> None:
@@ -119,9 +111,7 @@ def test_no_uniform_duplicate_operands_rdna() -> None:
 
     assert len(data) >= 14, f"AMD RDNA dump is too small: {len(data)}"
     encodings = {str(item.get("encoding")) for item in data}
-    assert (
-        "Unknown" not in encodings or len(encodings) > 5
-    ), f"RDNA dump has insufficient encodings: {encodings}"
+    assert "Unknown" not in encodings or len(encodings) > 5, f"RDNA dump has insufficient encodings: {encodings}"
 
     # Verify that multiple unique operand signatures exist
     unique_sigs = set()
@@ -130,9 +120,7 @@ def test_no_uniform_duplicate_operands_rdna() -> None:
         sig_str = str(operands)
         unique_sigs.add(sig_str)
 
-    assert (
-        len(unique_sigs) >= 10
-    ), f"RDNA dump exhibits uniform operand duplication: {len(unique_sigs)} unique sigs"
+    assert len(unique_sigs) >= 10, f"RDNA dump exhibits uniform operand duplication: {len(unique_sigs)} unique sigs"
 
 
 def test_stablehlo_operand_attribute_separation() -> None:
@@ -196,9 +184,7 @@ def test_mlir_operand_attribute_integrity() -> None:
 
     assert len(data) >= 14, f"MLIR dump has insufficient operations: {len(data)}"
     ops_with_operands = sum(1 for item in data if item.get("operands"))
-    assert (
-        ops_with_operands / len(data) >= 0.70
-    ), f"Too many MLIR operations have empty operands: {ops_with_operands} / {len(data)}"
+    assert ops_with_operands / len(data) >= 0.70, f"Too many MLIR operations have empty operands: {ops_with_operands} / {len(data)}"
 
     op_map = {str(item["api_path"]): item for item in data if "api_path" in item}
 
@@ -217,9 +203,7 @@ def test_mlir_operand_attribute_integrity() -> None:
         matmul_operands = matmul.get("operands", [])
         assert isinstance(matmul_operands, list)
         assert len(matmul_operands) >= 2
-        matmul_op_names = [
-            op["name"] if isinstance(op, dict) else op for op in matmul_operands
-        ]
+        matmul_op_names = [op["name"] if isinstance(op, dict) else op for op in matmul_operands]
         assert "inputs" in matmul_op_names
         assert "outputs" in matmul_op_names
 
@@ -227,7 +211,7 @@ def test_mlir_operand_attribute_integrity() -> None:
 def test_schema_validity_all_snapshots() -> None:
     """Validate all snapshot JSON files against GhostRef or ExtendedGhostRef models."""
     for json_path in _get_all_json_snapshots():
-        with open(json_path, "r", encoding="utf-8") as f:
+        with open(json_path, encoding="utf-8") as f:
             data = json.load(f)
 
         items_to_validate: list[dict[str, JsonValue]] = []
@@ -236,9 +220,7 @@ def test_schema_validity_all_snapshots() -> None:
             if isinstance(categories, dict):
                 for _cat, cat_items in categories.items():
                     if isinstance(cat_items, list):
-                        items_to_validate.extend(
-                            it for it in cat_items if isinstance(it, dict)
-                        )
+                        items_to_validate.extend(it for it in cat_items if isinstance(it, dict))
         elif isinstance(data, list):
             items_to_validate.extend(it for it in data if isinstance(it, dict))
 
@@ -246,12 +228,7 @@ def test_schema_validity_all_snapshots() -> None:
         for item in items_to_validate[:20]:  # Sample validation
             if "domain_metadata" in item or "operands" in item or "attributes" in item:
                 # Ensure ExtendedGhostRef or basic GhostRef fields parse
-                assert (
-                    "name" in item
-                    or "mnemonic" in item
-                    or "api_path" in item
-                    or "class_name" in item
-                )
+                assert "name" in item or "mnemonic" in item or "api_path" in item or "class_name" in item
             else:
                 validated = GhostInspector.hydrate(item)
                 assert validated.name is not None

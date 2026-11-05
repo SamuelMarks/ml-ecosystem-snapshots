@@ -7,7 +7,10 @@ import json
 import os
 import typing
 
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    InspectableTarget,
+    get_member_dict,
+)
 
 
 @typing.runtime_checkable
@@ -21,7 +24,7 @@ class _GriffeValueProtocol(typing.Protocol):
 class _GriffeTargetProtocol(typing.Protocol):
     """Protocol for Griffe alias objects exposing a `.target` attribute."""
 
-    target: _GriffeValueProtocol | InspectableTarget
+    target: _GriffeValueProtocol | str | None
 
 
 @typing.runtime_checkable
@@ -44,13 +47,6 @@ class _GriffeModuleProtocol(typing.Protocol):
     """Protocol for a loaded Griffe module exposing a `.members` dictionary."""
 
     members: _GriffeMembersMappingProtocol
-
-
-@typing.runtime_checkable
-class VersionedModuleProtocol(typing.Protocol):
-    """Protocol for Python modules exposing a `__version__` string attribute."""
-
-    __version__: str
 
 
 _PKG_NAME_ALIASES: dict[str, str] = {
@@ -87,9 +83,7 @@ def _extract_version_with_griffe(module_name: str) -> str | None:
     try:
         import griffe as _griffe_mod
 
-        loaded: _GriffeModuleProtocol | InspectableTarget = _griffe_mod.load(
-            module_name
-        )
+        loaded: _GriffeModuleProtocol | InspectableTarget = _griffe_mod.load(module_name)
         if not isinstance(loaded, str) and isinstance(loaded, _GriffeModuleProtocol):
             ver = loaded.members.get("__version__")
             if isinstance(ver, _GriffeTargetProtocol):
@@ -150,6 +144,129 @@ _EXHAUSTIVE_JSON_VERSIONS: dict[str, str] = {
 }
 
 
+def _read_module_dunder_version(mod: InspectableTarget) -> str:
+    """Read `__version__` from a loaded module via `get_member_dict`.
+
+    Args:
+        mod: Loaded Python module object.
+
+    Returns:
+        Version string.
+
+    Raises:
+        AttributeError: If `__version__` is absent on `mod`.
+    """
+    ver = get_member_dict(mod).get("__version__")
+    if ver is None:
+        raise AttributeError("__version__")
+    return str(ver)
+
+
+def _resolve_live_module_version(mod_name: str, default_ver: str, dist_fallback: str | None) -> str:
+    """Resolve version from a live imported module, falling back to dist metadata or default.
+
+    Args:
+        mod_name: Importable module name.
+        default_ver: Canonical fallback version string.
+        dist_fallback: Optional pip distribution name for `importlib.metadata.version`.
+
+    Returns:
+        Resolved version string.
+    """
+    try:
+        mod: InspectableTarget = __import__(mod_name)
+        return _read_module_dunder_version(mod)
+    except Exception:
+        if dist_fallback is None:
+            return default_ver
+        try:
+            return importlib.metadata.version(dist_fallback)
+        except Exception:
+            return default_ver
+
+
+def _read_exhaustive_json_version(anchor_dir: str, pkg_prefix: str, default_ver: str) -> str:
+    """Read the `version` header from a bundled `<pkg_prefix>_exhaustive.json` file.
+
+    Args:
+        anchor_dir: Directory containing `frameworks/`.
+        pkg_prefix: Framework prefix (e.g. 'mlir', 'nvidia_sass').
+        default_ver: Default version if the file is absent or unreadable.
+
+    Returns:
+        Resolved version string.
+    """
+    json_file = os.path.join(anchor_dir, "frameworks", f"{pkg_prefix}_exhaustive.json")
+    if os.path.exists(json_file):
+        try:
+            with open(json_file, encoding="utf-8") as f:
+                h = json.load(f)
+                if isinstance(h, dict) and h.get("version"):
+                    return str(h["version"])
+        except Exception:
+            pass
+    return default_ver
+
+
+def _resolve_tensorflow_or_cupy_version(package_name: str) -> str | None:
+    """Resolve version for `cupy` or `tensorflow` with platform distribution fallbacks.
+
+    Args:
+        package_name: Package name ('cupy' or 'tensorflow').
+
+    Returns:
+        Resolved version string or None.
+    """
+    if package_name == "cupy":
+        try:
+            import cupy
+
+            return _read_module_dunder_version(cupy)
+        except ImportError:
+            return importlib.metadata.version("cupy-cuda12x")
+    try:
+        import tensorflow as tf
+
+        return _read_module_dunder_version(tf)
+    except ImportError:
+        try:
+            return importlib.metadata.version("tensorflow-macos")
+        except Exception:
+            return importlib.metadata.version("tensorflow-cpu")
+
+
+def _resolve_special_pkg_version(
+    package_name: str,
+    anchor_dir: str,
+    griffe_extractor: typing.Callable[[str], str | None],
+) -> str | None:
+    """Resolve version for special packages (`keras`, `cupy`, `tensorflow`, `mlir`).
+
+    Args:
+        package_name: Normalized package name.
+        anchor_dir: Package anchor directory.
+        griffe_extractor: Griffe static version extractor callback.
+
+    Returns:
+        Resolved version string, or None to fall through to `importlib.metadata.version`.
+    """
+    if package_name == "keras":
+        try:
+            return importlib.metadata.version("keras")
+        except Exception:
+            return griffe_extractor("keras")
+    if package_name in ("cupy", "tensorflow"):
+        return _resolve_tensorflow_or_cupy_version(package_name)
+    if package_name == "mlir":
+        for mlir_pkg in ("mlir", "mlir-native"):
+            try:
+                return importlib.metadata.version(mlir_pkg)
+            except Exception:
+                pass
+        return _read_exhaustive_json_version(anchor_dir, "mlir", "19.1.0")
+    return None
+
+
 def get_pkg_version(
     package_name: str,
     base_file: str | None = None,
@@ -168,83 +285,18 @@ def get_pkg_version(
     anchor_dir = os.path.dirname(base_file or __file__)
     griffe_extractor = extract_griffe_fn or _extract_version_with_griffe
     try:
-        if package_name in _STATIC_SPEC_VERSIONS:
-            return _STATIC_SPEC_VERSIONS[package_name]
-
-        if package_name in _LIVE_MODULE_VERSION_FALLBACKS:
-            mod_name, default_ver, dist_fallback = _LIVE_MODULE_VERSION_FALLBACKS[
-                package_name
-            ]
-            try:
-                mod: InspectableTarget = __import__(mod_name)
-                assert isinstance(mod, VersionedModuleProtocol)
-                return str(mod.__version__)
-            except Exception:
-                if dist_fallback is None:
-                    return default_ver
-                try:
-                    return importlib.metadata.version(dist_fallback)
-                except Exception:
-                    return default_ver
-        elif package_name in _PKG_NAME_ALIASES:
+        resolved: str | None = _STATIC_SPEC_VERSIONS.get(package_name)
+        if resolved is None and package_name in _LIVE_MODULE_VERSION_FALLBACKS:
+            mod_name, default_ver, dist_fallback = _LIVE_MODULE_VERSION_FALLBACKS[package_name]
+            resolved = _resolve_live_module_version(mod_name, default_ver, dist_fallback)
+        elif resolved is None and package_name in _PKG_NAME_ALIASES:
             package_name = _PKG_NAME_ALIASES[package_name]
-        elif package_name == "keras":
-            try:
-                return importlib.metadata.version("keras")
-            except Exception:
-                griffe_ver = griffe_extractor("keras")
-                if griffe_ver is not None:
-                    return griffe_ver
-        elif package_name == "cupy":
-            try:
-                import cupy
+        elif resolved is None and package_name in _EXHAUSTIVE_JSON_VERSIONS:
+            resolved = _read_exhaustive_json_version(anchor_dir, package_name, _EXHAUSTIVE_JSON_VERSIONS[package_name])
+        elif resolved is None:
+            resolved = _resolve_special_pkg_version(package_name, anchor_dir, griffe_extractor)
 
-                return str(cupy.__version__)
-            except ImportError:
-                return importlib.metadata.version("cupy-cuda12x")
-        elif package_name == "tensorflow":
-            try:
-                import tensorflow as tf
-
-                return str(tf.__version__)
-            except ImportError:
-                try:
-                    return importlib.metadata.version("tensorflow-macos")
-                except Exception:
-                    return importlib.metadata.version("tensorflow-cpu")
-        elif package_name == "mlir":
-            for mlir_pkg in ("mlir", "mlir-native"):
-                try:
-                    return importlib.metadata.version(mlir_pkg)
-                except Exception:
-                    pass
-            json_file = os.path.join(anchor_dir, "frameworks", "mlir_exhaustive.json")
-            if os.path.exists(json_file):
-                try:
-                    with open(json_file, "r", encoding="utf-8") as f:
-                        h = json.load(f)
-                        if isinstance(h, dict) and h.get("version"):
-                            return str(h["version"])
-                except Exception:
-                    pass
-            return "19.1.0"
-        elif package_name in _EXHAUSTIVE_JSON_VERSIONS:
-            json_file = os.path.join(
-                anchor_dir,
-                "frameworks",
-                f"{package_name}_exhaustive.json",
-            )
-            if os.path.exists(json_file):
-                try:
-                    with open(json_file, "r", encoding="utf-8") as f:
-                        h = json.load(f)
-                        if isinstance(h, dict) and h.get("version"):
-                            return str(h["version"])
-                except Exception:
-                    pass
-            return _EXHAUSTIVE_JSON_VERSIONS[package_name]
-
-        return importlib.metadata.version(package_name)
+        return resolved if resolved is not None else importlib.metadata.version(package_name)
     except Exception:
         if package_name in _FALLBACK_PKG_VERSIONS:
             griffe_mod, fallback_ver = _FALLBACK_PKG_VERSIONS[package_name]
@@ -254,7 +306,6 @@ def get_pkg_version(
 
 
 __all__ = [
-    "VersionedModuleProtocol",
     "_EXHAUSTIVE_JSON_VERSIONS",
     "_FALLBACK_PKG_VERSIONS",
     "_LIVE_MODULE_VERSION_FALLBACKS",

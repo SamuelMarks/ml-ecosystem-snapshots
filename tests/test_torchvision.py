@@ -10,8 +10,8 @@ import argparse
 import sys
 import types
 from unittest.mock import patch
-import pytest
 
+import pytest
 from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli import cmd_check_torchvision
 from ml_ecosystem_snapshots.frameworks import torchvision

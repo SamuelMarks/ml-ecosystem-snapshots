@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 import argparse
-from collections import defaultdict
 import json
 import os
 import re
 import typing
+from collections import defaultdict
 
 from ml_ecosystem_snapshots.models import IsaInstructionRecordModel, JsonValue
 
-LLVM_REPO_BASE = (
-    "https://raw.githubusercontent.com/llvm/llvm-project/main/llvm/lib/Target/AMDGPU"
-)
+LLVM_REPO_BASE = "https://raw.githubusercontent.com/llvm/llvm-project/main/llvm/lib/Target/AMDGPU"
 TD_FILES = [
     "VOP1Instructions.td",
     "VOP2Instructions.td",
@@ -38,9 +36,7 @@ ALL_GFX_ARCHITECTURES = [
 ]
 
 
-def fetch_td_file(
-    filename: str, local_dir: str | None = None, use_cache: bool = True
-) -> str:
+def fetch_td_file(filename: str, local_dir: str | None = None, use_cache: bool = True) -> str:
     """Fetch a TableGen file from local checkout or LLVM repository.
 
     Args:
@@ -55,20 +51,18 @@ def fetch_td_file(
     if resolved_dir:
         candidate = os.path.join(resolved_dir, filename)
         if os.path.isfile(candidate):
-            with open(candidate, "r", encoding="utf-8") as f:
+            with open(candidate, encoding="utf-8") as f:
                 return f.read()
 
     cache_dir = os.path.join(
-        os.environ.get(
-            "XDG_CACHE_HOME", os.path.expanduser(os.path.join("~", ".cache"))
-        ),
+        os.environ.get("XDG_CACHE_HOME", os.path.expanduser(os.path.join("~", ".cache"))),
         "ml_ecosystem_snapshots",
         "amdgpu_td",
     )
     cache_path = os.path.join(cache_dir, filename)
     if use_cache and os.path.isfile(cache_path):
         try:
-            with open(cache_path, "r", encoding="utf-8") as f:
+            with open(cache_path, encoding="utf-8") as f:
                 return f.read()
         except (
             AttributeError,
@@ -111,9 +105,158 @@ def fetch_td_file(
     return ""
 
 
-def resolve_td_instruction_info(
-    def_name: str, class_name: str, mnemonic: str
-) -> IsaInstructionRecordModel:
+_RDNA_ENCODING_PROFILES: tuple[tuple[tuple[str, ...], str, list[JsonValue], list[JsonValue]], ...] = (
+    (
+        ("VOP1",),
+        "VOP1",
+        ["_e32", "_e64"],
+        [["VGPR", "VGPR"], ["VGPR", "SGPR"], ["VGPR", "imm32"]],
+    ),
+    (
+        ("VOP2",),
+        "VOP2",
+        ["_e32", "_e64"],
+        [["VGPR", "VGPR", "VGPR"], ["VGPR", "SGPR", "VGPR"], ["VGPR", "imm32", "VGPR"]],
+    ),
+    (
+        ("VOPC",),
+        "VOPC",
+        ["_e32", "_e64"],
+        [["VCC", "VGPR", "VGPR"], ["VCC", "SGPR", "VGPR"], ["VCC", "imm32", "VGPR"]],
+    ),
+    (
+        ("VOP3P",),
+        "VOP3P",
+        ["_e64", "neg_lo", "neg_hi", "clamp", "op_sel", "-src", "|src|"],
+        [
+            ["VGPR", "VReg_64", "VReg_64"],
+            ["VGPR", "VGPR", "VGPR"],
+            ["V[n:n+1]", "V[n:n+1]", "V[n:n+1]"],
+            ["a[n:n+3]", "V[n:n+1]", "V[n:n+1]", "a[n:n+3]"],
+        ],
+    ),
+    (
+        ("VOP3",),
+        "VOP3",
+        ["_e64", "clamp", "omod", "omod:2", "omod:4", "omod:div2", "-src", "|src|"],
+        [
+            ["VGPR", "VGPR", "VGPR", "VGPR"],
+            ["VGPR", "SGPR", "VGPR", "VGPR"],
+            ["VGPR", "imm32", "VGPR", "VGPR"],
+            ["V[n:n+1]", "V[n:n+1]", "V[n:n+1]"],
+            ["V[n:n+3]", "V[n:n+3]", "V[n:n+3]"],
+            ["a[n:n+3]", "V[n:n+1]", "V[n:n+1]", "a[n:n+3]"],
+        ],
+    ),
+    (
+        ("VOPD", "V_DUAL"),
+        "VOPD",
+        ["dual"],
+        [["VGPR", "VGPR", "VGPR", "VGPR"], ["VGPR", "VGPR", "VGPR"]],
+    ),
+    (
+        ("SOP1",),
+        "SOP1",
+        [],
+        [["SGPR", "SGPR"], ["SGPR", "imm32"]],
+    ),
+    (
+        ("SOP2",),
+        "SOP2",
+        [],
+        [["SGPR", "SGPR", "SGPR"], ["SGPR", "SGPR", "imm32"]],
+    ),
+    (
+        ("SOPK",),
+        "SOPK",
+        [],
+        [["SGPR", "simm16"]],
+    ),
+    (
+        ("SOPP",),
+        "SOPP",
+        [],
+        [["simm16"]],
+    ),
+    (
+        ("SM", "SCALARMEM"),
+        "SM",
+        ["glc", "dlc"],
+        [["SGPR", "SReg_64", "imm32"]],
+    ),
+    (
+        ("FLAT",),
+        "FLAT",
+        ["glc", "slc", "dlc"],
+        [["VGPR", "VReg_64", "imm12"]],
+    ),
+    (
+        ("BUF", "MUBUF"),
+        "BUF",
+        ["glc", "slc", "dlc", "idxen", "offen"],
+        [["VGPR", "SReg_128", "VGPR", "SGPR"]],
+    ),
+    (
+        ("DS",),
+        "DS",
+        ["gds"],
+        [["VGPR", "VGPR", "imm16"]],
+    ),
+)
+
+_RDNA_ARCH_RULES: tuple[tuple[str, str], ...] = (
+    ("GFX12", "GFX12/RDNA4"),
+    ("GFX11_5", "GFX11.5"),
+    ("GFX11", "GFX11/RDNA3"),
+    ("GFX10_3", "GFX10.3/RDNA2"),
+    ("GFX10", "GFX10/RDNA1"),
+    ("GFX9", "GFX9/CDNA"),
+)
+
+_TBLGEN_ENCODING_CANDIDATES: tuple[str, ...] = (
+    "VOP3P",
+    "VOPD",
+    "VOP3",
+    "VOP2",
+    "VOP1",
+    "VOPC",
+    "SOPK",
+    "SOPP",
+    "SOP1",
+    "SOP2",
+    "SMEM",
+    "FLAT",
+    "GLOBAL",
+    "SCRATCH",
+    "DS",
+)
+
+_TBLGEN_ENCODING_MODIFIERS: dict[str, list[str]] = {
+    "VOP3": ["_e64", "clamp", "omod:2", "omod:4", "omod:div2", "-src", "|src|"],
+    "VOP3P": ["_e64", "neg_lo", "neg_hi", "clamp", "op_sel"],
+    "VOP1": ["_e32", "_e64"],
+    "VOP2": ["_e32", "_e64"],
+    "VOPC": ["_e32", "_e64"],
+    "VOPD": ["dual"],
+}
+
+
+def _resolve_rdna_architecture(upper_tokens: str) -> str:
+    """Resolve the AMD GPU architecture label from uppercase class and definition tokens.
+
+    Args:
+        upper_tokens: Combined uppercase class names and definition identifiers.
+
+    Returns:
+        Canonical architecture string (e.g. `'GFX11/RDNA3'`, `'GFX10+'`).
+    """
+    for token, arch_label in _RDNA_ARCH_RULES:
+        if token in upper_tokens:
+            return arch_label
+    return "GFX10+"
+
+
+def resolve_td_instruction_info(def_name: str, class_name: str, mnemonic: str) -> IsaInstructionRecordModel:
     """Derive real operand signatures, encodings, modifiers, and architectures from TableGen classes.
 
     Args:
@@ -124,162 +267,24 @@ def resolve_td_instruction_info(
     Returns:
         Dictionary containing encoding, modifiers, operands, and architecture.
     """
-    cls = class_name.upper()
-    df = def_name.upper()
+    cls_df = f"{class_name.upper()} {def_name.upper()}"
+    search_tokens = f"{cls_df} {mnemonic.upper()}"
 
-    encoding = "Unknown"
+    encoding = "VOP1"
     modifiers: list[JsonValue] = []
-    operands: list[JsonValue] = []
+    operands: list[JsonValue] = [["VGPR", "VGPR"]]
 
-    # 1. Vector Arithmetic (VOP1, VOP2, VOP3, VOPC, VOP3P)
-    if "VOP1" in cls or "VOP1" in df:
-        encoding = "VOP1"
-        modifiers = ["_e32", "_e64"]
-        operands = [
-            ["VGPR", "VGPR"],
-            ["VGPR", "SGPR"],
-            ["VGPR", "imm32"],
-        ]
-    elif "VOP2" in cls or "VOP2" in df:
-        encoding = "VOP2"
-        modifiers = ["_e32", "_e64"]
-        operands = [
-            ["VGPR", "VGPR", "VGPR"],
-            ["VGPR", "SGPR", "VGPR"],
-            ["VGPR", "imm32", "VGPR"],
-        ]
-    elif "VOPC" in cls or "VOPC" in df:
-        encoding = "VOPC"
-        modifiers = ["_e32", "_e64"]
-        operands = [
-            ["VCC", "VGPR", "VGPR"],
-            ["VCC", "SGPR", "VGPR"],
-            ["VCC", "imm32", "VGPR"],
-        ]
-    elif "VOP3P" in cls or "VOP3P" in df:
-        encoding = "VOP3P"
-        modifiers = [
-            "_e64",
-            "neg_lo",
-            "neg_hi",
-            "clamp",
-            "op_sel",
-            "-src",
-            "|src|",
-        ]
-        operands = [
-            ["VGPR", "VReg_64", "VReg_64"],
-            ["VGPR", "VGPR", "VGPR"],
-            ["V[n:n+1]", "V[n:n+1]", "V[n:n+1]"],
-            ["a[n:n+3]", "V[n:n+1]", "V[n:n+1]", "a[n:n+3]"],
-        ]
-    elif "VOP3" in cls or "VOP3" in df:
-        encoding = "VOP3"
-        modifiers = [
-            "_e64",
-            "clamp",
-            "omod",
-            "omod:2",
-            "omod:4",
-            "omod:div2",
-            "-src",
-            "|src|",
-        ]
-        operands = [
-            ["VGPR", "VGPR", "VGPR", "VGPR"],
-            ["VGPR", "SGPR", "VGPR", "VGPR"],
-            ["VGPR", "imm32", "VGPR", "VGPR"],
-            ["V[n:n+1]", "V[n:n+1]", "V[n:n+1]"],
-            ["V[n:n+3]", "V[n:n+3]", "V[n:n+3]"],
-            ["a[n:n+3]", "V[n:n+1]", "V[n:n+1]", "a[n:n+3]"],
-        ]
-    elif (
-        "VOPD" in cls
-        or "VOPD" in df
-        or "V_DUAL" in df
-        or mnemonic.lower().startswith("v_dual_")
-    ):
-        encoding = "VOPD"
-        modifiers = ["dual"]
-        operands = [
-            ["VGPR", "VGPR", "VGPR", "VGPR"],
-            ["VGPR", "VGPR", "VGPR"],
-        ]
-
-    # 2. Scalar ALU (SOP1, SOP2, SOPK, SOPP)
-    elif "SOP1" in cls or "SOP1" in df:
-        encoding = "SOP1"
-        operands = [
-            ["SGPR", "SGPR"],
-            ["SGPR", "imm32"],
-        ]
-    elif "SOP2" in cls or "SOP2" in df:
-        encoding = "SOP2"
-        operands = [
-            ["SGPR", "SGPR", "SGPR"],
-            ["SGPR", "SGPR", "imm32"],
-        ]
-    elif "SOPK" in cls or "SOPK" in df:
-        encoding = "SOPK"
-        operands = [
-            ["SGPR", "simm16"],
-        ]
-    elif "SOPP" in cls or "SOPP" in df:
-        encoding = "SOPP"
-        operands = [
-            ["simm16"],
-        ]
-
-    # 3. Memory Instructions (SM, FLAT, BUF, DS)
-    elif "SM" in cls or "SM" in df or "SCALARMEM" in cls:
-        encoding = "SM"
-        modifiers = ["glc", "dlc"]
-        operands = [
-            ["SGPR", "SReg_64", "imm32"],
-        ]
-    elif "FLAT" in cls or "FLAT" in df:
-        encoding = "FLAT"
-        modifiers = ["glc", "slc", "dlc"]
-        operands = [
-            ["VGPR", "VReg_64", "imm12"],
-        ]
-    elif "BUF" in cls or "MUBUF" in cls or "BUF" in df:
-        encoding = "BUF"
-        modifiers = ["glc", "slc", "dlc", "idxen", "offen"]
-        operands = [
-            ["VGPR", "SReg_128", "VGPR", "SGPR"],
-        ]
-    elif "DS" in cls or "DS" in df:
-        encoding = "DS"
-        modifiers = ["gds"]
-        operands = [
-            ["VGPR", "VGPR", "imm16"],
-        ]
-    else:
-        # Default instruction classification
-        encoding = "VOP1"
-        operands = [["VGPR", "VGPR"]]
-
-    # Map architecture target availability
-    if "GFX12" in cls or "GFX12" in df:
-        arch = "GFX12/RDNA4"
-    elif "GFX11_5" in cls or "GFX11_5" in df:
-        arch = "GFX11.5"
-    elif "GFX11" in cls or "GFX11" in df:
-        arch = "GFX11/RDNA3"
-    elif "GFX10_3" in cls or "GFX10_3" in df:
-        arch = "GFX10.3/RDNA2"
-    elif "GFX10" in cls or "GFX10" in df:
-        arch = "GFX10/RDNA1"
-    elif "GFX9" in cls or "GFX9" in df:
-        arch = "GFX9/CDNA"
-    else:
-        arch = "GFX10+"
+    for keywords, enc_name, prof_mods, prof_ops in _RDNA_ENCODING_PROFILES:
+        if any(k in search_tokens for k in keywords):
+            encoding = enc_name
+            modifiers = list(prof_mods)
+            operands = [list(sig) if isinstance(sig, list) else sig for sig in prof_ops]
+            break
 
     return IsaInstructionRecordModel(
         {
             "mnemonic": mnemonic,
-            "architecture": arch,
+            "architecture": _resolve_rdna_architecture(cls_df),
             "encoding": encoding,
             "modifiers": modifiers,
             "operands": operands,
@@ -298,9 +303,7 @@ def parse_td_content(content: str) -> list[IsaInstructionRecordModel]:
     """
     instructions: list[IsaInstructionRecordModel] = []
 
-    pattern = re.compile(
-        r'defm?\s+([A-Za-z0-9_]+)\s*:\s*([A-Za-z0-9_]+)\s*<\s*"([a-z0-9_]+)"'
-    )
+    pattern = re.compile(r'defm?\s+([A-Za-z0-9_]+)\s*:\s*([A-Za-z0-9_]+)\s*<\s*"([a-z0-9_]+)"')
 
     for match in pattern.finditer(content):
         def_name = match.group(1)
@@ -310,9 +313,7 @@ def parse_td_content(content: str) -> list[IsaInstructionRecordModel]:
         info = resolve_td_instruction_info(def_name, class_name, mnemonic)
         instructions.append(info)
 
-    multiclass_pattern = re.compile(
-        r"defm\s+([A-Za-z0-9_]+)\s*:\s*([A-Za-z0-9_]*(?:VOP3|VOP3P|SOPK|VOPD|VOP2|VOP1)[A-Za-z0-9_]*)\s*;"
-    )
+    multiclass_pattern = re.compile(r"defm\s+([A-Za-z0-9_]+)\s*:\s*([A-Za-z0-9_]*(?:VOP3|VOP3P|SOPK|VOPD|VOP2|VOP1)[A-Za-z0-9_]*)\s*;")
     for match in multiclass_pattern.finditer(content):
         def_name = match.group(1)
         class_name = match.group(2)
@@ -322,6 +323,51 @@ def parse_td_content(content: str) -> list[IsaInstructionRecordModel]:
             instructions.append(info)
 
     return instructions
+
+
+def _resolve_tblgen_record_mnemonic(
+    def_name: str,
+    record: typing.Mapping[str, JsonValue],
+) -> str:
+    """Resolve and normalize the instruction mnemonic from a TableGen JSON record.
+
+    Args:
+        def_name: Top-level record definition name.
+        record: Parsed TableGen JSON dictionary for the instruction.
+
+    Returns:
+        Normalized lowercase mnemonic with encoding suffixes stripped.
+    """
+    raw_mnemonic = record.get("Mnemonic")
+    if isinstance(raw_mnemonic, dict):
+        mnemonic = str(raw_mnemonic.get("def", "")).lower()
+    elif isinstance(raw_mnemonic, str) and raw_mnemonic:
+        mnemonic = raw_mnemonic.lower()
+    else:
+        mnemonic = def_name.lower()
+    return re.sub(r"_(e32|e64|dpp|sdwa|nosdst)$", "", mnemonic)
+
+
+def _extract_tblgen_record_operands(
+    record: typing.Mapping[str, JsonValue],
+) -> list[JsonValue]:
+    """Extract combined output and input register operand names from a TableGen JSON record.
+
+    Args:
+        record: Parsed TableGen JSON dictionary for the instruction.
+
+    Returns:
+        Flat list of operand register class strings.
+    """
+    operands: list[JsonValue] = []
+    for list_key in ("OutOperandList", "InOperandList"):
+        raw_list = record.get(list_key, [])
+        if isinstance(raw_list, list):
+            for op in raw_list:
+                op_name = str(op.get("def", "")) if isinstance(op, dict) else str(op)
+                if op_name:
+                    operands.append(op_name)
+    return operands
 
 
 def parse_llvm_tblgen_json(
@@ -342,75 +388,21 @@ def parse_llvm_tblgen_json(
     instructions: list[IsaInstructionRecordModel] = []
 
     for def_name, record in tblgen_json.items():
-        if def_name.startswith("!"):
-            continue
-        if not isinstance(record, dict):
+        if def_name.startswith("!") or not isinstance(record, dict):
             continue
 
         raw_supers = record.get("!superclasses", [])
-        superclasses: list[str] = [
-            str(sc) for sc in (raw_supers if isinstance(raw_supers, list) else [])
-        ]
+        superclasses: list[str] = [str(sc) for sc in (raw_supers if isinstance(raw_supers, list) else [])]
         sc_str = " ".join(superclasses)
+        clean_mnemonic = _resolve_tblgen_record_mnemonic(def_name, record)
 
-        # Resolve mnemonic
-        raw_mnemonic = record.get("Mnemonic")
-        if isinstance(raw_mnemonic, dict):
-            mnemonic = str(raw_mnemonic.get("def", "")).lower()
-        elif isinstance(raw_mnemonic, str) and raw_mnemonic:
-            mnemonic = raw_mnemonic.lower()
-        else:
-            mnemonic = def_name.lower()
-
-        # Clean trailing encoding suffixes from mnemonic like _e32, _e64, _dpp
-        clean_mnemonic = re.sub(r"_(e32|e64|dpp|sdwa|nosdst)$", "", mnemonic)
-
-        # Resolve encoding profile
         encoding = "Unknown"
-        modifiers: list[str] = []
-        for enc_candidate in [
-            "VOP3P",
-            "VOPD",
-            "VOP3",
-            "VOP2",
-            "VOP1",
-            "VOPC",
-            "SOPK",
-            "SOPP",
-            "SOP1",
-            "SOP2",
-            "SMEM",
-            "FLAT",
-            "GLOBAL",
-            "SCRATCH",
-            "DS",
-        ]:
-            if (
-                any(enc_candidate in sc for sc in superclasses)
-                or enc_candidate in def_name
-            ):
+        for enc_candidate in _TBLGEN_ENCODING_CANDIDATES:
+            if any(enc_candidate in sc for sc in superclasses) or enc_candidate in def_name:
                 encoding = enc_candidate
                 break
 
-        # Register classes extraction from operand lists
-        operands: list[JsonValue] = []
-        out_ops = record.get("OutOperandList", [])
-        in_ops = record.get("InOperandList", [])
-
-        # Process out operands
-        if isinstance(out_ops, list):
-            for op in out_ops:
-                op_name = str(op.get("def", "")) if isinstance(op, dict) else str(op)
-                if op_name:
-                    operands.append(op_name)
-
-        # Process in operands
-        if isinstance(in_ops, list):
-            for op in in_ops:
-                op_name = str(op.get("def", "")) if isinstance(op, dict) else str(op)
-                if op_name:
-                    operands.append(op_name)
-
+        operands = _extract_tblgen_record_operands(record)
         operands_list: JsonValue
         if not operands:
             info = resolve_td_instruction_info(def_name, sc_str, clean_mnemonic)
@@ -420,38 +412,9 @@ def parse_llvm_tblgen_json(
                 encoding = str(info["encoding"])
         else:
             operands_list = [operands]
-            if encoding == "VOP3":
-                modifiers = [
-                    "_e64",
-                    "clamp",
-                    "omod:2",
-                    "omod:4",
-                    "omod:div2",
-                    "-src",
-                    "|src|",
-                ]
-            elif encoding == "VOP3P":
-                modifiers = ["_e64", "neg_lo", "neg_hi", "clamp", "op_sel"]
-            elif encoding in ("VOP1", "VOP2", "VOPC"):
-                modifiers = ["_e32", "_e64"]
-            elif encoding == "VOPD":
-                modifiers = ["dual"]
+            modifiers = list(_TBLGEN_ENCODING_MODIFIERS.get(encoding, []))
 
-        # Determine architecture
-        if any("GFX12" in sc for sc in superclasses) or "GFX12" in def_name:
-            arch = "GFX12/RDNA4"
-        elif any("GFX11_5" in sc for sc in superclasses) or "GFX11_5" in def_name:
-            arch = "GFX11.5"
-        elif any("GFX11" in sc for sc in superclasses) or "GFX11" in def_name:
-            arch = "GFX11/RDNA3"
-        elif any("GFX10_3" in sc for sc in superclasses) or "GFX10_3" in def_name:
-            arch = "GFX10.3/RDNA2"
-        elif any("GFX10" in sc for sc in superclasses) or "GFX10" in def_name:
-            arch = "GFX10/RDNA1"
-        elif any("GFX9" in sc for sc in superclasses) or "GFX9" in def_name:
-            arch = "GFX9/CDNA"
-        else:
-            arch = "GFX10+"
+        arch = _resolve_rdna_architecture(f"{sc_str.upper()} {def_name.upper()}")
 
         instructions.append(
             IsaInstructionRecordModel(
@@ -523,7 +486,7 @@ def scrape_amd_rdna(
                     inst_ops[base_name].append(sig)
 
     if tblgen_json_path and os.path.exists(tblgen_json_path):
-        with open(tblgen_json_path, "r", encoding="utf-8") as f:
+        with open(tblgen_json_path, encoding="utf-8") as f:
             tblgen_json: dict[str, JsonValue] = json.load(f)
         _merge_instrs(parse_llvm_tblgen_json(tblgen_json))
     else:
@@ -579,9 +542,7 @@ def main(argv: list[str] | None = None) -> None:
     Args:
         argv: Optional list of command-line arguments.
     """
-    parser = argparse.ArgumentParser(
-        description="Scrape exhaustive AMD RDNA instructions."
-    )
+    parser = argparse.ArgumentParser(description="Scrape exhaustive AMD RDNA instructions.")
     parser.add_argument(
         "--llvm-version",
         type=str,

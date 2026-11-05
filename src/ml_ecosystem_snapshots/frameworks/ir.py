@@ -13,9 +13,7 @@ from ml_switcheroo_ir.schema.ghost import (
 )
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect IR API symbols for the given category.
 
     Args:

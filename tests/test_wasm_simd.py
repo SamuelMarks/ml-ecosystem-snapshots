@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import operator
-
 import argparse
-import pytest
 
+import pytest
+from ml_ecosystem_snapshots.cli import cmd_check_wasm
 from ml_ecosystem_snapshots.frameworks.wasm_simd import (
     CANONICAL_WASM_SIMD_OPS,
     _load_wasm_simd_ops,
     collect_api,
 )
 from ml_ecosystem_snapshots.mcp_server import check_wasm_instruction
-from ml_ecosystem_snapshots.cli import cmd_check_wasm
 from ml_switcheroo_ir.schema.ghost import (
     GhostOperationRef,
     OperandDirection,
@@ -53,12 +51,11 @@ def test_wasm_simd_op_properties_and_roles() -> None:
     assert store_ref.returns is not None and len(store_ref.returns) == 0
     assert store_ref.returns_type == "None"
     assert store_ref.operands is not None
+    from ml_ecosystem_snapshots.models import ExtendedGhostParam
+
     addr_op = next(p for p in store_ref.operands if p.name == "addr")
-    assert (
-        operator.attrgetter("direction")(addr_op)
-        if "direction" in dir(addr_op)
-        else None
-    ) == OperandDirection.WRITE
+    assert isinstance(addr_op, ExtendedGhostParam)
+    assert addr_op.direction == OperandDirection.WRITE
 
 
 def test_check_wasm_instruction_validation() -> None:
@@ -85,17 +82,13 @@ def test_check_wasm_instruction_validation() -> None:
     # 5. Invalid attribute
     res_bad_attr = check_wasm_instruction("v128.load", attributes=["invalid_attr"])
     assert res_bad_attr["is_valid"] is False
-    assert any(
-        "Attribute 'invalid_attr' is not valid" in e for e in res_bad_attr["errors"]
-    )
+    assert any("Attribute 'invalid_attr' is not valid" in e for e in res_bad_attr["errors"])
 
     # 6. Non-existent instruction
     res_nonexistent = check_wasm_instruction("nonexistent.opcode")
     assert res_nonexistent["is_valid"] is False
     assert res_nonexistent["op_exists"] is False
-    assert any(
-        "Unknown WebAssembly SIMD instruction" in e for e in res_nonexistent["errors"]
-    )
+    assert any("Unknown WebAssembly SIMD instruction" in e for e in res_nonexistent["errors"])
 
 
 def test_cmd_check_wasm_cli(capsys: pytest.CaptureFixture[str]) -> None:

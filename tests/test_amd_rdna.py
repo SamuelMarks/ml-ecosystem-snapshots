@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import pytest
 from unittest import mock
-from ml_switcheroo_ir.schema.ghost import SemanticTier, GhostRef, GhostParam
+
+import pytest
 from ml_ecosystem_snapshots.frameworks import amd_rdna
+from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, SemanticTier
 
 
 def test_amd_rdna_collect_api_layer() -> None:
@@ -15,53 +16,56 @@ def test_amd_rdna_collect_api_layer() -> None:
     assert amd_rdna.collect_api(SemanticTier.LAYER) == []
 
 
-@mock.patch("ml_ecosystem_snapshots.frameworks.amd_rdna._load_exhaustive_rdna")
-def test_amd_rdna_collect_api_util(mock_load: mock.MagicMock) -> None:
+def test_amd_rdna_collect_api_util(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that collect_api returns valid GhostRef objects for RDNA instructions.
 
     Args:
-        mock_load: Mock for _load_exhaustive_rdna.
+        monkeypatch: Pytest monkeypatch fixture.
     """
     # Mock data to test all branches:
     # 1. No modifiers
     # 2. Multiple signatures where one is shorter
     # 3. Condition code (VCC/SCC) and execution mask (EXEC)
-    mock_load.return_value = [
-        {
-            "mnemonic": "v_nop",
-            "modifiers": [],
-            "operands": [["vGPR"], ["vGPR", "vGPR"]],  # Longer, will update max_sig
-            "description": "No op",
-        },
-        {
-            "mnemonic": "v_add_f32",
-            "modifiers": ["_e32", "_e64"],
-            "operands": [
-                ["vGPR", "vGPR", "vGPR"],
-                ["vGPR", "vGPR"],  # Shorter, tests branch
-            ],
-        },
-        {
-            "mnemonic": "v_cmp_eq_f32",
-            "modifiers": ["_e32"],
-            "operands": [
-                ["VCC", "VGPR", "VGPR"],
-                ["SCC", "SGPR", "SGPR"],
-                ["EXEC", "simm16"],
-            ],
-            "description": "Comparison instruction.",
-            "encoding": "VOPC",
-            "architecture": "GFX11/RDNA3",
-        },
-        {
-            "mnemonic": "s_cbranch_execz",
-            "modifiers": [],
-            "operands": [["EXEC", "simm16"]],
-            "description": "Branch if exec zero.",
-            "encoding": "SOPP",
-            "architecture": "GFX10+",
-        },
-    ]
+    monkeypatch.setattr(
+        amd_rdna,
+        "_load_exhaustive_rdna",
+        lambda: [
+            {
+                "mnemonic": "v_nop",
+                "modifiers": [],
+                "operands": [["vGPR"], ["vGPR", "vGPR"]],  # Longer, will update max_sig
+                "description": "No op",
+            },
+            {
+                "mnemonic": "v_add_f32",
+                "modifiers": ["_e32", "_e64"],
+                "operands": [
+                    ["vGPR", "vGPR", "vGPR"],
+                    ["vGPR", "vGPR"],  # Shorter, tests branch
+                ],
+            },
+            {
+                "mnemonic": "v_cmp_eq_f32",
+                "modifiers": ["_e32"],
+                "operands": [
+                    ["VCC", "VGPR", "VGPR"],
+                    ["SCC", "SGPR", "SGPR"],
+                    ["EXEC", "simm16"],
+                ],
+                "description": "Comparison instruction.",
+                "encoding": "VOPC",
+                "architecture": "GFX11/RDNA3",
+            },
+            {
+                "mnemonic": "s_cbranch_execz",
+                "modifiers": [],
+                "operands": [["EXEC", "simm16"]],
+                "description": "Branch if exec zero.",
+                "encoding": "SOPP",
+                "architecture": "GFX10+",
+            },
+        ],
+    )
 
     refs = amd_rdna.collect_api(SemanticTier.UTIL)
 
@@ -97,21 +101,24 @@ def test_amd_rdna_collect_api_util(mock_load: mock.MagicMock) -> None:
     assert "GFX11/RDNA3" in (cmp_inst.environment_tags or [])
 
 
-@mock.patch("ml_ecosystem_snapshots.frameworks.amd_rdna._load_exhaustive_rdna")
-def test_amd_rdna_specific_instruction(mock_load: mock.MagicMock) -> None:
+def test_amd_rdna_specific_instruction(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test a specific instruction to verify it was extracted.
 
     Args:
-        mock_load: Mock for _load_exhaustive_rdna.
+        monkeypatch: Pytest monkeypatch fixture.
     """
-    mock_load.return_value = [
-        {
-            "mnemonic": "v_add_f32",
-            "modifiers": ["_e32"],
-            "operands": [["vGPR", "vGPR", "vGPR"]],
-            "description": "AMD RDNA v_add_f32 instruction.",
-        }
-    ]
+    monkeypatch.setattr(
+        amd_rdna,
+        "_load_exhaustive_rdna",
+        lambda: [
+            {
+                "mnemonic": "v_add_f32",
+                "modifiers": ["_e32"],
+                "operands": [["vGPR", "vGPR", "vGPR"]],
+                "description": "AMD RDNA v_add_f32 instruction.",
+            }
+        ],
+    )
     refs = amd_rdna.collect_api(SemanticTier.UTIL)
 
     add_refs = [r for r in refs if "v_add" in r.name]
@@ -210,37 +217,21 @@ def test_validate_rdna_register() -> None:
 def test_validate_rdna_constant_bus() -> None:
     """Test constant bus limitation on pre-RDNA architectures."""
     # Pre-RDNA (GFX9/CDNA) vector instructions cannot read > 1 SGPR/literal
-    err_cbus = amd_rdna.validate_rdna_constant_bus(
-        ["v0", "s0", "s1"], encoding="VOP2", gfx_arch="GFX9/CDNA"
-    )
+    err_cbus = amd_rdna.validate_rdna_constant_bus(["v0", "s0", "s1"], encoding="VOP2", gfx_arch="GFX9/CDNA")
     assert any("Constant bus limitation violation" in e for e in err_cbus)
 
-    err_cbus_imm = amd_rdna.validate_rdna_constant_bus(
-        ["v0", "s0", "42"], encoding="VOP2", gfx_arch="GFX9/CDNA"
-    )
+    err_cbus_imm = amd_rdna.validate_rdna_constant_bus(["v0", "s0", "42"], encoding="VOP2", gfx_arch="GFX9/CDNA")
     assert any("Constant bus limitation violation" in e for e in err_cbus_imm)
 
     # Valid: 1 SGPR + 1 VGPR
-    assert (
-        amd_rdna.validate_rdna_constant_bus(
-            ["v0", "s0", "v1"], encoding="VOP2", gfx_arch="GFX9/CDNA"
-        )
-        == []
-    )
+    assert amd_rdna.validate_rdna_constant_bus(["v0", "s0", "v1"], encoding="VOP2", gfx_arch="GFX9/CDNA") == []
 
     # VOPC test (starts from index 2)
-    err_vopc = amd_rdna.validate_rdna_constant_bus(
-        ["vcc", "v0", "s0", "s1"], encoding="VOPC", gfx_arch="GFX9/CDNA"
-    )
+    err_vopc = amd_rdna.validate_rdna_constant_bus(["vcc", "v0", "s0", "s1"], encoding="VOPC", gfx_arch="GFX9/CDNA")
     assert any("Constant bus limitation violation" in e for e in err_vopc)
 
     # On RDNA3 (GFX11/RDNA3), constant bus limitation does not apply
-    assert (
-        amd_rdna.validate_rdna_constant_bus(
-            ["v0", "s0", "s1"], encoding="VOP2", gfx_arch="GFX11/RDNA3"
-        )
-        == []
-    )
+    assert amd_rdna.validate_rdna_constant_bus(["v0", "s0", "s1"], encoding="VOP2", gfx_arch="GFX11/RDNA3") == []
 
     # Empty or single operand
     assert amd_rdna.validate_rdna_constant_bus([]) == []
@@ -251,15 +242,11 @@ def test_validate_rdna_modifiers() -> None:
     """Test source and output modifier legality checks."""
     # Valid source modifiers on VOP3/VOP3P
     assert amd_rdna.validate_rdna_modifiers(["-src", "clamp"], encoding="VOP3") == []
-    assert (
-        amd_rdna.validate_rdna_modifiers(["op_sel", "neg_lo"], encoding="VOP3P") == []
-    )
+    assert amd_rdna.validate_rdna_modifiers(["op_sel", "neg_lo"], encoding="VOP3P") == []
 
     # Invalid source modifier on SOP1
     err_sop = amd_rdna.validate_rdna_modifiers(["clamp"], encoding="SOP1")
-    assert any(
-        "Source modifier 'clamp' is only valid on VOP3/VOP3P" in e for e in err_sop
-    )
+    assert any("Source modifier 'clamp' is only valid on VOP3/VOP3P" in e for e in err_sop)
 
     # Valid output modifier on VOP3
     assert amd_rdna.validate_rdna_modifiers(["omod:2"], encoding="VOP3") == []
@@ -272,44 +259,21 @@ def test_validate_rdna_modifiers() -> None:
 def test_validate_rdna_microarchitecture() -> None:
     """Test microarchitecture and wave-size execution constraints."""
     # Dual-issue on GFX11/GFX12
-    assert (
-        amd_rdna.validate_rdna_microarchitecture(
-            "v_dual_fma_f32", gfx_arch="GFX11/RDNA3"
-        )
-        == []
-    )
-    err_dual_gfx9 = amd_rdna.validate_rdna_microarchitecture(
-        "v_dual_fma_f32", gfx_arch="GFX9/CDNA"
-    )
-    assert any(
-        "Dual-issue instruction 'v_dual_fma_f32' is strictly supported on GFX11+" in e
-        for e in err_dual_gfx9
-    )
+    assert amd_rdna.validate_rdna_microarchitecture("v_dual_fma_f32", gfx_arch="GFX11/RDNA3") == []
+    err_dual_gfx9 = amd_rdna.validate_rdna_microarchitecture("v_dual_fma_f32", gfx_arch="GFX9/CDNA")
+    assert any("Dual-issue instruction 'v_dual_fma_f32' is strictly supported on GFX11+" in e for e in err_dual_gfx9)
 
-    err_dual_wave64 = amd_rdna.validate_rdna_microarchitecture(
-        "v_dual_fma_f32", gfx_arch="GFX11/RDNA3", wave_size=64
-    )
+    err_dual_wave64 = amd_rdna.validate_rdna_microarchitecture("v_dual_fma_f32", gfx_arch="GFX11/RDNA3", wave_size=64)
     assert any("strictly requires Wave32 execution mode" in e for e in err_dual_wave64)
 
     # Matrix accumulator on CDNA vs RDNA
-    assert (
-        amd_rdna.validate_rdna_microarchitecture(
-            "v_mfma_f32_16x16x16f16", gfx_arch="GFX9/CDNA"
-        )
-        == []
-    )
-    err_mfma = amd_rdna.validate_rdna_microarchitecture(
-        "v_mfma_f32_16x16x16f16", gfx_arch="GFX11/RDNA3"
-    )
+    assert amd_rdna.validate_rdna_microarchitecture("v_mfma_f32_16x16x16f16", gfx_arch="GFX9/CDNA") == []
+    err_mfma = amd_rdna.validate_rdna_microarchitecture("v_mfma_f32_16x16x16f16", gfx_arch="GFX11/RDNA3")
     assert any("strictly supported on GFX9/CDNA" in e for e in err_mfma)
 
     # CDNA wave-size check: CDNA is Wave64
-    err_cdna_w32 = amd_rdna.validate_rdna_microarchitecture(
-        "v_add_f32", gfx_arch="GFX9/CDNA", wave_size=32
-    )
-    assert any(
-        "executes in Wave64 mode and does not support Wave32" in e for e in err_cdna_w32
-    )
+    err_cdna_w32 = amd_rdna.validate_rdna_microarchitecture("v_add_f32", gfx_arch="GFX9/CDNA", wave_size=32)
+    assert any("executes in Wave64 mode and does not support Wave32" in e for e in err_cdna_w32)
 
 
 def test_check_rdna_instruction_extended() -> None:
@@ -344,9 +308,7 @@ def test_check_rdna_instruction_extended() -> None:
         gfx_arch="GFX11/RDNA3",
     )
     assert res_mod["is_valid"] is False
-    assert any(
-        "Output modifier 'omod:2' is only valid on VOP3" in e for e in res_mod["errors"]
-    )
+    assert any("Output modifier 'omod:2' is only valid on VOP3" in e for e in res_mod["errors"])
 
 
 def test_cli_check_rdna(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
@@ -356,9 +318,10 @@ def test_cli_check_rdna(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> N
         capsys: Pytest stdout/stderr capture fixture.
         tmp_path: Temporary directory path fixture.
     """
-    from ml_ecosystem_snapshots.cli import cmd_check_rdna
     import argparse
+
     import pytest
+    from ml_ecosystem_snapshots.cli import cmd_check_rdna
 
     # 1. Valid mnemonic
     args_valid = argparse.Namespace(
@@ -467,30 +430,21 @@ def test_validate_vopd_pairing() -> None:
     opy_valid = {"mnemonic": "v_dual_fma_f32", "dst": "v1"}
 
     # Valid pairing on GFX11
-    assert (
-        amd_rdna.validate_vopd_pairing(opx_valid, opy_valid, gfx_arch="GFX11/RDNA3")
-        == []
-    )
+    assert amd_rdna.validate_vopd_pairing(opx_valid, opy_valid, gfx_arch="GFX11/RDNA3") == []
 
     # Invalid architecture
-    err_arch = amd_rdna.validate_vopd_pairing(
-        opx_valid, opy_valid, gfx_arch="GFX9/CDNA"
-    )
+    err_arch = amd_rdna.validate_vopd_pairing(opx_valid, opy_valid, gfx_arch="GFX9/CDNA")
     assert any("only supported on GFX11/RDNA3" in e for e in err_arch)
 
     # Invalid opcodes
-    err_op = amd_rdna.validate_vopd_pairing(
-        {"mnemonic": "v_add_f32"}, {"mnemonic": "v_mul_f32"}, gfx_arch="GFX11/RDNA3"
-    )
+    err_op = amd_rdna.validate_vopd_pairing({"mnemonic": "v_add_f32"}, {"mnemonic": "v_mul_f32"}, gfx_arch="GFX11/RDNA3")
     assert any("not a valid VOPD OpX opcode" in e for e in err_op)
     assert any("not a valid VOPD OpY opcode" in e for e in err_op)
 
     # Same destination register conflict
     opx_conflict = {"mnemonic": "v_dual_fmac_f32", "dst": "v5"}
     opy_conflict = {"mnemonic": "v_dual_add_f32", "dst": "v5"}
-    err_dst = amd_rdna.validate_vopd_pairing(
-        opx_conflict, opy_conflict, gfx_arch="GFX11/RDNA3"
-    )
+    err_dst = amd_rdna.validate_vopd_pairing(opx_conflict, opy_conflict, gfx_arch="GFX11/RDNA3")
     assert any("destination conflict" in e for e in err_dst)
 
 
@@ -505,9 +459,7 @@ def test_load_exhaustive_rdna_variants() -> None:
         },
     }
     with mock.patch("os.path.exists", return_value=True):
-        with mock.patch(
-            "builtins.open", mock.mock_open(read_data=json.dumps(mock_envelope))
-        ):
+        with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_envelope))):
             ops = amd_rdna._load_exhaustive_rdna()
             assert len(ops) == 1
             assert ops[0]["mnemonic"] == "v_test_env"
@@ -515,17 +467,13 @@ def test_load_exhaustive_rdna_variants() -> None:
         mock_inst_dict = {
             "instructions": [{"mnemonic": "v_test_dict"}],
         }
-        with mock.patch(
-            "builtins.open", mock.mock_open(read_data=json.dumps(mock_inst_dict))
-        ):
+        with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_inst_dict))):
             ops = amd_rdna._load_exhaustive_rdna()
             assert len(ops) == 1
             assert ops[0]["mnemonic"] == "v_test_dict"
 
         mock_raw_list = [{"mnemonic": "v_test_list"}]
-        with mock.patch(
-            "builtins.open", mock.mock_open(read_data=json.dumps(mock_raw_list))
-        ):
+        with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_raw_list))):
             ops = amd_rdna._load_exhaustive_rdna()
             assert len(ops) == 1
             assert ops[0]["mnemonic"] == "v_test_list"
@@ -550,9 +498,7 @@ def test_tokenize_rdna_line_and_code_block() -> None:
     assert "_e32" in mods
 
     # Extra edge cases: early modifier, trailing non-modifier, empty comma slot
-    b_edge, ops_edge, _suf_edge, mods_edge = amd_rdna.tokenize_rdna_line(
-        "v_fma_f32 v0, clamp,  , v1, v2 v3"
-    )
+    b_edge, ops_edge, _suf_edge, mods_edge = amd_rdna.tokenize_rdna_line("v_fma_f32 v0, clamp,  , v1, v2 v3")
     assert b_edge == "v_fma_f32"
     assert "clamp" in mods_edge
     assert "v3" in ops_edge

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import enum
+import inspect
 import logging
-import operator
 import re
 import types
 import typing
@@ -12,20 +13,12 @@ import pydantic
 
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     InspectableTarget,
-    read_runtime_attr,
 )
 
 if typing.TYPE_CHECKING:
     import griffe
 
 _LOGGER = logging.getLogger(__name__)
-
-
-@typing.runtime_checkable
-class _ModuleWithAllProtocol(typing.Protocol):
-    """Protocol for modules or types defining an `__all__` export sequence."""
-
-    __all__: typing.Sequence[str]
 
 
 @typing.runtime_checkable
@@ -135,26 +128,18 @@ class DocstringMetadata(pydantic.BaseModel):
     raises: list[str] = pydantic.Field(default_factory=list)
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["params"]
-    ) -> dict[str, DocstringParamMeta]: ...
+    def __getitem__(self, key: typing.Literal["params"]) -> dict[str, DocstringParamMeta]: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["returns"]
-    ) -> DocstringReturnMeta | None: ...
+    def __getitem__(self, key: typing.Literal["returns"]) -> DocstringReturnMeta | None: ...
 
     @typing.overload
     def __getitem__(self, key: typing.Literal["raises"]) -> list[str]: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: str
-    ) -> dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None: ...
+    def __getitem__(self, key: str) -> dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None: ...
 
-    def __getitem__(
-        self, key: str
-    ) -> dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None:
+    def __getitem__(self, key: str) -> dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None:
         """Retrieve a docstring metadata field by key.
 
         Args:
@@ -194,17 +179,13 @@ class DocstringMetadata(pydantic.BaseModel):
     def get(
         self,
         key: str,
-        default: (
-            dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None
-        ) = None,
+        default: (dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None) = None,
     ) -> dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None: ...
 
     def get(
         self,
         key: str,
-        default: (
-            dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None
-        ) = None,
+        default: (dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None) = None,
     ) -> dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None:
         """Retrieve a docstring metadata field by key with default.
 
@@ -222,53 +203,43 @@ class DocstringMetadata(pydantic.BaseModel):
 
 
 def get_all_members(
-    module: types.ModuleType | type,
+    module: types.ModuleType | types.SimpleNamespace | type,
 ) -> list[tuple[str, InspectableTarget]]:
-    """Safely extract all members from a module, bypassing __getattr__ obfuscation.
-
-    Many modern ML frameworks use lazy-loading modules that define __getattr__
-    and __all__ but do not correctly implement __dir__. This function combines
-    dir() and __all__ to forcefully resolve hidden members.
+    """Safely extract all accessible members from a module or class via `inspect.getmembers`.
 
     Args:
-        module: The module to inspect.
+        module: The module or class to inspect.
 
     Returns:
         A list of `(name, member_target)` tuples.
     """
-    members: list[tuple[str, InspectableTarget]] = []
-    seen: set[str] = set()
-
-    for name in dir(module):
-        try:
-            val: InspectableTarget = operator.attrgetter(name)(module)
-            members.append((name, val))
-            seen.add(name)
-        except Exception as exc:
-            _LOGGER.debug("Skipping inaccessible member %s: %s", name, exc)
-
-    if isinstance(module, _ModuleWithAllProtocol):
-        all_names = module.__all__
-        for name in all_names:
-            name_str = str(name)
-            if name_str not in seen:
-                try:
-                    val_all: InspectableTarget = operator.attrgetter(name_str)(module)
-                    members.append((name_str, val_all))
-                    seen.add(name_str)
-                except Exception as exc:
-                    _LOGGER.debug(
-                        "Skipping inaccessible __all__ member %s: %s",
-                        name_str,
-                        exc,
-                    )
-
-    return members
+    try:
+        raw_members: list[tuple[str, InspectableTarget]] = inspect.getmembers(module)
+        return raw_members
+    except Exception as exc:
+        _LOGGER.debug("Skipping inaccessible module members: %s", exc)
+        return []
 
 
-def get_framework_docstring_parser(
-    framework_name: str, docstring: str | None = None
-) -> str:
+def _detect_docstring_style_from_text(docstring: str) -> str | None:
+    """Detect the docstring parser convention from explicit markers in `docstring`.
+
+    Args:
+        docstring: Non-empty docstring text to inspect.
+
+    Returns:
+        Detected parser identifier (`'rest'`, `'numpy'`, or `'google'`), or None if inconclusive.
+    """
+    if any(marker in docstring for marker in (":param ", ":type ", ":return:", ":rtype:", ":raises:")):
+        return "rest"
+    if re.search(r"(?:^|\s)(Parameters|Returns|Raises)\s*[-=]{3,}", docstring):
+        return "numpy"
+    if re.search(r"(?:^|\s)(Args|Arguments|Returns|Raises):\s*", docstring):
+        return "google"
+    return None
+
+
+def get_framework_docstring_parser(framework_name: str, docstring: str | None = None) -> str:
     """Determine the most appropriate docstring parser for a framework.
 
     Args:
@@ -279,27 +250,11 @@ def get_framework_docstring_parser(
         The docstring parser style identifier ('rest', 'numpy', 'google', or 'auto').
     """
     if docstring and isinstance(docstring, str):
-        if any(
-            marker in docstring
-            for marker in (":param ", ":type ", ":return:", ":rtype:", ":raises:")
-        ):
-            return "rest"
-        if re.search(r"(?:^|\s)(Parameters|Returns|Raises)\s*[-=]{3,}", docstring):
-            return "numpy"
-        if re.search(r"(?:^|\s)(Args|Arguments|Returns|Raises):\s*", docstring):
-            return "google"
+        detected = _detect_docstring_style_from_text(docstring)
+        if detected is not None:
+            return detected
 
     name_clean = framework_name.lower().replace("-", "_")
-    if name_clean in (
-        "torch",
-        "pytorch",
-        "tensorflow",
-        "tf",
-        "sklearn",
-        "scikit_learn",
-        "scipy",
-    ):
-        return "rest"
     if name_clean in ("numpy", "np"):
         return "numpy"
     if name_clean in (
@@ -316,7 +271,6 @@ def get_framework_docstring_parser(
         "optax",
     ):
         return "google"
-
     return "rest"
 
 
@@ -345,9 +299,7 @@ def resolve_griffe_parser(parser_name: str) -> griffe.Parser | None:
         return None
 
 
-def parse_docstring_with_griffe(
-    docstring: str, parser_name: str | None = None
-) -> list[griffe.DocstringSection]:
+def parse_docstring_with_griffe(docstring: str, parser_name: str | None = None) -> list[griffe.DocstringSection]:
     """Parse a docstring using Griffe with dynamic fallback across conventions.
 
     Args:
@@ -376,12 +328,8 @@ def parse_docstring_with_griffe(
             continue
         try:
             doc_obj = _griffe_mod.Docstring(docstring)
-            sections: list[griffe.DocstringSection] = _griffe_mod.parse(
-                doc_obj, resolved
-            )
-            has_structured = any(
-                s.kind in ("parameters", "returns", "raises") for s in sections
-            )
+            sections: list[griffe.DocstringSection] = _griffe_mod.parse(doc_obj, resolved)
+            has_structured = any(s.kind in ("parameters", "returns", "raises") for s in sections)
             if has_structured:
                 return sections
             if not best_sections and sections:
@@ -408,9 +356,75 @@ def strip_sphinx_roles(text: str | None) -> str | None:
     return cleaned
 
 
-def extract_griffe_docstring_metadata(
-    docstring: str, parser_name: str | None = None
-) -> DocstringMetadata:
+def _extract_griffe_params_section(
+    items: list[InspectableTarget],
+    params: dict[str, DocstringParamMeta],
+) -> None:
+    """Populate `params` from a parsed Griffe parameters section list.
+
+    Args:
+        items: List of Griffe parameter items from `section.value`.
+        params: Mutable dictionary mapping parameter names to `DocstringParamMeta`.
+    """
+    for item in items:
+        assert isinstance(item, _DocstringParamItemProtocol)
+        p_name = item.name
+        if p_name:
+            annotation = item.annotation
+            value = item.value
+            desc = item.description
+            cleaned_typ = strip_sphinx_roles(str(annotation)) if annotation is not None else None
+            params[str(p_name)] = DocstringParamMeta(
+                doc=str(desc) if desc else "",
+                typ=cleaned_typ,
+                default=str(value) if value is not None else None,
+            )
+
+
+def _extract_griffe_returns_section(
+    items: list[InspectableTarget],
+) -> DocstringReturnMeta | None:
+    """Extract `DocstringReturnMeta` from a parsed Griffe returns section list.
+
+    Args:
+        items: List of Griffe return items from `section.value`.
+
+    Returns:
+        Last extracted `DocstringReturnMeta` entry, or None if `items` is empty.
+    """
+    returns: DocstringReturnMeta | None = None
+    for item in items:
+        assert isinstance(item, _DocstringReturnItemProtocol)
+        annotation = item.annotation
+        desc = item.description
+        cleaned_typ = strip_sphinx_roles(str(annotation)) if annotation is not None else None
+        returns = DocstringReturnMeta(
+            doc=str(desc) if desc else "",
+            typ=cleaned_typ,
+        )
+    return returns
+
+
+def _extract_griffe_raises_section(
+    items: list[InspectableTarget],
+    raises: list[str],
+) -> None:
+    """Populate `raises` from a parsed Griffe raises section list.
+
+    Args:
+        items: List of Griffe exception items from `section.value`.
+        raises: Mutable list of unique exception type names.
+    """
+    for item in items:
+        assert isinstance(item, _DocstringRaiseItemProtocol)
+        annotation = item.annotation
+        if annotation:
+            exc_name = strip_sphinx_roles(str(annotation)) or str(annotation)
+            if exc_name not in raises:
+                raises.append(exc_name)
+
+
+def extract_griffe_docstring_metadata(docstring: str, parser_name: str | None = None) -> DocstringMetadata:
     """Extract structured parameters, return types, and exceptions from a docstring.
 
     Args:
@@ -428,51 +442,13 @@ def extract_griffe_docstring_metadata(
 
     for section in sections:
         raw_kind: InspectableTarget = section.kind
-        kind_name: str = (
-            raw_kind
-            if isinstance(raw_kind, str)
-            else str(read_runtime_attr(raw_kind, "value", raw_kind))
-        )
+        kind_name: str = raw_kind if isinstance(raw_kind, str) else (str(raw_kind.value) if isinstance(raw_kind, enum.Enum) else str(raw_kind))
         if kind_name == "parameters" and isinstance(section.value, list):
-            for item in section.value:
-                assert isinstance(item, _DocstringParamItemProtocol)
-                p_name = item.name
-                if p_name:
-                    annotation = item.annotation
-                    value = item.value
-                    desc = item.description
-                    cleaned_typ = (
-                        strip_sphinx_roles(str(annotation))
-                        if annotation is not None
-                        else None
-                    )
-                    params[str(p_name)] = DocstringParamMeta(
-                        doc=str(desc) if desc else "",
-                        typ=cleaned_typ,
-                        default=str(value) if value is not None else None,
-                    )
+            _extract_griffe_params_section(section.value, params)
         elif kind_name == "returns" and isinstance(section.value, list):
-            for item in section.value:
-                assert isinstance(item, _DocstringReturnItemProtocol)
-                annotation = item.annotation
-                desc = item.description
-                cleaned_typ = (
-                    strip_sphinx_roles(str(annotation))
-                    if annotation is not None
-                    else None
-                )
-                returns = DocstringReturnMeta(
-                    doc=str(desc) if desc else "",
-                    typ=cleaned_typ,
-                )
+            returns = _extract_griffe_returns_section(section.value)
         elif kind_name == "raises" and isinstance(section.value, list):
-            for item in section.value:
-                assert isinstance(item, _DocstringRaiseItemProtocol)
-                annotation = item.annotation
-                if annotation:
-                    exc_name = strip_sphinx_roles(str(annotation)) or str(annotation)
-                    if exc_name not in raises:
-                        raises.append(exc_name)
+            _extract_griffe_raises_section(section.value, raises)
 
     for exc in re.findall(r":(?:raises?|except)\s+([A-Za-z0-9_.]+):", docstring):
         if exc in params:
@@ -484,6 +460,26 @@ def extract_griffe_docstring_metadata(
 
 
 _BACKSLASH = chr(92)
+_TABLEGEN_DEPTH_DELTAS: dict[str, tuple[int, int, int]] = {
+    "[": (1, 0, 0),
+    "]": (-1, 0, 0),
+    "<": (0, 1, 0),
+    ">": (0, -1, 0),
+    "(": (0, 0, 1),
+    ")": (0, 0, -1),
+}
+
+
+def _append_non_comment_element(elements: list[str], current: list[str]) -> None:
+    """Append the trimmed string formed by `current` to `elements` if non-empty and not a comment.
+
+    Args:
+        elements: Mutable list of accumulated TableGen element strings.
+        current: Character buffer for the current element.
+    """
+    elem = "".join(current).strip()
+    if elem and not elem.startswith("//"):
+        elements.append(elem)
 
 
 def split_tablegen_list(raw_list_str: str) -> list[str]:
@@ -497,9 +493,7 @@ def split_tablegen_list(raw_list_str: str) -> list[str]:
     """
     elements: list[str] = []
     current: list[str] = []
-    depth_bracket = 0
-    depth_angle = 0
-    depth_paren = 0
+    depths = (0, 0, 0)
     in_quote = False
     escape = False
 
@@ -523,39 +517,83 @@ def split_tablegen_list(raw_list_str: str) -> list[str]:
             current.append(char)
             continue
 
-        if char == "[":
-            depth_bracket += 1
+        if char in _TABLEGEN_DEPTH_DELTAS:
+            db, da, dp = _TABLEGEN_DEPTH_DELTAS[char]
+            depths = (depths[0] + db, depths[1] + da, depths[2] + dp)
             current.append(char)
-        elif char == "]":
-            depth_bracket -= 1
-            current.append(char)
-        elif char == "<":
-            depth_angle += 1
-            current.append(char)
-        elif char == ">":
-            depth_angle -= 1
-            current.append(char)
-        elif char == "(":
-            depth_paren += 1
-            current.append(char)
-        elif char == ")":
-            depth_paren -= 1
-            current.append(char)
-        elif (
-            char == "," and depth_bracket == 0 and depth_angle == 0 and depth_paren == 0
-        ):
-            elem = "".join(current).strip()
-            if elem and not elem.startswith("//"):
-                elements.append(elem)
+        elif char == "," and depths == (0, 0, 0):
+            _append_non_comment_element(elements, current)
             current = []
         else:
             current.append(char)
 
     if current:
-        elem = "".join(current).strip()
-        if elem and not elem.startswith("//"):
-            elements.append(elem)
+        _append_non_comment_element(elements, current)
     return elements
+
+
+_TRAIT_INTERFACE_ALIASES: dict[str, str] = {
+    '"getAsmResultNames"': "OpAsmOpInterface::getAsmResultNames",
+    '["getAsmResultNames"]': "OpAsmOpInterface::getAsmResultNames",
+    '"inferReturnTypeComponents"': "InferTypeOpInterface::inferReturnTypeComponents",
+    '["inferReturnTypeComponents"': "InferTypeOpInterface::inferReturnTypeComponents",
+    '"inferResultRanges"': "InferIntRangeInterface::inferResultRanges",
+    '["inferResultRanges"': "InferIntRangeInterface::inferResultRanges",
+}
+
+
+def _find_unquoted_open_bracket(text: str) -> int:
+    """Locate the index of the first unquoted `'['` character in `text`.
+
+    Args:
+        text: TableGen source text to scan.
+
+    Returns:
+        Zero-based character index of `'['`, or `-1` if not found.
+    """
+    in_str = False
+    esc = False
+    for i, ch in enumerate(text):
+        if esc:
+            esc = False
+        elif ch == _BACKSLASH:
+            esc = True
+        elif ch == '"':
+            in_str = not in_str
+        elif not in_str and ch == "[":
+            return i
+    return -1
+
+
+def _find_matching_close_bracket(text: str, start: int) -> int:
+    """Locate the index of the closing `']'` matching the `'['` at `start`.
+
+    Args:
+        text: TableGen source text to scan.
+        start: Index of the opening `'['` character.
+
+    Returns:
+        Zero-based character index of the matching `']'`, or `-1` if unbalanced.
+    """
+    depth = 0
+    in_quote = False
+    escape = False
+    for i in range(start, len(text)):
+        char = text[i]
+        if escape:
+            escape = False
+        elif char == _BACKSLASH:
+            escape = True
+        elif char == '"':
+            in_quote = not in_quote
+        elif not in_quote:
+            if char == "[":
+                depth += 1
+            elif char == "]":
+                depth -= 1
+                if depth == 0:
+                    return i
+    return -1
 
 
 def extract_tablegen_traits(text: str) -> list[str]:
@@ -567,70 +605,20 @@ def extract_tablegen_traits(text: str) -> list[str]:
     Returns:
         List of parsed trait names with nested parameters preserved.
     """
-    start = -1
-    in_str = False
-    esc = False
-    for i, ch in enumerate(text):
-        if esc:
-            esc = False
-            continue
-        if ch == _BACKSLASH:
-            esc = True
-            continue
-        if ch == '"':
-            in_str = not in_str
-            continue
-        if not in_str and ch == "[":
-            start = i
-            break
-
+    start = _find_unquoted_open_bracket(text)
     if start == -1:
         return []
-    depth = 0
-    in_quote = False
-    escape = False
-    end = -1
-    for i in range(start, len(text)):
-        char = text[i]
-        if escape:
-            escape = False
-            continue
-        if char == _BACKSLASH:
-            escape = True
-            continue
-        if char == '"':
-            in_quote = not in_quote
-            continue
-        if in_quote:
-            continue
-        if char == "[":
-            depth += 1
-        elif char == "]":
-            depth -= 1
-            if depth == 0:
-                end = i
-                break
-    if end != -1:
-        inner = text[start + 1 : end]
-        raw_elems = split_tablegen_list(inner)
-        traits: list[str] = []
-        for elem in raw_elems:
-            cleaned = elem.strip()
-            if cleaned.startswith("//"):
-                continue
-            if cleaned in ('"getAsmResultNames"', '["getAsmResultNames"]'):
-                traits.append("OpAsmOpInterface::getAsmResultNames")
-            elif cleaned in (
-                '"inferReturnTypeComponents"',
-                '["inferReturnTypeComponents"',
-            ):
-                traits.append("InferTypeOpInterface::inferReturnTypeComponents")
-            elif cleaned in ('"inferResultRanges"', '["inferResultRanges"'):
-                traits.append("InferIntRangeInterface::inferResultRanges")
-            elif cleaned:
-                traits.append(cleaned)
-        return traits
-    return []
+    end = _find_matching_close_bracket(text, start)
+    if end == -1:
+        return []
+
+    raw_elems = split_tablegen_list(text[start + 1 : end])
+    traits: list[str] = []
+    for elem in raw_elems:
+        cleaned = elem.strip()
+        if cleaned and not cleaned.startswith("//"):
+            traits.append(_TRAIT_INTERFACE_ALIASES.get(cleaned, cleaned))
+    return traits
 
 
 __all__ = [

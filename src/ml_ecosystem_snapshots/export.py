@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict
 import typing
+from collections import OrderedDict
 
+import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     ExtendedGhostParam,
     ExtendedGhostRef,
     GhostParam,
     GhostRef,
 )
-import pydantic
 
 from ml_ecosystem_snapshots.models import JsonValue
 
@@ -34,14 +34,10 @@ class CddIrModel(pydantic.BaseModel):
     def __getitem__(self, key: typing.Literal["name", "type", "doc"]) -> str: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["params"]
-    ) -> dict[str, dict[str, str]]: ...
+    def __getitem__(self, key: typing.Literal["params"]) -> dict[str, dict[str, str]]: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["returns"]
-    ) -> dict[str, dict[str, str]] | None: ...
+    def __getitem__(self, key: typing.Literal["returns"]) -> dict[str, dict[str, str]] | None: ...
 
     @typing.overload
     def __getitem__(self, key: str) -> str | dict[str, dict[str, str]] | JsonValue: ...
@@ -55,9 +51,7 @@ class CddIrModel(pydantic.BaseModel):
         Returns:
             Field value.
         """
-        dumped: dict[str, str | dict[str, dict[str, str]] | JsonValue] = (
-            self.model_dump()
-        )
+        dumped: dict[str, str | dict[str, dict[str, str]] | JsonValue] = self.model_dump()
         return dumped[key]
 
     def to_cdd_dict(self) -> dict[str, JsonValue]:
@@ -66,14 +60,8 @@ class CddIrModel(pydantic.BaseModel):
         Returns:
             Dictionary suitable for `cdd-python` emitters.
         """
-        params_od: dict[str, JsonValue] = OrderedDict(
-            (k, dict(v)) for k, v in self.params.items()
-        )
-        returns_od: dict[str, JsonValue] | None = (
-            OrderedDict((k, dict(v)) for k, v in self.returns.items())
-            if self.returns is not None
-            else None
-        )
+        params_od: dict[str, JsonValue] = OrderedDict((k, dict(v)) for k, v in self.params.items())
+        returns_od: dict[str, JsonValue] | None = OrderedDict((k, dict(v)) for k, v in self.returns.items()) if self.returns is not None else None
         return {
             "name": self.name,
             "type": self.type,
@@ -134,9 +122,7 @@ def to_json_schema(ref: GhostRef) -> dict[str, JsonValue]:
     import cdd.json_schema.emit
 
     ir = _ghost_to_cdd_ir(ref)
-    schema: dict[str, JsonValue] = cdd.json_schema.emit.json_schema(
-        ir.to_cdd_dict(), identifier=ref.api_path
-    )
+    schema: dict[str, JsonValue] = cdd.json_schema.emit.json_schema(ir.to_cdd_dict(), identifier=ref.api_path)
     return schema
 
 
@@ -171,6 +157,64 @@ def to_openapi(refs: typing.Sequence[GhostRef]) -> dict[str, JsonValue]:
     return spec
 
 
+def _render_pydantic_param_field(param: GhostParam) -> str:
+    """Render a single Pydantic model field assignment line from a `GhostParam`.
+
+    Args:
+        param: Parameter definition to format as a Pydantic field.
+
+    Returns:
+        Formatted 4-space indented field declaration line.
+    """
+    raw_typ = param.annotation if param.annotation else "object"
+    typ = "object" if raw_typ == "Any" else raw_typ
+    desc = param.description.replace('"', "'") if param.description else ""
+    default_val = param.default
+
+    if param.kind == "VAR_POSITIONAL":
+        typ = f"tuple[{typ}, ...]"
+        field_def = f'pydantic.Field(default=(), description="{desc}")' if desc else "pydantic.Field(default=())"
+        return f"    {param.name}: {typ} = {field_def}"
+    if param.kind == "VAR_KEYWORD":
+        typ = f"dict[str, {typ}]"
+        field_def = f'pydantic.Field(default_factory=dict, description="{desc}")' if desc else "pydantic.Field(default_factory=dict)"
+        return f"    {param.name}: {typ} = {field_def}"
+    if default_val is None:
+        field_def = f'pydantic.Field(..., description="{desc}")' if desc else "pydantic.Field(...)"
+        return f"    {param.name}: {typ} = {field_def}"
+    field_def = f'pydantic.Field(default={default_val}, description="{desc}")' if desc else f"{default_val}"
+    return f"    {param.name}: {typ} = {field_def}"
+
+
+def _render_single_pydantic_model(
+    name: str,
+    doc: str | None,
+    params: typing.Sequence[GhostParam],
+    validate_varargs: bool,
+) -> list[str]:
+    """Render Python source code lines for a single Pydantic `BaseModel` class.
+
+    Args:
+        name: Class name for the Pydantic model.
+        doc: Optional docstring for the class.
+        params: Sequence of `GhostParam` specifications.
+        validate_varargs: Whether to include `*args` and `**kwargs` as validated fields.
+
+    Returns:
+        List of Python source code lines for the class.
+    """
+    m_lines = [
+        f"class {name}(pydantic.BaseModel):",
+        f'    """{doc}"""' if doc else '    """Generated Pydantic model."""',
+        "",
+        '    model_config = pydantic.ConfigDict(extra="forbid")',
+    ]
+    valid_params = [p for p in params if validate_varargs or p.kind not in ("VAR_POSITIONAL", "VAR_KEYWORD")]
+    for param in valid_params:
+        m_lines.append(_render_pydantic_param_field(param))
+    return m_lines
+
+
 def to_pydantic(ref: GhostRef, validate_varargs: bool = False) -> str:
     """Convert a GhostRef into a Pydantic V2 class definition string.
 
@@ -191,98 +235,26 @@ def to_pydantic(ref: GhostRef, validate_varargs: bool = False) -> str:
         "",
         "",
     ]
-
-    def _render_single_model(
-        name: str,
-        doc: str | None,
-        params: typing.Sequence[GhostParam],
-    ) -> list[str]:
-        """Render Python source code lines for a single Pydantic model.
-
-        Args:
-            name: Class name for the Pydantic model.
-            doc: Optional docstring for the class.
-            params: Sequence of GhostParam specifications.
-
-        Returns:
-            List of Python source code lines for the class.
-        """
-        m_lines = [f"class {name}(pydantic.BaseModel):"]
-        if doc:
-            m_lines.append(f'    """{doc}"""')
-        else:
-            m_lines.append('    """Generated Pydantic model."""')
-        m_lines.append("")
-        m_lines.append('    model_config = pydantic.ConfigDict(extra="forbid")')
-
-        valid_params = []
-        for p in params:
-            if p.kind in ("VAR_POSITIONAL", "VAR_KEYWORD") and not validate_varargs:
-                continue
-            valid_params.append(p)
-
-        if not valid_params:
-            return m_lines
-
-        for param in valid_params:
-            raw_typ = param.annotation if param.annotation else "object"
-            typ = "object" if raw_typ == "Any" else raw_typ
-            desc = param.description.replace('"', "'") if param.description else ""
-            default_val = param.default
-
-            if param.kind == "VAR_POSITIONAL":
-                typ = f"tuple[{typ}, ...]"
-                field_def = (
-                    f'pydantic.Field(default=(), description="{desc}")'
-                    if desc
-                    else "pydantic.Field(default=())"
-                )
-                m_lines.append(f"    {param.name}: {typ} = {field_def}")
-                continue
-            if param.kind == "VAR_KEYWORD":
-                typ = f"dict[str, {typ}]"
-                field_def = (
-                    f'pydantic.Field(default_factory=dict, description="{desc}")'
-                    if desc
-                    else "pydantic.Field(default_factory=dict)"
-                )
-                m_lines.append(f"    {param.name}: {typ} = {field_def}")
-                continue
-
-            if default_val is None:
-                field_def = (
-                    f'pydantic.Field(..., description="{desc}")'
-                    if desc
-                    else "pydantic.Field(...)"
-                )
-                m_lines.append(f"    {param.name}: {typ} = {field_def}")
-            else:
-                field_def = (
-                    f'pydantic.Field(default={default_val}, description="{desc}")'
-                    if desc
-                    else f"{default_val}"
-                )
-                m_lines.append(f"    {param.name}: {typ} = {field_def}")
-
-        return m_lines
-
     all_models: list[str] = []
     if ref.overloads:
         all_variants = [ref] + [ov for ov in ref.overloads if isinstance(ov, GhostRef)]
-        variant_names = []
+        variant_names: list[str] = []
         for i, variant in enumerate(all_variants):
             var_name = f"{ref.name}Variant{i}"
             variant_names.append(var_name)
             all_models.extend(
-                _render_single_model(
-                    var_name, variant.docstring or ref.docstring, variant.params
+                _render_single_pydantic_model(
+                    var_name,
+                    variant.docstring or ref.docstring,
+                    variant.params,
+                    validate_varargs,
                 )
             )
             all_models.append("")
 
         all_models.append(f"{ref.name} = {' | '.join(variant_names)}")
     else:
-        all_models.extend(_render_single_model(ref.name, ref.docstring, ref.params))
+        all_models.extend(_render_single_pydantic_model(ref.name, ref.docstring, ref.params, validate_varargs))
 
     return "\n".join(header_lines + all_models) + "\n"
 
@@ -337,6 +309,26 @@ PROTO_DEFINITIONS_BY_TYPE: dict[str, str] = {
 }
 
 
+_PARAM_NAME_TO_PROTO_ENUM: dict[str, str] = {
+    "reduction": "ReductionType",
+    "reduction_type": "ReductionType",
+    "padding": "PaddingMode",
+    "padding_mode": "PaddingMode",
+    "layout": "LayoutMode",
+    "layout_mode": "LayoutMode",
+}
+
+_PROTO_SUBSTRING_TYPES: tuple[tuple[str, str], ...] = (
+    ("list", "repeated string"),
+    ("tuple", "repeated string"),
+    ("dict", "map<string, string>"),
+    ("int", "int64"),
+    ("float", "double"),
+    ("bool", "bool"),
+    ("str", "string"),
+)
+
+
 def _py_type_to_proto(typ: str | None, param_name: str = "") -> str:
     """Map Python type to Protobuf type with structured message and enum mapping.
 
@@ -353,13 +345,7 @@ def _py_type_to_proto(typ: str | None, param_name: str = "") -> str:
     clean_t = str(typ).lower().strip()
     p_norm = param_name.lower().strip()
 
-    if clean_t in (
-        "tensor",
-        "torch.tensor",
-        "tensorproto",
-        "ndarray",
-        "array",
-    ) or clean_t.startswith("tensor<"):
+    if clean_t in ("tensor", "torch.tensor", "tensorproto", "ndarray", "array") or clean_t.startswith("tensor<"):
         return "TensorProto"
 
     if p_norm in ("shape", "size", "dims", "dimensions") or clean_t in (
@@ -370,27 +356,12 @@ def _py_type_to_proto(typ: str | None, param_name: str = "") -> str:
     ):
         return "repeated int64"
 
-    if p_norm in ("reduction", "reduction_type"):
-        return "ReductionType"
-    if p_norm in ("padding", "padding_mode"):
-        return "PaddingMode"
-    if p_norm in ("layout", "layout_mode"):
-        return "LayoutMode"
-    if p_norm == "mode" and "interp" in clean_t:
-        return "InterpolationMode"
+    if p_norm in _PARAM_NAME_TO_PROTO_ENUM or (p_norm == "mode" and "interp" in clean_t):
+        return _PARAM_NAME_TO_PROTO_ENUM.get(p_norm, "InterpolationMode")
 
-    if "list" in clean_t or "tuple" in clean_t:
-        return "repeated string"
-    elif "dict" in clean_t:
-        return "map<string, string>"
-    elif "int" in clean_t:
-        return "int64"
-    elif "float" in clean_t:
-        return "double"
-    elif "bool" in clean_t:
-        return "bool"
-    elif "str" in clean_t:
-        return "string"
+    for substring, proto_type in _PROTO_SUBSTRING_TYPES:
+        if substring in clean_t:
+            return proto_type
     return "string"
 
 
@@ -419,11 +390,7 @@ def to_protobuf(ref: GhostRef, package: str = "ml_framework") -> str:
             seen_blocks.add(def_block)
             preamble_blocks.append(def_block)
 
-        if (
-            param.default is not None
-            and not proto_type.startswith("repeated")
-            and not proto_type.startswith("map")
-        ):
+        if param.default is not None and not proto_type.startswith("repeated") and not proto_type.startswith("map"):
             proto_type = f"optional {proto_type}"
 
         desc = f" // {param.description}" if param.description else ""
@@ -440,11 +407,7 @@ def to_protobuf(ref: GhostRef, package: str = "ml_framework") -> str:
         lines.extend(preamble_blocks)
         lines.append("")
 
-    lines.append(
-        f"// {ref.docstring}"
-        if ref.docstring
-        else f"// Generated message for {ref.api_path}"
-    )
+    lines.append(f"// {ref.docstring}" if ref.docstring else f"// Generated message for {ref.api_path}")
     lines.append(f"message {ref.name} {{")
     lines.extend(field_lines)
     lines.append("}")
@@ -485,9 +448,7 @@ def export_llm_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
                 constraints.append(f"rank: {p_rank}")
             constr_str = f" [{', '.join(constraints)}]" if constraints else ""
 
-            param_details.append(
-                f"  - `{p.name}` ({p.kind}, type `{type_annot}`{default_part}){constr_str}{desc}"
-            )
+            param_details.append(f"  - `{p.name}` ({p.kind}, type `{type_annot}`{default_part}){constr_str}{desc}")
 
         sig = f"{ref.api_path}({', '.join(params_str_list)})"
         if ref.returns_type:
@@ -518,6 +479,72 @@ def export_llm_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
+def _build_sass_syntax_str(
+    name: str,
+    modifiers: list[str],
+    op_sigs: list[list[str]],
+) -> str:
+    """Construct a canonical SASS assembly syntax template string for an instruction.
+
+    Args:
+        name: SASS instruction mnemonic.
+        modifiers: List of supported instruction modifier strings.
+        op_sigs: List of operand signature lists.
+
+    Returns:
+        Formatted SASS instruction template string.
+    """
+    mod_suffix = f"{{.{' | .'.join(m.lstrip('.') for m in modifiers[:4])}}}" if modifiers else ""
+    if not op_sigs:
+        return f"[@P0] {name}{mod_suffix};"
+    op_terms = [f"R{i} (dst)" if i == 0 else f"R{i} ({op_t})" for i, op_t in enumerate(op_sigs[0])]
+    return f"[@P0] {name}{mod_suffix} {', '.join(op_terms)};"
+
+
+def _format_single_sass_ref(ref: GhostRef) -> str:
+    """Format a single SASS `GhostRef` into a Markdown assembly specification block.
+
+    Args:
+        ref: SASS `GhostRef` item to format.
+
+    Returns:
+        Markdown block string for the instruction.
+    """
+    meta_raw = ref.domain_metadata if isinstance(ref, ExtendedGhostRef) else None
+    meta = meta_raw if isinstance(meta_raw, dict) else {}
+    raw_modifiers = meta.get("modifiers")
+    modifiers: list[str] = [str(m) for m in raw_modifiers] if isinstance(raw_modifiers, list) else []
+    raw_archs = meta.get("valid_architectures")
+    archs: list[str] = [str(a) for a in raw_archs] if isinstance(raw_archs, list) and raw_archs else list(ref.environment_tags or [])
+    raw_op_sigs = meta.get("operand_signatures")
+    op_sigs: list[list[str]] = [[str(item) for item in sig] for sig in raw_op_sigs if isinstance(sig, list)] if isinstance(raw_op_sigs, list) else []
+
+    syntax_str = _build_sass_syntax_str(ref.name, modifiers, op_sigs)
+    lines = [
+        f"### `{ref.name}`",
+        f"- **Syntax**: `{syntax_str}`",
+    ]
+
+    clean_archs = [a for a in archs if a != "cuda"]
+    if clean_archs:
+        lines.append(f"- **Architectures**: {', '.join(clean_archs)}")
+
+    if modifiers:
+        lines.append(f"- **Modifiers**: {', '.join(modifiers)}")
+
+    if ref.params:
+        lines.append("- **Operands**:")
+        for p in ref.params:
+            dir_val = p.direction if isinstance(p, ExtendedGhostParam) else None
+            dir_str = f" [{dir_val}]" if dir_val else ""
+            lines.append(f"  - `{p.name}` ({p.standardized_name or 'operand'}, type `{p.annotation or 'Register'}`){dir_str}")
+
+    if ref.docstring:
+        lines.append(f"- **Description**: {ref.docstring.strip().splitlines()[0]}")
+
+    return "\n".join(lines)
+
+
 def export_sass_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
     """Export SASS instruction specifications as canonical assembly prompt templates.
 
@@ -530,78 +557,89 @@ def export_sass_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
     Returns:
         Markdown string formatted with assembly syntax templates and register constraints.
     """
-    blocks: list[str] = []
-
-    for ref in refs:
-        meta_raw = ref.domain_metadata if isinstance(ref, ExtendedGhostRef) else None
-        meta = meta_raw if isinstance(meta_raw, dict) else {}
-        raw_modifiers = meta.get("modifiers")
-        modifiers: list[str] = (
-            [str(m) for m in raw_modifiers] if isinstance(raw_modifiers, list) else []
-        )
-        raw_archs = meta.get("valid_architectures")
-        archs: list[str] = (
-            [str(a) for a in raw_archs]
-            if isinstance(raw_archs, list) and raw_archs
-            else list(ref.environment_tags or [])
-        )
-        raw_op_sigs = meta.get("operand_signatures")
-        op_sigs: list[list[str]] = (
-            [
-                [str(item) for item in sig]
-                for sig in raw_op_sigs
-                if isinstance(sig, list)
-            ]
-            if isinstance(raw_op_sigs, list)
-            else []
-        )
-
-        mod_suffix = (
-            f"{{.{' | .'.join(m.lstrip('.') for m in modifiers[:4])}}}"
-            if modifiers
-            else ""
-        )
-        if op_sigs:
-            sample_sig = op_sigs[0]
-            op_terms = []
-            for i, op_t in enumerate(sample_sig):
-                if i == 0:
-                    op_terms.append(f"R{i} (dst)")
-                else:
-                    op_terms.append(f"R{i} ({op_t})")
-            syntax_str = f"[@P0] {ref.name}{mod_suffix} {', '.join(op_terms)};"
-        else:
-            syntax_str = f"[@P0] {ref.name}{mod_suffix};"
-
-        lines = [
-            f"### `{ref.name}`",
-            f"- **Syntax**: `{syntax_str}`",
-        ]
-
-        if archs:
-            clean_archs = [a for a in archs if a != "cuda"]
-            if clean_archs:
-                lines.append(f"- **Architectures**: {', '.join(clean_archs)}")
-
-        if modifiers:
-            lines.append(f"- **Modifiers**: {', '.join(modifiers)}")
-
-        if ref.params:
-            lines.append("- **Operands**:")
-            for p in ref.params:
-                dir_val = p.direction if isinstance(p, ExtendedGhostParam) else None
-                dir_str = f" [{dir_val}]" if dir_val else ""
-                lines.append(
-                    f"  - `{p.name}` ({p.standardized_name or 'operand'}, type `{p.annotation or 'Register'}`){dir_str}"
-                )
-
-        if ref.docstring:
-            first_line = ref.docstring.strip().splitlines()[0]
-            lines.append(f"- **Description**: {first_line}")
-
-        blocks.append("\n".join(lines))
-
+    blocks = [_format_single_sass_ref(ref) for ref in refs]
     return "\n\n".join(blocks) + "\n"
+
+
+def _classify_mlir_params(
+    params: typing.Sequence[GhostParam],
+) -> tuple[list[GhostParam], list[GhostParam]]:
+    """Partition MLIR operation parameters into SSA operands and compile-time attributes.
+
+    Args:
+        params: Sequence of `GhostParam` definitions on an MLIR operation.
+
+    Returns:
+        Tuple of `(ssa_operand_params, attribute_params)` excluding regions.
+    """
+    ssa_params: list[GhostParam] = []
+    attr_params: list[GhostParam] = []
+    for p in params:
+        role = p.role if isinstance(p, ExtendedGhostParam) else None
+        if str(role) == "IRParameterRole.REGION" or p.annotation == "Region":
+            continue
+        if str(role) == "IRParameterRole.ATTRIBUTE" or p.kind == "KEYWORD_ONLY":
+            attr_params.append(p)
+        else:
+            ssa_params.append(p)
+    return ssa_params, attr_params
+
+
+def _format_single_mlir_ref(ref: GhostRef) -> str:
+    """Format a single MLIR or StableHLO `GhostRef` into a Markdown SSA template block.
+
+    Args:
+        ref: MLIR or StableHLO `GhostRef` item to format.
+
+    Returns:
+        Markdown block string for the operation.
+    """
+    meta = (ref.domain_metadata or {}) if isinstance(ref, ExtendedGhostRef) else {}
+    raw_traits = meta.get("traits")
+    traits = [str(t) for t in raw_traits] if isinstance(raw_traits, list) else []
+    raw_regions = meta.get("regions")
+    regions = [str(r) for r in raw_regions] if isinstance(raw_regions, list) else []
+
+    ssa_params, attr_params = _classify_mlir_params(ref.params)
+    operands = [f"%{p.name}" for p in ssa_params]
+    attributes = [f"{p.name} = ..." for p in attr_params]
+
+    op_str = ", ".join(operands)
+    attr_str = f" {{{', '.join(attributes)}}}" if attributes else ""
+    ret_str = ref.returns_type or "none"
+    syntax_str = f"%res = {ref.api_path}({op_str}){attr_str} : {ret_str}"
+
+    lines = [
+        f"### `{ref.api_path}`",
+        f"- **Syntax**: `{syntax_str}`",
+    ]
+
+    if ssa_params:
+        lines.append("- **SSA Operands**:")
+        for p in ssa_params:
+            lines.append(f"  - `%{p.name}` (type `{p.annotation or 'Value'}`)")
+
+    if attr_params:
+        lines.append("- **Attributes**:")
+        for p in attr_params:
+            lines.append(f"  - `{p.name}` (type `{p.annotation or 'Attribute'}`)")
+
+    results = ref.returns if isinstance(ref, ExtendedGhostRef) else None
+    if results:
+        lines.append("- **Results**:")
+        for r in results:
+            lines.append(f"  - `%{r.name}` (type `{r.type}`)")
+
+    if traits:
+        lines.append(f"- **Traits**: {', '.join(traits)}")
+
+    if regions:
+        lines.append(f"- **Regions**: {', '.join(regions)}")
+
+    if ref.docstring:
+        lines.append(f"- **Description**: {ref.docstring.strip().splitlines()[0]}")
+
+    return "\n".join(lines)
 
 
 def export_mlir_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
@@ -616,77 +654,7 @@ def export_mlir_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
     Returns:
         Markdown string formatted with canonical MLIR operation specifications.
     """
-    blocks: list[str] = []
-
-    for ref in refs:
-        meta = (ref.domain_metadata or {}) if isinstance(ref, ExtendedGhostRef) else {}
-        raw_traits = meta.get("traits")
-        traits = [str(t) for t in raw_traits] if isinstance(raw_traits, list) else []
-        raw_regions = meta.get("regions")
-        regions = [str(r) for r in raw_regions] if isinstance(raw_regions, list) else []
-
-        operands: list[str] = []
-        attributes: list[str] = []
-
-        for p in ref.params:
-            role = p.role if isinstance(p, ExtendedGhostParam) else None
-            if str(role) == "IRParameterRole.REGION" or p.annotation == "Region":
-                continue
-            if str(role) == "IRParameterRole.ATTRIBUTE" or p.kind == "KEYWORD_ONLY":
-                attributes.append(f"{p.name} = ...")
-            else:
-                operands.append(f"%{p.name}")
-
-        op_str = ", ".join(operands)
-        attr_str = f" {{{', '.join(attributes)}}}" if attributes else ""
-        ret_str = ref.returns_type or "none"
-        syntax_str = f"%res = {ref.api_path}({op_str}){attr_str} : {ret_str}"
-
-        lines = [
-            f"### `{ref.api_path}`",
-            f"- **Syntax**: `{syntax_str}`",
-        ]
-
-        if operands:
-            lines.append("- **SSA Operands**:")
-            for p in ref.params:
-                p_role = p.role if isinstance(p, ExtendedGhostParam) else None
-                if (
-                    str(p_role) != "IRParameterRole.ATTRIBUTE"
-                    and p.annotation != "Region"
-                ):
-                    lines.append(f"  - `%{p.name}` (type `{p.annotation or 'Value'}`)")
-
-        if attributes:
-            lines.append("- **Attributes**:")
-            for p in ref.params:
-                p_role = p.role if isinstance(p, ExtendedGhostParam) else None
-                if (
-                    str(p_role) == "IRParameterRole.ATTRIBUTE"
-                    or p.kind == "KEYWORD_ONLY"
-                ):
-                    lines.append(
-                        f"  - `{p.name}` (type `{p.annotation or 'Attribute'}`)"
-                    )
-
-        results = ref.returns if isinstance(ref, ExtendedGhostRef) else None
-        if results:
-            lines.append("- **Results**:")
-            for r in results:
-                lines.append(f"  - `%{r.name}` (type `{r.type}`)")
-
-        if traits:
-            lines.append(f"- **Traits**: {', '.join(str(t) for t in traits)}")
-
-        if regions:
-            lines.append(f"- **Regions**: {', '.join(str(r) for r in regions)}")
-
-        if ref.docstring:
-            first_line = ref.docstring.strip().splitlines()[0]
-            lines.append(f"- **Description**: {first_line}")
-
-        blocks.append("\n".join(lines))
-
+    blocks = [_format_single_mlir_ref(ref) for ref in refs]
     return "\n\n".join(blocks) + "\n"
 
 
@@ -732,6 +700,73 @@ COMMON_HALLUCINATION_GUARDS: dict[str, list[str]] = {
 }
 
 
+def _collect_matching_scoped_items(
+    raw_categories: JsonValue,
+    module_prefix: str | None,
+) -> list[dict[str, JsonValue]]:
+    """Extract and filter snapshot symbol items matching an optional `module_prefix`.
+
+    Args:
+        raw_categories: Raw `categories` dictionary from a resolved snapshot.
+        module_prefix: Optional namespace prefix filter.
+
+    Returns:
+        Filtered list of raw symbol dictionaries.
+    """
+    assert isinstance(raw_categories, dict)
+    matching_items: list[dict[str, JsonValue]] = []
+    for _cat, items in sorted(raw_categories.items()):
+        assert isinstance(items, list)
+        for raw_it in items:
+            if not isinstance(raw_it, dict):
+                continue
+            item = dict(raw_it)
+            path = str(item.get("api_path") or item.get("name") or item.get("mnemonic") or "")
+            if not module_prefix or path.startswith(module_prefix) or path.startswith(f"{module_prefix}."):
+                matching_items.append(item)
+    return matching_items
+
+
+def _build_scoped_index_lines(
+    framework: str,
+    matching_items: list[dict[str, JsonValue]],
+) -> list[str]:
+    """Build the Markdown header, hallucination guard section, and grouped index summary lines.
+
+    Args:
+        framework: Target framework identifier.
+        matching_items: Filtered list of matching raw symbol dictionaries.
+
+    Returns:
+        List of Markdown lines for the index section.
+    """
+    index_lines: list[str] = [f"# Framework Grounding Context: `{framework}`"]
+
+    guards = COMMON_HALLUCINATION_GUARDS.get(framework.lower())
+    if guards:
+        index_lines.append("\n## Common Hallucination Guards & Anti-Patterns")
+        for g in guards:
+            index_lines.append(f"- {g}")
+
+    index_lines.append(f"\n## Index of Available Operations ({len(matching_items)} total)")
+
+    grouped: dict[str, list[str]] = {}
+    for item in matching_items:
+        path = str(item.get("api_path") or item.get("name") or item.get("mnemonic") or "")
+        parts = path.split(".")
+        group_key = ".".join(parts[:2]) if len(parts) >= 2 else parts[0]
+        grouped.setdefault(group_key, []).append(path)
+
+    for group_name, members in sorted(grouped.items()):
+        sample = ", ".join(f"`{m.split('.')[-1]}`" for m in members[:8])
+        if len(members) > 8:
+            sample += f", ... (+{len(members) - 8} more)"
+        index_lines.append(f"- **{group_name}** ({len(members)} ops): {sample}")
+
+    index_lines.append("\n## Detailed Operation Signatures")
+    return index_lines
+
+
 def export_scoped_prompt_context(
     framework: str,
     module_prefix: str | None = None,
@@ -756,67 +791,17 @@ def export_scoped_prompt_context(
     from ml_ecosystem_snapshots.mcp.cache import resolve_snapshot
 
     snap = resolve_snapshot(framework, repository=repository)
-    raw_categories = snap.get("categories", {})
-
-    all_raw_items: list[dict[str, JsonValue]] = []
-    assert isinstance(raw_categories, dict)
-    for _cat, items in sorted(raw_categories.items()):
-        assert isinstance(items, list)
-        for raw_it in items:
-            if isinstance(raw_it, dict):
-                all_raw_items.append(dict(raw_it))
-
-    matching_items: list[dict[str, JsonValue]] = []
-    for item in all_raw_items:
-        path = str(
-            item.get("api_path") or item.get("name") or item.get("mnemonic") or ""
-        )
-        if module_prefix:
-            if path.startswith(module_prefix) or path.startswith(f"{module_prefix}."):
-                matching_items.append(item)
-        else:
-            matching_items.append(item)
-
+    matching_items = _collect_matching_scoped_items(snap.get("categories", {}), module_prefix)
     total_matching = len(matching_items)
-    selected_items = matching_items[:max_symbols]
 
     hydrated_refs: list[GhostRef] = []
-    for item in selected_items:
+    for item in matching_items[:max_symbols]:
         try:
             hydrated_refs.append(GhostInspector.hydrate(item))
         except Exception:
             pass
 
-    index_lines: list[str] = [
-        f"# Framework Grounding Context: `{framework}`",
-    ]
-
-    guards = COMMON_HALLUCINATION_GUARDS.get(framework.lower())
-    if guards:
-        index_lines.append("\n## Common Hallucination Guards & Anti-Patterns")
-        for g in guards:
-            index_lines.append(f"- {g}")
-
-    index_lines.append(f"\n## Index of Available Operations ({total_matching} total)")
-
-    grouped: dict[str, list[str]] = {}
-    for item in matching_items:
-        path = str(
-            item.get("api_path") or item.get("name") or item.get("mnemonic") or ""
-        )
-        parts = path.split(".")
-        group_key = ".".join(parts[:2]) if len(parts) >= 2 else parts[0]
-        if group_key not in grouped:
-            grouped[group_key] = []
-        grouped[group_key].append(path)
-
-    for group_name, members in sorted(grouped.items()):
-        sample = ", ".join(f"`{m.split('.')[-1]}`" for m in members[:8])
-        if len(members) > 8:
-            sample += f", ... (+{len(members) - 8} more)"
-        index_lines.append(f"- **{group_name}** ({len(members)} ops): {sample}")
-
-    index_lines.append("\n## Detailed Operation Signatures")
+    index_lines = _build_scoped_index_lines(framework, matching_items)
 
     if framework in ("nvidia_sass", "amd_rdna"):
         details = export_sass_prompt_context(hydrated_refs)
@@ -828,10 +813,7 @@ def export_scoped_prompt_context(
     result_parts = ["\n".join(index_lines), details]
 
     if total_matching > max_symbols:
-        result_parts.append(
-            f"*(Showing {max_symbols} of {total_matching} operations to prevent context explosion. "
-            f"Query specific submodules or APIs using 'search_apis' or 'get_api_signature' for complete constraints.)*\n"
-        )
+        result_parts.append(f"*(Showing {max_symbols} of {total_matching} operations to prevent context explosion. Query specific submodules or APIs using 'search_apis' or 'get_api_signature' for complete constraints.)*\n")
 
     return "\n\n".join(result_parts).strip() + "\n"
 

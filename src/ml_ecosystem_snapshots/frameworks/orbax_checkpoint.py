@@ -805,19 +805,14 @@ def _build_orbax_canonical_ops(
             api_path=api_path,
             kind=kind,
             submodule=submodule,
-            params=[
-                CanonicalParamSpec(name=pn, kind=pk, default=pd)
-                for pn, pk, pd in params
-            ],
+            params=[CanonicalParamSpec(name=pn, kind=pk, default=pd) for pn, pk, pd in params],
             docstring=doc,
         )
         for name, api_path, kind, submodule, params, doc in defs
     ]
 
 
-CANONICAL_ORBAX_OPS: list[CanonicalSubmoduleOpSpec] = _build_orbax_canonical_ops(
-    _ORBAX_OP_DEFS
-)
+CANONICAL_ORBAX_OPS: list[CanonicalSubmoduleOpSpec] = _build_orbax_canonical_ops(_ORBAX_OP_DEFS)
 
 
 def _get_orbax_griffe_modules() -> dict[str, GriffeCacheEntry]:
@@ -829,9 +824,7 @@ def _get_orbax_griffe_modules() -> dict[str, GriffeCacheEntry]:
     if is_offline_mode():
         return {"checkpoint": None, "export": None}
     return {
-        "checkpoint": load_griffe_module_safely(
-            "orbax.checkpoint", framework_name="orbax"
-        ),
+        "checkpoint": load_griffe_module_safely("orbax.checkpoint", framework_name="orbax"),
         "export": load_griffe_module_safely("orbax.export", framework_name="orbax"),
     }
 
@@ -880,15 +873,39 @@ def _scan_orbax_checkpoint(include_nonpublic: bool = False) -> list[GhostRef]:
                 if not include_nonpublic and name.startswith("_"):
                     continue
                 try:
-                    found.append(
-                        GhostInspector.inspect(obj, f"orbax.checkpoint.{name}")
-                    )
+                    found.append(GhostInspector.inspect(obj, f"orbax.checkpoint.{name}"))
                 except Exception:
                     pass
     except Exception:
         pass
 
     return found
+
+
+def _scan_orbax_export_live(
+    include_nonpublic: bool,
+    results: list[GhostRef],
+    seen_paths: set[str],
+) -> None:
+    """Scan live `orbax.export` module members and append discovered classes and functions.
+
+    Args:
+        include_nonpublic: Whether to include private underscore-prefixed members.
+        results: Accumulator list of discovered `GhostRef` objects.
+        seen_paths: Set of already recorded canonical API paths.
+    """
+    exp_mod = _get_orbax_export_module()
+    if exp_mod is not None:
+        for name, obj in get_all_members(exp_mod):
+            if inspect.isclass(obj) or inspect.isfunction(obj):
+                if not include_nonpublic and name.startswith("_"):
+                    continue
+                api_path = f"orbax.export.{name}"
+                try:
+                    results.append(GhostInspector.inspect(obj, api_path))
+                    seen_paths.add(api_path)
+                except Exception:
+                    pass
 
 
 def collect_orbax_api(include_nonpublic: bool = False) -> list[GhostRef]:
@@ -914,18 +931,7 @@ def collect_orbax_api(include_nonpublic: bool = False) -> list[GhostRef]:
                 results.append(ref)
                 seen_paths.add(ref.api_path)
 
-        exp_mod = _get_orbax_export_module()
-        if exp_mod is not None:
-            for name, obj in get_all_members(exp_mod):
-                if inspect.isclass(obj) or inspect.isfunction(obj):
-                    if not include_nonpublic and name.startswith("_"):
-                        continue
-                    api_path = f"orbax.export.{name}"
-                    try:
-                        results.append(GhostInspector.inspect(obj, api_path))
-                        seen_paths.add(api_path)
-                    except Exception:
-                        pass
+        _scan_orbax_export_live(include_nonpublic, results, seen_paths)
 
         griffe_mods = _get_orbax_griffe_modules()
         for key, mod_path in (
@@ -960,9 +966,7 @@ def collect_orbax_api(include_nonpublic: bool = False) -> list[GhostRef]:
     return results
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Entrypoint to collect the Orbax Checkpoint API signature.
 
     Args:

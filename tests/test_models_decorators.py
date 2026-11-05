@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     InspectableTarget,

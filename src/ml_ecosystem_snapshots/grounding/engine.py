@@ -7,6 +7,7 @@ import os
 import threading
 
 from ml_switcheroo_ir.validation.core import compute_levenshtein
+
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository
 from ml_ecosystem_snapshots.models import (
@@ -98,18 +99,13 @@ class GroundingEngine:
                 continue
             for fname in os.listdir(d):
                 clean_fname = fname.lower()
-                is_json = clean_fname.endswith(".json") or clean_fname.endswith(
-                    ".json.gz"
-                )
+                is_json = clean_fname.endswith(".json") or clean_fname.endswith(".json.gz")
                 if not is_json:
                     continue
 
                 if clean_fname.startswith(f"{norm_target}_exhaustive."):
                     matched_files.append(os.path.join(d, fname))
-                elif (
-                    clean_fname.startswith(f"{norm_target}_v")
-                    or clean_fname == f"{norm_target}.json"
-                ):
+                elif clean_fname.startswith(f"{norm_target}_v") or clean_fname == f"{norm_target}.json":
                     matched_files.append(os.path.join(d, fname))
 
         return matched_files
@@ -233,9 +229,7 @@ class GroundingEngine:
         short_map = self._short_name_cache.get(target.lower().replace("-", "_"), {})
         return short_map.get(norm_symbol)
 
-    def suggest_closest_symbol(
-        self, target: str, typo_candidate: str, max_distance: int = 4
-    ) -> str | None:
+    def suggest_closest_symbol(self, target: str, typo_candidate: str, max_distance: int = 4) -> str | None:
         """Suggest the closest valid symbol using Levenshtein distance matching.
 
         Args:

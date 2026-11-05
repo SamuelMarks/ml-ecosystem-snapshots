@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pathlib
 import sys
+
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.static_parsers import _GRIFFE_CACHE
 from ml_switcheroo_ir.schema.ghost import GhostRef
@@ -43,7 +44,6 @@ def my_overloaded_func(a: int | str, b: str | None = None) -> int | str:
         "test_overload_mock_unique.my_overloaded_func",
     )
 
-    assert "overloads" in dir(ref)
     assert ref.overloads is not None
     assert len(ref.overloads) == 2
     ov0 = ref.overloads[0]
@@ -99,7 +99,6 @@ class OverloadedClass:
         kind="class",
     )
 
-    assert "overloads" in dir(ref)
     assert ref.overloads is not None
     assert len(ref.overloads) == 2
     ov0 = ref.overloads[0]

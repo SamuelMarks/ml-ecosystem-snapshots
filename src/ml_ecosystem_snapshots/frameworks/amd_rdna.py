@@ -6,11 +6,11 @@ register classes, operand directionality, and GFX architecture targeting.
 
 from __future__ import annotations
 
-from enum import Enum
 import json
 import os
 import re
 import typing
+from enum import Enum
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -89,6 +89,69 @@ RDNA_OUTPUT_MODIFIERS: set[str] = {
 }
 
 
+_RDNA_SLICE_ALIGNMENTS: dict[int, int] = {
+    1: 2,
+    3: 4,
+    7: 8,
+    15: 16,
+}
+
+
+def _validate_rdna_slice_register(operand: str, slice_match: re.Match[str]) -> list[str]:
+    """Validate register bounds, span, and alignment for a sliced RDNA register range.
+
+    Args:
+        operand: Original register operand string for error reporting.
+        slice_match: Regex match containing register prefix, start index, and end index.
+
+    Returns:
+        List of register range validation errors.
+    """
+    reg_type = slice_match.group(1).lower()
+    start_idx = int(slice_match.group(2))
+    end_idx = int(slice_match.group(3))
+    span = end_idx - start_idx
+
+    max_idx = 105 if reg_type == "s" else 255
+    if start_idx > max_idx or end_idx > max_idx:
+        return [f"Register index out of range in '{operand}': maximum index for {reg_type.upper()} is {max_idx}."]
+
+    align = _RDNA_SLICE_ALIGNMENTS.get(span)
+    if align is None:
+        return [f"Invalid register span in '{operand}': expected pair (span 1), quad (span 3), oct (span 7), or hex (span 15), got span {span}."]
+
+    if start_idx % align != 0:
+        if span == 1:
+            return [f"Register alignment error: 64-bit register pair '{operand}' must start on an even register index (got {start_idx})."]
+        bits = (span + 1) * 32
+        return [f"Register alignment error: {bits}-bit register '{operand}' must start on a modulo-{align} register index (got {start_idx})."]
+    return []
+
+
+_RDNA_SINGLE_REG_LIMITS: tuple[tuple[str, int, str], ...] = (
+    ("v", 255, "Vector register index v{idx} out of range (v0-v255)."),
+    ("s", 105, "Scalar register index s{idx} out of range (s0-s105)."),
+    ("a", 255, "Accumulator register index a{idx} out of range (a0-a255)."),
+)
+
+
+def _validate_rdna_single_register(cleaned: str) -> list[str]:
+    """Validate a single 32-bit vector, scalar, or accumulator register index.
+
+    Args:
+        cleaned: Stripped register token string.
+
+    Returns:
+        List of single-register index range error messages.
+    """
+    for prefix, limit, msg_template in _RDNA_SINGLE_REG_LIMITS:
+        reg_match = re.match(rf"^{prefix}(\d+)$", cleaned, re.IGNORECASE)
+        if reg_match:
+            idx = int(reg_match.group(1))
+            return [msg_template.format(idx=idx)] if idx > limit else []
+    return []
+
+
 def validate_rdna_register(operand: str, gfx_arch: str | None = None) -> list[str]:
     """Validate a single AMD RDNA/CDNA register specification against alignment and bounds.
 
@@ -109,101 +172,24 @@ def validate_rdna_register(operand: str, gfx_arch: str | None = None) -> list[st
     cleaned = operand.strip()
 
     # Memory wrapper handling: e.g. [v0, s[0:1]]
-    if (
-        cleaned.startswith("[")
-        and not (
-            cleaned.startswith("v[")
-            or cleaned.startswith("s[")
-            or cleaned.startswith("a[")
-        )
-        and cleaned.endswith("]")
-    ):
+    if cleaned.startswith("[") and not cleaned.lower().startswith(("v[", "s[", "a[")) and cleaned.endswith("]"):
         inner = cleaned[1:-1].strip()
-        parts = [p.strip() for p in inner.split(",") if p.strip()]
-        for p in parts:
-            errors.extend(validate_rdna_register(p, gfx_arch=gfx_arch))
+        for part in (p.strip() for p in inner.split(",") if p.strip()):
+            errors.extend(validate_rdna_register(part, gfx_arch=gfx_arch))
         return errors
 
     # Check CDNA matrix accumulators
-    is_cdna_acc = bool(
-        re.match(r"^a\d+$", cleaned, re.IGNORECASE)
-        or re.match(r"^a\[.*?\]$", cleaned, re.IGNORECASE)
-        or cleaned in ("AReg_32", "a[n:n+3]")
-    )
-    if is_cdna_acc:
-        if gfx_arch and "CDNA" not in gfx_arch and "GFX9" not in gfx_arch:
-            errors.append(
-                f"Matrix accumulator operand '{operand}' is only supported on GFX9/CDNA, not '{gfx_arch}'."
-            )
+    is_cdna_acc = bool(re.match(r"^a(\d+|\[.*?\])$", cleaned, re.IGNORECASE) or cleaned in ("AReg_32", "a[n:n+3]"))
+    if is_cdna_acc and gfx_arch and "CDNA" not in gfx_arch and "GFX9" not in gfx_arch:
+        errors.append(f"Matrix accumulator operand '{operand}' is only supported on GFX9/CDNA, not '{gfx_arch}'.")
 
     # Check range/slice registers: v[0:1], s[0:3], a[0:3]
     slice_match = re.match(r"^([vVsSaA])\[(\d+):(\d+)\]$", cleaned)
     if slice_match:
-        reg_type = slice_match.group(1).lower()
-        start_idx = int(slice_match.group(2))
-        end_idx = int(slice_match.group(3))
-        span = end_idx - start_idx
-
-        # Check bounds
-        max_idx = 105 if reg_type == "s" else 255
-        if start_idx > max_idx or end_idx > max_idx:
-            errors.append(
-                f"Register index out of range in '{operand}': maximum index for {reg_type.upper()} is {max_idx}."
-            )
-            return errors
-
-        # 64-bit pair (span 1)
-        if span == 1:
-            if start_idx % 2 != 0:
-                errors.append(
-                    f"Register alignment error: 64-bit register pair '{operand}' must start on an even register index (got {start_idx})."
-                )
-        # 128-bit quad (span 3)
-        elif span == 3:
-            if start_idx % 4 != 0:
-                errors.append(
-                    f"Register alignment error: 128-bit register '{operand}' must start on a modulo-4 register index (got {start_idx})."
-                )
-        # 256-bit oct (span 7)
-        elif span == 7:
-            if start_idx % 8 != 0:
-                errors.append(
-                    f"Register alignment error: 256-bit register '{operand}' must start on a modulo-8 register index (got {start_idx})."
-                )
-        # 512-bit hex (span 15)
-        elif span == 15:
-            if start_idx % 16 != 0:
-                errors.append(
-                    f"Register alignment error: 512-bit register '{operand}' must start on a modulo-16 register index (got {start_idx})."
-                )
-        else:
-            errors.append(
-                f"Invalid register span in '{operand}': expected pair (span 1), quad (span 3), oct (span 7), or hex (span 15), got span {span}."
-            )
+        errors.extend(_validate_rdna_slice_register(operand, slice_match))
         return errors
 
-    # Check 32-bit registers
-    v_match = re.match(r"^v(\d+)$", cleaned, re.IGNORECASE)
-    if v_match:
-        idx = int(v_match.group(1))
-        if idx > 255:
-            errors.append(f"Vector register index v{idx} out of range (v0-v255).")
-        return errors
-
-    s_match = re.match(r"^s(\d+)$", cleaned, re.IGNORECASE)
-    if s_match:
-        idx = int(s_match.group(1))
-        if idx > 105:
-            errors.append(f"Scalar register index s{idx} out of range (s0-s105).")
-        return errors
-
-    a_match = re.match(r"^a(\d+)$", cleaned, re.IGNORECASE)
-    if a_match:
-        idx = int(a_match.group(1))
-        if idx > 255:
-            errors.append(f"Accumulator register index a{idx} out of range (a0-a255).")
-        return errors
-
+    errors.extend(_validate_rdna_single_register(cleaned))
     return errors
 
 
@@ -243,23 +229,14 @@ def validate_rdna_constant_bus(
         for op in src_ops:
             cleaned = op.strip().lower()
             # SGPR scalar register
-            is_sgpr = bool(
-                re.match(r"^s\d+$", cleaned)
-                or re.match(r"^s\[.*?\]$", cleaned)
-                or cleaned in ("sgpr", "sgpr_32", "sreg_64")
-            )
+            is_sgpr = bool(re.match(r"^s\d+$", cleaned) or re.match(r"^s\[.*?\]$", cleaned) or cleaned in ("sgpr", "sgpr_32", "sreg_64"))
             # Literal constant / immediate
-            is_imm = bool(
-                re.match(r"^-?(0x[0-9a-fA-F]+|\d+(\.\d+)?)$", cleaned)
-                or cleaned in ("imm32", "simm16")
-            )
+            is_imm = bool(re.match(r"^-?(0x[0-9a-fA-F]+|\d+(\.\d+)?)$", cleaned) or cleaned in ("imm32", "simm16"))
             if is_sgpr or is_imm:
                 constant_bus_reads += 1
 
         if constant_bus_reads > 1:
-            errors.append(
-                f"Constant bus limitation violation on '{gfx_arch}': vector instructions cannot read more than one SGPR or literal constant across vector source operands (found {constant_bus_reads})."
-            )
+            errors.append(f"Constant bus limitation violation on '{gfx_arch}': vector instructions cannot read more than one SGPR or literal constant across vector source operands (found {constant_bus_reads}).")
 
     return errors
 
@@ -300,9 +277,7 @@ def validate_vopd_pairing(
     errors: list[str] = []
 
     if gfx_arch and "GFX11" not in gfx_arch and "RDNA3" not in gfx_arch:
-        errors.append(
-            f"VOPD dual-issue encoding is only supported on GFX11/RDNA3, got '{gfx_arch}'."
-        )
+        errors.append(f"VOPD dual-issue encoding is only supported on GFX11/RDNA3, got '{gfx_arch}'.")
 
     mnem_x = str(opx.get("mnemonic", "")).lower()
     mnem_y = str(opy.get("mnemonic", "")).lower()
@@ -316,16 +291,12 @@ def validate_vopd_pairing(
     dst_y = str(opy.get("dst", "")).strip().lower()
 
     if dst_x and dst_y and dst_x == dst_y:
-        errors.append(
-            f"VOPD destination conflict: OpX and OpY cannot write to the same destination VGPR '{dst_x}'."
-        )
+        errors.append(f"VOPD destination conflict: OpX and OpY cannot write to the same destination VGPR '{dst_x}'.")
 
     return errors
 
 
-def validate_rdna_modifiers(
-    modifiers: list[str], encoding: str | None = None
-) -> list[str]:
+def validate_rdna_modifiers(modifiers: list[str], encoding: str | None = None) -> list[str]:
     """Validate source and output modifier legality against the instruction encoding.
 
     Args:
@@ -344,16 +315,12 @@ def validate_rdna_modifiers(
         # Source modifiers: -src, |src|, clamp, op_sel, neg_lo, neg_hi
         if clean_mod in RDNA_SOURCE_MODIFIERS:
             if enc not in ("VOP3", "VOP3P", "VOPD"):
-                errors.append(
-                    f"Source modifier '{mod}' is only valid on VOP3/VOP3P encodings, but instruction encoding is '{encoding}'."
-                )
+                errors.append(f"Source modifier '{mod}' is only valid on VOP3/VOP3P encodings, but instruction encoding is '{encoding}'.")
 
         # Output modifiers: omod:2, omod:4, omod:div2
         if clean_mod in RDNA_OUTPUT_MODIFIERS:
             if enc != "VOP3":
-                errors.append(
-                    f"Output modifier '{mod}' is only valid on VOP3 encodings, but instruction encoding is '{encoding}'."
-                )
+                errors.append(f"Output modifier '{mod}' is only valid on VOP3 encodings, but instruction encoding is '{encoding}'.")
 
     return errors
 
@@ -379,29 +346,32 @@ def validate_rdna_microarchitecture(
     # Guard dual-issue instructions strictly to GFX11/RDNA3 and GFX12/RDNA4
     if m.startswith("v_dual_"):
         if gfx_arch and ("GFX9" in gfx_arch or "GFX10" in gfx_arch):
-            errors.append(
-                f"Dual-issue instruction '{mnemonic}' is strictly supported on GFX11+ (RDNA3/RDNA4), not '{gfx_arch}'."
-            )
+            errors.append(f"Dual-issue instruction '{mnemonic}' is strictly supported on GFX11+ (RDNA3/RDNA4), not '{gfx_arch}'.")
         if wave_size == 64:
-            errors.append(
-                f"Dual-issue instruction '{mnemonic}' strictly requires Wave32 execution mode."
-            )
+            errors.append(f"Dual-issue instruction '{mnemonic}' strictly requires Wave32 execution mode.")
 
     # Guard matrix accumulator instructions strictly to GFX9/CDNA
     if m.startswith("v_mfma_") or m.startswith("v_smfmac_"):
         if gfx_arch and "CDNA" not in gfx_arch and "GFX9" not in gfx_arch:
-            errors.append(
-                f"Matrix accumulator instruction '{mnemonic}' is strictly supported on GFX9/CDNA architectures, not '{gfx_arch}'."
-            )
+            errors.append(f"Matrix accumulator instruction '{mnemonic}' is strictly supported on GFX9/CDNA architectures, not '{gfx_arch}'.")
 
     # Guard wave-size mode per architecture
     if wave_size is not None and gfx_arch:
         if wave_size == 32 and ("CDNA" in gfx_arch or "GFX9" in gfx_arch):
-            errors.append(
-                f"Architecture '{gfx_arch}' executes in Wave64 mode and does not support Wave32 execution."
-            )
+            errors.append(f"Architecture '{gfx_arch}' executes in Wave64 mode and does not support Wave32 execution.")
 
     return errors
+
+
+_DEFAULT_RDNA_ARCHITECTURES: list[str] = [
+    "GFX10/RDNA1",
+    "GFX10.3/RDNA2",
+    "GFX11/RDNA3",
+    "GFX11.5",
+    "GFX12/RDNA4",
+]
+
+_EXACT_GFX_ARCH_MAP: dict[str, list[str]] = {arch: [arch] for arch in ALL_GFX_ARCHITECTURES}
 
 
 def resolve_gfx_architectures(arch_spec: JsonValue) -> list[str]:
@@ -414,40 +384,17 @@ def resolve_gfx_architectures(arch_spec: JsonValue) -> list[str]:
         List of targeted GFX architectures.
     """
     if not arch_spec:
-        return [
-            "GFX10/RDNA1",
-            "GFX10.3/RDNA2",
-            "GFX11/RDNA3",
-            "GFX11.5",
-            "GFX12/RDNA4",
-        ]
+        return list(_DEFAULT_RDNA_ARCHITECTURES)
 
     spec = str(arch_spec).strip()
-    if spec == "GFX9/CDNA":
-        return ["GFX9/CDNA"]
-    if spec == "GFX10/RDNA1":
-        return ["GFX10/RDNA1"]
-    if spec == "GFX10.3/RDNA2":
-        return ["GFX10.3/RDNA2"]
-    if spec == "GFX11/RDNA3":
-        return ["GFX11/RDNA3"]
-    if spec == "GFX11.5":
-        return ["GFX11.5"]
-    if spec == "GFX12/RDNA4":
-        return ["GFX12/RDNA4"]
+    if spec in _EXACT_GFX_ARCH_MAP:
+        return list(_EXACT_GFX_ARCH_MAP[spec])
     if "GFX11" in spec:
         return ["GFX11/RDNA3", "GFX11.5", "GFX12/RDNA4"]
     if "GFX12" in spec:
         return ["GFX12/RDNA4"]
 
-    # GFX10+ default
-    return [
-        "GFX10/RDNA1",
-        "GFX10.3/RDNA2",
-        "GFX11/RDNA3",
-        "GFX11.5",
-        "GFX12/RDNA4",
-    ]
+    return list(_DEFAULT_RDNA_ARCHITECTURES)
 
 
 def tokenize_rdna_line(
@@ -470,9 +417,7 @@ def tokenize_rdna_line(
     rest = tokens[1] if len(tokens) > 1 else ""
 
     encoding_suffix = None
-    suffix_match = re.match(
-        r"^(v_[a-z0-9_]+)_(e32|e64|dpp\d*|sdwa|b32|b64)$", inst_token
-    )
+    suffix_match = re.match(r"^(v_[a-z0-9_]+)_(e32|e64|dpp\d*|sdwa|b32|b64)$", inst_token)
     if suffix_match:
         base_mnemonic = suffix_match.group(1)
         encoding_suffix = f"_{suffix_match.group(2)}"
@@ -686,38 +631,56 @@ def _load_exhaustive_rdna() -> list[dict[str, JsonValue]]:
     json_path = os.path.join(os.path.dirname(__file__), "amd_rdna_exhaustive.json")
     if not os.path.exists(json_path):
         return _get_canonical_fallback_rdna()
-    with open(json_path, "r", encoding="utf-8") as f:
+    with open(json_path, encoding="utf-8") as f:
         data: JsonValue = json.load(f)
         if isinstance(data, dict):
             if "categories" in data and isinstance(data["categories"], dict):
                 all_ops: list[dict[str, JsonValue]] = []
                 for cat_ops in data["categories"].values():
                     if isinstance(cat_ops, list):
-                        all_ops.extend(
-                            item for item in cat_ops if isinstance(item, dict)
-                        )
+                        all_ops.extend(item for item in cat_ops if isinstance(item, dict))
                 return all_ops
-            raw_cand = (
-                data.get("instructions")
-                or data.get("operations")
-                or data.get("items")
-                or []
+            raw_cand = data.get("instructions") or data.get("operations") or data.get("items") or []
+            return [item for item in (raw_cand if isinstance(raw_cand, list) else []) if isinstance(item, dict)]
+        return [item for item in (data if isinstance(data, list) else []) if isinstance(item, dict)]
+
+
+def _build_rdna_operand_params(sig: list[str]) -> list[GhostParam]:
+    """Build positional `ExtendedGhostParam` entries from an RDNA operand type signature.
+
+    Args:
+        sig: Ordered list of RDNA operand type tokens (e.g. `['VGPR', 'SGPR', 'VGPR']`).
+
+    Returns:
+        List of `GhostParam` definitions with directionality and standardized role names.
+    """
+    params: list[GhostParam] = []
+    for i, op_type in enumerate(sig):
+        if op_type in ("VCC", "SCC"):
+            role = "condition"
+            direction = OperandDirection.PREDICATE
+        elif op_type == "EXEC":
+            role = "exec_mask"
+            direction = OperandDirection.READ
+        else:
+            role = "dst" if i == 0 else f"src{i - 1}"
+            direction = OperandDirection.WRITE if i == 0 else OperandDirection.READ
+
+        params.append(
+            ExtendedGhostParam(
+                name=f"op{i}",
+                kind=ParameterKind.POSITIONAL_ONLY,
+                annotation=op_type,
+                standardized_name=role,
+                description=f"Operand {i} ({role}) of type {op_type}",
+                direction=direction,
+                role=IRParameterRole.OPERAND,
             )
-            return [
-                item
-                for item in (raw_cand if isinstance(raw_cand, list) else [])
-                if isinstance(item, dict)
-            ]
-        return [
-            item
-            for item in (data if isinstance(data, list) else [])
-            if isinstance(item, dict)
-        ]
+        )
+    return params
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Entrypoint to collect the AMD RDNA API signature.
 
     Args:
@@ -732,66 +695,23 @@ def collect_api(
 
     refs: list[GhostRef] = []
 
-    rdna_data = _load_exhaustive_rdna()
-
-    for inst_data in rdna_data:
+    for inst_data in _load_exhaustive_rdna():
         mnemonic = str(inst_data["mnemonic"])
         encoding = str(inst_data.get("encoding", "Unknown"))
-        base_desc = str(
-            inst_data.get("description", f"AMD RDNA {mnemonic} instruction.")
-        )
+        base_desc = str(inst_data.get("description", f"AMD RDNA {mnemonic} instruction."))
         raw_mods = inst_data.get("modifiers", [])
-        modifiers: list[str] = [
-            str(m) for m in (raw_mods if isinstance(raw_mods, list) else [])
-        ]
+        modifiers: list[str] = [str(m) for m in (raw_mods if isinstance(raw_mods, list) else [])]
         arch = inst_data.get("architecture")
         valid_archs = resolve_gfx_architectures(arch)
         env_tags = ["rocm"] + valid_archs
 
-        docstring = (
-            f"AMD RDNA {mnemonic} instruction.\n"
-            f"Encoding: {encoding}\n"
-            f"Description: {base_desc}\n"
-            f"Modifiers: {', '.join(modifiers) if modifiers else 'None'}\n"
-            f"Target Architectures: {', '.join(valid_archs)}"
-        )
+        docstring = f"AMD RDNA {mnemonic} instruction.\nEncoding: {encoding}\nDescription: {base_desc}\nModifiers: {', '.join(modifiers) if modifiers else 'None'}\nTarget Architectures: {', '.join(valid_archs)}"
 
         raw_operands = inst_data.get("operands", [])
-        operands_list: list[list[str]] = [
-            [str(op) for op in sig]
-            for sig in (raw_operands if isinstance(raw_operands, list) else [])
-            if isinstance(sig, list)
-        ]
+        operands_list: list[list[str]] = [[str(op) for op in sig] for sig in (raw_operands if isinstance(raw_operands, list) else []) if isinstance(sig, list)]
 
-        # Find the maximum length signature
-        max_sig: list[str] = []
-        for sig in operands_list:
-            if len(sig) > len(max_sig):
-                max_sig = sig
-
-        params: list[GhostParam] = []
-        for i, op_type in enumerate(max_sig):
-            if op_type in ("VCC", "SCC"):
-                role = "condition"
-                direction = OperandDirection.PREDICATE
-            elif op_type == "EXEC":
-                role = "exec_mask"
-                direction = OperandDirection.READ
-            else:
-                role = "dst" if i == 0 else f"src{i - 1}"
-                direction = OperandDirection.WRITE if i == 0 else OperandDirection.READ
-
-            params.append(
-                ExtendedGhostParam(
-                    name=f"op{i}",
-                    kind=ParameterKind.POSITIONAL_ONLY,
-                    annotation=op_type,
-                    standardized_name=role,
-                    description=f"Operand {i} ({role}) of type {op_type}",
-                    direction=direction,
-                    role=IRParameterRole.OPERAND,
-                )
-            )
+        max_sig: list[str] = max(operands_list, key=len, default=[])
+        params = _build_rdna_operand_params(max_sig)
 
         domain_metadata: dict[str, JsonValue] = {
             "encoding": encoding,
@@ -801,45 +721,18 @@ def collect_api(
             "operand_signatures": [list(s) for s in operands_list],
         }
 
-        # Build overloads for all operand variations
-        overloads: list[dict[str, JsonValue] | GhostRef] = []
-        for sig_idx, sig in enumerate(operands_list):
-            overload_params: list[GhostParam] = []
-            for i, op_type in enumerate(sig):
-                if op_type in ("VCC", "SCC"):
-                    role = "condition"
-                    direction = OperandDirection.PREDICATE
-                elif op_type == "EXEC":
-                    role = "exec_mask"
-                    direction = OperandDirection.READ
-                else:
-                    role = "dst" if i == 0 else f"src{i - 1}"
-                    direction = (
-                        OperandDirection.WRITE if i == 0 else OperandDirection.READ
-                    )
-
-                overload_params.append(
-                    ExtendedGhostParam(
-                        name=f"op{i}",
-                        kind=ParameterKind.POSITIONAL_ONLY,
-                        annotation=op_type,
-                        standardized_name=role,
-                        description=f"Operand {i} ({role}) of type {op_type}",
-                        direction=direction,
-                        role=IRParameterRole.OPERAND,
-                    )
-                )
-            overloads.append(
-                ExtendedGhostRef(
-                    name=mnemonic,
-                    api_path=f"amd_rdna.inst.{mnemonic}",
-                    kind="function",
-                    params=overload_params,
-                    docstring=f"Overload {sig_idx} for {mnemonic}: {', '.join(sig)}",
-                    environment_tags=env_tags,
-                    domain_metadata=domain_metadata,
-                )
+        overloads: list[dict[str, JsonValue] | GhostRef] = [
+            ExtendedGhostRef(
+                name=mnemonic,
+                api_path=f"amd_rdna.inst.{mnemonic}",
+                kind="function",
+                params=_build_rdna_operand_params(sig),
+                docstring=f"Overload {sig_idx} for {mnemonic}: {', '.join(sig)}",
+                environment_tags=env_tags,
+                domain_metadata=domain_metadata,
             )
+            for sig_idx, sig in enumerate(operands_list)
+        ]
 
         refs.append(
             GhostIsaRef(

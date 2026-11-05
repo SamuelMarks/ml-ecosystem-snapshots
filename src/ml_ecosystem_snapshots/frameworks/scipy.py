@@ -10,19 +10,16 @@ from __future__ import annotations
 import importlib
 import types
 
+import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     SemanticTier,
 )
-import pydantic
 
 from ml_ecosystem_snapshots.frameworks._base import CanonicalSubmoduleOpSpec
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
-
-CANONICAL_SCIPY_OPS: list[CanonicalSubmoduleOpSpec] = pydantic.TypeAdapter(
-    list[CanonicalSubmoduleOpSpec]
-).validate_python(
+CANONICAL_SCIPY_OPS: list[CanonicalSubmoduleOpSpec] = pydantic.TypeAdapter(list[CanonicalSubmoduleOpSpec]).validate_python(
     [
         # Special functions
         {
@@ -641,9 +638,7 @@ def _get_scipy_submodule(submod: str) -> types.ModuleType | None:
         return None
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect SciPy mathematical, linear algebra, and signal processing APIs.
 
     Args:

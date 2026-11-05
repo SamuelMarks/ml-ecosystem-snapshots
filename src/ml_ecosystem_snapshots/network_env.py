@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import typing
+from pathlib import Path
 
 from ml_ecosystem_snapshots.exceptions import OfflineModeNetworkError
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
@@ -119,9 +119,24 @@ def load_json_data(file_path: str | Path) -> JsonValue:
                 res_fallback: JsonValue = json.loads(bf.read().decode("utf-8"))
                 return res_fallback
     else:
-        with open(path_str, "r", encoding="utf-8") as f:
+        with open(path_str, encoding="utf-8") as f:
             res_plain: JsonValue = json.load(f)
             return res_plain
+
+
+def _iter_dict_items(items: JsonValue) -> typing.Iterator[dict[str, JsonValue]]:
+    """Yield dictionary elements from a JSON list value.
+
+    Args:
+        items: JSON value expected to be a list of dictionaries.
+
+    Yields:
+        Dictionary items contained in `items`.
+    """
+    if isinstance(items, list):
+        for item in items:
+            if isinstance(item, dict):
+                yield item
 
 
 def stream_snapshot_items(
@@ -137,22 +152,13 @@ def stream_snapshot_items(
     """
     data = load_json_data(file_path)
     if isinstance(data, list):
-        for item in data:
-            if isinstance(item, dict):
-                yield item
+        yield from _iter_dict_items(data)
     elif isinstance(data, dict):
         categories = data.get("categories", {})
         if isinstance(categories, dict):
             for _cat, items in categories.items():
-                if isinstance(items, list):
-                    for item in items:
-                        if isinstance(item, dict):
-                            yield item
-        items_list = data.get("items", [])
-        if isinstance(items_list, list):
-            for item in items_list:
-                if isinstance(item, dict):
-                    yield item
+                yield from _iter_dict_items(items)
+        yield from _iter_dict_items(data.get("items", []))
 
 
 def fetch_url(url: str, timeout: int = 10, strict_offline: bool = False) -> str | None:
@@ -174,9 +180,7 @@ def fetch_url(url: str, timeout: int = 10, strict_offline: bool = False) -> str 
 
     if is_offline_mode():
         if strict_offline:
-            raise OfflineModeNetworkError(
-                f"Outbound network request to '{url}' blocked in offline mode."
-            )
+            raise OfflineModeNetworkError(f"Outbound network request to '{url}' blocked in offline mode.")
         return None
 
     try:

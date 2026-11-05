@@ -10,10 +10,7 @@ def test_sanitize_type_str() -> None:
     assert sanitize_type_str(None) is None
     assert sanitize_type_str("<class 'list'>") == "list"
     assert sanitize_type_str("typing.List[int]") == "list[int]"
-    assert (
-        sanitize_type_str("typing.Dict[str, typing.Tuple[int, int]]")
-        == "dict[str, tuple[int, int]]"
-    )
+    assert sanitize_type_str("typing.Dict[str, typing.Tuple[int, int]]") == "dict[str, tuple[int, int]]"
     assert sanitize_type_str("Union[list, dict]") == "list | dict"
     assert sanitize_type_str("typing.Union[str, int]") == "str | int"
     assert sanitize_type_str("Optional[int]") == "int | None"
@@ -22,9 +19,7 @@ def test_sanitize_type_str() -> None:
     assert sanitize_type_str("Type[int]") == "type[int]"
     assert sanitize_type_str("int") == "int"
     assert sanitize_type_str("some_invalid_ast!") == "some_invalid_ast!"
-    assert (
-        sanitize_type_str("Union[int]") == "Union[int]"
-    )  # no transformation if len < 2
+    assert sanitize_type_str("Union[int]") == "Union[int]"  # no transformation if len < 2
     assert sanitize_type_str("typing.Any") == "Any"
 
 
@@ -97,9 +92,7 @@ def test_sanitize_param_default_edge_cases() -> None:
     assert factory0 == "<MyObject>"
     assert is_mand0 is False
 
-    def_val1, factory1, is_mand1 = sanitize_param_default(
-        CustomReprWithoutAngleBrackets()
-    )
+    def_val1, factory1, is_mand1 = sanitize_param_default(CustomReprWithoutAngleBrackets())
     assert def_val1 == "custom_object"
     assert factory1 is None
     assert is_mand1 is False

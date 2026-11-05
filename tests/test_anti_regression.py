@@ -9,13 +9,66 @@ Enforces:
 
 from __future__ import annotations
 
+import ast
 import json
-from pathlib import Path
 import os
+from pathlib import Path
 
 import pytest
-
 from ml_ecosystem_snapshots.models import JsonValue
+
+
+def _load_fallback_bundled_data(filename: str) -> list[dict[str, JsonValue]]:
+    """Load canonical fallback records when an exhaustive JSON file is not on disk.
+
+    Args:
+        filename: Name of the JSON file in frameworks directory.
+
+    Returns:
+        Canonical fallback records or empty list.
+    """
+    if "sass" in filename:
+        from ml_ecosystem_snapshots.frameworks.nvidia_sass import (
+            _load_exhaustive_sass,
+        )
+
+        return [dict(r) for r in _load_exhaustive_sass()]
+    if "rdna" in filename:
+        from ml_ecosystem_snapshots.frameworks.amd_rdna import _load_exhaustive_rdna
+
+        return [dict(r) for r in _load_exhaustive_rdna()]
+    if "mlir" in filename:
+        from ml_ecosystem_snapshots.frameworks.mlir import (
+            _get_canonical_mlir_records,
+        )
+
+        return [dict(r) for r in _get_canonical_mlir_records()]
+    if "stablehlo" in filename:
+        from ml_ecosystem_snapshots.frameworks.stablehlo import (
+            _get_canonical_stablehlo_records,
+        )
+
+        return [dict(r) for r in _get_canonical_stablehlo_records()]
+    return []
+
+
+def _extract_dict_records(data: JsonValue | list[dict[str, JsonValue]]) -> list[dict[str, JsonValue]]:
+    """Normalize loaded JSON data into a flat list of dictionary records.
+
+    Args:
+        data: Raw decoded JSON value.
+
+    Returns:
+        Flat list of dictionary records.
+    """
+    if isinstance(data, dict) and "categories" in data:
+        categories = data["categories"]
+        if isinstance(categories, dict):
+            return [dict(item) for cat_items in categories.values() if isinstance(cat_items, list) for item in cat_items if isinstance(item, dict)]
+        return []
+    if isinstance(data, list):
+        return [dict(item) for item in data if isinstance(item, dict)]
+    return []
 
 
 def get_bundled_json(filename: str) -> list[dict[str, JsonValue]]:
@@ -28,50 +81,13 @@ def get_bundled_json(filename: str) -> list[dict[str, JsonValue]]:
         Parsed JSON content list.
     """
     pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    fpath = os.path.join(
-        pkg_dir, "src", "ml_ecosystem_snapshots", "frameworks", filename
-    )
+    fpath = os.path.join(pkg_dir, "src", "ml_ecosystem_snapshots", "frameworks", filename)
     if os.path.isfile(fpath):
-        with open(fpath, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        with open(fpath, encoding="utf-8") as f:
+            data: JsonValue | list[dict[str, JsonValue]] = json.load(f)
     else:
-        if "sass" in filename:
-            from ml_ecosystem_snapshots.frameworks.nvidia_sass import (
-                _load_exhaustive_sass,
-            )
-
-            data = _load_exhaustive_sass()
-        elif "rdna" in filename:
-            from ml_ecosystem_snapshots.frameworks.amd_rdna import _load_exhaustive_rdna
-
-            data = _load_exhaustive_rdna()
-        elif "mlir" in filename:
-            from ml_ecosystem_snapshots.frameworks.mlir import (
-                _get_canonical_mlir_records,
-            )
-
-            data = _get_canonical_mlir_records()
-        elif "stablehlo" in filename:
-            from ml_ecosystem_snapshots.frameworks.stablehlo import (
-                _get_canonical_stablehlo_records,
-            )
-
-            data = _get_canonical_stablehlo_records()
-        else:
-            data = []
-    if isinstance(data, dict) and "categories" in data:
-        items: list[dict[str, JsonValue]] = []
-        categories = data["categories"]
-        if isinstance(categories, dict):
-            for cat_items in categories.values():
-                if isinstance(cat_items, list):
-                    for item in cat_items:
-                        if isinstance(item, dict):
-                            items.append(item)
-        return items
-    if isinstance(data, list):
-        return [dict(item) for item in data if isinstance(item, dict)]
-    return []
+        data = _load_fallback_bundled_data(filename)
+    return _extract_dict_records(data)
 
 
 def test_zero_unparsed_regex_tokens_in_bundled_snapshots() -> None:
@@ -88,9 +104,7 @@ def test_zero_unparsed_regex_tokens_in_bundled_snapshots() -> None:
         data = get_bundled_json(sname)
         raw_text = json.dumps(data)
         for tok in forbidden_tokens:
-            assert (
-                tok not in raw_text
-            ), f"Forbidden unparsed token '{tok}' found in {sname}"
+            assert tok not in raw_text, f"Forbidden unparsed token '{tok}' found in {sname}"
 
 
 def test_no_decay_to_varargs_for_top_pytorch_ops() -> None:
@@ -115,12 +129,8 @@ def test_no_decay_to_varargs_for_top_pytorch_ops() -> None:
         # Check that it did not decay to inexact (*args, **kwargs)
         if len(ref.params) == 2:
             names = [p.name for p in ref.params]
-            assert not (
-                names == ["args", "kwargs"]
-            ), f"Operator {api_path} decayed to (*args, **kwargs)!"
-        assert "inexact_signature" not in (
-            ref.environment_tags or []
-        ), f"Operator {api_path} tagged with inexact_signature!"
+            assert not (names == ["args", "kwargs"]), f"Operator {api_path} decayed to (*args, **kwargs)!"
+        assert "inexact_signature" not in (ref.environment_tags or []), f"Operator {api_path} tagged with inexact_signature!"
 
 
 def test_zero_duplicate_placeholder_operand_signatures() -> None:
@@ -132,9 +142,7 @@ def test_zero_duplicate_placeholder_operand_signatures() -> None:
         assert isinstance(op_sigs, list)
         sig_tuples = [tuple(sig) for sig in op_sigs if isinstance(sig, list)]
         # No duplicate operand signatures for the same instruction
-        assert len(sig_tuples) == len(
-            set(sig_tuples)
-        ), f"Duplicate operand signatures found in SASS mnemonic {item.get('mnemonic')}"
+        assert len(sig_tuples) == len(set(sig_tuples)), f"Duplicate operand signatures found in SASS mnemonic {item.get('mnemonic')}"
 
     # 2. AMD RDNA
     rdna_data = get_bundled_json("amd_rdna_exhaustive.json")
@@ -142,9 +150,7 @@ def test_zero_duplicate_placeholder_operand_signatures() -> None:
         op_sigs = item.get("operand_signatures", [])
         assert isinstance(op_sigs, list)
         sig_tuples = [tuple(sig) for sig in op_sigs if isinstance(sig, list)]
-        assert len(sig_tuples) == len(
-            set(sig_tuples)
-        ), f"Duplicate operand signatures found in RDNA mnemonic {item.get('mnemonic')}"
+        assert len(sig_tuples) == len(set(sig_tuples)), f"Duplicate operand signatures found in RDNA mnemonic {item.get('mnemonic')}"
 
 
 def test_separation_of_ssa_operands_from_attributes_in_dialects() -> None:
@@ -157,18 +163,12 @@ def test_separation_of_ssa_operands_from_attributes_in_dialects() -> None:
         assert isinstance(operands, list)
         assert isinstance(attributes, list)
 
-        op_names: set[str] = {
-            str(o.get("name") if isinstance(o, dict) else o) for o in operands
-        }
-        attr_names: set[str] = {
-            str(a.get("name") if isinstance(a, dict) else a) for a in attributes
-        }
+        op_names: set[str] = {str(o.get("name") if isinstance(o, dict) else o) for o in operands}
+        attr_names: set[str] = {str(a.get("name") if isinstance(a, dict) else a) for a in attributes}
 
         # Intersection between operands and attributes should be empty
         overlap = op_names.intersection(attr_names)
-        assert (
-            len(overlap) == 0
-        ), f"Overlap between SSA operands and attributes in MLIR op {op.get('name')}: {overlap}"
+        assert len(overlap) == 0, f"Overlap between SSA operands and attributes in MLIR op {op.get('name')}: {overlap}"
 
     # 2. StableHLO
     hlo_ops = get_bundled_json("stablehlo_exhaustive.json")
@@ -179,14 +179,10 @@ def test_separation_of_ssa_operands_from_attributes_in_dialects() -> None:
         assert isinstance(attributes, list)
 
         op_names = {str(o.get("name") if isinstance(o, dict) else o) for o in operands}
-        attr_names = {
-            str(a.get("name") if isinstance(a, dict) else a) for a in attributes
-        }
+        attr_names = {str(a.get("name") if isinstance(a, dict) else a) for a in attributes}
 
         overlap = op_names.intersection(attr_names)
-        assert (
-            len(overlap) == 0
-        ), f"Overlap between SSA operands and attributes in StableHLO op {op.get('name')}: {overlap}"
+        assert len(overlap) == 0, f"Overlap between SSA operands and attributes in StableHLO op {op.get('name')}: {overlap}"
 
 
 @pytest.mark.frameworks
@@ -194,7 +190,9 @@ def test_dask_minimum_symbol_threshold() -> None:
     """Verify Dask collector extracts genuine GhostRef signatures across array and util tiers."""
     import types
     from unittest.mock import patch
+
     import ml_ecosystem_snapshots.frameworks.dask as dask_mod
+    from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     fake_da = types.ModuleType("dask.array")
@@ -202,52 +200,36 @@ def test_dask_minimum_symbol_threshold() -> None:
     fake_fft = types.ModuleType("dask.array.fft")
     fake_top = types.ModuleType("dask")
 
-    def sample_array_op(
-        x: list[float], axis: int = 0, keepdims: bool = False
-    ) -> list[float]:
-        """Compute array reduction along axis.
-
-        Args:
-            x: Input dask array.
-            axis: Reduction axis index.
-            keepdims: Whether to preserve reduced dimensions.
+    def _make_sample_array_op() -> InspectableTarget:
+        """Create a fresh typed Dask array operation function with full docstring and annotations.
 
         Returns:
-            Reduced dask array.
+            Freshly created function object.
         """
-        return x
+
+        def sample_array_op(x: list[float], axis: int = 0, keepdims: bool = False) -> list[float]:
+            """Compute array reduction along axis.
+
+            Args:
+                x: Input dask array.
+                axis: Reduction axis index.
+                keepdims: Whether to preserve reduced dimensions.
+
+            Returns:
+                Reduced dask array.
+            """
+            return x
+
+        return sample_array_op
 
     for i in range(180):
-        fn = types.FunctionType(
-            sample_array_op.__code__,
-            sample_array_op.__globals__,
-            name=f"op_{i}",
-            argdefs=sample_array_op.__defaults__,
-            closure=sample_array_op.__closure__,
-        )
-        fn.__annotations__ = dict(sample_array_op.__annotations__)
-        fn.__doc__ = sample_array_op.__doc__
-        pytest.MonkeyPatch().setattr(fake_da, f"op_{i}", fn, raising=False)
+        pytest.MonkeyPatch().setattr(fake_da, f"op_{i}", _make_sample_array_op(), raising=False)
 
     for i in range(15):
-        fn = types.FunctionType(
-            sample_array_op.__code__,
-            sample_array_op.__globals__,
-            name=f"linalg_op_{i}",
-            argdefs=sample_array_op.__defaults__,
-            closure=sample_array_op.__closure__,
-        )
-        pytest.MonkeyPatch().setattr(fake_linalg, f"linalg_op_{i}", fn, raising=False)
+        pytest.MonkeyPatch().setattr(fake_linalg, f"linalg_op_{i}", _make_sample_array_op(), raising=False)
 
     for i in range(10):
-        fn = types.FunctionType(
-            sample_array_op.__code__,
-            sample_array_op.__globals__,
-            name=f"util_op_{i}",
-            argdefs=sample_array_op.__defaults__,
-            closure=sample_array_op.__closure__,
-        )
-        pytest.MonkeyPatch().setattr(fake_top, f"util_op_{i}", fn, raising=False)
+        pytest.MonkeyPatch().setattr(fake_top, f"util_op_{i}", _make_sample_array_op(), raising=False)
 
     pytest.MonkeyPatch().setattr(fake_da, "linalg", fake_linalg, raising=False)
     pytest.MonkeyPatch().setattr(fake_da, "fft", fake_fft, raising=False)
@@ -260,9 +242,7 @@ def test_dask_minimum_symbol_threshold() -> None:
         util_refs = dask_mod.collect_api(SemanticTier.UTIL)
 
     total_count = len(arr_refs) + len(util_refs)
-    assert (
-        total_count >= 200
-    ), f"Dask symbol count too low: {total_count} endpoints found"
+    assert total_count >= 200, f"Dask symbol count too low: {total_count} endpoints found"
     first_ref = arr_refs[0]
     assert first_ref.api_path.startswith("dask.array.")
     assert any(p.name == "axis" for p in first_ref.params)
@@ -298,13 +278,7 @@ def test_all_new_snapshots_exist_and_nonempty(tmp_path: Path) -> None:
     for prefix in expected_prefixes:
         matching: list[str] = []
         if os.path.isdir(snap_dir):
-            matching = [
-                os.path.join(snap_dir, f)
-                for f in os.listdir(snap_dir)
-                if f.startswith(f"{prefix}_")
-                and f.endswith(".json")
-                and not f.endswith(("_ops.json", "_exhaustive.json"))
-            ]
+            matching = [os.path.join(snap_dir, f) for f in os.listdir(snap_dir) if f.startswith(f"{prefix}_") and f.endswith(".json") and not f.endswith(("_ops.json", "_exhaustive.json"))]
         if not matching:
             snap = extract_snapshot(prefix)
             assert snap, f"Failed to extract snapshot for target: {prefix}"
@@ -315,11 +289,9 @@ def test_all_new_snapshots_exist_and_nonempty(tmp_path: Path) -> None:
         for fpath in matching:
             size = os.path.getsize(fpath)
             assert size > 500, f"Snapshot {fpath} is too small ({size} bytes)"
-            with open(fpath, "r", encoding="utf-8") as f:
+            with open(fpath, encoding="utf-8") as f:
                 data = json.load(f)
-                assert (
-                    "categories" in data
-                ), f"Snapshot {fpath} missing 'categories' envelope key"
+                assert "categories" in data, f"Snapshot {fpath} missing 'categories' envelope key"
 
 
 def test_no_mock_introspection_or_type_ignores_in_src() -> None:
@@ -346,33 +318,21 @@ def test_no_mock_introspection_or_type_ignores_in_src() -> None:
         "typing.cast",
     ]
     for fpath in src_files:
-        with open(fpath, "r", encoding="utf-8") as fp:
+        with open(fpath, encoding="utf-8") as fp:
             content = fp.read()
         for token in banned_tokens:
-            assert (
-                token not in content
-            ), f"Banned token '{token}' found in production module {fpath}"
+            assert token not in content, f"Banned token '{token}' found in production module {fpath}"
         if not fpath.endswith("stubs.py"):
-            assert (
-                ": object" not in content and "-> object" not in content
-            ), f"Banned 'object' type annotation found in production module {fpath}"
+            assert ": object" not in content and "-> object" not in content, f"Banned 'object' type annotation found in production module {fpath}"
 
-    all_py_files = sorted(
-        glob.glob("src/ml_ecosystem_snapshots/**/*.py", recursive=True)
-        + glob.glob("tests/**/*.py", recursive=True)
-        + glob.glob("scripts/**/*.py", recursive=True)
-    )
+    all_py_files = sorted(glob.glob("src/ml_ecosystem_snapshots/**/*.py", recursive=True) + glob.glob("tests/**/*.py", recursive=True) + glob.glob("scripts/**/*.py", recursive=True))
     for fpath in all_py_files:
         if fpath.endswith("test_anti_regression.py"):
             continue
-        with open(fpath, "r", encoding="utf-8") as fp:
+        with open(fpath, encoding="utf-8") as fp:
             content = fp.read()
-        assert (
-            "# type: ignore" not in content
-        ), f"Banned '# type: ignore' found in {fpath}"
-        assert (
-            "len(captured.out) >= 0" not in content
-        ), f"Tautological assertion found in {fpath}"
+        assert "# type: ignore" not in content, f"Banned '# type: ignore' found in {fpath}"
+        assert "len(captured.out) >= 0" not in content, f"Tautological assertion found in {fpath}"
 
 
 def test_every_test_function_has_assertions() -> None:
@@ -382,12 +342,10 @@ def test_every_test_function_has_assertions() -> None:
 
     test_files = sorted(glob.glob("tests/**/*.py", recursive=True))
     for fpath in test_files:
-        with open(fpath, "r", encoding="utf-8") as fp:
+        with open(fpath, encoding="utf-8") as fp:
             tree = ast.parse(fp.read(), filename=fpath)
         for node in ast.walk(tree):
-            if isinstance(
-                node, (ast.FunctionDef, ast.AsyncFunctionDef)
-            ) and node.name.startswith("test_"):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"):
                 has_assert = False
                 for sub in ast.walk(node):
                     if isinstance(sub, ast.Assert):
@@ -395,27 +353,62 @@ def test_every_test_function_has_assertions() -> None:
                         break
                     if isinstance(sub, ast.Call):
                         call_str = ast.unparse(sub.func)
-                        if any(
-                            k in call_str for k in ("raises", "assert", "warns", "fail")
-                        ):
+                        if any(k in call_str for k in ("raises", "assert", "warns", "fail")):
                             has_assert = True
                             break
-                assert (
-                    has_assert
-                ), f"Zero-assertion test detected: {fpath}:{node.lineno} ({node.name})"
+                assert has_assert, f"Zero-assertion test detected: {fpath}:{node.lineno} ({node.name})"
+
+
+def _is_overload_func(node: ast.AST) -> bool:
+    """Check whether an AST node is an @overload-decorated function.
+
+    Args:
+        node: AST definition node to inspect.
+
+    Returns:
+        True if decorated with @overload, False otherwise.
+    """
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return False
+    return any((isinstance(d, ast.Name) and d.id == "overload") or (isinstance(d, ast.Attribute) and d.attr == "overload") for d in node.decorator_list)
+
+
+def _collect_func_arg_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    """Collect all non-self/cls parameter names from a function definition.
+
+    Args:
+        node: AST function definition node.
+
+    Returns:
+        List of parameter identifier names.
+    """
+    args = [a.arg for a in node.args.args if a.arg not in ("self", "cls")]
+    args += [a.arg for a in node.args.kwonlyargs]
+    if node.args.vararg:
+        args.append(node.args.vararg.arg)
+    if node.args.kwarg:
+        args.append(node.args.kwarg.arg)
+    return args
+
+
+def _assert_no_banned_placeholders(doc: str, banned_placeholders: tuple[str, ...], target_label: str) -> None:
+    """Assert that a docstring contains none of the banned placeholder substrings.
+
+    Args:
+        doc: Docstring content to check.
+        banned_placeholders: Disallowed placeholder substrings.
+        target_label: Human-readable location label for error reporting.
+    """
+    for bp in banned_placeholders:
+        assert bp not in doc, f"Placeholder '{bp}' in docstring of {target_label}"
 
 
 def test_codebase_100_percent_docstring_and_arg_coverage() -> None:
     """Verify 100% module, class, function, and parameter docstring coverage with zero placeholders."""
-    import ast
     import glob
     import re
 
-    files = sorted(
-        glob.glob("src/ml_ecosystem_snapshots/**/*.py", recursive=True)
-        + glob.glob("tests/**/*.py", recursive=True)
-        + glob.glob("scripts/**/*.py", recursive=True)
-    )
+    files = sorted(glob.glob("src/ml_ecosystem_snapshots/**/*.py", recursive=True) + glob.glob("tests/**/*.py", recursive=True) + glob.glob("scripts/**/*.py", recursive=True))
     banned_placeholders = (
         "Function docstring.",
         "Class docstring.",
@@ -436,39 +429,17 @@ def test_codebase_100_percent_docstring_and_arg_coverage() -> None:
         "Tuple.",
     )
     for fpath in files:
-        with open(fpath, "r", encoding="utf-8") as fp:
+        with open(fpath, encoding="utf-8") as fp:
             src = fp.read()
         tree = ast.parse(src, filename=fpath)
         mod_doc = ast.get_docstring(tree)
         assert mod_doc, f"Missing module docstring in {fpath}"
-        for bp in banned_placeholders:
-            assert (
-                bp not in mod_doc
-            ), f"Placeholder '{bp}' in module docstring of {fpath}"
+        _assert_no_banned_placeholders(mod_doc, banned_placeholders, fpath)
         for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(
-                    (isinstance(d, ast.Name) and d.id == "overload")
-                    or (isinstance(d, ast.Attribute) and d.attr == "overload")
-                    for d in node.decorator_list
-                ):
-                    continue
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and not _is_overload_func(node):
                 doc = ast.get_docstring(node)
                 assert doc, f"Missing docstring on {node.name} at {fpath}:{node.lineno}"
-                for bp in banned_placeholders:
-                    assert (
-                        bp not in doc
-                    ), f"Placeholder '{bp}' in docstring of {node.name} at {fpath}:{node.lineno}"
+                _assert_no_banned_placeholders(doc, banned_placeholders, f"{node.name} at {fpath}:{node.lineno}")
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    args = [
-                        a.arg for a in node.args.args if a.arg not in ("self", "cls")
-                    ]
-                    args += [a.arg for a in node.args.kwonlyargs]
-                    if node.args.vararg:
-                        args.append(node.args.vararg.arg)
-                    if node.args.kwarg:
-                        args.append(node.args.kwarg.arg)
-                    for arg_name in args:
-                        assert re.search(
-                            rf"\b{re.escape(arg_name)}\b\s*(\([^)]*\))?\s*:", doc
-                        ), f"Missing arg '{arg_name}' in docstring of {node.name} at {fpath}:{node.lineno}"
+                    for arg_name in _collect_func_arg_names(node):
+                        assert re.search(rf"\b{re.escape(arg_name)}\b\s*(\([^)]*\))?\s*:", doc), f"Missing arg '{arg_name}' in docstring of {node.name} at {fpath}:{node.lineno}"

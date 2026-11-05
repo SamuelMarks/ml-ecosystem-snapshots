@@ -6,11 +6,11 @@ predicate guards, instruction modifiers, and multi-architecture targeting.
 
 from __future__ import annotations
 
-from enum import Enum
 import json
 import os
 import re
 import typing
+from enum import Enum
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -119,9 +119,7 @@ def get_sass_instruction_family(mnemonic: str) -> str:
     m = mnemonic.upper().strip()
     if any(m.startswith(p) for p in ("BAR", "DEPBAR", "SYNC")):
         return SASSInstructionFamily.BARRIER.value
-    if any(
-        m.startswith(p) for p in ("BRA", "RET", "EXIT", "WARPSYNC", "JMP", "CALL", "BR")
-    ):
+    if any(m.startswith(p) for p in ("BRA", "RET", "EXIT", "WARPSYNC", "JMP", "CALL", "BR")):
         return SASSInstructionFamily.CONTROL.value
     if any(m.startswith(p) for p in ("HMMA", "IMMA", "BMMA", "DMMA", "WGMMA")):
         return SASSInstructionFamily.TENSOR.value
@@ -181,9 +179,101 @@ def get_sass_latency_range(family: str, sm_arch: str | None = None) -> tuple[int
     return (1, 16)
 
 
-def validate_sass_register(
-    operand: str, role: str = "src", sm_arch: str | None = None
+def _validate_sass_register_pair_or_quad(operand: str, start_idx: int, end_idx: int) -> list[str]:
+    """Validate 64-bit register pair or 128-bit register quad alignment and index bounds.
+
+    Args:
+        operand: Original register operand string for diagnostic messages.
+        start_idx: Starting register index in the range.
+        end_idx: Ending register index in the range.
+
+    Returns:
+        List of alignment or range validation error messages.
+    """
+    if start_idx > 255 or end_idx > 255:
+        return [f"Register index out of range in '{operand}': max register index is R255."]
+    span = end_idx - start_idx
+    if span == 1:
+        if start_idx % 2 != 0:
+            return [f"64-bit register pair '{operand}' must start on an even register index (got R{start_idx})."]
+        return []
+    if span == 3:
+        if start_idx % 4 != 0:
+            return [f"128-bit register quad '{operand}' must start on a modulo-4 register index (got R{start_idx})."]
+        return []
+    return [f"Invalid register span in '{operand}': expected pair (span 1) or quad (span 3), got span {span}."]
+
+
+def _validate_sass_uniform_register_pair(
+    operand: str,
+    start_idx: int,
+    end_idx: int,
+    sm_arch: str | None,
 ) -> list[str]:
+    """Validate uniform register pair architecture support, index bounds, and alignment.
+
+    Args:
+        operand: Original uniform register pair operand string.
+        start_idx: Starting uniform register index.
+        end_idx: Ending uniform register index.
+        sm_arch: Target SM architecture identifier.
+
+    Returns:
+        List of uniform register pair validation error messages.
+    """
+    errors: list[str] = []
+    if sm_arch == "sm_70":
+        errors.append(f"Uniform registers (UR) are only supported on sm_75+ architectures, but target architecture is '{sm_arch}'.")
+    if start_idx > 63 or end_idx > 63:
+        errors.append(f"Uniform register index out of range in '{operand}': max is UR63.")
+    elif end_idx - start_idx != 1:
+        errors.append(f"Invalid uniform register pair span in '{operand}': expected span 1, got {end_idx - start_idx}.")
+    elif start_idx % 2 != 0:
+        errors.append(f"Uniform register pair '{operand}' must start on an even register index (got UR{start_idx}).")
+    return errors
+
+
+def _validate_sass_scalar_register(cleaned: str, sm_arch: str | None) -> list[str]:
+    """Validate a single non-pair SASS scalar, uniform, predicate, or barrier register token.
+
+    Args:
+        cleaned: Cleaned register token stripped of reuse flags and predicate prefixes.
+        sm_arch: Target SM architecture identifier.
+
+    Returns:
+        List of register bounds or architecture compatibility error messages.
+    """
+    errors: list[str] = []
+    r_match = re.match(r"^R(\d+)$", cleaned, re.IGNORECASE)
+    if r_match and int(r_match.group(1)) > 255:
+        errors.append(f"32-bit vector register index R{int(r_match.group(1))} out of range (R0-R255).")
+
+    ur_match = re.match(r"^UR(\d+)$", cleaned, re.IGNORECASE)
+    if cleaned.upper() == "URZ" or ur_match:
+        if sm_arch == "sm_70":
+            errors.append(f"Uniform registers (UR) are only supported on sm_75+ architectures, but target architecture is '{sm_arch}'.")
+        if ur_match and int(ur_match.group(1)) > 63:
+            errors.append(f"Uniform register index UR{int(ur_match.group(1))} out of range (UR0-UR63).")
+
+    p_match = re.match(r"^!?P(\d+)$", cleaned, re.IGNORECASE)
+    if p_match and int(p_match.group(1)) > 7:
+        errors.append(f"Predicate register index P{int(p_match.group(1))} out of range (P0-P7).")
+
+    up_match = re.match(r"^!?UP(\d+)$", cleaned, re.IGNORECASE)
+    if cleaned.upper() in ("UPT", "!UPT") or up_match:
+        if sm_arch == "sm_70":
+            errors.append(f"Uniform predicate registers (UP) are only supported on sm_75+ architectures, but target architecture is '{sm_arch}'.")
+        if up_match and int(up_match.group(1)) > 7:
+            errors.append(f"Uniform predicate register index UP{int(up_match.group(1))} out of range (UP0-UP7).")
+
+    b_match = re.match(r"^B(\d+)$", cleaned, re.IGNORECASE)
+    if b_match and int(b_match.group(1)) > 15:
+        errors.append(f"Barrier register index B{int(b_match.group(1))} out of range (B0-B15).")
+
+    return errors
+
+
+def validate_sass_register(operand: str, role: str = "src", sm_arch: str | None = None) -> list[str]:
     """Validate a single SASS register specification against hardware alignment and indexing rules.
 
     Validates:
@@ -207,12 +297,9 @@ def validate_sass_register(
     cleaned = operand.strip()
 
     # Check for register reuse flag
-    has_reuse = ".reuse" in cleaned.lower()
-    if has_reuse:
+    if ".reuse" in cleaned.lower():
         if role == "dst":
-            errors.append(
-                f"Register reuse flag '.reuse' is not permitted on destination operand '{operand}'."
-            )
+            errors.append(f"Register reuse flag '.reuse' is not permitted on destination operand '{operand}'.")
         cleaned = re.sub(r"\.reuse", "", cleaned, flags=re.IGNORECASE).strip()
 
     # Strip predicate guard prefix '@'
@@ -228,137 +315,29 @@ def validate_sass_register(
         return []
 
     # Check 64-bit / 128-bit vector register range: R<start>:R<end> or R[<start>:<end>]
-    quad_pair_match = re.match(r"^R(\d+):R(\d+)$", cleaned, re.IGNORECASE) or re.match(
-        r"^R\[(\d+):(\d+)\]$", cleaned, re.IGNORECASE
-    )
+    quad_pair_match = re.match(r"^R(\d+):R(\d+)$", cleaned, re.IGNORECASE) or re.match(r"^R\[(\d+):(\d+)\]$", cleaned, re.IGNORECASE)
     if quad_pair_match:
-        start_idx = int(quad_pair_match.group(1))
-        end_idx = int(quad_pair_match.group(2))
-        span = end_idx - start_idx
-
-        if start_idx > 255 or end_idx > 255:
-            errors.append(
-                f"Register index out of range in '{operand}': max register index is R255."
-            )
-            return errors
-
-        if span == 1:
-            # 64-bit pair
-            if start_idx % 2 != 0:
-                errors.append(
-                    f"64-bit register pair '{operand}' must start on an even register index (got R{start_idx})."
-                )
-        elif span == 3:
-            # 128-bit quad
-            if start_idx % 4 != 0:
-                errors.append(
-                    f"128-bit register quad '{operand}' must start on a modulo-4 register index (got R{start_idx})."
-                )
-        else:
-            errors.append(
-                f"Invalid register span in '{operand}': expected pair (span 1) or quad (span 3), got span {span}."
-            )
+        errors.extend(_validate_sass_register_pair_or_quad(operand, int(quad_pair_match.group(1)), int(quad_pair_match.group(2))))
         return errors
 
     # Check uniform register pair: UR<start>:UR<end> or UR[<start>:<end>]
-    ur_pair_match = re.match(r"^UR(\d+):UR(\d+)$", cleaned, re.IGNORECASE) or re.match(
-        r"^UR\[(\d+):(\d+)\]$", cleaned, re.IGNORECASE
-    )
+    ur_pair_match = re.match(r"^UR(\d+):UR(\d+)$", cleaned, re.IGNORECASE) or re.match(r"^UR\[(\d+):(\d+)\]$", cleaned, re.IGNORECASE)
     if ur_pair_match:
-        if sm_arch and sm_arch == "sm_70":
-            errors.append(
-                f"Uniform registers (UR) are only supported on sm_75+ architectures, but target architecture is '{sm_arch}'."
+        errors.extend(
+            _validate_sass_uniform_register_pair(
+                operand,
+                int(ur_pair_match.group(1)),
+                int(ur_pair_match.group(2)),
+                sm_arch,
             )
-        start_idx = int(ur_pair_match.group(1))
-        end_idx = int(ur_pair_match.group(2))
-        if start_idx > 63 or end_idx > 63:
-            errors.append(
-                f"Uniform register index out of range in '{operand}': max is UR63."
-            )
-        elif end_idx - start_idx != 1:
-            errors.append(
-                f"Invalid uniform register pair span in '{operand}': expected span 1, got {end_idx - start_idx}."
-            )
-        elif start_idx % 2 != 0:
-            errors.append(
-                f"Uniform register pair '{operand}' must start on an even register index (got UR{start_idx})."
-            )
+        )
         return errors
 
-    # Check 32-bit vector register: R0-R255, RZ
-    if cleaned.upper() == "RZ":
-        return errors
-    r_match = re.match(r"^R(\d+)$", cleaned, re.IGNORECASE)
-    if r_match:
-        idx = int(r_match.group(1))
-        if idx > 255:
-            errors.append(
-                f"32-bit vector register index R{idx} out of range (R0-R255)."
-            )
-        return errors
-
-    # Check uniform register: UR0-UR63, URZ
-    if cleaned.upper() == "URZ":
-        if sm_arch and sm_arch == "sm_70":
-            errors.append(
-                f"Uniform registers (UR) are only supported on sm_75+ architectures, but target architecture is '{sm_arch}'."
-            )
-        return errors
-    ur_match = re.match(r"^UR(\d+)$", cleaned, re.IGNORECASE)
-    if ur_match:
-        if sm_arch and sm_arch == "sm_70":
-            errors.append(
-                f"Uniform registers (UR) are only supported on sm_75+ architectures, but target architecture is '{sm_arch}'."
-            )
-        idx = int(ur_match.group(1))
-        if idx > 63:
-            errors.append(f"Uniform register index UR{idx} out of range (UR0-UR63).")
-        return errors
-
-    # Check predicate register: P0-P7, PT (and negated !P0-!P7, !PT)
-    p_match = re.match(r"^!?P(\d+)$", cleaned, re.IGNORECASE)
-    if p_match:
-        idx = int(p_match.group(1))
-        if idx > 7:
-            errors.append(f"Predicate register index P{idx} out of range (P0-P7).")
-        return errors
-    if cleaned.upper() in ("PT", "!PT"):
-        return errors
-
-    # Check uniform predicate register: UP0-UP7, UPT (and negated !UP0-!UP7, !UPT)
-    up_match = re.match(r"^!?UP(\d+)$", cleaned, re.IGNORECASE)
-    if up_match:
-        if sm_arch and sm_arch == "sm_70":
-            errors.append(
-                f"Uniform predicate registers (UP) are only supported on sm_75+ architectures, but target architecture is '{sm_arch}'."
-            )
-        idx = int(up_match.group(1))
-        if idx > 7:
-            errors.append(
-                f"Uniform predicate register index UP{idx} out of range (UP0-UP7)."
-            )
-        return errors
-    if cleaned.upper() in ("UPT", "!UPT"):
-        if sm_arch and sm_arch == "sm_70":
-            errors.append(
-                f"Uniform predicate registers (UP) are only supported on sm_75+ architectures, but target architecture is '{sm_arch}'."
-            )
-        return errors
-
-    # Check barrier register: B0-B15
-    b_match = re.match(r"^B(\d+)$", cleaned, re.IGNORECASE)
-    if b_match:
-        idx = int(b_match.group(1))
-        if idx > 15:
-            errors.append(f"Barrier register index B{idx} out of range (B0-B15).")
-        return errors
-
+    errors.extend(_validate_sass_scalar_register(cleaned, sm_arch))
     return errors
 
 
-def validate_sass_operand_directionality(
-    operands: list[str], mnemonic: str
-) -> list[str]:
+def validate_sass_operand_directionality(operands: list[str], mnemonic: str) -> list[str]:
     """Validate operand directionality to ensure read-only elements are not assigned to write slots.
 
     Args:
@@ -384,29 +363,13 @@ def validate_sass_operand_directionality(
         dst = operands[0].strip()
         # Immediate constants cannot be destination
         if re.match(r"^-?(0x[0-9a-fA-F]+|\d+(\.\d+)?)$", dst) or dst in ("I", "FI"):
-            errors.append(
-                f"Operand 0 is a destination (write) slot and cannot be an immediate: '{dst}'."
-            )
-        elif (
-            "c[" in dst.lower()
-            or "cx[" in dst.lower()
-            or dst in ("c[bank][offset]", "cx[bank][offset]")
-        ):
-            errors.append(
-                f"Operand 0 is a destination (write) slot and cannot be constant bank memory: '{dst}'."
-            )
+            errors.append(f"Operand 0 is a destination (write) slot and cannot be an immediate: '{dst}'.")
+        elif "c[" in dst.lower() or "cx[" in dst.lower() or dst in ("c[bank][offset]", "cx[bank][offset]"):
+            errors.append(f"Operand 0 is a destination (write) slot and cannot be constant bank memory: '{dst}'.")
 
-    c_bank_count = sum(
-        1
-        for op in operands
-        if "c[" in op.lower()
-        or "cx[" in op.lower()
-        or op in ("c[bank][offset]", "cx[bank][offset]")
-    )
+    c_bank_count = sum(1 for op in operands if "c[" in op.lower() or "cx[" in op.lower() or op in ("c[bank][offset]", "cx[bank][offset]"))
     if c_bank_count > 1:
-        errors.append(
-            f"Hardware resource conflict in '{mnemonic}': SASS instructions permit at most 1 constant bank reference per cycle due to shared read ports (found {c_bank_count})."
-        )
+        errors.append(f"Hardware resource conflict in '{mnemonic}': SASS instructions permit at most 1 constant bank reference per cycle due to shared read ports (found {c_bank_count}).")
 
     return errors
 
@@ -432,16 +395,12 @@ def validate_sass_modifiers(mnemonic: str, modifiers: list[str]) -> list[str]:
     # Check rounding mode conflicts
     rounding_present = [m for m in norm_mods if m in ROUNDING_MODIFIERS]
     if len(rounding_present) > 1:
-        errors.append(
-            f"Conflicting rounding mode modifiers in '{mnemonic}': {sorted(rounding_present)}."
-        )
+        errors.append(f"Conflicting rounding mode modifiers in '{mnemonic}': {sorted(rounding_present)}.")
 
     # Check cache policy conflicts
     cache_present = [m for m in norm_mods if m in CACHE_MODIFIERS]
     if len(cache_present) > 1:
-        errors.append(
-            f"Conflicting cache policy modifiers in '{mnemonic}': {sorted(cache_present)}."
-        )
+        errors.append(f"Conflicting cache policy modifiers in '{mnemonic}': {sorted(cache_present)}.")
 
     # Check .SAT validity
     if ".SAT" in norm_mods:
@@ -451,9 +410,46 @@ def validate_sass_modifiers(mnemonic: str, modifiers: list[str]) -> list[str]:
             SASSInstructionFamily.BARRIER.value,
             SASSInstructionFamily.CONTROL.value,
         ):
-            errors.append(
-                f"Saturation modifier '.SAT' is not supported on instruction family '{family}' for '{mnemonic}'."
-            )
+            errors.append(f"Saturation modifier '.SAT' is not supported on instruction family '{family}' for '{mnemonic}'.")
+
+    return errors
+
+
+def _validate_sass_control_timing(
+    family: str,
+    control_codes: typing.Mapping[str, JsonValue],
+    sm_arch: str | None,
+) -> list[str]:
+    """Validate stall counts, dependency barrier scoreboard masks, and cycle latency bounds.
+
+    Args:
+        family: Resolved SASS instruction family name.
+        control_codes: Mapping of control code field names to values.
+        sm_arch: Optional target SM architecture string.
+
+    Returns:
+        List of timing or scoreboard validation error messages.
+    """
+    errors: list[str] = []
+
+    if "stall_count" in control_codes:
+        stall = control_codes["stall_count"]
+        if not isinstance(stall, int) or stall < 0 or stall > 15:
+            errors.append(f"Stall count cycle {stall} is out of valid range (0-15).")
+
+    max_barrier = 7 if sm_arch in ("sm_90", "sm_100") else 5
+    for b_field in ("read_barrier_mask", "write_barrier_mask"):
+        if b_field in control_codes:
+            mask = control_codes[b_field]
+            if not isinstance(mask, int) or mask < 0 or mask > max_barrier:
+                name = "Read" if "read" in b_field else "Write"
+                errors.append(f"{name} dependency barrier scoreboard {mask} is out of valid range (0-{max_barrier}).")
+
+    if "latency_ticks" in control_codes and sm_arch:
+        latency = control_codes["latency_ticks"]
+        min_ticks, max_ticks = get_sass_latency_range(family, sm_arch)
+        if not isinstance(latency, int) or latency < min_ticks or latency > max_ticks:
+            errors.append(f"Latency ticks {latency} out of bounds for {family} on {sm_arch}: expected between {min_ticks} and {max_ticks} cycles.")
 
     return errors
 
@@ -473,34 +469,8 @@ def validate_sass_control_code(
     Returns:
         List of control code error messages.
     """
-    errors: list[str] = []
     family = get_sass_instruction_family(mnemonic)
-
-    # Stall count: 0-15
-    if "stall_count" in control_codes:
-        stall = control_codes["stall_count"]
-        if not isinstance(stall, int) or stall < 0 or stall > 15:
-            errors.append(f"Stall count cycle {stall} is out of valid range (0-15).")
-
-    # Dependency barrier scoreboard masks: 0-5 for sm_70-sm_89, 0-7 for sm_90+
-    max_barrier = 7 if sm_arch in ("sm_90", "sm_100") else 5
-    for b_field in ("read_barrier_mask", "write_barrier_mask"):
-        if b_field in control_codes:
-            mask = control_codes[b_field]
-            if not isinstance(mask, int) or mask < 0 or mask > max_barrier:
-                name = "Read" if "read" in b_field else "Write"
-                errors.append(
-                    f"{name} dependency barrier scoreboard {mask} is out of valid range (0-{max_barrier})."
-                )
-
-    # Latency ticks
-    if "latency_ticks" in control_codes and sm_arch:
-        latency = control_codes["latency_ticks"]
-        min_ticks, max_ticks = get_sass_latency_range(family, sm_arch)
-        if not isinstance(latency, int) or latency < min_ticks or latency > max_ticks:
-            errors.append(
-                f"Latency ticks {latency} out of bounds for {family} on {sm_arch}: expected between {min_ticks} and {max_ticks} cycles."
-            )
+    errors = _validate_sass_control_timing(family, control_codes, sm_arch)
 
     # Register reuse cache flags (.reuse) validation
     if "register_reuse_flags" in control_codes:
@@ -509,29 +479,21 @@ def validate_sass_control_code(
             for rf in reuse_flags:
                 rf_str = str(rf)
                 if not rf_str.endswith(".reuse"):
-                    errors.append(
-                        f"Malformed register reuse flag '{rf_str}': expected 'R*.reuse'."
-                    )
+                    errors.append(f"Malformed register reuse flag '{rf_str}': expected 'R*.reuse'.")
                 reg_clean = rf_str.replace(".reuse", "")
                 reg_errs = validate_sass_register(reg_clean, sm_arch=sm_arch)
                 errors.extend(reg_errs)
 
     # Dual-issue restrictions
-    if control_codes.get("dual_issue"):
-        if family in (
-            SASSInstructionFamily.TENSOR.value,
-            SASSInstructionFamily.BARRIER.value,
-        ):
-            errors.append(
-                f"Instruction '{mnemonic}' in family '{family}' does not support dual-issue execution."
-            )
+    if control_codes.get("dual_issue") and family in (
+        SASSInstructionFamily.TENSOR.value,
+        SASSInstructionFamily.BARRIER.value,
+    ):
+        errors.append(f"Instruction '{mnemonic}' in family '{family}' does not support dual-issue execution.")
 
     # Hopper / Blackwell WGMMA and TMA asynchronous instruction validation
-    if mnemonic.startswith("WGMMA") or "TMA" in mnemonic:
-        if sm_arch and sm_arch not in ("sm_90", "sm_100"):
-            errors.append(
-                f"Instruction '{mnemonic}' requires Hopper or Blackwell architecture (sm_90+), got '{sm_arch}'."
-            )
+    if (mnemonic.startswith("WGMMA") or "TMA" in mnemonic) and sm_arch and sm_arch not in ("sm_90", "sm_100"):
+        errors.append(f"Instruction '{mnemonic}' requires Hopper or Blackwell architecture (sm_90+), got '{sm_arch}'.")
 
     return errors
 
@@ -615,6 +577,22 @@ def resolve_sm_architectures(
     return list(ALL_SM_ARCHITECTURES)
 
 
+_SASS_OPERAND_TYPE_MAP: dict[str, str] = {
+    "R": "R",
+    "RegOperand": "R",
+    "UR": "UR",
+    "UniformRegOperand": "UR",
+    "P": "P",
+    "PredicateOperand": "P",
+    "I": "I",
+    "IntIMMOperand": "I",
+    "FI": "FI",
+    "FloatIMMOperand": "FI",
+    "ADDR": "ADDR",
+    "AddressOperand": "ADDR",
+}
+
+
 def normalize_sass_operand_type(raw_op: str) -> str:
     """Normalize raw operand names into canonical SASS operand categories.
 
@@ -634,18 +612,8 @@ def normalize_sass_operand_type(raw_op: str) -> str:
         Canonical operand category string.
     """
     cleaned = raw_op.strip()
-    if cleaned in ("R", "RegOperand"):
-        return "R"
-    if cleaned in ("UR", "UniformRegOperand"):
-        return "UR"
-    if cleaned in ("P", "PredicateOperand"):
-        return "P"
-    if cleaned in ("I", "IntIMMOperand"):
-        return "I"
-    if cleaned in ("FI", "FloatIMMOperand"):
-        return "FI"
-    if cleaned in ("ADDR", "AddressOperand"):
-        return "ADDR"
+    if cleaned in _SASS_OPERAND_TYPE_MAP:
+        return _SASS_OPERAND_TYPE_MAP[cleaned]
     if "cx[" in cleaned:
         return "cx[bank][offset]"
     if "c[" in cleaned:
@@ -653,9 +621,33 @@ def normalize_sass_operand_type(raw_op: str) -> str:
     return cleaned
 
 
-def build_structured_sass_operands(
-    operands: list[str], mnemonic: str
-) -> list[dict[str, JsonValue]]:
+def _classify_sass_operand_reg_classes(op: str) -> list[str]:
+    """Classify the register and constant-bank classes referenced by a SASS operand token.
+
+    Args:
+        op: Raw SASS operand token string.
+
+    Returns:
+        List of canonical register class identifiers ('UR', 'R', 'P', 'UP', 'B', 'CBANK').
+    """
+    reg_classes: list[str] = []
+    op_u = op.upper()
+    if "UR" in op_u:
+        reg_classes.append("UR")
+    if "R" in op_u and "UR" not in op_u and "BAR" not in op_u:
+        reg_classes.append("R")
+    if "P" in op_u and "UP" not in op_u and "DEPBAR" not in op_u:
+        reg_classes.append("P")
+    if "UP" in op_u:
+        reg_classes.append("UP")
+    if "B" in op_u:
+        reg_classes.append("B")
+    if "C[" in op_u or "CX[" in op_u:
+        reg_classes.append("CBANK")
+    return reg_classes
+
+
+def build_structured_sass_operands(operands: list[str], mnemonic: str) -> list[dict[str, JsonValue]]:
     """Build structured operand records detailing roles, register classes, and immediate constraints.
 
     Args:
@@ -671,11 +663,7 @@ def build_structured_sass_operands(
     is_barrier = mnemonic in ("DEPBAR", "BAR", "SYNC", "WARPSYNC")
 
     for idx, op in enumerate(operands):
-        role = (
-            "dest"
-            if idx == 0 and not (is_store or is_branch or is_barrier)
-            else f"src{idx - 1 if idx > 0 else 0}"
-        )
+        role = "dest" if idx == 0 and not (is_store or is_branch or is_barrier) else f"src{idx - 1 if idx > 0 else 0}"
         if is_store and idx == 0:
             role = "address"
         elif is_branch:
@@ -683,20 +671,7 @@ def build_structured_sass_operands(
         elif is_barrier:
             role = "barrier"
 
-        reg_classes: list[str] = []
-        op_u = op.upper()
-        if "UR" in op_u:
-            reg_classes.append("UR")
-        if "R" in op_u and "UR" not in op_u and "BAR" not in op_u:
-            reg_classes.append("R")
-        if "P" in op_u and "UP" not in op_u and "DEPBAR" not in op_u:
-            reg_classes.append("P")
-        if "UP" in op_u:
-            reg_classes.append("UP")
-        if "B" in op_u:
-            reg_classes.append("B")
-        if "C[" in op_u or "CX[" in op_u:
-            reg_classes.append("CBANK")
+        reg_classes = _classify_sass_operand_reg_classes(op)
 
         imm_type: str | None = None
         if re.match(r"^-?\d+\.\d+", op):
@@ -1012,40 +987,21 @@ def _load_exhaustive_sass() -> list[IsaInstructionRecordModel]:
     json_path = os.path.join(os.path.dirname(__file__), "nvidia_sass_exhaustive.json")
     if not os.path.exists(json_path):
         return _get_canonical_fallback_sass()
-    with open(json_path, "r", encoding="utf-8") as f:
+    with open(json_path, encoding="utf-8") as f:
         data: JsonValue = json.load(f)
         if isinstance(data, dict):
             if "categories" in data and isinstance(data["categories"], dict):
                 all_ops: list[IsaInstructionRecordModel] = []
                 for cat_ops in data["categories"].values():
                     if isinstance(cat_ops, list):
-                        all_ops.extend(
-                            IsaInstructionRecordModel(item)
-                            for item in cat_ops
-                            if isinstance(item, dict)
-                        )
+                        all_ops.extend(IsaInstructionRecordModel(item) for item in cat_ops if isinstance(item, dict))
                 return all_ops
-            raw_cand = (
-                data.get("instructions")
-                or data.get("operations")
-                or data.get("items")
-                or []
-            )
-            return [
-                IsaInstructionRecordModel(item)
-                for item in (raw_cand if isinstance(raw_cand, list) else [])
-                if isinstance(item, dict)
-            ]
-        return [
-            IsaInstructionRecordModel(item)
-            for item in (data if isinstance(data, list) else [])
-            if isinstance(item, dict)
-        ]
+            raw_cand = data.get("instructions") or data.get("operations") or data.get("items") or []
+            return [IsaInstructionRecordModel(item) for item in (raw_cand if isinstance(raw_cand, list) else []) if isinstance(item, dict)]
+        return [IsaInstructionRecordModel(item) for item in (data if isinstance(data, list) else []) if isinstance(item, dict)]
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Entrypoint to collect the NVIDIA SASS API signature.
 
     Args:
@@ -1064,33 +1020,19 @@ def collect_api(
 
     for inst_data in sass_data:
         mnemonic = str(inst_data["mnemonic"])
-        base_desc = str(
-            inst_data.get("description", f"NVIDIA SASS {mnemonic} instruction.")
-        )
+        base_desc = str(inst_data.get("description", f"NVIDIA SASS {mnemonic} instruction."))
         raw_mods = inst_data.get("modifiers", [])
-        raw_modifiers = [
-            str(m) for m in (raw_mods if isinstance(raw_mods, list) else [])
-        ]
+        raw_modifiers = [str(m) for m in (raw_mods if isinstance(raw_mods, list) else [])]
         parsed_modifiers = parse_sass_modifiers(raw_modifiers)
 
         arch = inst_data.get("architecture")
         valid_archs = resolve_sm_architectures(arch)
         env_tags = ["cuda"] + valid_archs
 
-        docstring = (
-            f"NVIDIA SASS {mnemonic} instruction.\n"
-            f"Description: {base_desc}\n"
-            f"Modifiers: {', '.join(parsed_modifiers) if parsed_modifiers else 'None'}\n"
-            f"Target Architectures: {', '.join(valid_archs)}\n"
-            f"Predicate Guard: Supported (@P0, @!P1)"
-        )
+        docstring = f"NVIDIA SASS {mnemonic} instruction.\nDescription: {base_desc}\nModifiers: {', '.join(parsed_modifiers) if parsed_modifiers else 'None'}\nTarget Architectures: {', '.join(valid_archs)}\nPredicate Guard: Supported (@P0, @!P1)"
 
         raw_operands = inst_data.get("operands", [])
-        operands_list: list[list[str]] = [
-            [str(op) for op in sig]
-            for sig in (raw_operands if isinstance(raw_operands, list) else [])
-            if isinstance(sig, list)
-        ]
+        operands_list: list[list[str]] = [[str(op) for op in sig] for sig in (raw_operands if isinstance(raw_operands, list) else []) if isinstance(sig, list)]
 
         # Find the maximum length signature for the canonical representation
         max_sig: list[str] = []
@@ -1115,11 +1057,7 @@ def collect_api(
                 )
             )
 
-        arch_json: JsonValue = (
-            [str(a) for a in arch]
-            if isinstance(arch, list)
-            else (str(arch) if arch is not None else None)
-        )
+        arch_json: JsonValue = [str(a) for a in arch] if isinstance(arch, list) else (str(arch) if arch is not None else None)
         domain_metadata: dict[str, JsonValue] = {
             "architecture": arch_json,
             "valid_architectures": list(valid_archs),
@@ -1183,9 +1121,7 @@ def collect_api(
                     write_barrier=0,
                     wait_barrier_mask=0,
                 ),
-                structured_operands=[
-                    IsaStructuredOperandSpec.model_validate(op) for op in raw_struct_ops
-                ],
+                structured_operands=[IsaStructuredOperandSpec.model_validate(op) for op in raw_struct_ops],
             )
         )
 

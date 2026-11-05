@@ -75,9 +75,7 @@ def test_scrape_nvidia_sass() -> None:
             json.dump(mock_input_data, f)
 
         # Patch the file paths in the script
-        with mock.patch(
-            "ml_ecosystem_snapshots.tools.scrape_nvidia_sass.open"
-        ) as mock_open:
+        with mock.patch("ml_ecosystem_snapshots.tools.scrape_nvidia_sass.open") as mock_open:
             # We want to use the real open, but intercept the paths
             import io
 
@@ -117,11 +115,9 @@ def test_scrape_nvidia_sass() -> None:
 
         # Verify output
         assert os.path.exists(output_path)
-        with open(output_path, "r") as f:
+        with open(output_path) as f:
             raw_data = json.load(f)
-            result_data = (
-                raw_data["instructions"] if isinstance(raw_data, dict) else raw_data
-            )
+            result_data = raw_data["instructions"] if isinstance(raw_data, dict) else raw_data
 
         assert len(result_data) == 3
 
@@ -202,9 +198,7 @@ def test_scrape_sass_nvdisasm_file() -> None:
         with open(input_path, "w") as f:
             f.write(raw_disasm)
 
-        records = scrape_nvidia_sass.scrape_sass(
-            input_path=input_path, output_path=output_path
-        )
+        records = scrape_nvidia_sass.scrape_sass(input_path=input_path, output_path=output_path)
         assert os.path.exists(output_path)
         assert len(records) == 2
         ffma = next(r for r in records if r["mnemonic"] == "FFMA")
@@ -223,9 +217,7 @@ def test_scrape_sass_json_list() -> None:
         with open(input_path, "w") as f:
             f.write(json_content)
 
-        records = scrape_nvidia_sass.scrape_sass(
-            input_path=input_path, output_path=output_path
-        )
+        records = scrape_nvidia_sass.scrape_sass(input_path=input_path, output_path=output_path)
         assert os.path.exists(output_path)
         assert len(records) == 1
         assert records[0]["mnemonic"] == "FADD"
@@ -240,9 +232,7 @@ def test_scrape_sass_json_scalar() -> None:
         with open(input_path, "w") as f:
             f.write("123")
 
-        records = scrape_nvidia_sass.scrape_sass(
-            input_path=input_path, output_path=output_path
-        )
+        records = scrape_nvidia_sass.scrape_sass(input_path=input_path, output_path=output_path)
         assert os.path.exists(output_path)
         assert len(records) == 1
         assert records[0]["mnemonic"] == "123"
@@ -267,8 +257,8 @@ def test_scrape_sass_env_var() -> None:
 def test_resolve_instruction_architectures_and_expanded_catalog() -> None:
     """Test resolve_instruction_architectures branches and build_expanded_sass_catalog."""
     from ml_ecosystem_snapshots.tools.scrape_nvidia_sass import (
-        resolve_instruction_architectures,
         build_expanded_sass_catalog,
+        resolve_instruction_architectures,
     )
 
     # 1. FP4/Blackwell branch
@@ -309,9 +299,7 @@ def test_resolve_instruction_architectures_and_expanded_catalog() -> None:
     ]
 
     # 6. Test build_expanded_sass_catalog
-    catalog = build_expanded_sass_catalog(
-        [{"mnemonic": "CUSTOM_OP", "operands": [["R", "R"]]}]
-    )
+    catalog = build_expanded_sass_catalog([{"mnemonic": "CUSTOM_OP", "operands": [["R", "R"]]}])
     assert len(catalog) > 800
 
     # 7. Test build_expanded_sass_catalog with duplicates and pre-existing entries

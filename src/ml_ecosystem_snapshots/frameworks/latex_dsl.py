@@ -129,9 +129,7 @@ _LATEX_ENVIRONMENTS = [
 ]
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Entrypoint to collect the LaTeX DSL API signature.
 
     Args:

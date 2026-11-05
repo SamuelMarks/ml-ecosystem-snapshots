@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import types
+from pathlib import Path
+
 import pytest
-
-
 from ml_ecosystem_snapshots.c_extension_sig import (
     _normalize_c_sig_args,
     _parse_c_extension_sig_str,
@@ -19,73 +18,83 @@ from ml_ecosystem_snapshots.network_env import (
 from ml_ecosystem_snapshots.utils import get_all_members
 
 
-class FaultyModule(types.ModuleType):
-    """Mock or helper class FaultyModule for unit testing."""
-
-    def __init__(self) -> None:
-        """Initialize FaultyModule."""
-        super().__init__("faulty_mod")
-        self.__all__ = ["good", "bad"]
-        self.good = 1
-
-    @property
-    def bad(self) -> None:
-        """Execute helper bad.
-
-        Raises:
-            ValueError: Exception.
-        """
-        raise ValueError("Cannot access")
-
-
-class NoAllModule(types.ModuleType):
-    """Mock or helper class NoAllModule for unit testing."""
-
-    def __init__(self) -> None:
-        """Initialize NoAllModule."""
-        super().__init__("no_all_mod")
-        self.a = 1
-
-
 def test_get_all_members_exception() -> None:
     """Test get_all_members handles inaccessible properties gracefully."""
-    members = get_all_members(FaultyModule())
+
+    class FaultyNamespace(types.SimpleNamespace):
+        """Namespace with a valid attribute and a raising property."""
+
+        good: int = 1
+
+        @property
+        def bad(self) -> None:
+            """Raise AttributeError when accessed.
+
+            Raises:
+                AttributeError: Simulated inaccessible property.
+            """
+            raise AttributeError("Cannot access")
+
+    class BrokenDirNamespace(types.SimpleNamespace):
+        """Namespace whose `__dir__` raises RuntimeError."""
+
+        def __dir__(self) -> list[str]:
+            """Raise RuntimeError during dir() enumeration.
+
+            Raises:
+                RuntimeError: Simulated broken dir().
+            """
+            raise RuntimeError("broken dir")
+
+    members = get_all_members(FaultyNamespace())
     assert dict(members)["good"] == 1
     assert "bad" not in dict(members)
 
-    members_no_all = get_all_members(NoAllModule())
+    members_no_all = get_all_members(types.SimpleNamespace(a=1))
     assert dict(members_no_all)["a"] == 1
 
+    assert get_all_members(BrokenDirNamespace()) == []
 
-def test_extract_c_extension_signatures() -> None:
-    """Test extract_c_extension_signature across diverse docstring patterns and overloads."""
+
+def test_extract_c_extension_signatures(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test extract_c_extension_signature across basic docstring patterns and defaults.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
 
     def empty_doc() -> None:
-        """Execute helper empty doc."""
+        """Placeholder target with empty docstring."""
         pass
 
-    empty_doc.__doc__ = ""
+    monkeypatch.setattr(empty_doc, "__doc__", "")
     assert extract_c_extension_signature(empty_doc, "empty_doc") is None
 
     def bad_syntax() -> None:
-        """Execute helper bad syntax."""
+        """func(a b c) -> int."""
         pass
 
-    bad_syntax.__doc__ = "func(a b c) -> int"
+    monkeypatch.setattr(bad_syntax, "__doc__", "func(a b c) -> int")
     assert extract_c_extension_signature(bad_syntax, "bad_syntax") is None
 
     def no_match() -> None:
-        """Execute helper no match."""
+        """This is just a description without signature."""
         pass
 
-    no_match.__doc__ = "This is just a description without signature."
     assert extract_c_extension_signature(no_match, "no_match") is None
 
     def string_def() -> None:
-        """Execute helper string def."""
+        """func(a='hello', b=None, *args: int, c=1, **kwargs: float) -> str.
+
+        Description text.
+        """
         pass
 
-    string_def.__doc__ = "func(a='hello', b=None, *args: int, c=1, **kwargs: float) -> str\n\nDescription text."
+    monkeypatch.setattr(
+        string_def,
+        "__doc__",
+        "func(a='hello', b=None, *args: int, c=1, **kwargs: float) -> str\n\nDescription text.",
+    )
     sig = extract_c_extension_signature(string_def, "func")
     assert sig is not None
     names = [s[0] for s in sig]
@@ -97,72 +106,100 @@ def test_extract_c_extension_signatures() -> None:
     assert sig[1][2] == "None"  # b=None
 
     def func_with_self() -> None:
-        """Execute helper func with self."""
+        """func(self, x=torch.float32)."""
         pass
 
-    func_with_self.__doc__ = "func(self, x=torch.float32)"
+    monkeypatch.setattr(func_with_self, "__doc__", "func(self, x=torch.float32)")
     sig2 = extract_c_extension_signature(func_with_self, "func")
     assert sig2 is not None
     assert sig2[0][0] == "x"
     assert sig2[0][2] == "torch.float32"  # value error fallback
 
+
+def test_extract_c_extension_signature_overloads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test extract_c_extension_signature across numbered overload docstring layouts.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+
     def leading_empty() -> None:
-        """Execute helper leading empty."""
+        """Placeholder target with leading blank lines."""
         pass
 
-    leading_empty.__doc__ = (
-        "\n\nOverloaded function.\n\n1. func(x: int) -> int\n2. func(y: str) -> str"
+    monkeypatch.setattr(
+        leading_empty,
+        "__doc__",
+        "\n\nOverloaded function.\n\n1. func(x: int) -> int\n2. func(y: str) -> str",
     )
     sig_leading = extract_c_extension_signature(leading_empty, "func")
     assert sig_leading is not None
     assert len(sig_leading.overloads) == 1
 
     def numbered_with_empty() -> None:
-        """Execute helper numbered with empty."""
+        """Placeholder target with numbered overloads after blank line."""
         pass
 
-    numbered_with_empty.__doc__ = (
-        "func(x: int) -> int\n\n1. func(x: int) -> int\n2. func(y: str) -> str"
+    monkeypatch.setattr(
+        numbered_with_empty,
+        "__doc__",
+        "func(x: int) -> int\n\n1. func(x: int) -> int\n2. func(y: str) -> str",
     )
     sig_num = extract_c_extension_signature(numbered_with_empty, "func")
     assert sig_num is not None
     assert len(sig_num.overloads) == 2
 
     def sig_then_overload_header() -> None:
-        """Execute helper sig then overload header."""
+        """Placeholder target with signature followed by overload header."""
         pass
 
-    sig_then_overload_header.__doc__ = "func(x: int) -> int\nOverloaded function.\n1. func(x: int) -> int\n2. func(y: str) -> str"
+    monkeypatch.setattr(
+        sig_then_overload_header,
+        "__doc__",
+        "func(x: int) -> int\nOverloaded function.\n1. func(x: int) -> int\n2. func(y: str) -> str",
+    )
     sig_so = extract_c_extension_signature(sig_then_overload_header, "func")
     assert sig_so is not None
     assert len(sig_so.overloads) == 2
 
     def sig_then_doc_text() -> None:
-        """Execute helper sig then doc text."""
+        """Placeholder target with signature followed by prose description."""
         pass
 
-    sig_then_doc_text.__doc__ = (
-        "func(x: int) -> int\nSome description without overload header."
+    monkeypatch.setattr(
+        sig_then_doc_text,
+        "__doc__",
+        "func(x: int) -> int\nSome description without overload header.",
     )
     sig_dt = extract_c_extension_signature(sig_then_doc_text, "func")
     assert sig_dt is not None
     assert len(sig_dt.overloads) == 0
 
 
-def test_utils_branches() -> None:
-    """Test extract_c_extension_signature on classes with whitespace docstrings."""
+def test_utils_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test extract_c_extension_signature on classes with whitespace docstrings.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
 
     class Dummy:
         """Mock or helper class Dummy for unit testing."""
 
         pass
 
-    Dummy.__doc__ = "\n"
+    monkeypatch.setattr(Dummy, "__doc__", "\n")
     assert extract_c_extension_signature(Dummy, "X") is None
 
 
-def test_normalize_c_sig_args_and_unparse_branches() -> None:
-    """Test branches in _normalize_c_sig_args, _parse_c_extension_sig_str, and docstring usage scanning."""
+def test_normalize_c_sig_args_and_unparse_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test branches in _normalize_c_sig_args, _parse_c_extension_sig_str, and docstring usage scanning.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     # Test with trailing comma, keyword-only marker '*', slash '/', varargs, varkwargs, colon, C++ type with default, and plain arg
     raw = "Tensor a, *, /, *args, **kwargs, c: int, const Tensor& d = None, plain_arg, "
     normalized = _normalize_c_sig_args(raw)
@@ -181,9 +218,7 @@ def test_normalize_c_sig_args_and_unparse_branches() -> None:
     assert parsed[1][0][3] is None  # annotation is None
 
     # Test C++ style signature where first ast.parse raises SyntaxError and normalized parse succeeds (lines 162-163)
-    parsed_cpp = _parse_c_extension_sig_str(
-        "func(Tensor self, bool inplace=False) -> Tensor"
-    )
+    parsed_cpp = _parse_c_extension_sig_str("func(Tensor self, bool inplace=False) -> Tensor")
     assert parsed_cpp is not None
     assert parsed_cpp[1][0][0] == "inplace"
 
@@ -199,10 +234,10 @@ def test_normalize_c_sig_args_and_unparse_branches() -> None:
         """Function with usage docstring demonstrating signature parsing fallback."""
         pass
 
-    usage_func.__doc__ = (
-        "Some description\n"
-        ">>> usage_func(invalid syntax arg)\n"
-        ">>> usage_func(valid_arg: int) -> int\n"
+    monkeypatch.setattr(
+        usage_func,
+        "__doc__",
+        ("Some description\n>>> usage_func(invalid syntax arg)\n>>> usage_func(valid_arg: int) -> int\n"),
     )
     sig_usage = extract_c_extension_signature(usage_func, "usage_func")
     assert sig_usage is not None
@@ -222,12 +257,7 @@ def test_tablegen_list_and_traits() -> None:
     assert split_tablegen_list("Pure, Commutative") == ["Pure", "Commutative"]
 
     # Nested brackets, angles, parens, strings with commas and escaped characters
-    complex_raw = (
-        'Pure, AllElementTypesMatch<["operand", "result"]>, '
-        'DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>, '
-        'SomeAttr<"foo, bar", (ins I32:$x)>, // line comment\n'
-        'Escaped<"hello \\"world\\", test">'
-    )
+    complex_raw = 'Pure, AllElementTypesMatch<["operand", "result"]>, DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>, SomeAttr<"foo, bar", (ins I32:$x)>, // line comment\nEscaped<"hello \\"world\\", test">'
     res = split_tablegen_list(complex_raw)
     assert "Pure" in res
     assert 'AllElementTypesMatch<["operand", "result"]>' in res
@@ -242,20 +272,11 @@ def test_tablegen_list_and_traits() -> None:
     assert extract_tablegen_traits("[UnclosedTrait") == []
 
     # extract_tablegen_traits with escaped quote inside brackets and string with brackets
-    escaped_bracket_text = (
-        'let x = "[not_a_trait]"; let traits = [Trait<"nested \\"quote\\" [inside]">];'
-    )
-    assert extract_tablegen_traits(escaped_bracket_text) == [
-        'Trait<"nested \\"quote\\" [inside]">'
-    ]
+    escaped_bracket_text = 'let x = "[not_a_trait]"; let traits = [Trait<"nested \\"quote\\" [inside]">];'
+    assert extract_tablegen_traits(escaped_bracket_text) == ['Trait<"nested \\"quote\\" [inside]">']
 
     # extract_tablegen_traits with specialized interfaces
-    sample_text = (
-        'Op<"custom", [Pure, "getAsmResultNames", ["getAsmResultNames"], '
-        '"inferReturnTypeComponents", ["inferReturnTypeComponents"], '
-        '"inferResultRanges", ["inferResultRanges"], // ignore comment\n'
-        'AllTypesMatch<["a", "b"]>]>'
-    )
+    sample_text = 'Op<"custom", [Pure, "getAsmResultNames", ["getAsmResultNames"], "inferReturnTypeComponents", ["inferReturnTypeComponents"], "inferResultRanges", ["inferResultRanges"], // ignore comment\nAllTypesMatch<["a", "b"]>]>'
     traits = extract_tablegen_traits(sample_text)
     assert "Pure" in traits
     assert "OpAsmOpInterface::getAsmResultNames" in traits
@@ -267,9 +288,7 @@ def test_tablegen_list_and_traits() -> None:
     assert split_tablegen_list("Trait1, , Trait2, ") == ["Trait1", "Trait2"]
 
     # Escaped backslash and quotes before outer bracket (lines 703-704, 706-707)
-    text_with_escaped_pre_bracket = (
-        r'let x = "escaped \"quote\" before [not_a_trait]"; let traits = [Trait1];'
-    )
+    text_with_escaped_pre_bracket = r'let x = "escaped \"quote\" before [not_a_trait]"; let traits = [Trait1];'
     assert extract_tablegen_traits(text_with_escaped_pre_bracket) == ["Trait1"]
 
     # Fallback and interface loops (line 748 and branch 758 -> 745)
@@ -283,9 +302,7 @@ def test_tablegen_list_and_traits() -> None:
         assert res_mocked == ["TraitA"]
 
 
-def test_get_custom_snapshots_paths_deduplication(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_get_custom_snapshots_paths_deduplication(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test deduplication and existence check in get_custom_snapshots_paths.
 
     Args:
@@ -307,9 +324,9 @@ def test_get_custom_snapshots_paths_deduplication(
 def test_resolve_griffe_parser_setattr_failure() -> None:
     """Test resolve_griffe_parser when setting fallback _missing_ raises an exception."""
     from unittest import mock
-    from ml_ecosystem_snapshots.utils import resolve_griffe_parser
 
     from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+    from ml_ecosystem_snapshots.utils import resolve_griffe_parser
 
     orig_hasattr = hasattr
     orig_setattr = setattr
@@ -355,6 +372,7 @@ def test_parse_docstring_with_griffe_import_error() -> None:
     """Test parse_docstring_with_griffe returns empty list when griffe cannot be imported."""
     import sys
     from unittest.mock import patch
+
     from ml_ecosystem_snapshots.utils import parse_docstring_with_griffe
 
     with patch.dict(sys.modules, {"griffe": None}):
@@ -367,6 +385,7 @@ def test_resolve_griffe_parser_has_rest() -> None:
     import sys
     import types
     from unittest.mock import patch
+
     from ml_ecosystem_snapshots.utils import resolve_griffe_parser
 
     class MockParser:
@@ -386,6 +405,7 @@ def test_resolve_griffe_parser_has_rest() -> None:
 def test_parse_docstring_with_griffe_parse_exception() -> None:
     """Test parse_docstring_with_griffe when griffe.parse raises an exception."""
     from unittest.mock import patch
+
     from ml_ecosystem_snapshots.utils import parse_docstring_with_griffe
 
     with patch("griffe.parse", side_effect=ValueError("simulated parse error")):

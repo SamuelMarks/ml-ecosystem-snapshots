@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
 from ml_ecosystem_snapshots.c_extension_sig import CExtensionSignature
 from ml_ecosystem_snapshots.introspection.inspector import (
     GhostInspector,
@@ -14,10 +15,7 @@ from ml_switcheroo_ir.schema.ghost import ParameterKind
 
 def test_to_parameter_kind_branches() -> None:
     """Test to_parameter_kind returns existing enum or falls back to POSITIONAL_OR_KEYWORD."""
-    assert (
-        to_parameter_kind(ParameterKind.POSITIONAL_ONLY)
-        == ParameterKind.POSITIONAL_ONLY
-    )
+    assert to_parameter_kind(ParameterKind.POSITIONAL_ONLY) == ParameterKind.POSITIONAL_ONLY
     assert to_parameter_kind("NON_EXISTENT_KIND") == ParameterKind.POSITIONAL_OR_KEYWORD
 
 
@@ -34,9 +32,7 @@ def test_ghost_inspector_aten_overload_merge_and_returns() -> None:
     )
     aten_sig = CExtensionSignature(
         [("x", "POSITIONAL_OR_KEYWORD", None, "int")],
-        overloads=[
-            CExtensionSignature([("x", "POSITIONAL_OR_KEYWORD", None, "float")])
-        ],
+        overloads=[CExtensionSignature([("x", "POSITIONAL_OR_KEYWORD", None, "float")])],
     )
 
     with (
@@ -79,9 +75,7 @@ def test_ghost_inspector_opaque_c_extension_none_env_tags() -> None:
             return_value=None,
         ),
     ):
-        ref = GhostInspector.inspect(
-            opaque_fn, "torch.opaque", kind="function", environment_tags=None
-        )
+        ref = GhostInspector.inspect(opaque_fn, "torch.opaque", kind="function", environment_tags=None)
         assert ref.environment_tags is not None
         assert "inexact_signature" in ref.environment_tags
         assert "opaque_c_extension" in ref.environment_tags
@@ -110,11 +104,21 @@ class SampleChildForSuper(SampleParentForSuper):
             a: First parameter value.
             kwargs: Variadic keyword arguments.
         """
-        super().__init__(a=a, **kwargs)
+        pass
 
 
-def test_ghost_inspector_super_kwargs_already_present_param() -> None:
-    """Test super kwargs inspection when parent parameter already exists in extracted_params."""
+def test_ghost_inspector_super_kwargs_already_present_param(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test super kwargs inspection when parent parameter already exists in extracted_params.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    monkeypatch.setattr(
+        "ml_ecosystem_snapshots.introspection.inspector.get_runtime_source",
+        lambda _obj: "class SampleChildForSuper(SampleParentForSuper):\n    def __init__(self, a: int, **kwargs: str) -> None:\n        super().__init__(a=a, **kwargs)\n",
+    )
     ref = GhostInspector.inspect(SampleChildForSuper, "tests.SampleChildForSuper")
     param_names = [p.name for p in ref.params]
     assert param_names == ["a", "kwargs", "b"]

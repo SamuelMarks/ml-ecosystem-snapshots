@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-
 import sys
 import types
-import pytest
 
+import pytest
 from ml_ecosystem_snapshots.frameworks.numba import (
     CANONICAL_NUMBA_OPS,
     _get_numba,
@@ -67,15 +66,11 @@ def test_collect_api_numba_live(monkeypatch: pytest.MonkeyPatch) -> None:
             """
             return range(n)
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.numba._get_numba", lambda: FakeNumba()
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.numba._get_numba", lambda: FakeNumba())
 
     real_inspect = GhostInspector.inspect
 
-    def mock_inspect(
-        obj: InspectableTarget, name: str, is_public: bool = True
-    ) -> ExtendedGhostRef:
+    def mock_inspect(obj: InspectableTarget, name: str, is_public: bool = True) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -90,9 +85,7 @@ def test_collect_api_numba_live(monkeypatch: pytest.MonkeyPatch) -> None:
             raise RuntimeError("Simulated inspection failure")
         return real_inspect(obj, name, is_public=is_public)
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.numba.GhostInspector.inspect", mock_inspect
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.numba.GhostInspector.inspect", mock_inspect)
 
     refs = collect_api(SemanticTier.ARRAY_API)
     assert len(refs) > 0
@@ -113,9 +106,7 @@ def test_collect_api_numba_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.numba._get_numba", lambda: None
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.numba._get_numba", lambda: None)
     refs = collect_api(SemanticTier.ARRAY_API)
     assert len(refs) == len(CANONICAL_NUMBA_OPS)
     names = {ref.name for ref in refs}
@@ -141,38 +132,7 @@ def test_get_numba_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    import builtins
-    import typing
-
-    real_import = builtins.__import__
-
-    def mock_import(
-        name: str,
-        globals: typing.Mapping[str, InspectableTarget] | None = None,
-        locals: typing.Mapping[str, InspectableTarget] | None = None,
-        fromlist: typing.Sequence[str] = (),
-        level: int = 0,
-    ) -> types.ModuleType:
-        """Mock import raising ImportError on numba.
-
-        Args:
-            name: Module name.
-            globals: Globals dictionary.
-            locals: Locals dictionary.
-            fromlist: From-import list.
-            level: Relative import level.
-
-        Returns:
-            Imported module.
-
-        Raises:
-            ImportError: When importing numba.
-        """
-        if "numba" in name:
-            raise ImportError("Simulated numba absent")
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", mock_import)
+    monkeypatch.setitem(sys.modules, "numba", None)
     assert _get_numba() is None
 
 
@@ -190,9 +150,7 @@ def test_collect_api_numba_inspection_exception(
 
         njit = "broken"
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.numba._get_numba", lambda: FlakyNumba()
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.numba._get_numba", lambda: FlakyNumba())
 
     def mock_inspect(*args: InspectableTarget, **kwargs: InspectableTarget) -> None:
         """Mock inspect raising RuntimeError.
@@ -206,9 +164,7 @@ def test_collect_api_numba_inspection_exception(
         """
         raise RuntimeError("Inspection failure")
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.numba.GhostInspector.inspect", mock_inspect
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.numba.GhostInspector.inspect", mock_inspect)
     refs = collect_api(SemanticTier.ARRAY_API)
     assert refs == []
 

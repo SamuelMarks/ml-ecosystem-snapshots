@@ -7,10 +7,12 @@ framework collector modules.
 
 from __future__ import annotations
 
-import operator
+import inspect
 import types
 import typing
 
+import pydantic
+import typing_extensions
 from ml_switcheroo_ir.schema.ghost import (
     ExtendedGhostParam,
     GhostOperationRef,
@@ -22,7 +24,6 @@ from ml_switcheroo_ir.schema.ghost import (
     OperandDirection,
     ParameterKind,
 )
-import pydantic
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
@@ -84,9 +85,7 @@ class CanonicalPythonOpSpec(pydantic.BaseModel):
     def __getitem__(self, key: typing.Literal["name", "api_path", "kind"]) -> str: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["params"]
-    ) -> list[CanonicalParamSpec]: ...
+    def __getitem__(self, key: typing.Literal["params"]) -> list[CanonicalParamSpec]: ...
 
     @typing.overload
     def __getitem__(self, key: str) -> str | list[CanonicalParamSpec] | JsonValue: ...
@@ -100,9 +99,7 @@ class CanonicalPythonOpSpec(pydantic.BaseModel):
         Returns:
             Field value.
         """
-        dumped: dict[str, str | list[CanonicalParamSpec] | JsonValue] = (
-            self.model_dump()
-        )
+        dumped: dict[str, str | list[CanonicalParamSpec] | JsonValue] = self.model_dump()
         return dumped[key]
 
     def get(
@@ -174,27 +171,19 @@ class CanonicalSsaOpSpec(pydantic.BaseModel):
     @typing.overload
     def __getitem__(
         self,
-        key: typing.Literal[
-            "name", "mnemonic", "domain", "category", "address_space", "description"
-        ],
+        key: typing.Literal["name", "mnemonic", "domain", "category", "address_space", "description"],
     ) -> str: ...
 
     @typing.overload
     def __getitem__(self, key: typing.Literal["inputs", "outputs"]) -> list[str]: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["attributes"]
-    ) -> list[CanonicalSsaAttrSpec]: ...
+    def __getitem__(self, key: typing.Literal["attributes"]) -> list[CanonicalSsaAttrSpec]: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: str
-    ) -> str | list[str] | list[CanonicalSsaAttrSpec] | JsonValue: ...
+    def __getitem__(self, key: str) -> str | list[str] | list[CanonicalSsaAttrSpec] | JsonValue: ...
 
-    def __getitem__(
-        self, key: str
-    ) -> str | list[str] | list[CanonicalSsaAttrSpec] | JsonValue:
+    def __getitem__(self, key: str) -> str | list[str] | list[CanonicalSsaAttrSpec] | JsonValue:
         """Retrieve an SSA operation field by dictionary key.
 
         Args:
@@ -205,17 +194,13 @@ class CanonicalSsaOpSpec(pydantic.BaseModel):
         """
         if key == "attributes":
             return self.attributes
-        dumped: dict[str, str | list[str] | list[CanonicalSsaAttrSpec] | JsonValue] = (
-            self.model_dump()
-        )
+        dumped: dict[str, str | list[str] | list[CanonicalSsaAttrSpec] | JsonValue] = self.model_dump()
         return dumped[key]
 
     @typing.overload
     def get(
         self,
-        key: typing.Literal[
-            "name", "mnemonic", "domain", "category", "address_space", "description"
-        ],
+        key: typing.Literal["name", "mnemonic", "domain", "category", "address_space", "description"],
         default: str | None = None,
     ) -> str: ...
 
@@ -256,9 +241,7 @@ class CanonicalSsaOpSpec(pydantic.BaseModel):
         """
         if key == "attributes":
             return self.attributes
-        dumped: dict[str, list[str] | list[CanonicalSsaAttrSpec] | JsonValue] = (
-            self.model_dump()
-        )
+        dumped: dict[str, list[str] | list[CanonicalSsaAttrSpec] | JsonValue] = self.model_dump()
         val = dumped.get(key, default)
         return val if val is not None else default
 
@@ -274,11 +257,7 @@ def _coerce_python_op(
     Returns:
         Validated `CanonicalPythonOpSpec`.
     """
-    return (
-        op
-        if isinstance(op, CanonicalPythonOpSpec)
-        else CanonicalPythonOpSpec.model_validate(dict(op))
-    )
+    return op if isinstance(op, CanonicalPythonOpSpec) else CanonicalPythonOpSpec.model_validate(dict(op))
 
 
 def _coerce_submodule_op(
@@ -292,11 +271,7 @@ def _coerce_submodule_op(
     Returns:
         Validated `CanonicalSubmoduleOpSpec`.
     """
-    return (
-        op
-        if isinstance(op, CanonicalSubmoduleOpSpec)
-        else CanonicalSubmoduleOpSpec.model_validate(dict(op))
-    )
+    return op if isinstance(op, CanonicalSubmoduleOpSpec) else CanonicalSubmoduleOpSpec.model_validate(dict(op))
 
 
 def _coerce_ssa_op(
@@ -310,11 +285,7 @@ def _coerce_ssa_op(
     Returns:
         Validated `CanonicalSsaOpSpec`.
     """
-    return (
-        op
-        if isinstance(op, CanonicalSsaOpSpec)
-        else CanonicalSsaOpSpec.model_validate(dict(op))
-    )
+    return op if isinstance(op, CanonicalSsaOpSpec) else CanonicalSsaOpSpec.model_validate(dict(op))
 
 
 def build_canonical_python_ref(
@@ -380,9 +351,7 @@ def collect_from_canonical_or_live(
     live_module: types.ModuleType | None,
     module_prefix: str,
     target_names: typing.Sequence[str],
-    canonical_ops: typing.Sequence[
-        CanonicalPythonOpSpec | typing.Mapping[str, JsonValue]
-    ],
+    canonical_ops: typing.Sequence[CanonicalPythonOpSpec | typing.Mapping[str, JsonValue]],
     default_doc_prefix: str,
     environment_tags: typing.Sequence[str],
     inspector_fn: InspectorCallable | None = None,
@@ -413,15 +382,13 @@ def collect_from_canonical_or_live(
 
     inspect_callable = inspector_fn or GhostInspector.inspect
     results: list[GhostRef] = []
-    live_names = set(dir(live_module))
+    live_members: dict[str, InspectableTarget] = dict(inspect.getmembers(live_module))
     for name in target_names:
-        if name in live_names:
-            obj: InspectableTarget = operator.attrgetter(name)(live_module)
+        if name in live_members:
+            obj: InspectableTarget = live_members[name]
             try:
                 ref = inspect_callable(obj, f"{module_prefix}.{name}", is_public=True)
-                ref.environment_tags = list(ref.environment_tags or ()) + list(
-                    environment_tags
-                )
+                ref.environment_tags = list(ref.environment_tags or ()) + list(environment_tags)
                 results.append(ref)
             except Exception:
                 pass
@@ -430,9 +397,7 @@ def collect_from_canonical_or_live(
 
 def collect_from_submodules_or_canonical(
     loaded_submods: typing.Mapping[str, types.ModuleType],
-    canonical_ops: typing.Sequence[
-        CanonicalSubmoduleOpSpec | typing.Mapping[str, JsonValue]
-    ],
+    canonical_ops: typing.Sequence[CanonicalSubmoduleOpSpec | typing.Mapping[str, JsonValue]],
     framework_tag: str,
     default_submodule: str,
     default_doc_prefix: str,
@@ -474,8 +439,9 @@ def collect_from_submodules_or_canonical(
         sub = spec.submodule or default_submodule
         if sub in loaded_submods:
             mod = loaded_submods[sub]
-            if spec.name in dir(mod):
-                obj: InspectableTarget = operator.attrgetter(spec.name)(mod)
+            mod_members: dict[str, InspectableTarget] = dict(inspect.getmembers(mod))
+            if spec.name in mod_members:
+                obj: InspectableTarget = mod_members[spec.name]
                 try:
                     ref = inspect_callable(obj, spec.api_path, is_public=True)
                     ref.environment_tags = list(ref.environment_tags or ()) + [
@@ -504,6 +470,23 @@ def collect_from_submodules_or_canonical(
     return results
 
 
+class _SsaRefOptions(pydantic.BaseModel):
+    """Keyword options for constructing SSA operation `GhostOperationRef` records."""
+
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    attr_description_prefix: str
+    result_type: str
+    empty_return_type: str
+    provenance_fn: typing.Callable[[CanonicalSsaOpSpec], typing.Mapping[str, JsonValue]]
+    default_doc_fn: typing.Callable[[str], str]
+    environment_tags: typing.Sequence[str]
+    api_path_fn: typing.Callable[[CanonicalSsaOpSpec, str], str] | None = None
+
+
+_SsaRefOptionValue: typing_extensions.TypeAlias = "str | typing.Sequence[str] | typing.Callable[[CanonicalSsaOpSpec], typing.Mapping[str, JsonValue]] " "| typing.Callable[[str], str] | typing.Callable[[CanonicalSsaOpSpec, str], str] | None"
+
+
 def build_ssa_operation_refs(
     ops: typing.Sequence[CanonicalSsaOpSpec | typing.Mapping[str, JsonValue]],
     api_prefix: str,
@@ -511,13 +494,7 @@ def build_ssa_operation_refs(
     operand_annotation_fn: typing.Callable[[CanonicalSsaOpSpec, str], str],
     operand_description_fn: typing.Callable[[CanonicalSsaOpSpec, str], str],
     operand_direction_fn: typing.Callable[[CanonicalSsaOpSpec, str], OperandDirection],
-    attr_description_prefix: str,
-    result_type: str,
-    empty_return_type: str,
-    provenance_fn: typing.Callable[[CanonicalSsaOpSpec], dict[str, JsonValue]],
-    default_doc_fn: typing.Callable[[str], str],
-    environment_tags: typing.Sequence[str],
-    api_path_fn: typing.Callable[[CanonicalSsaOpSpec, str], str] | None = None,
+    **options: _SsaRefOptionValue,
 ) -> list[GhostRef]:
     """Construct `GhostOperationRef` objects from SSA / hardware operation specs.
 
@@ -528,26 +505,27 @@ def build_ssa_operation_refs(
         operand_annotation_fn: Callback returning type annotation for `(op, inp)`.
         operand_description_fn: Callback returning description for `(op, inp)`.
         operand_direction_fn: Callback returning `OperandDirection` for `(op, inp)`.
-        attr_description_prefix: Prefix for attribute descriptions (e.g. 'C++ attribute').
-        result_type: Result type string when outputs exist (e.g. 'auto', 'T', 'v128', 'vec4').
-        empty_return_type: Return type string when no outputs exist (e.g. 'void', 'None').
-        provenance_fn: Callback returning provenance metadata dictionary for `op`.
-        default_doc_fn: Callback returning fallback docstring for `op_name`.
-        environment_tags: Sequence of environment tag strings.
-        api_path_fn: Optional callback returning `api_path` for `(op, op_name)`.
+        **options: Keyword options validated via `_SsaRefOptions` specifying `attr_description_prefix`,
+            `result_type`, `empty_return_type`, `provenance_fn`, `default_doc_fn`,
+            `environment_tags`, and optional `api_path_fn`.
 
     Returns:
         List of populated `GhostOperationRef` items.
     """
+    opts = _SsaRefOptions.model_validate(options)
+    attr_description_prefix = opts.attr_description_prefix
+    result_type = opts.result_type
+    empty_return_type = opts.empty_return_type
+    provenance_fn = opts.provenance_fn
+    default_doc_fn = opts.default_doc_fn
+    environment_tags = opts.environment_tags
+    api_path_fn = opts.api_path_fn
+
     refs: list[GhostRef] = []
     for raw_op in ops:
         spec = _coerce_ssa_op(raw_op)
         op_name = spec.mnemonic if name_key == "mnemonic" else spec.name
-        api_path = (
-            api_path_fn(spec, op_name)
-            if api_path_fn is not None
-            else f"{api_prefix}.{op_name}"
-        )
+        api_path = api_path_fn(spec, op_name) if api_path_fn is not None else f"{api_prefix}.{op_name}"
         params: list[ExtendedGhostParam] = []
 
         for inp_str in spec.inputs:
@@ -582,9 +560,7 @@ def build_ssa_operation_refs(
             )
             attrs_meta[attr_name] = attr.model_dump(exclude_none=True)
 
-        returns: list[GhostResult] = [
-            GhostResult(name=out, type=result_type) for out in spec.outputs
-        ]
+        returns: list[GhostResult] = [GhostResult(name=out, type=result_type) for out in spec.outputs]
         returns_type = result_type if returns else empty_return_type
         params_list: list[GhostParam] = list(params)
 
@@ -599,7 +575,7 @@ def build_ssa_operation_refs(
                 returns_type=returns_type,
                 docstring=spec.description or default_doc_fn(op_name),
                 environment_tags=list(environment_tags),
-                domain_metadata=provenance_fn(spec),
+                domain_metadata=dict(provenance_fn(spec)),
                 attributes=attrs_meta if attrs_meta else None,
             )
         )
@@ -625,15 +601,12 @@ def collect_dir_callables(
     """
     inspect_callable = inspector_fn or GhostInspector.inspect
     results: list[GhostRef] = []
-    for name in dir(mod_obj):
+    for name, obj in inspect.getmembers(mod_obj):
         if not include_nonpublic and name.startswith("_"):
             continue
-        obj: InspectableTarget = operator.attrgetter(name)(mod_obj)
         if callable(obj):
             try:
-                res = inspect_callable(
-                    obj, f"{api_prefix}.{name}", is_public=not name.startswith("_")
-                )
+                res = inspect_callable(obj, f"{api_prefix}.{name}", is_public=not name.startswith("_"))
                 results.append(res)
             except Exception:
                 pass
@@ -682,18 +655,14 @@ def scan_griffe_module_members(
         except Exception:
             continue
 
-        if ("class" in allowed_kinds and is_cls) or (
-            "function" in allowed_kinds and is_fn
-        ):
+        if ("class" in allowed_kinds and is_cls) or ("function" in allowed_kinds and is_fn):
             try:
                 ref = inspect_callable(
                     member,
                     f"{api_prefix}.{name}",
                     is_public=not name.startswith("_"),
                 )
-                ref.environment_tags = list(ref.environment_tags or ()) + [
-                    t for t in environment_tags if t not in (ref.environment_tags or ())
-                ]
+                ref.environment_tags = list(ref.environment_tags or ()) + [t for t in environment_tags if t not in (ref.environment_tags or ())]
                 results.append(ref)
             except Exception:
                 pass

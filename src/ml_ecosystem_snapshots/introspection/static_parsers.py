@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import typing
+
 import typing_extensions
 
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
@@ -48,9 +49,7 @@ _GRIFFE_CACHE: dict[str, GriffeCacheEntry] = {}
 logging.getLogger("griffe").setLevel(logging.CRITICAL)
 
 
-def load_griffe_module_safely(
-    module_path: str, framework_name: str | None = None
-) -> GriffeCacheEntry:
+def load_griffe_module_safely(module_path: str, framework_name: str | None = None) -> GriffeCacheEntry:
     """Statically load a Python module or package via Griffe with caching and parser resolution.
 
     Args:
@@ -71,9 +70,7 @@ def load_griffe_module_safely(
         fw_key = framework_name or module_path.split(".")[0]
         parser = resolve_griffe_parser(get_framework_docstring_parser(fw_key))
         loaded = _griffe_mod.load(module_path, docstring_parser=parser)
-        assert isinstance(
-            loaded, (_griffe_mod.Module, _griffe_mod.Object, _griffe_mod.Alias)
-        )
+        assert isinstance(loaded, (_griffe_mod.Module, _griffe_mod.Object, _griffe_mod.Alias))
         _GRIFFE_CACHE[module_path] = loaded
         return loaded
     except Exception:
@@ -110,9 +107,7 @@ def preload_griffe_cache(frameworks: list[str] | None = None) -> None:
 
                 parser = resolve_griffe_parser(get_framework_docstring_parser(target))
                 loaded = _griffe_mod.load(target, docstring_parser=parser)
-                assert isinstance(
-                    loaded, (_griffe_mod.Module, _griffe_mod.Object, _griffe_mod.Alias)
-                )
+                assert isinstance(loaded, (_griffe_mod.Module, _griffe_mod.Object, _griffe_mod.Alias))
                 _GRIFFE_CACHE[target] = loaded
             except Exception:
                 pass

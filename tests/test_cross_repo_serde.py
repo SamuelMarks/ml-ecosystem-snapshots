@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import operator
-
 import json
 import os
 
-from ml_switcheroo_ir.schema.ghost import ParameterKind
 from ml_ecosystem_snapshots.models import (
     ExtendedGhostParam,
     ExtendedGhostRef,
@@ -19,6 +16,7 @@ from ml_ecosystem_snapshots.models import (
     SnapshotEnvelope,
 )
 from ml_ecosystem_snapshots.serialization.hydration import hydrate_ghost_ref
+from ml_switcheroo_ir.schema.ghost import ParameterKind
 
 
 def test_ghost_protocol_v2_models_instantiation() -> None:
@@ -135,7 +133,7 @@ def test_exhaustive_snapshot_loading_serde() -> None:
         if not os.path.exists(fpath):
             continue
 
-        with open(fpath, "r", encoding="utf-8") as f:
+        with open(fpath, encoding="utf-8") as f:
             raw_data = json.load(f)
 
         if isinstance(raw_data, dict):
@@ -158,9 +156,8 @@ def test_exhaustive_snapshot_loading_serde() -> None:
 
         for raw_item in records[:10]:
             ref = hydrate_ghost_ref(raw_item)
-            assert ref.name or (
-                operator.attrgetter("mnemonic")(ref) if "mnemonic" in dir(ref) else None
-            )
+            mnemonic_extra = ref.model_extra.get("mnemonic") if ref.model_extra else None
+            assert bool(ref.name or mnemonic_extra)
             # Re-serialize to verify schema integrity
             dumped = ref.model_dump()
             assert isinstance(dumped, dict)

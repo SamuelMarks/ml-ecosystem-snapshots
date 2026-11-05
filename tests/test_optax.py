@@ -6,9 +6,7 @@ import argparse
 import types
 from unittest.mock import patch
 
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 import pytest
-
 from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli.commands.check import cmd_check_optax
 from ml_ecosystem_snapshots.frameworks import optax as optax_fw
@@ -21,6 +19,7 @@ from ml_ecosystem_snapshots.mcp.tools.hallucination import (
 )
 from ml_ecosystem_snapshots.mcp.tools.translation import translate_concept_arguments
 from ml_ecosystem_snapshots.utils import get_framework_docstring_parser
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 
 def test_optax_docstring_parser_and_version_fallback() -> None:
@@ -58,12 +57,8 @@ def test_get_optax_griffe_module_and_hydrate_aliases(
     ):
         assert optax_fw._get_optax_griffe_module() is None
 
-    losses = optax_fw._hydrate_canonical_optax_tier(
-        optax_fw.CANONICAL_OPTAX_LOSSES, attach_root_alias=True
-    )
-    ce_ref = next(
-        r for r in losses if r.api_path == "optax.losses.softmax_cross_entropy"
-    )
+    losses = optax_fw._hydrate_canonical_optax_tier(optax_fw.CANONICAL_OPTAX_LOSSES, attach_root_alias=True)
+    ce_ref = next(r for r in losses if r.api_path == "optax.losses.softmax_cross_entropy")
     assert ce_ref.aliases is not None
     assert "optax.softmax_cross_entropy" in ce_ref.aliases
 
@@ -169,28 +164,16 @@ def test_optax_scan_array_api_live_and_griffe_branches(
         """
         return tree
 
-    pytest.MonkeyPatch().setattr(
-        fake_proj, "projection_non_negative", projection_non_negative, raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        fake_proj, "projection_box", projection_box, raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        fake_proj, "_private_proj", _private_proj, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_proj, "projection_non_negative", projection_non_negative, raising=False)
+    pytest.MonkeyPatch().setattr(fake_proj, "projection_box", projection_box, raising=False)
+    pytest.MonkeyPatch().setattr(fake_proj, "_private_proj", _private_proj, raising=False)
     pytest.MonkeyPatch().setattr(fake_proj, "NOT_A_FN", 123, raising=False)
 
-    pytest.MonkeyPatch().setattr(
-        fake_optax, "apply_updates", apply_updates, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_optax, "apply_updates", apply_updates, raising=False)
     pytest.MonkeyPatch().setattr(fake_optax, "global_norm", global_norm, raising=False)
-    pytest.MonkeyPatch().setattr(
-        fake_optax, "_private_top", _private_top, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_optax, "_private_top", _private_top, raising=False)
     pytest.MonkeyPatch().setattr(fake_optax, "projections", fake_proj, raising=False)
-    pytest.MonkeyPatch().setattr(
-        fake_optax, "tree_utils", "not_a_module", raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_optax, "tree_utils", "not_a_module", raising=False)
 
     real_inspect = GhostInspector.inspect
 
@@ -314,9 +297,7 @@ def test_check_optax_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
     cmd_check_optax(args_ok)
     assert "Optax Operation 'adam' is valid." in capsys.readouterr().out
 
-    args_fail = argparse.Namespace(
-        op_name="InvalidOptaxOp", inputs_count=None, attributes=None
-    )
+    args_fail = argparse.Namespace(op_name="InvalidOptaxOp", inputs_count=None, attributes=None)
     with pytest.raises(SystemExit):
         cmd_check_optax(args_fail)
 

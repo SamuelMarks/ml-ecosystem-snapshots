@@ -8,23 +8,23 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
+
 import pytest
 import pytest_mock
-
 from ml_ecosystem_snapshots.frameworks.torch import (
     extract_aten_c_extension_signature,
     get_aten_op_schema,
     infer_torch_dtype_and_rank,
     parse_native_functions_yaml,
 )
-from ml_ecosystem_snapshots.mcp_server import check_hallucination, handle_mcp_message
-from ml_switcheroo_ir.schema.ghost import ParameterKind
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.sanitize import sanitize_param_default
+from ml_ecosystem_snapshots.mcp_server import check_hallucination, handle_mcp_message
 from ml_ecosystem_snapshots.models import (
     ExtendedGhostParam,
     GhostPythonRef,
 )
+from ml_switcheroo_ir.schema.ghost import ParameterKind
 
 
 def test_sanitize_param_default_semantic_literals() -> None:
@@ -343,11 +343,7 @@ def test_ghost_inspector_aten_torch_no_decay() -> None:
     # Inspect torch.add
     ref_add = GhostInspector.inspect(torch.add, "torch.add")
     assert ref_add.name == "add"
-    assert not (
-        len(ref_add.params) == 2
-        and ref_add.params[0].name == "args"
-        and ref_add.params[1].name == "kwargs"
-    )
+    assert not (len(ref_add.params) == 2 and ref_add.params[0].name == "args" and ref_add.params[1].name == "kwargs")
     param_names = [p.name for p in ref_add.params]
     assert "input" in param_names
     assert "other" in param_names
@@ -358,21 +354,13 @@ def test_ghost_inspector_aten_torch_no_decay() -> None:
     # Inspect torch.relu
     ref_relu = GhostInspector.inspect(torch.relu, "torch.relu")
     assert ref_relu.name == "relu"
-    assert not (
-        len(ref_relu.params) == 2
-        and ref_relu.params[0].name == "args"
-        and ref_relu.params[1].name == "kwargs"
-    )
+    assert not (len(ref_relu.params) == 2 and ref_relu.params[0].name == "args" and ref_relu.params[1].name == "kwargs")
     assert any(p.name == "input" for p in ref_relu.params)
 
     # Inspect torch.matmul
     ref_matmul = GhostInspector.inspect(torch.matmul, "torch.matmul")
     assert ref_matmul.name == "matmul"
-    assert not (
-        len(ref_matmul.params) == 2
-        and ref_matmul.params[0].name == "args"
-        and ref_matmul.params[1].name == "kwargs"
-    )
+    assert not (len(ref_matmul.params) == 2 and ref_matmul.params[0].name == "args" and ref_matmul.params[1].name == "kwargs")
     assert any(p.name == "input" for p in ref_matmul.params)
     assert any(p.name == "other" for p in ref_matmul.params)
 
@@ -528,8 +516,9 @@ def test_handle_mcp_message_dtypes_and_ranks() -> None:
         }
     }
 
-    from ml_ecosystem_snapshots.models import JsonValue
     from unittest.mock import patch
+
+    from ml_ecosystem_snapshots.models import JsonValue
 
     with patch(
         "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
@@ -640,11 +629,7 @@ def test_torch_collect_api_array_api_aten(mocker: pytest_mock.MockerFixture) -> 
     assert len(res) > 0
     assert any(r.api_path.startswith("torch.") for r in res)
 
-    tensor_in_place = [
-        r
-        for r in res
-        if r.api_path.startswith("torch.Tensor.") and r.name.endswith("_")
-    ]
+    tensor_in_place = [r for r in res if r.api_path.startswith("torch.Tensor.") and r.name.endswith("_")]
     if tensor_in_place:
         assert isinstance(tensor_in_place[0], GhostPythonRef)
         assert tensor_in_place[0].domain_metadata is not None

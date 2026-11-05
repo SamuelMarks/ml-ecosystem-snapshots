@@ -7,7 +7,6 @@ GhostRefs for layers, losses, optimizers, and activations.
 from __future__ import annotations
 
 import inspect
-import operator
 import types
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
@@ -37,6 +36,21 @@ def _get_tf() -> types.ModuleType | None:
         return None
 
 
+def _get_submodule(parent: types.ModuleType | types.SimpleNamespace, name: str) -> types.ModuleType | types.SimpleNamespace | None:
+    """Resolve a submodule attribute on `parent` via `inspect.getmembers`.
+
+    Args:
+        parent: Parent module object.
+        name: Submodule attribute name.
+
+    Returns:
+        Submodule `ModuleType` / `SimpleNamespace` or None if absent.
+    """
+    members: dict[str, InspectableTarget] = dict(inspect.getmembers(parent))
+    sub = members.get(name)
+    return sub if isinstance(sub, (types.ModuleType, types.SimpleNamespace)) else None
+
+
 def _collect_tf_submodules(
     tf_mod: types.ModuleType,
     submodule_names: list[str],
@@ -55,21 +69,222 @@ def _collect_tf_submodules(
         List of inspected `GhostRef` objects.
     """
     collected: list[GhostRef] = []
-    tf_names = set(dir(tf_mod))
     for sub_name in submodule_names:
-        if sub_name in tf_names:
-            sub_mod: types.ModuleType = operator.attrgetter(sub_name)(tf_mod)
-            for name, obj in get_all_members(sub_mod):
-                if (callable(obj) or (allow_classes and inspect.isclass(obj))) and (
-                    include_nonpublic or not name.startswith("_")
-                ):
+        sub_mod = _get_submodule(tf_mod, sub_name)
+        if sub_mod is not None:
+            for name, obj in inspect.getmembers(sub_mod):
+                if (callable(obj) or (allow_classes and inspect.isclass(obj))) and (include_nonpublic or not name.startswith("_")):
                     try:
-                        collected.append(
-                            GhostInspector.inspect(obj, f"tf.{sub_name}.{name}")
-                        )
+                        collected.append(GhostInspector.inspect(obj, f"tf.{sub_name}.{name}"))
                     except Exception:
                         pass
     return collected
+
+
+def _collect_tf_classes_from_mod(
+    mod: types.ModuleType | types.SimpleNamespace | None,
+    prefix: str,
+    include_nonpublic: bool,
+) -> list[GhostRef]:
+    """Collect class symbols from a TensorFlow or Keras submodule.
+
+    Args:
+        mod: Target submodule or None.
+        prefix: Qualified API path prefix.
+        include_nonpublic: Whether to include underscore-prefixed classes.
+
+    Returns:
+        List of inspected `GhostRef` items.
+    """
+    if mod is None:
+        return []
+    return [
+        GhostInspector.inspect(
+            obj,
+            f"{prefix}.{name}",
+            is_public=not name.startswith("_"),
+        )
+        for name, obj in get_all_members(mod)
+        if inspect.isclass(obj) and (include_nonpublic or not name.startswith("_"))
+    ]
+
+
+def _collect_tf_activations(tf_mod: types.ModuleType) -> list[GhostRef]:
+    """Collect TensorFlow activation functions from `tf.nn`.
+
+    Args:
+        tf_mod: Loaded TensorFlow root module.
+
+    Returns:
+        List of inspected `GhostRef` items.
+    """
+    nn_mod = _get_submodule(tf_mod, "nn")
+    if nn_mod is None:
+        return []
+    target_names = {
+        "relu",
+        "sigmoid",
+        "tanh",
+        "softmax",
+        "leaky_relu",
+        "elu",
+        "selu",
+    }
+    nn_members: dict[str, InspectableTarget] = dict(inspect.getmembers(nn_mod))
+    return [GhostInspector.inspect(nn_members[name], f"tf.nn.{name}") for name in target_names if name in nn_members]
+
+
+def _collect_tf_keras_tier(tf_mod: types.ModuleType, category: SemanticTier, include_nonpublic: bool) -> list[GhostRef]:
+    """Collect Keras-backed TensorFlow tiers (`LAYER`, `LOSS`, `OPTIMIZER`, `SCHEDULER`, `INITIALIZER`, `METRIC`).
+
+    Args:
+        tf_mod: Loaded TensorFlow root module.
+        category: Target `SemanticTier`.
+        include_nonpublic: Whether to include private classes.
+
+    Returns:
+        List of inspected `GhostRef` items.
+    """
+    keras_mod = _get_submodule(tf_mod, "keras")
+    if keras_mod is None:
+        return []
+
+    tier_submod_map: dict[SemanticTier, tuple[str, str]] = {
+        SemanticTier.LAYER: ("layers", "tf.keras.layers"),
+        SemanticTier.LOSS: ("losses", "tf.keras.losses"),
+        SemanticTier.OPTIMIZER: ("optimizers", "tf.keras.optimizers"),
+        SemanticTier.INITIALIZER: ("initializers", "tf.keras.initializers"),
+        SemanticTier.METRIC: ("metrics", "tf.keras.metrics"),
+    }
+    if category in tier_submod_map:
+        attr_name, prefix = tier_submod_map[category]
+        return _collect_tf_classes_from_mod(_get_submodule(keras_mod, attr_name), prefix, include_nonpublic)
+
+    opt_mod = _get_submodule(keras_mod, "optimizers")
+    sched_mod = _get_submodule(opt_mod, "schedules") if opt_mod else None
+    return _collect_tf_classes_from_mod(sched_mod, "tf.keras.optimizers.schedules", include_nonpublic)
+
+
+def _collect_tf_type_methods(tf_mod: types.ModuleType, type_name: str, include_nonpublic: bool) -> list[GhostRef]:
+    """Collect instance methods from `tf.Tensor` or `tf.Variable`.
+
+    Args:
+        tf_mod: Loaded TensorFlow root module.
+        type_name: Class name on `tf_mod` (`'Tensor'` or `'Variable'`).
+        include_nonpublic: Whether to include private methods.
+
+    Returns:
+        List of inspected `GhostRef` items.
+    """
+    tf_members: dict[str, InspectableTarget] = dict(inspect.getmembers(tf_mod))
+    cls_obj = tf_members.get(type_name)
+    if cls_obj is None:
+        return []
+    results: list[GhostRef] = []
+    for name, obj in inspect.getmembers(cls_obj):
+        if (include_nonpublic or not name.startswith("_")) and callable(obj) and not inspect.isclass(obj):
+            try:
+                results.append(GhostInspector.inspect(obj, f"tf.{type_name}.{name}", kind="method"))
+            except Exception:
+                pass
+    return results
+
+
+def _collect_tf_raw_ops(tf_mod: types.ModuleType, include_nonpublic: bool, add_tag: bool) -> list[GhostRef]:
+    """Collect functions from `tf.raw_ops`.
+
+    Args:
+        tf_mod: Loaded TensorFlow root module.
+        include_nonpublic: Whether to include private functions.
+        add_tag: Whether to append `'tf.raw_op'` to `environment_tags`.
+
+    Returns:
+        List of inspected `GhostRef` items.
+    """
+    raw_ops_mod = _get_submodule(tf_mod, "raw_ops")
+    if raw_ops_mod is None:
+        return []
+    results: list[GhostRef] = []
+    for name, obj in get_all_members(raw_ops_mod):
+        if (include_nonpublic or not name.startswith("_")) and (callable(obj) and not inspect.isclass(obj)):
+            try:
+                ref = GhostInspector.inspect(obj, f"tf.raw_ops.{name}")
+                if add_tag:
+                    if ref.environment_tags is None:
+                        ref.environment_tags = []
+                    ref.environment_tags.append("tf.raw_op")
+                results.append(ref)
+            except Exception:
+                pass
+    return results
+
+
+def _collect_tf_array_api(tf_mod: types.ModuleType, include_nonpublic: bool) -> list[GhostRef]:
+    """Collect `SemanticTier.ARRAY_API` symbols across TensorFlow modules and classes.
+
+    Args:
+        tf_mod: Loaded TensorFlow root module.
+        include_nonpublic: Whether to include private symbols.
+
+    Returns:
+        List of inspected `GhostRef` items.
+    """
+    results: list[GhostRef] = []
+    results.extend(
+        _collect_tf_submodules(
+            tf_mod,
+            ["math", "linalg", "nn", "image"],
+            include_nonpublic=include_nonpublic,
+            allow_classes=False,
+        )
+    )
+    results.extend(
+        _collect_tf_submodules(
+            tf_mod,
+            ["lookup"],
+            include_nonpublic=include_nonpublic,
+            allow_classes=True,
+        )
+    )
+
+    top_level_tensor_ops = [
+        "concat",
+        "stack",
+        "unstack",
+        "split",
+        "gather",
+        "gather_nd",
+        "scatter_nd",
+        "reshape",
+        "squeeze",
+        "expand_dims",
+        "transpose",
+        "tile",
+        "slice",
+        "strided_slice",
+        "where",
+    ]
+    seen_ops = set(top_level_tensor_ops)
+    tf_top_members: dict[str, InspectableTarget] = dict(inspect.getmembers(tf_mod))
+    for name in top_level_tensor_ops:
+        if name in tf_top_members and callable(tf_top_members[name]):
+            try:
+                results.append(GhostInspector.inspect(tf_top_members[name], f"tf.{name}"))
+            except Exception:
+                pass
+
+    for name, obj in get_all_members(tf_mod):
+        if (not name.startswith("_") or include_nonpublic) and name not in seen_ops and callable(obj) and not inspect.isclass(obj):
+            try:
+                results.append(GhostInspector.inspect(obj, f"tf.{name}"))
+            except Exception:
+                pass
+
+    results.extend(_collect_tf_raw_ops(tf_mod, include_nonpublic, add_tag=False))
+    results.extend(_collect_tf_type_methods(tf_mod, "Tensor", include_nonpublic))
+    results.extend(_collect_tf_type_methods(tf_mod, "Variable", include_nonpublic))
+    results.extend(_collect_tf_raw_ops(tf_mod, include_nonpublic, add_tag=True))
+    return results
 
 
 def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[GhostRef]:
@@ -81,249 +296,37 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
 
     Returns:
         A list of populated GhostRef objects.
-
     """
-    results: list[GhostRef] = []
     tf_mod = _get_tf()
     if not tf_mod:
-        return results
+        return []
 
+    results: list[GhostRef] = []
     try:
         if category == SemanticTier.ACTIVATION:
-            target_names = {
-                "relu",
-                "sigmoid",
-                "tanh",
-                "softmax",
-                "leaky_relu",
-                "elu",
-                "selu",
-            }
-            if "nn" in dir(tf_mod):
-                nn_names = set(dir(tf_mod.nn))
-                for name in target_names:
-                    if name in nn_names:
-                        act_obj: InspectableTarget = operator.attrgetter(name)(
-                            tf_mod.nn
-                        )
-                        results.append(GhostInspector.inspect(act_obj, f"tf.nn.{name}"))
-
-        elif category == SemanticTier.LAYER:
-            is_keras_available = "keras" in dir(tf_mod) and "layers" in dir(
-                tf_mod.keras
-            )
-            if is_keras_available:
-                for name, obj in get_all_members(tf_mod.keras.layers):
-                    if inspect.isclass(obj) and (
-                        include_nonpublic or not name.startswith("_")
-                    ):
-                        results.append(
-                            GhostInspector.inspect(obj, f"tf.keras.layers.{name}")
-                        )
-
-        elif category == SemanticTier.LOSS:
-            is_keras_available = "keras" in dir(tf_mod) and "losses" in dir(
-                tf_mod.keras
-            )
-            if is_keras_available:
-                for name, obj in get_all_members(tf_mod.keras.losses):
-                    if inspect.isclass(obj) and (
-                        include_nonpublic or not name.startswith("_")
-                    ):
-                        results.append(
-                            GhostInspector.inspect(obj, f"tf.keras.losses.{name}")
-                        )
-
-        elif category == SemanticTier.OPTIMIZER:
-            is_keras_available = "keras" in dir(tf_mod) and "optimizers" in dir(
-                tf_mod.keras
-            )
-            if is_keras_available:
-                for name, obj in get_all_members(tf_mod.keras.optimizers):
-                    if inspect.isclass(obj) and (
-                        include_nonpublic or not name.startswith("_")
-                    ):
-                        results.append(
-                            GhostInspector.inspect(obj, f"tf.keras.optimizers.{name}")
-                        )
-
-        elif category == SemanticTier.SCHEDULER:
-            is_keras_available = (
-                "keras" in dir(tf_mod)
-                and "optimizers" in dir(tf_mod.keras)
-                and "schedules" in dir(tf_mod.keras.optimizers)
-            )
-            if is_keras_available:
-                for name, obj in get_all_members(tf_mod.keras.optimizers.schedules):
-                    if inspect.isclass(obj) and (
-                        include_nonpublic or not name.startswith("_")
-                    ):
-                        results.append(
-                            GhostInspector.inspect(
-                                obj, f"tf.keras.optimizers.schedules.{name}"
-                            )
-                        )
-
-        elif category == SemanticTier.INITIALIZER:
-            is_keras_available = "keras" in dir(tf_mod) and "initializers" in dir(
-                tf_mod.keras
-            )
-            if is_keras_available:
-                for name, obj in get_all_members(tf_mod.keras.initializers):
-                    if inspect.isclass(obj) and (
-                        include_nonpublic or not name.startswith("_")
-                    ):
-                        results.append(
-                            GhostInspector.inspect(obj, f"tf.keras.initializers.{name}")
-                        )
-
-        elif category == SemanticTier.METRIC:
-            is_keras_available = "keras" in dir(tf_mod) and "metrics" in dir(
-                tf_mod.keras
-            )
-            if is_keras_available:
-                for name, obj in get_all_members(tf_mod.keras.metrics):
-                    if inspect.isclass(obj) and (
-                        include_nonpublic or not name.startswith("_")
-                    ):
-                        results.append(
-                            GhostInspector.inspect(obj, f"tf.keras.metrics.{name}")
-                        )
-
-        elif category == SemanticTier.DATALOADER:
-            if "data" in dir(tf_mod):
-                for name, obj in get_all_members(tf_mod.data):
-                    if inspect.isclass(obj) and (
-                        include_nonpublic or not name.startswith("_")
-                    ):
-                        results.append(GhostInspector.inspect(obj, f"tf.data.{name}"))
-
-        elif category == SemanticTier.ARRAY_API:
-            results.extend(
-                _collect_tf_submodules(
-                    tf_mod,
-                    ["math", "linalg", "nn", "image"],
-                    include_nonpublic=include_nonpublic,
-                    allow_classes=False,
-                )
-            )
-            results.extend(
-                _collect_tf_submodules(
-                    tf_mod,
-                    ["lookup"],
-                    include_nonpublic=include_nonpublic,
-                    allow_classes=True,
-                )
-            )
-
-            top_level_tensor_ops = [
-                "concat",
-                "stack",
-                "unstack",
-                "split",
-                "gather",
-                "gather_nd",
-                "scatter_nd",
-                "reshape",
-                "squeeze",
-                "expand_dims",
-                "transpose",
-                "tile",
-                "slice",
-                "strided_slice",
-                "where",
-            ]
-            seen_ops = set(top_level_tensor_ops)
-            tf_top_names = set(dir(tf_mod))
-            for name in top_level_tensor_ops:
-                if name in tf_top_names:
-                    obj_top: InspectableTarget = operator.attrgetter(name)(tf_mod)
-                    if callable(obj_top):
-                        try:
-                            results.append(
-                                GhostInspector.inspect(obj_top, f"tf.{name}")
-                            )
-                        except Exception:
-                            pass
-
-            for name, obj in get_all_members(tf_mod):
-                if (
-                    not name.startswith("_") or include_nonpublic
-                ) and name not in seen_ops:
-                    if callable(obj) and not inspect.isclass(obj):
-                        try:
-                            results.append(GhostInspector.inspect(obj, f"tf.{name}"))
-                        except Exception:
-                            pass
-
-            if "raw_ops" in dir(tf_mod):
-                for name, obj in get_all_members(tf_mod.raw_ops):
-                    if not name.startswith("_") or include_nonpublic:
-                        if callable(obj) and not inspect.isclass(obj):
-                            try:
-                                results.append(
-                                    GhostInspector.inspect(obj, f"tf.raw_ops.{name}")
-                                )
-                            except Exception:
-                                pass
-
-            if "Tensor" in dir(tf_mod):
-                for name, obj in inspect.getmembers(tf_mod.Tensor):
-                    if (
-                        (include_nonpublic or not name.startswith("_"))
-                        and callable(obj)
-                        and not inspect.isclass(obj)
-                    ):
-                        try:
-                            results.append(
-                                GhostInspector.inspect(
-                                    obj, f"tf.Tensor.{name}", kind="method"
-                                )
-                            )
-                        except Exception:
-                            pass
-
-            if "Variable" in dir(tf_mod):
-                for name, obj in inspect.getmembers(tf_mod.Variable):
-                    if (
-                        (include_nonpublic or not name.startswith("_"))
-                        and callable(obj)
-                        and not inspect.isclass(obj)
-                    ):
-                        try:
-                            results.append(
-                                GhostInspector.inspect(
-                                    obj, f"tf.Variable.{name}", kind="method"
-                                )
-                            )
-                        except Exception:
-                            pass
-
-        if category in (SemanticTier.ARRAY_API, SemanticTier.UTIL) and "raw_ops" in dir(
-            tf_mod
+            results = _collect_tf_activations(tf_mod)
+        elif category in (
+            SemanticTier.LAYER,
+            SemanticTier.LOSS,
+            SemanticTier.OPTIMIZER,
+            SemanticTier.SCHEDULER,
+            SemanticTier.INITIALIZER,
+            SemanticTier.METRIC,
         ):
-            for name, obj in get_all_members(tf_mod.raw_ops):
-                if not include_nonpublic and name.startswith("_"):
-                    continue
-                if callable(obj) and not inspect.isclass(obj):
-                    try:
-                        ref = GhostInspector.inspect(obj, f"tf.raw_ops.{name}")
-                        if ref.environment_tags is None:
-                            ref.environment_tags = []
-                        ref.environment_tags.append("tf.raw_op")
-                        results.append(ref)
-                    except Exception:
-                        pass
-
+            results = _collect_tf_keras_tier(tf_mod, category, include_nonpublic)
+        elif category == SemanticTier.DATALOADER:
+            results = _collect_tf_classes_from_mod(_get_submodule(tf_mod, "data"), "tf.data", include_nonpublic)
+        elif category == SemanticTier.ARRAY_API:
+            results = _collect_tf_array_api(tf_mod, include_nonpublic)
+        elif category == SemanticTier.UTIL:
+            results = _collect_tf_raw_ops(tf_mod, include_nonpublic, add_tag=True)
     except Exception:
         pass
 
     return results
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Entrypoint to collect the TensorFlow API signature for a given category.
 
     Args:
@@ -332,6 +335,5 @@ def collect_api(
 
     Returns:
         A list of GhostRef items discovered for the requested category.
-
     """
     return _collect_live(category, include_nonpublic)

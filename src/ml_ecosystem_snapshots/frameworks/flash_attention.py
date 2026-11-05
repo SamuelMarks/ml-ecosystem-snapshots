@@ -7,23 +7,19 @@ cache indexing layouts, and attention attributes matching `custom_ops.json`.
 from __future__ import annotations
 
 import importlib
-import operator
 import types
 
+import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     SemanticTier,
 )
-import pydantic
 
 from ml_ecosystem_snapshots.frameworks._base import CanonicalPythonOpSpec
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 
-
-CANONICAL_FLASH_ATTN_OPS: list[CanonicalPythonOpSpec] = pydantic.TypeAdapter(
-    list[CanonicalPythonOpSpec]
-).validate_python(
+CANONICAL_FLASH_ATTN_OPS: list[CanonicalPythonOpSpec] = pydantic.TypeAdapter(list[CanonicalPythonOpSpec]).validate_python(
     [
         # FlashAttention-2 Core
         {
@@ -150,9 +146,7 @@ def _discover_flash_attn_module() -> types.ModuleType | None:
     return None
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect FlashAttention, PagedAttention, and custom attention operator signatures.
 
     Args:
@@ -184,14 +178,16 @@ def collect_api(
             for op in CANONICAL_FLASH_ATTN_OPS
         ]
 
+    import inspect
+
     results: list[GhostRef] = []
     seen: set[str] = set()
-    mod_names = set(dir(mod))
+    mod_members: dict[str, InspectableTarget] = dict(inspect.getmembers(mod))
 
     for op in CANONICAL_FLASH_ATTN_OPS:
         name = op.name
-        if name in mod_names:
-            obj: InspectableTarget = operator.attrgetter(name)(mod)
+        if name in mod_members:
+            obj: InspectableTarget = mod_members[name]
             try:
                 ref = GhostInspector.inspect(obj, op.api_path, is_public=True)
                 ref.environment_tags = list(ref.environment_tags or ()) + [

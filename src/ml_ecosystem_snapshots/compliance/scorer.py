@@ -18,6 +18,68 @@ from ml_ecosystem_snapshots.compliance.models import (
 from ml_ecosystem_snapshots.models import JsonValue, SnapshotEnvelope
 
 
+def _build_reference_map(
+    reference_snapshot: SnapshotEnvelope | typing.Mapping[str, JsonValue],
+) -> dict[str, GhostRef]:
+    """Build a lookup dictionary mapping canonical and alias API paths to `GhostRef` items.
+
+    Args:
+        reference_snapshot: The reference snapshot dictionary or envelope containing categories.
+
+    Returns:
+        Dictionary mapping API path strings to validated `GhostRef` instances.
+    """
+    reference_map: dict[str, GhostRef] = {}
+    raw_snap = reference_snapshot.model_dump() if isinstance(reference_snapshot, SnapshotEnvelope) else reference_snapshot
+    cats_obj: JsonValue = raw_snap.get("categories", {})
+    assert isinstance(cats_obj, dict)
+    for _cat, items in cats_obj.items():
+        assert isinstance(items, list)
+        for item in items:
+            ref = GhostRef.model_validate(item)
+            reference_map[ref.api_path] = ref
+            for alias in ref.aliases or []:
+                reference_map[alias] = ref
+    return reference_map
+
+
+def _sig_tuple(p: GhostParam) -> ParamSignatureTuple:
+    """Build a normalized `(name, kind, default, annotation)` tuple for parameter comparison.
+
+    Args:
+        p: A `GhostParam` with `name`, `kind`, `default`, and `annotation`.
+
+    Returns:
+        Normalized 4-tuple `(name, kind, default, annotation)`.
+    """
+    name_val = p.name
+    kind_val = str(p.kind)
+    ann = p.annotation
+    default: str | None = str(p.default) if p.default is not None else None
+
+    if isinstance(ann, str) and ann.startswith('"') and ann.endswith('"'):
+        ann = ann[1:-1]
+    if isinstance(ann, str) and ann.startswith("'") and ann.endswith("'"):
+        ann = ann[1:-1]
+    if default in ("'```(None)```'", "```(None)```", "'___NONE___'"):
+        default = "None"
+    return (name_val, kind_val, default, ann)
+
+
+def _is_ref_opaque(ref_obj: GhostRef) -> bool:
+    """Check whether a `GhostRef` has an opaque or inexact C-extension signature.
+
+    Args:
+        ref_obj: Reference or target `GhostRef` to inspect.
+
+    Returns:
+        True if the signature is marked opaque or inexact, False otherwise.
+    """
+    sig_comp = ref_obj.signature_completeness if isinstance(ref_obj, GhostPythonRef) else None
+    tags = ref_obj.environment_tags or []
+    return sig_comp == "opaque" or "inexact_signature" in tags or "opaque_c_extension" in tags
+
+
 def score_compliance(
     reference_snapshot: SnapshotEnvelope | typing.Mapping[str, JsonValue],
     target_refs: typing.Sequence[GhostRef],
@@ -33,22 +95,7 @@ def score_compliance(
     Returns:
         A `ComplianceScoreReport` containing compliance metrics.
     """
-    reference_map: dict[str, GhostRef] = {}
-    raw_snap = (
-        reference_snapshot.model_dump()
-        if isinstance(reference_snapshot, SnapshotEnvelope)
-        else reference_snapshot
-    )
-    cats_obj: JsonValue = raw_snap.get("categories", {})
-    assert isinstance(cats_obj, dict)
-    for _cat, items in cats_obj.items():
-        assert isinstance(items, list)
-        for item in items:
-            ref = GhostRef.model_validate(item)
-            reference_map[ref.api_path] = ref
-            for alias in ref.aliases or []:
-                reference_map[alias] = ref
-
+    reference_map = _build_reference_map(reference_snapshot)
     target_map = {ref.api_path: ref for ref in target_refs}
 
     total_reference_endpoints = len({ref.api_path for ref in reference_map.values()})
@@ -69,65 +116,18 @@ def score_compliance(
     opaque_signatures: list[str] = []
     warnings: list[str] = []
 
-    def sig_tuple(p: GhostParam) -> ParamSignatureTuple:
-        """Build a normalized `(name, kind, default, annotation)` tuple for parameter comparison.
-
-        Args:
-            p: A `GhostParam` with `name`, `kind`, `default`, and `annotation`.
-
-        Returns:
-            Normalized 4-tuple `(name, kind, default, annotation)`.
-        """
-        name_val = p.name
-        kind_val = str(p.kind)
-        ann = p.annotation
-        default: str | None = str(p.default) if p.default is not None else None
-
-        if isinstance(ann, str) and ann.startswith('"') and ann.endswith('"'):
-            ann = ann[1:-1]
-        if isinstance(ann, str) and ann.startswith("'") and ann.endswith("'"):
-            ann = ann[1:-1]
-        if default in ("'```(None)```'", "```(None)```", "'___NONE___'"):
-            default = "None"
-        return (name_val, kind_val, default, ann)
-
     for api_path, ref_obj in reference_map.items():
         if api_path not in target_map:
             missing.append(api_path)
             continue
 
         target_obj = target_map[api_path]
+        ref_sig = [_sig_tuple(p) for p in ref_obj.params]
+        tgt_sig = [_sig_tuple(p) for p in target_obj.params]
 
-        ref_sig = [sig_tuple(p) for p in ref_obj.params]
-        tgt_sig = [sig_tuple(p) for p in target_obj.params]
-
-        ref_sig_comp = (
-            ref_obj.signature_completeness
-            if isinstance(ref_obj, GhostPythonRef)
-            else None
-        )
-        tgt_sig_comp = (
-            target_obj.signature_completeness
-            if isinstance(target_obj, GhostPythonRef)
-            else None
-        )
-
-        ref_is_opaque = (
-            ref_sig_comp == "opaque"
-            or "inexact_signature" in (ref_obj.environment_tags or [])
-            or "opaque_c_extension" in (ref_obj.environment_tags or [])
-        )
-        tgt_is_opaque = (
-            tgt_sig_comp == "opaque"
-            or "inexact_signature" in (target_obj.environment_tags or [])
-            or "opaque_c_extension" in (target_obj.environment_tags or [])
-        )
-
-        if ref_is_opaque or tgt_is_opaque:
+        if _is_ref_opaque(ref_obj) or _is_ref_opaque(target_obj):
             opaque_signatures.append(api_path)
-            warnings.append(
-                f"API '{api_path}' matched via opaque (*args, **kwargs) C-extension fallback."
-            )
+            warnings.append(f"API '{api_path}' matched via opaque (*args, **kwargs) C-extension fallback.")
             if strict_c_extensions:
                 mismatched.append(
                     ComplianceMismatchEntry(
@@ -150,11 +150,7 @@ def score_compliance(
             if has_varargs and has_varkwargs:
                 matched.append(api_path)
             else:
-                mismatched.append(
-                    ComplianceMismatchEntry(
-                        api_path=api_path, expected=ref_sig, actual=tgt_sig
-                    )
-                )
+                mismatched.append(ComplianceMismatchEntry(api_path=api_path, expected=ref_sig, actual=tgt_sig))
 
     score_percentage = (len(matched) / total_reference_endpoints) * 100.0
 

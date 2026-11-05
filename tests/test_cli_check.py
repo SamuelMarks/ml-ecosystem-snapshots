@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
+import os
 from pathlib import Path
+from unittest.mock import mock_open
+
 import pytest
 import pytest_mock
-import os
-import argparse
-from unittest.mock import MagicMock, patch, mock_open
 from ml_ecosystem_snapshots.cli import cmd_check
 
 MOCK_JSON = """
@@ -44,37 +45,40 @@ MOCK_JSON = """
 """
 
 
-@patch("ml_ecosystem_snapshots.compliance.score_compliance")
-@patch("ml_ecosystem_snapshots.compliance.extract_target_refs")
-@patch("builtins.open", new_callable=mock_open, read_data=MOCK_JSON)
 def test_cmd_check(
-    mock_file: MagicMock,
-    mock_extract: MagicMock,
-    mock_score: MagicMock,
+    mocker: pytest_mock.MockerFixture,
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test basic check command reporting.
 
     Args:
-        mock_file: Mocked file open callable.
-        mock_extract: Mocked `extract_target_refs` callable.
-        mock_score: Mocked `score_compliance` callable.
+        mocker: Pytest mocker fixture.
+        tmp_path: Pytest temporary directory fixture.
         capsys: Pytest stdout/stderr capture fixture.
     """
+    snap_file = tmp_path / "dummy.json"
+    snap_file.write_text(MOCK_JSON, encoding="utf-8")
     args = argparse.Namespace(
-        snapshot_json="dummy.json",
+        snapshot_json=str(snap_file),
         target_path="dummy_target",
         target_prefix="t_pref",
         reference_prefix="r_pref",
     )
 
-    mock_extract.return_value = ["mock_ref"]
-    mock_score.return_value = {
-        "score_percentage": 75.5,
-        "matched": ["mod.func1", "mod.func2", "other.func3"],
-        "missing": ["mod.func4"],
-        "mismatched": [{"api_path": "other.func5", "expected": [], "actual": []}],
-    }
+    mock_extract = mocker.patch(
+        "ml_ecosystem_snapshots.compliance.extract_target_refs",
+        return_value=["mock_ref"],
+    )
+    mock_score = mocker.patch(
+        "ml_ecosystem_snapshots.compliance.score_compliance",
+        return_value={
+            "score_percentage": 75.5,
+            "matched": ["mod.func1", "mod.func2", "other.func3"],
+            "missing": ["mod.func4"],
+            "mismatched": [{"api_path": "other.func5", "expected": [], "actual": []}],
+        },
+    )
 
     import json
 
@@ -94,45 +98,45 @@ def test_cmd_check(
     assert "other.func5" in captured.out
 
 
-@patch("ml_ecosystem_snapshots.compliance.score_compliance")
-@patch("ml_ecosystem_snapshots.compliance.extract_target_refs")
-@patch("builtins.open", new_callable=mock_open, read_data='{"categories": {}}')
 def test_cmd_check_pagination(
-    mock_file: MagicMock,
-    mock_extract: MagicMock,
-    mock_score: MagicMock,
+    mocker: pytest_mock.MockerFixture,
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test pagination in check command reporting.
 
     Args:
-        mock_file: Mocked file open callable.
-        mock_extract: Mocked `extract_target_refs` callable.
-        mock_score: Mocked `score_compliance` callable.
+        mocker: Pytest mocker fixture.
+        tmp_path: Pytest temporary directory fixture.
         capsys: Pytest stdout/stderr capture fixture.
     """
+    snap_file = tmp_path / "dummy.json"
+    snap_file.write_text('{"categories": {}}', encoding="utf-8")
     args = argparse.Namespace(
-        snapshot_json="dummy.json",
+        snapshot_json=str(snap_file),
         target_path="dummy_target",
         target_prefix="t_pref",
         reference_prefix="r_pref",
     )
 
-    mock_extract.return_value = []
+    mocker.patch(
+        "ml_ecosystem_snapshots.compliance.extract_target_refs",
+        return_value=[],
+    )
 
     # Generate > 20 missing and mismatched
     missing = [f"mod.func{i}" for i in range(25)]
-    mismatched = [
-        {"api_path": f"mod.func{i}", "expected": [], "actual": []}
-        for i in range(30, 55)
-    ]
+    mismatched = [{"api_path": f"mod.func{i}", "expected": [], "actual": []} for i in range(30, 55)]
 
-    mock_score.return_value = {
-        "score_percentage": 0.0,
-        "matched": [],
-        "missing": missing,
-        "mismatched": mismatched,
-    }
+    mocker.patch(
+        "ml_ecosystem_snapshots.compliance.score_compliance",
+        return_value={
+            "score_percentage": 0.0,
+            "matched": [],
+            "missing": missing,
+            "mismatched": mismatched,
+        },
+    )
 
     cmd_check(args)
 
@@ -140,37 +144,40 @@ def test_cmd_check_pagination(
     assert "... and 5 more" in captured.out
 
 
-@patch("ml_ecosystem_snapshots.compliance.score_compliance")
-@patch("ml_ecosystem_snapshots.compliance.extract_target_refs")
-@patch("builtins.open", new_callable=mock_open, read_data='{"categories": {}}')
 def test_cmd_check_no_missing_mismatched(
-    mock_file: MagicMock,
-    mock_extract: MagicMock,
-    mock_score: MagicMock,
+    mocker: pytest_mock.MockerFixture,
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test check command with complete compliance.
 
     Args:
-        mock_file: Mocked file open callable.
-        mock_extract: Mocked `extract_target_refs` callable.
-        mock_score: Mocked `score_compliance` callable.
+        mocker: Pytest mocker fixture.
+        tmp_path: Pytest temporary directory fixture.
         capsys: Pytest stdout/stderr capture fixture.
     """
+    snap_file = tmp_path / "dummy.json"
+    snap_file.write_text('{"categories": {}}', encoding="utf-8")
     args = argparse.Namespace(
-        snapshot_json="dummy.json",
+        snapshot_json=str(snap_file),
         target_path="dummy_target",
         target_prefix="t_pref",
         reference_prefix="r_pref",
     )
 
-    mock_extract.return_value = []
-    mock_score.return_value = {
-        "score_percentage": 100.0,
-        "matched": ["mod.func1"],
-        "missing": [],
-        "mismatched": [],
-    }
+    mocker.patch(
+        "ml_ecosystem_snapshots.compliance.extract_target_refs",
+        return_value=[],
+    )
+    mocker.patch(
+        "ml_ecosystem_snapshots.compliance.score_compliance",
+        return_value={
+            "score_percentage": 100.0,
+            "matched": ["mod.func1"],
+            "missing": [],
+            "mismatched": [],
+        },
+    )
 
     cmd_check(args)
     captured = capsys.readouterr()
@@ -190,9 +197,10 @@ def test_cmd_check_output_formatting(
         mocker: Pytest mocker fixture.
         tmp_path: Pytest temporary directory fixture.
     """
+    import json
+
     from ml_ecosystem_snapshots.cli import cmd_check
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
-    import json
 
     ref = GhostRef(
         name="func",
@@ -230,9 +238,7 @@ def test_cmd_check_output_formatting(
         "ml_ecosystem_snapshots.cli.resolver.resolve_snapshot_path",
         return_value=str(snap_file),
     )
-    mocker.patch(
-        "ml_ecosystem_snapshots.compliance.extract_target_refs", return_value=[]
-    )
+    mocker.patch("ml_ecosystem_snapshots.compliance.extract_target_refs", return_value=[])
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.score_compliance",
         return_value={
@@ -258,9 +264,7 @@ def test_cmd_check_output_formatting(
     assert "module" in out
 
 
-def test_cmd_check_sass_no_modifiers(
-    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cmd_check_sass_no_modifiers(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     """Test cmd_check_sass when valid instruction has no valid modifiers.
 
     Args:
@@ -290,9 +294,7 @@ def test_cmd_check_sass_no_modifiers(
     assert "Recognized Modifiers" not in out
 
 
-def test_cmd_check_rdna_no_encoding(
-    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cmd_check_rdna_no_encoding(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     """Test cmd_check_rdna when valid instruction has no encoding returned.
 
     Args:
@@ -324,9 +326,7 @@ def test_cmd_check_rdna_no_encoding(
     assert "Encoding:" not in out
 
 
-def test_cmd_check_non_python_auto_detect(
-    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cmd_check_non_python_auto_detect(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     """Test cmd_check auto-detecting .sass, .s, and .mlir file extensions.
 
     Args:

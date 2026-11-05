@@ -80,9 +80,7 @@ def _scan_nnx_layers(include_nonpublic: bool) -> list[GhostRef]:
     return found
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Entrypoint to collect the Flax API signature for a given category.
 
     Args:

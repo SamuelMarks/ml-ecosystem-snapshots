@@ -40,7 +40,7 @@ def _parse_maxtext_classes(dir_path: str, module_prefix: str) -> list[GhostRef]:
     refs = []
     for file in glob.glob(os.path.join(dir_path, "**", "*.py"), recursive=True):
         try:
-            with open(file, "r", encoding="utf-8") as f:
+            with open(file, encoding="utf-8") as f:
                 tree = ast.parse(f.read())
 
             for node in ast.walk(tree):
@@ -49,10 +49,7 @@ def _parse_maxtext_classes(dir_path: str, module_prefix: str) -> list[GhostRef]:
                     docstring = ast.get_docstring(node) or ""
 
                     for subnode in node.body:
-                        if (
-                            isinstance(subnode, ast.FunctionDef)
-                            and subnode.name == "__init__"
-                        ):
+                        if isinstance(subnode, ast.FunctionDef) and subnode.name == "__init__":
                             for arg in subnode.args.args:
                                 if arg.arg != "self":
                                     params.append(
@@ -94,9 +91,25 @@ def _parse_maxtext_classes(dir_path: str, module_prefix: str) -> list[GhostRef]:
     return refs
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def _get_package_search_dir(mod: types.ModuleType) -> str | None:
+    """Resolve the root directory of a package module via `inspect.getmembers`.
+
+    Args:
+        mod: Loaded Python module object.
+
+    Returns:
+        First package directory path or None.
+    """
+    import inspect
+
+    members = dict(inspect.getmembers(mod))
+    raw_path = members.get("__path__")
+    if isinstance(raw_path, list) and raw_path:
+        return str(raw_path[0])
+    return None
+
+
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Entrypoint to collect the MaxText API signature for a given category.
 
     Args:
@@ -109,8 +122,8 @@ def collect_api(
     if not maxtext or category != SemanticTier.MODEL:
         return []
 
-    if "__path__" in dir(maxtext) and maxtext.__path__:
-        maxtext_dir = maxtext.__path__[0]
+    maxtext_dir = _get_package_search_dir(maxtext)
+    if maxtext_dir:
         models_dir = os.path.join(maxtext_dir, "models")
         return _parse_maxtext_classes(models_dir, "maxtext.models")
     return []

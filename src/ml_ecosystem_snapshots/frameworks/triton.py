@@ -4,20 +4,30 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import types
+import typing
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import (
-    InspectableTarget,
-    has_runtime_attr,
-    read_runtime_attr,
-)
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 
 
-def _extract_triton_kernel(
-    obj: InspectableTarget, name: str, module_name: str, inspector: GhostInspector
-) -> GhostRef:
+@typing.runtime_checkable
+class _TritonJitWrapperProtocol(typing.Protocol):
+    """Protocol for Triton JITFunction wrappers exposing an underlying `.fn` callable."""
+
+    fn: InspectableTarget
+
+
+@typing.runtime_checkable
+class _TritonLanguageWithMathProtocol(typing.Protocol):
+    """Protocol for `triton.language` exposing a `.math` submodule."""
+
+    math: types.ModuleType
+
+
+def _extract_triton_kernel(obj: InspectableTarget, name: str, module_name: str, inspector: GhostInspector) -> GhostRef:
     """Extract a `GhostRef` for a Triton JIT kernel or language primitive.
 
     Args:
@@ -29,10 +39,11 @@ def _extract_triton_kernel(
     Returns:
         The extracted `GhostRef` with `tl.constexpr` annotations normalized.
     """
-    fn = read_runtime_attr(obj, "fn", obj) if has_runtime_attr(obj, "fn") else obj
+    fn: InspectableTarget = obj.fn if isinstance(obj, _TritonJitWrapperProtocol) and obj.fn is not None else obj
 
     ref = inspector.inspect(fn, f"{module_name}.{name}")
-    raw_annos = read_runtime_attr(fn, "__annotations__", None)
+    fn_members = dict(inspect.getmembers(fn))
+    raw_annos = fn_members.get("__annotations__")
     if isinstance(raw_annos, dict):
         for param in ref.params:
             if param.name in raw_annos:
@@ -42,9 +53,33 @@ def _extract_triton_kernel(
     return ref
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
+def _collect_triton_module_callables(
+    mod: types.ModuleType,
+    module_name: str,
+    include_nonpublic: bool,
+    inspector: GhostInspector,
 ) -> list[GhostRef]:
+    """Collect callable Triton primitives from a module.
+
+    Args:
+        mod: Loaded `triton.language` or `triton.language.math` module.
+        module_name: Dotted module name prefix.
+        include_nonpublic: Whether to include private symbols.
+        inspector: Active `GhostInspector` instance.
+
+    Returns:
+        List of extracted `GhostRef` items.
+    """
+    collected: list[GhostRef] = []
+    for name, obj in inspect.getmembers(mod):
+        if not include_nonpublic and name.startswith("_"):
+            continue
+        if obj and callable(obj):
+            collected.append(_extract_triton_kernel(obj, name, module_name, inspector))
+    return collected
+
+
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect Triton language (`triton.language` and `triton.language.math`) API symbols.
 
     Args:
@@ -67,27 +102,12 @@ def collect_api(
 
     try:
         tl = importlib.import_module("triton.language")
-        for name in dir(tl):
-            if not include_nonpublic and name.startswith("_"):
-                continue
-            obj = read_runtime_attr(tl, name, None)
-            if obj and callable(obj):
-                results.append(
-                    _extract_triton_kernel(obj, name, "triton.language", inspector)
-                )
+        results.extend(_collect_triton_module_callables(tl, "triton.language", include_nonpublic, inspector))
 
-        tl_math = read_runtime_attr(tl, "math", None)
-        if inspect.ismodule(tl_math):
-            for name in dir(tl_math):
-                if not include_nonpublic and name.startswith("_"):
-                    continue
-                obj_math = read_runtime_attr(tl_math, name, None)
-                if obj_math and callable(obj_math):
-                    results.append(
-                        _extract_triton_kernel(
-                            obj_math, name, "triton.language.math", inspector
-                        )
-                    )
+        tl_members = dict(inspect.getmembers(tl))
+        tl_math = tl_members.get("math")
+        if isinstance(tl_math, types.ModuleType):
+            results.extend(_collect_triton_module_callables(tl_math, "triton.language.math", include_nonpublic, inspector))
     except ImportError:
         pass
 

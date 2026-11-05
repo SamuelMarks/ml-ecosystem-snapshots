@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-import operator
-import pytest
-
-import builtins
-import pytest_mock
 import importlib
 import inspect
 import sys
@@ -14,23 +9,37 @@ import types
 import typing
 from unittest.mock import patch
 
+import pytest
+import pytest_mock
+from ml_ecosystem_snapshots.frameworks import (
+    huggingface as hf_mod,
+)
+from ml_ecosystem_snapshots.frameworks import (
+    ir as ir_mod,
+)
+from ml_ecosystem_snapshots.frameworks import (
+    jax as jax_fw,
+)
+from ml_ecosystem_snapshots.frameworks import (
+    mlx as mlx_mod,
+)
+from ml_ecosystem_snapshots.frameworks import (
+    numpy as numpy_mod,
+)
+from ml_ecosystem_snapshots.frameworks import (
+    onnxruntime as ort_mod,
+)
+from ml_ecosystem_snapshots.frameworks import (
+    tensorflow as tf_fw,
+)
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
     GhostRef,
     ParameterKind,
     SemanticTier,
 )
-from ml_ecosystem_snapshots.frameworks import (
-    huggingface as hf_mod,
-    ir as ir_mod,
-    jax as jax_fw,
-    mlx as mlx_mod,
-    numpy as numpy_mod,
-    onnxruntime as ort_mod,
-    tensorflow as tf_fw,
-)
-from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 
 
 def test_ir_collect_api_all_categories() -> None:
@@ -56,100 +65,64 @@ def test_ir_collect_api_all_categories() -> None:
     assert refs_loss == []
 
 
-def test_onnxruntime_collect_api_edge_branches(
-    mocker: pytest_mock.MockerFixture,
-) -> None:
-    """Test onnxruntime.collect_api for full line and branch coverage.
+class _OrtInferenceSession:
+    """Stub ONNX Runtime InferenceSession class."""
+
+
+class _OrtOtherSession:
+    """Stub secondary ONNX Runtime session class."""
+
+
+def _ort_dummy_util() -> None:
+    """Stub public utility function for ONNX Runtime."""
+
+
+def _ort_private_func() -> None:
+    """Stub private utility function for ONNX Runtime."""
+
+
+def _build_fake_ort_module() -> types.ModuleType:
+    """Construct a populated fake `onnxruntime` module for collector testing.
+
+    Returns:
+        Populated fake `onnxruntime` module instance.
+    """
+    fake_mod = types.ModuleType("onnxruntime")
+    mp = pytest.MonkeyPatch()
+    mp.setattr(fake_mod, "InferenceSession", _OrtInferenceSession, raising=False)
+    mp.setattr(fake_mod, "OtherSession", _OrtOtherSession, raising=False)
+    mp.setattr(fake_mod, "dummy_util", _ort_dummy_util, raising=False)
+    mp.setattr(fake_mod, "_private_func", _ort_private_func, raising=False)
+    mp.setattr(fake_mod, "none_obj", None, raising=False)
+    mp.setattr(fake_mod, "raise_exc", lambda: None, raising=False)
+    mp.setattr(fake_mod, "return_none_ref", lambda: None, raising=False)
+    return fake_mod
+
+
+def _make_ort_inspect_side_effect(
+    providers_present: list[bool],
+) -> typing.Callable[[InspectableTarget, str], GhostRef | None]:
+    """Create a side-effect callback for `GhostInspector.inspect` on ONNX Runtime targets.
 
     Args:
-        mocker: Pytest mocker fixture.
+        providers_present: Single-element boolean list controlling whether `providers` is pre-populated.
+
+    Returns:
+        Callable side-effect function returning a `GhostRef` or `None`.
     """
-    # 1. Unsupported category
-    assert ort_mod.collect_api(SemanticTier.LOSS) == []
 
-    # 2. ImportError
-    real_import = importlib.import_module
-
-    def mock_import_err(name: str, package: str | None = None) -> types.ModuleType:
-        """Mock import raising on onnxruntime.
+    def _mock_inspect(obj: InspectableTarget, path: str) -> GhostRef | None:
+        """Simulate `GhostInspector.inspect` for ONNX Runtime test targets.
 
         Args:
-            name: Module name.
-            package: Optional package anchor.
+            obj: Live target being inspected.
+            path: Dotted API path of the target.
 
         Raises:
-            ImportError: Simulated import error.
+            RuntimeError: When `raise_exc` is encountered in `path`.
 
         Returns:
-            Imported module.
-        """
-        if name == "onnxruntime":
-            raise ImportError("simulated onnxruntime error")
-        return real_import(name, package)
-
-    with patch("importlib.import_module", side_effect=mock_import_err):
-        assert ort_mod.collect_api(SemanticTier.MODEL) == []
-
-    # 3. Comprehensive mock module covering all branches
-    fake_mod = types.ModuleType("onnxruntime")
-
-    class InferenceSession:
-        """Mock InferenceSession class."""
-
-        pass
-
-    class OtherSession:
-        """Mock session class."""
-
-        pass
-
-    def dummy_util() -> None:
-        """Mock utility function."""
-        pass
-
-    def _private_func() -> None:
-        """Private function."""
-        pass
-
-    pytest.MonkeyPatch().setattr(
-        fake_mod, "InferenceSession", InferenceSession, raising=False
-    )
-    pytest.MonkeyPatch().setattr(fake_mod, "OtherSession", OtherSession, raising=False)
-    pytest.MonkeyPatch().setattr(fake_mod, "dummy_util", dummy_util, raising=False)
-    pytest.MonkeyPatch().setattr(
-        fake_mod, "_private_func", _private_func, raising=False
-    )
-    pytest.MonkeyPatch().setattr(fake_mod, "none_obj", None, raising=False)
-    pytest.MonkeyPatch().setattr(fake_mod, "raise_exc", lambda: None, raising=False)
-    pytest.MonkeyPatch().setattr(
-        fake_mod, "return_none_ref", lambda: None, raising=False
-    )
-
-    def mock_import_fake(name: str, package: str | None = None) -> types.ModuleType:
-        """Mock import returning fake onnxruntime.
-
-        Args:
-            name: Module name.
-            package: Optional package anchor.
-
-        Returns:
-            Imported module.
-        """
-        if name == "onnxruntime":
-            return fake_mod
-        return real_import(name, package)
-
-    providers_present = [False]
-
-    def mock_inspect(obj: InspectableTarget, path: str) -> GhostRef | None:
-        """Mock inspect function.
-
-        Args:
-            obj: Target live object to inspect.
-            path: Dotted canonical API path.
-
-        Returns:
-            A mocked GhostRef.
+            Constructed `GhostRef` or `None`.
         """
         if "raise_exc" in path:
             raise RuntimeError("simulated inspect error")
@@ -169,86 +142,206 @@ def test_onnxruntime_collect_api_edge_branches(
             params=[],
         )
 
-    mocker.patch.object(GhostInspector, "inspect", side_effect=mock_inspect)
+    return _mock_inspect
+
+
+def test_onnxruntime_collect_api_edge_branches(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
+    """Exercise `onnxruntime.collect_api` across all category and error branches.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    assert ort_mod.collect_api(SemanticTier.LOSS) == []
+
+    real_import = importlib.import_module
+
+    def mock_import_err(name: str, package: str | None = None) -> types.ModuleType:
+        """Raise `ImportError` when importing `onnxruntime`.
+
+        Args:
+            name: Target module name.
+            package: Optional package anchor.
+
+        Raises:
+            ImportError: When `name` equals `'onnxruntime'`.
+
+        Returns:
+            Imported module for non-onnxruntime names.
+        """
+        if name == "onnxruntime":
+            raise ImportError("simulated onnxruntime error")
+        return real_import(name, package)
+
+    with patch("importlib.import_module", side_effect=mock_import_err):
+        assert ort_mod.collect_api(SemanticTier.MODEL) == []
+
+    fake_mod = _build_fake_ort_module()
+
+    def mock_import_fake(name: str, package: str | None = None) -> types.ModuleType:
+        """Return `fake_mod` when importing `onnxruntime`.
+
+        Args:
+            name: Target module name.
+            package: Optional package anchor.
+
+        Returns:
+            Fake `onnxruntime` module or real imported module.
+        """
+        if name == "onnxruntime":
+            return fake_mod
+        return real_import(name, package)
+
+    providers_present = [False]
+    mocker.patch.object(GhostInspector, "inspect", side_effect=_make_ort_inspect_side_effect(providers_present))
 
     with patch("importlib.import_module", side_effect=mock_import_fake):
-        # Pass 1: InferenceSession without providers parameter (branch not has_providers is True)
         providers_present[0] = False
         res_model = ort_mod.collect_api(SemanticTier.MODEL, include_nonpublic=False)
         names_model = {r.name for r in res_model}
         assert "InferenceSession" in names_model
         assert "OtherSession" in names_model
 
-        # Verify InferenceSession has providers injected
         inf_ref = next(r for r in res_model if r.name == "InferenceSession")
         assert any(p.name == "providers" for p in inf_ref.params)
 
-        # Pass 2: InferenceSession WITH existing providers parameter (branch 55 -> 66: not has_providers is False)
         providers_present[0] = True
         res_model2 = ort_mod.collect_api(SemanticTier.MODEL, include_nonpublic=False)
         inf_ref2 = next(r for r in res_model2 if r.name == "InferenceSession")
         assert len([p for p in inf_ref2.params if p.name == "providers"]) == 1
 
-        # UTIL category with include_nonpublic=True:
-        # - includes _private_func
-        # - skips Sessions (obj_cat == MODEL, category == UTIL)
-        # - inspects dummy_util
-        # - handles return_none_ref returning None
-        # - handles raise_exc raising Exception
         res_util = ort_mod.collect_api(SemanticTier.UTIL, include_nonpublic=True)
         names_util = {r.name for r in res_util}
         assert "dummy_util" in names_util
         assert "_private_func" in names_util
 
 
+class _NumpyLinAlgClass:
+    """Stub class inside `numpy.linalg`."""
+
+
+class _NumpyFFTClass:
+    """Stub class inside `numpy.fft`."""
+
+
+def _np_noop() -> None:
+    """No-op stub callable for fake NumPy functions."""
+
+
+def _make_named_np_stubs() -> dict[str, typing.Callable[[], None]]:
+    """Create stub functions with exact NumPy symbol names for `GhostInspector.inspect`.
+
+    Returns:
+        Dictionary mapping NumPy symbol names to matching stub callables.
+    """
+
+    def tanh() -> None:
+        """Stub `numpy.tanh` function."""
+
+    def exp() -> None:
+        """Stub `numpy.exp` function."""
+
+    def abs() -> None:
+        """Stub `numpy.abs` function."""
+
+    def add() -> None:
+        """Stub `numpy.add` function."""
+
+    def det() -> None:
+        """Stub `numpy.linalg.det` function."""
+
+    def inv() -> None:
+        """Stub `numpy.linalg.inv` function."""
+
+    def fft() -> None:
+        """Stub `numpy.fft.fft` function."""
+
+    def ifft() -> None:
+        """Stub `numpy.fft.ifft` function."""
+
+    return {
+        "tanh": tanh,
+        "exp": exp,
+        "abs": abs,
+        "add": add,
+        "det": det,
+        "inv": inv,
+        "fft": fft,
+        "ifft": ifft,
+    }
+
+
+def _build_fake_numpy_array_module(
+    stubs: dict[str, typing.Callable[[], None]],
+) -> types.ModuleType:
+    """Build a fake `numpy` module with `linalg` and `fft` submodules.
+
+    Args:
+        stubs: Mapping of NumPy operation names to stub functions.
+
+    Returns:
+        Populated fake `numpy` module instance.
+    """
+    mp = pytest.MonkeyPatch()
+    fake_np_array = types.ModuleType("numpy")
+    mp.setattr(fake_np_array, "abs", stubs["abs"], raising=False)
+    mp.setattr(fake_np_array, "add", stubs["add"], raising=False)
+    mp.setattr(fake_np_array, "all", "not_callable", raising=False)
+
+    fake_linalg = types.ModuleType("numpy.linalg")
+    mp.setattr(fake_linalg, "_private", _np_noop, raising=False)
+    mp.setattr(fake_linalg, "LinAlgClass", _NumpyLinAlgClass, raising=False)
+    mp.setattr(fake_linalg, "non_callable", 123, raising=False)
+    mp.setattr(fake_linalg, "det", stubs["det"], raising=False)
+    mp.setattr(fake_linalg, "inv", stubs["inv"], raising=False)
+    mp.setattr(fake_np_array, "linalg", fake_linalg, raising=False)
+
+    fake_fft_mod = types.ModuleType("numpy.fft")
+    mp.setattr(fake_fft_mod, "_private", _np_noop, raising=False)
+    mp.setattr(fake_fft_mod, "FFTClass", _NumpyFFTClass, raising=False)
+    mp.setattr(fake_fft_mod, "non_callable", 456, raising=False)
+    mp.setattr(fake_fft_mod, "fft", stubs["fft"], raising=False)
+    mp.setattr(fake_fft_mod, "ifft", stubs["ifft"], raising=False)
+    mp.setattr(fake_np_array, "fft", fake_fft_mod, raising=False)
+    return fake_np_array
+
+
 def test_numpy_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None:
-    """Test numpy.collect_api for full line and branch coverage.
+    """Exercise `numpy.collect_api` across missing module, activation, and array branches.
 
     Args:
         mocker: Pytest mocker fixture.
     """
-    # 1. np is None branch
     mocker.patch.object(numpy_mod, "np", None)
     assert numpy_mod.collect_api(SemanticTier.ACTIVATION) == []
     assert numpy_mod.collect_api(SemanticTier.ARRAY_API) == []
 
-    # 2. Unsupported category
     fake_np = types.ModuleType("numpy")
     mocker.patch.object(numpy_mod, "np", fake_np)
     assert numpy_mod.collect_api(SemanticTier.MODEL) == []
 
-    # 3. ACTIVATION category:
-    # - has callable ops that succeed
-    # - has non-callable op (branch 37 -> 36: not callable(obj))
-    # - has missing op (hasattr is False)
-    # - has op where inspect raises Exception
-    def tanh() -> None:
-        """Fake tanh."""
-        pass
-
-    def exp() -> None:
-        """Fake exp."""
-        pass
-
-    pytest.MonkeyPatch().setattr(fake_np, "tanh", tanh, raising=False)
-    pytest.MonkeyPatch().setattr(fake_np, "exp", exp, raising=False)
-    pytest.MonkeyPatch().setattr(fake_np, "maximum", 42, raising=False)
-    # minimum is omitted so hasattr is False
+    stubs = _make_named_np_stubs()
+    mp = pytest.MonkeyPatch()
+    mp.setattr(fake_np, "tanh", stubs["tanh"], raising=False)
+    mp.setattr(fake_np, "exp", stubs["exp"], raising=False)
+    mp.setattr(fake_np, "maximum", 42, raising=False)
 
     original_inspect = GhostInspector.inspect
 
-    def mock_inspect_act(
-        obj: InspectableTarget, name: str, is_public: bool = True
-    ) -> GhostRef:
-        """Mock inspect for activation.
+    def mock_inspect_act(obj: InspectableTarget, name: str, is_public: bool = True) -> GhostRef:
+        """Simulate `GhostInspector.inspect` for NumPy activation symbols.
 
         Args:
-            obj: Object to inspect.
-            name: Path.
-            is_public: Public flag.
+            obj: Live target object to inspect.
+            name: Dotted API path string.
+            is_public: Public visibility flag.
+
+        Raises:
+            RuntimeError: When inspecting `exp`.
 
         Returns:
-            GhostRef or raises Exception.
+            Inspected `GhostRef` result.
         """
         if "exp" in name:
             raise RuntimeError("simulated inspect error")
@@ -259,91 +352,24 @@ def test_numpy_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> No
     assert len(res_act) == 1
     assert res_act[0].name == "tanh"
 
-    # 4. ARRAY_API category:
-    # - test array_ops with callable, non-callable, missing, and exception
-    fake_np_array = types.ModuleType("numpy")
+    fake_np_array = _build_fake_numpy_array_module(stubs)
+    failing_tokens = ("add", "inv", "ifft")
 
-    def abs() -> None:
-        """Fake abs."""
-        pass
-
-    def add() -> None:
-        """Fake add."""
-        pass
-
-    pytest.MonkeyPatch().setattr(fake_np_array, "abs", abs, raising=False)
-    pytest.MonkeyPatch().setattr(fake_np_array, "add", add, raising=False)
-    pytest.MonkeyPatch().setattr(fake_np_array, "all", "not_callable", raising=False)
-    # remaining array_ops not defined -> hasattr False
-
-    # linalg submodule:
-    # - private member (startswith '_')
-    # - class member (inspect.isclass is True -> skipped)
-    # - non-callable member (callable is False -> skipped)
-    # - valid callable member that succeeds
-    # - valid callable member where inspect raises Exception
-    class LinAlgClass:
-        """Class in linalg."""
-
-        pass
-
-    def det() -> None:
-        """Fake det."""
-        pass
-
-    def inv() -> None:
-        """Fake inv."""
-        pass
-
-    fake_linalg = types.ModuleType("numpy.linalg")
-    pytest.MonkeyPatch().setattr(fake_linalg, "_private", lambda: None, raising=False)
-    pytest.MonkeyPatch().setattr(fake_linalg, "LinAlgClass", LinAlgClass, raising=False)
-    pytest.MonkeyPatch().setattr(fake_linalg, "non_callable", 123, raising=False)
-    pytest.MonkeyPatch().setattr(fake_linalg, "det", det, raising=False)
-    pytest.MonkeyPatch().setattr(fake_linalg, "inv", inv, raising=False)
-    pytest.MonkeyPatch().setattr(fake_np_array, "linalg", fake_linalg, raising=False)
-
-    # fft submodule:
-    # - private member
-    # - class member
-    # - non-callable member
-    # - valid callable member that succeeds
-    # - valid callable member where inspect raises Exception
-    class FFTClass:
-        """Class in fft."""
-
-        pass
-
-    def fft() -> None:
-        """Fake fft."""
-        pass
-
-    def ifft() -> None:
-        """Fake ifft."""
-        pass
-
-    fake_fft_mod = types.ModuleType("numpy.fft")
-    pytest.MonkeyPatch().setattr(fake_fft_mod, "_private", lambda: None, raising=False)
-    pytest.MonkeyPatch().setattr(fake_fft_mod, "FFTClass", FFTClass, raising=False)
-    pytest.MonkeyPatch().setattr(fake_fft_mod, "non_callable", 456, raising=False)
-    pytest.MonkeyPatch().setattr(fake_fft_mod, "fft", fft, raising=False)
-    pytest.MonkeyPatch().setattr(fake_fft_mod, "ifft", ifft, raising=False)
-    pytest.MonkeyPatch().setattr(fake_np_array, "fft", fake_fft_mod, raising=False)
-
-    def mock_inspect_arr(
-        obj: InspectableTarget, name: str, is_public: bool = True
-    ) -> GhostRef:
-        """Mock inspect for array api.
+    def mock_inspect_arr(obj: InspectableTarget, name: str, is_public: bool = True) -> GhostRef:
+        """Simulate `GhostInspector.inspect` for NumPy array API symbols.
 
         Args:
-            obj: Object to inspect.
-            name: Path.
-            is_public: Public flag.
+            obj: Live target object to inspect.
+            name: Dotted API path string.
+            is_public: Public visibility flag.
+
+        Raises:
+            RuntimeError: When `name` contains any token in `failing_tokens`.
 
         Returns:
-            GhostRef or raises Exception.
+            Inspected `GhostRef` result.
         """
-        if "add" in name or "inv" in name or "ifft" in name:
+        if any(tok in name for tok in failing_tokens):
             raise RuntimeError("simulated inspect error")
         return original_inspect(obj, name, is_public=is_public)
 
@@ -352,13 +378,10 @@ def test_numpy_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> No
 
     res_arr = numpy_mod.collect_api(SemanticTier.ARRAY_API)
     names_arr = {r.name for r in res_arr}
-    assert "abs" in names_arr
-    assert "det" in names_arr
-    assert "fft" in names_arr
+    assert {"abs", "det", "fft"} <= names_arr
 
-    # Also test when np does not have linalg or fft attributes
     fake_np_bare = types.ModuleType("numpy")
-    pytest.MonkeyPatch().setattr(fake_np_bare, "abs", abs, raising=False)
+    mp.setattr(fake_np_bare, "abs", stubs["abs"], raising=False)
     mocker.patch.object(numpy_mod, "np", fake_np_bare)
     res_bare = numpy_mod.collect_api(SemanticTier.ARRAY_API)
     assert len(res_bare) == 1
@@ -369,35 +392,7 @@ def test_numpy_import_error_handling() -> None:
     saved_np = numpy_mod.np
     saved_sys_np = sys.modules.get("numpy")
 
-    real_import = builtins.__import__
-
-    def mock_import(
-        name: str,
-        globals: typing.Mapping[str, InspectableTarget] | None = None,
-        locals: typing.Mapping[str, InspectableTarget] | None = None,
-        fromlist: typing.Sequence[str] = (),
-        level: int = 0,
-    ) -> types.ModuleType:
-        """Mock import raising ImportError on numpy.
-
-        Args:
-            name: Module name.
-            globals: Globals dictionary.
-            locals: Locals dictionary.
-            fromlist: From-import list.
-            level: Relative import level.
-
-        Raises:
-            ImportError: Simulated import error.
-
-        Returns:
-            Imported module.
-        """
-        if name == "numpy":
-            raise ImportError("simulated numpy import error")
-        return real_import(name, globals, locals, fromlist, level)
-
-    with patch("builtins.__import__", side_effect=mock_import):
+    with patch.dict(sys.modules, {"numpy": None}):
         importlib.reload(numpy_mod)
         assert numpy_mod.np is None
 
@@ -408,17 +403,49 @@ def test_numpy_import_error_handling() -> None:
     assert numpy_mod.np is not None
 
 
-def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None:
-    """Test mlx.collect_api for all categories, lines, and branches.
+class _MlxUpperLayer:
+    """Stub MLX layer class with uppercase leading character."""
 
-    Args:
-        mocker: Pytest mocker fixture.
+
+class _mlx_lower_layer:
+    """Stub MLX layer class with lowercase leading character."""
+
+
+class _MlxPrivateLayer:
+    """Stub private MLX layer class."""
+
+
+class _MlxCustomLoss:
+    """Stub MLX loss class."""
+
+
+class _MlxAdam:
+    """Stub MLX optimizer class with uppercase leading character."""
+
+
+class _mlx_adam_lower:
+    """Stub MLX optimizer class with lowercase leading character."""
+
+
+class _MlxPrivateOptimizer:
+    """Stub private MLX optimizer class."""
+
+
+class _MlxCoreClass:
+    """Stub class in `mlx.core`."""
+
+
+def _mlx_noop() -> None:
+    """No-op callable stub for fake MLX functions."""
+
+
+def _build_fake_mlx_modules() -> tuple[types.ModuleType, types.ModuleType, types.ModuleType]:
+    """Build fake `mlx`, `mlx.nn`, and `mlx.nn.losses` modules for collector tests.
+
+    Returns:
+        Three-element tuple of `(fake_mlx, fake_nn, fake_losses)`.
     """
-    # 1. mlx is None
-    mocker.patch.object(mlx_mod, "mlx", None)
-    assert mlx_mod.collect_api(SemanticTier.LAYER) == []
-
-    # 2. Mock mlx structure
+    mp = pytest.MonkeyPatch()
     fake_mlx = types.ModuleType("mlx")
     fake_nn = types.ModuleType("mlx.nn")
     fake_losses = types.ModuleType("mlx.nn.losses")
@@ -427,192 +454,97 @@ def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None
     fake_fft = types.ModuleType("mlx.core.fft")
     fake_linalg = types.ModuleType("mlx.core.linalg")
 
-    pytest.MonkeyPatch().setattr(fake_mlx, "nn", fake_nn, raising=False)
-    pytest.MonkeyPatch().setattr(fake_mlx, "optimizers", fake_optimizers, raising=False)
-    pytest.MonkeyPatch().setattr(fake_mlx, "core", fake_core, raising=False)
+    mp.setattr(fake_mlx, "nn", fake_nn, raising=False)
+    mp.setattr(fake_mlx, "optimizers", fake_optimizers, raising=False)
+    mp.setattr(fake_mlx, "core", fake_core, raising=False)
 
-    # LAYER category
-    class UpperLayer:
-        """Valid layer class with uppercase name."""
+    mp.setattr(fake_nn, "UpperLayer", _MlxUpperLayer, raising=False)
+    mp.setattr(fake_nn, "lower_layer", _mlx_lower_layer, raising=False)
+    mp.setattr(fake_nn, "_PrivateLayer", _MlxPrivateLayer, raising=False)
+    mp.setattr(fake_nn, "not_a_class", _mlx_noop, raising=False)
+    mp.setattr(fake_nn, "relu", _mlx_noop, raising=False)
+    mp.setattr(fake_nn, "_relu", _mlx_noop, raising=False)
+    mp.setattr(fake_nn, "unrelated_act", _mlx_noop, raising=False)
 
-        pass
+    mp.setattr(fake_losses, "cross_entropy_loss", _mlx_noop, raising=False)
+    mp.setattr(fake_losses, "CustomLoss", _MlxCustomLoss, raising=False)
+    mp.setattr(fake_losses, "_private_loss", _mlx_noop, raising=False)
+    mp.setattr(fake_losses, "something_else", _mlx_noop, raising=False)
+    mp.setattr(fake_losses, "number_loss", 999, raising=False)
+    mp.setattr(fake_nn, "losses", fake_losses, raising=False)
 
-    class lower_layer:
-        """Class with lowercase name."""
+    mp.setattr(fake_optimizers, "Adam", _MlxAdam, raising=False)
+    mp.setattr(fake_optimizers, "adam_lower", _mlx_adam_lower, raising=False)
+    mp.setattr(fake_optimizers, "_PrivateOptimizer", _MlxPrivateOptimizer, raising=False)
+    mp.setattr(fake_optimizers, "optim_func", _mlx_noop, raising=False)
 
-        pass
+    mp.setattr(fake_core, "abs", _mlx_noop, raising=False)
+    mp.setattr(fake_core, "fake_core_exc", _mlx_noop, raising=False)
+    mp.setattr(fake_core, "CoreClass", _MlxCoreClass, raising=False)
+    mp.setattr(fake_core, "_private_core", _mlx_noop, raising=False)
 
-    class _PrivateLayer:
-        """Private layer class."""
+    mp.setattr(fake_fft, "fft", _mlx_noop, raising=False)
+    mp.setattr(fake_fft, "fake_fft_exc", _mlx_noop, raising=False)
+    mp.setattr(fake_fft, "ClassFFT", _MlxCoreClass, raising=False)
+    mp.setattr(fake_fft, "_private_fft", _mlx_noop, raising=False)
+    mp.setattr(fake_core, "fft", fake_fft, raising=False)
 
-        pass
+    mp.setattr(fake_linalg, "norm", _mlx_noop, raising=False)
+    mp.setattr(fake_linalg, "fake_linalg_exc", _mlx_noop, raising=False)
+    mp.setattr(fake_linalg, "ClassLinalg", _MlxCoreClass, raising=False)
+    mp.setattr(fake_linalg, "_private_linalg", _mlx_noop, raising=False)
+    mp.setattr(fake_core, "linalg", fake_linalg, raising=False)
+    return fake_mlx, fake_nn, fake_losses
 
-    def not_a_class() -> None:
-        """Function not a class."""
-        pass
 
-    pytest.MonkeyPatch().setattr(fake_nn, "UpperLayer", UpperLayer, raising=False)
-    pytest.MonkeyPatch().setattr(fake_nn, "lower_layer", lower_layer, raising=False)
-    pytest.MonkeyPatch().setattr(fake_nn, "_PrivateLayer", _PrivateLayer, raising=False)
-    pytest.MonkeyPatch().setattr(fake_nn, "not_a_class", not_a_class, raising=False)
+def _mock_mlx_inspect(obj: InspectableTarget, path: str) -> GhostRef:
+    """Simulate `GhostInspector.inspect` for MLX collector tests.
 
-    # ACTIVATION category
-    pytest.MonkeyPatch().setattr(fake_nn, "relu", lambda x: x, raising=False)
-    pytest.MonkeyPatch().setattr(fake_nn, "_relu", lambda x: x, raising=False)
-    pytest.MonkeyPatch().setattr(fake_nn, "unrelated_act", lambda x: x, raising=False)
+    Args:
+        obj: Target live object to inspect.
+        path: Dotted canonical API path.
 
-    # LOSS category
-    def cross_entropy_loss() -> None:
-        """Function containing loss."""
-        pass
+    Raises:
+        RuntimeError: When `path` references a simulated failing function.
 
-    class CustomLoss:
-        """Class containing loss."""
-
-        pass
-
-    def _private_loss() -> None:
-        """Private loss function."""
-        pass
-
-    pytest.MonkeyPatch().setattr(
-        fake_losses, "cross_entropy_loss", cross_entropy_loss, raising=False
-    )
-    pytest.MonkeyPatch().setattr(fake_losses, "CustomLoss", CustomLoss, raising=False)
-    pytest.MonkeyPatch().setattr(
-        fake_losses, "_private_loss", _private_loss, raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        fake_losses, "something_else", lambda: None, raising=False
-    )
-    pytest.MonkeyPatch().setattr(fake_losses, "number_loss", 999, raising=False)
-    pytest.MonkeyPatch().setattr(fake_nn, "losses", fake_losses, raising=False)
-
-    # OPTIMIZER category
-    class Adam:
-        """Valid optimizer class."""
-
-        pass
-
-    class adam_lower:
-        """Lowercase optimizer class."""
-
-        pass
-
-    class _PrivateOptimizer:
-        """Private optimizer class."""
-
-        pass
-
-    pytest.MonkeyPatch().setattr(fake_optimizers, "Adam", Adam, raising=False)
-    pytest.MonkeyPatch().setattr(
-        fake_optimizers, "adam_lower", adam_lower, raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        fake_optimizers, "_PrivateOptimizer", _PrivateOptimizer, raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        fake_optimizers, "optim_func", lambda: None, raising=False
+    Returns:
+        Constructed `GhostRef` instance.
+    """
+    if "_exc" in path:
+        raise RuntimeError("simulated inspect error")
+    return GhostRef(
+        name=path.split(".")[-1],
+        api_path=path,
+        kind="class" if inspect.isclass(obj) else "function",
+        params=[],
     )
 
-    # ARRAY_API category
-    def fake_abs() -> None:
-        """Fake abs function."""
-        pass
 
-    def fake_core_exc() -> None:
-        """Core function that triggers inspect exception."""
-        pass
+def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None:
+    """Exercise `mlx.collect_api` across all categories, visibility flags, and fallbacks.
 
-    class CoreClass:
-        """Class in core."""
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    mocker.patch.object(mlx_mod, "mlx", None)
+    assert mlx_mod.collect_api(SemanticTier.LAYER) == []
 
-        pass
-
-    pytest.MonkeyPatch().setattr(fake_core, "abs", fake_abs, raising=False)
-    pytest.MonkeyPatch().setattr(
-        fake_core, "fake_core_exc", fake_core_exc, raising=False
-    )
-    pytest.MonkeyPatch().setattr(fake_core, "CoreClass", CoreClass, raising=False)
-    pytest.MonkeyPatch().setattr(
-        fake_core, "_private_core", lambda: None, raising=False
-    )
-
-    def fake_fft_fn() -> None:
-        """Fake fft function."""
-        pass
-
-    def fake_fft_exc() -> None:
-        """FFT function that triggers inspect exception."""
-        pass
-
-    pytest.MonkeyPatch().setattr(fake_fft, "fft", fake_fft_fn, raising=False)
-    pytest.MonkeyPatch().setattr(fake_fft, "fake_fft_exc", fake_fft_exc, raising=False)
-    pytest.MonkeyPatch().setattr(fake_fft, "ClassFFT", CoreClass, raising=False)
-    pytest.MonkeyPatch().setattr(fake_fft, "_private_fft", lambda: None, raising=False)
-    pytest.MonkeyPatch().setattr(fake_core, "fft", fake_fft, raising=False)
-
-    def fake_linalg_fn() -> None:
-        """Fake linalg function."""
-        pass
-
-    def fake_linalg_exc() -> None:
-        """Linalg function that triggers inspect exception."""
-        pass
-
-    pytest.MonkeyPatch().setattr(fake_linalg, "norm", fake_linalg_fn, raising=False)
-    pytest.MonkeyPatch().setattr(
-        fake_linalg, "fake_linalg_exc", fake_linalg_exc, raising=False
-    )
-    pytest.MonkeyPatch().setattr(fake_linalg, "ClassLinalg", CoreClass, raising=False)
-    pytest.MonkeyPatch().setattr(
-        fake_linalg, "_private_linalg", lambda: None, raising=False
-    )
-    pytest.MonkeyPatch().setattr(fake_core, "linalg", fake_linalg, raising=False)
-
+    fake_mlx, fake_nn, fake_losses = _build_fake_mlx_modules()
     mocker.patch.object(mlx_mod, "mlx", fake_mlx)
+    mocker.patch.object(GhostInspector, "inspect", side_effect=_mock_mlx_inspect)
 
-    def mock_inspect(obj: InspectableTarget, path: str) -> GhostRef:
-        """Mock inspect function.
-
-        Args:
-            obj: Target live object to inspect.
-            path: Dotted canonical API path.
-
-        Returns:
-            A mocked GhostRef.
-        """
-        if (
-            "fake_core_exc" in path
-            or "fake_fft_exc" in path
-            or "fake_linalg_exc" in path
-        ):
-            raise RuntimeError("simulated inspect error")
-        return GhostRef(
-            name=path.split(".")[-1],
-            api_path=path,
-            kind="class" if inspect.isclass(obj) else "function",
-            params=[],
-        )
-
-    mocker.patch.object(GhostInspector, "inspect", side_effect=mock_inspect)
-
-    # Unsupported category triggers falling through elif chain to line 150 (branch 100 -> 150)
     assert mlx_mod.collect_api(SemanticTier.MODEL) == []
 
-    # LAYER: public vs nonpublic
     layers_pub = mlx_mod.collect_api(SemanticTier.LAYER, include_nonpublic=False)
     assert {r.name for r in layers_pub} == {"UpperLayer"}
     layers_all = mlx_mod.collect_api(SemanticTier.LAYER, include_nonpublic=True)
     assert {r.name for r in layers_all} == {"UpperLayer"}
 
-    # ACTIVATION: public vs nonpublic
     act_pub = mlx_mod.collect_api(SemanticTier.ACTIVATION, include_nonpublic=False)
     assert {r.name for r in act_pub} == {"relu"}
     act_all = mlx_mod.collect_api(SemanticTier.ACTIVATION, include_nonpublic=True)
     assert {r.name for r in act_all} == {"relu"}
 
-    # LOSS: public vs nonpublic, and test when losses attr is missing
     losses_pub = mlx_mod.collect_api(SemanticTier.LOSS, include_nonpublic=False)
     assert {r.name for r in losses_pub} == {"cross_entropy_loss", "CustomLoss"}
     losses_all = mlx_mod.collect_api(SemanticTier.LOSS, include_nonpublic=True)
@@ -622,41 +554,28 @@ def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None
     assert mlx_mod.collect_api(SemanticTier.LOSS) == []
     pytest.MonkeyPatch().setattr(fake_nn, "losses", fake_losses, raising=False)
 
-    # OPTIMIZER: public vs nonpublic
     opt_pub = mlx_mod.collect_api(SemanticTier.OPTIMIZER, include_nonpublic=False)
     assert {r.name for r in opt_pub} == {"Adam"}
     opt_all = mlx_mod.collect_api(SemanticTier.OPTIMIZER, include_nonpublic=True)
     assert {r.name for r in opt_all} == {"Adam"}
 
-    # ARRAY_API: includes core, fft, linalg, handles exceptions, public vs nonpublic
     arr_pub = mlx_mod.collect_api(SemanticTier.ARRAY_API, include_nonpublic=False)
     names_arr = {r.name for r in arr_pub}
-    assert "abs" in names_arr
-    assert "fft" in names_arr
-    assert "norm" in names_arr
+    assert {"abs", "fft", "norm"} <= names_arr
     assert "fake_core_exc" not in names_arr
 
     arr_all = mlx_mod.collect_api(SemanticTier.ARRAY_API, include_nonpublic=True)
     names_arr_all = {r.name for r in arr_all}
-    assert "_private_core" in names_arr_all
-    assert "_private_fft" in names_arr_all
-    assert "_private_linalg" in names_arr_all
+    assert {"_private_core", "_private_fft", "_private_linalg"} <= names_arr_all
 
-    # Test ARRAY_API when core is missing
-    fake_mlx_empty = types.ModuleType("mlx")
-    mocker.patch.object(mlx_mod, "mlx", fake_mlx_empty)
+    mocker.patch.object(mlx_mod, "mlx", types.ModuleType("mlx"))
     assert mlx_mod.collect_api(SemanticTier.ARRAY_API) == []
 
-    # Test ARRAY_API when fft and linalg submodules are missing from core (branches 117->131, 132->150)
     fake_mlx_no_sub = types.ModuleType("mlx")
-    fake_core_no_sub = types.ModuleType("mlx.core")
-    pytest.MonkeyPatch().setattr(
-        fake_mlx_no_sub, "core", fake_core_no_sub, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_mlx_no_sub, "core", types.ModuleType("mlx.core"), raising=False)
     mocker.patch.object(mlx_mod, "mlx", fake_mlx_no_sub)
     assert mlx_mod.collect_api(SemanticTier.ARRAY_API) == []
 
-    # Test outer exception handling in _collect_live (lines 147-148)
     mocker.patch.object(mlx_mod, "mlx", fake_mlx)
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.mlx.get_all_members",
@@ -673,6 +592,14 @@ def test_mlx_import_error_handling() -> None:
     mock_mlx_nn = types.ModuleType("mlx.nn")
     mock_mlx_opt = types.ModuleType("mlx.optimizers")
 
+    def _get_mlx() -> types.ModuleType | None:
+        """Read current `mlx_mod.mlx` reference after module reload.
+
+        Returns:
+            Current `mlx_mod.mlx` value.
+        """
+        return mlx_mod.mlx
+
     with patch.dict(
         sys.modules,
         {
@@ -683,167 +610,165 @@ def test_mlx_import_error_handling() -> None:
         },
     ):
         importlib.reload(mlx_mod)
-        assert operator.attrgetter("mlx")(mlx_mod) is mock_mlx_root
+        assert _get_mlx() is mock_mlx_root
 
     # 2. Test simulated import failure of mlx
-    real_import = builtins.__import__
-
-    def mock_import_fail(
-        name: str,
-        globals: typing.Mapping[str, InspectableTarget] | None = None,
-        locals: typing.Mapping[str, InspectableTarget] | None = None,
-        fromlist: typing.Sequence[str] = (),
-        level: int = 0,
-    ) -> types.ModuleType:
-        """Mock import raising on mlx.
-
-        Args:
-            name: Module name.
-            globals: Globals dictionary.
-            locals: Locals dictionary.
-            fromlist: From-import list.
-            level: Relative import level.
-
-        Raises:
-            ImportError: Simulated import error.
-
-        Returns:
-            Imported module.
-        """
-        if name.startswith("mlx"):
-            raise ImportError("simulated mlx import error")
-        return real_import(name, globals, locals, fromlist, level)
-
-    with patch("builtins.__import__", side_effect=mock_import_fail):
+    with patch.dict(
+        sys.modules,
+        {
+            "mlx": None,
+            "mlx.core": None,
+            "mlx.nn": None,
+            "mlx.optimizers": None,
+        },
+    ):
         importlib.reload(mlx_mod)
-        assert operator.attrgetter("mlx")(mlx_mod) is None
+        assert _get_mlx() is None
 
     # Restore clean reload
     importlib.reload(mlx_mod)
 
 
-def test_huggingface_collect_api_all_branches(
-    mocker: pytest_mock.MockerFixture,
-) -> None:
-    """Test huggingface.collect_huggingface for full line and branch coverage.
+class _HfDummyGenWithException:
+    """Stub class whose `generate` method signature inspection fails."""
+
+    def generate(self) -> None:
+        """Run stub generation."""
+
+
+class _HfDummyGenFull:
+    """Stub class with a multi-parameter `generate` signature."""
+
+    @typing.no_type_check
+    def generate(
+        self,
+        existing_param: str,
+        default_val: int = 10,
+        no_default: float = 0.0,
+        no_anno=None,
+        *args: InspectableTarget,
+        **kwargs: InspectableTarget,
+    ) -> None:
+        """Run stub generation with diverse parameter kinds.
+
+        Args:
+            existing_param: Pre-existing parameter name.
+            default_val: Parameter with integer default.
+            no_default: Parameter with float annotation.
+            no_anno: Untyped parameter.
+            *args: Variadic positional arguments.
+            **kwargs: Variadic keyword arguments.
+        """
+
+
+class _HfNoAnnotations:
+    """Stub class without class-level annotations."""
+
+
+class _HfAnnotatedConfig:
+    """Stub configuration class with class-level annotations."""
+
+    __annotations__ = {
+        "existing": int,
+        "str_anno": "str",
+        "type_anno": float,
+    }
+
+
+class _HfSampleGenModel:
+    """Stub HuggingFace model exposing a `generate` method."""
+
+    def generate(self, input_ids: str = "") -> None:
+        """Run stub generation with `input_ids`.
+
+        Args:
+            input_ids: Prompt token identifier string.
+        """
+
+
+class _HfLargeMod:
+    """Large fake `transformers` module with >100 attributes."""
+
+    def __dir__(self) -> list[str]:
+        """Return attribute names exceeding the 100-item threshold.
+
+        Returns:
+            List of attribute names on the fake module.
+        """
+        names = [f"ignored_symbol_{i}" for i in range(105)]
+        names.extend(
+            [
+                "_private_skip",
+                "AutoConfig",
+                "AutoModelWithGen",
+                "PreTrainedModelValid",
+                "CustomPipeline",
+                "CustomTokenizer",
+                "CustomTokenizerFast",
+                "TFAutoModelValid",
+                "FlaxAutoModelValid",
+                "AutoScheduler",
+                "pipeline_fn",
+                "AutoRaiseGetattr",
+                "AutoNone",
+                "AutoReturnNoneRef",
+                "AutoInspectExc",
+            ]
+        )
+        return names
+
+    def __getattr__(self, name: str) -> InspectableTarget:
+        """Resolve dynamic attributes on the fake `transformers` module.
+
+        Args:
+            name: Requested attribute name.
+
+        Raises:
+            AttributeError: When `name` is a dunder or `'AutoRaiseGetattr'`.
+
+        Returns:
+            Simulated target object or `None`.
+        """
+        if name.startswith("__") or name == "AutoRaiseGetattr":
+            raise AttributeError(name)
+        if name == "AutoNone":
+            return None
+        if name == "AutoConfig":
+            return _HfAnnotatedConfig
+        if name == "AutoModelWithGen":
+            return _HfSampleGenModel()
+        return _mlx_noop
+
+
+def _check_hf_helper_extractors(mocker: pytest_mock.MockerFixture) -> None:
+    """Exercise `_extract_generation_kwargs`, `_parse_pretrained_config`, and `_handle_automodel_factory`.
 
     Args:
         mocker: Pytest mocker fixture.
     """
-    # 1. Category not in category_mapping
-    mapping = {SemanticTier.MODEL: ["Model"]}
-    assert (
-        hf_mod.collect_huggingface("transformers", mapping, SemanticTier.OPTIMIZER)
-        == []
-    )
-
-    # 2. ImportError
-    real_import = importlib.import_module
-
-    def mock_import_err(name: str, package: str | None = None) -> types.ModuleType:
-        """Mock import raising on transformers.
-
-        Args:
-            name: Module name.
-            package: Optional package anchor.
-
-        Raises:
-            ImportError: Simulated import error.
-
-        Returns:
-            Imported module.
-        """
-        if name == "transformers":
-            raise ImportError("simulated transformers error")
-        return real_import(name, package)
-
-    with patch("importlib.import_module", side_effect=mock_import_err):
-        assert (
-            hf_mod.collect_huggingface("transformers", mapping, SemanticTier.MODEL)
-            == []
-        )
-
-    # 3. _extract_generation_kwargs branches:
-    # - inspect.signature raises Exception (lines 46-47)
-    class DummyGenWithException:
-        """Class whose generate method cannot be inspected."""
-
-        def generate(self) -> None:
-            """Generate method."""
-            pass
-
     ref = GhostRef(name="DummyGen", api_path="DummyGen", kind="class", params=[])
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.huggingface.inspect.signature",
         side_effect=TypeError("cannot inspect signature"),
     )
-    hf_mod._extract_generation_kwargs(DummyGenWithException(), ref)
+    hf_mod._extract_generation_kwargs(_HfDummyGenWithException(), ref)
     assert len(ref.params) == 0
-
-    # - successful signature extraction covering self, varargs, varkw, existing param, default empty/nonempty, anno empty/nonempty
-    class DummyGenFull:
-        """Class with comprehensive generate signature."""
-
-        @typing.no_type_check
-        def generate(
-            self,
-            existing_param: str,
-            default_val: int = 10,
-            no_default: float = 0.0,
-            no_anno=None,
-            *args: InspectableTarget,
-            **kwargs: InspectableTarget,
-        ) -> None:
-            """Generate method.
-
-            Args:
-                existing_param: Existing param.
-                default_val: Default value param.
-                no_default: No default param.
-                no_anno: No annotation param.
-                *args: Varargs.
-                **kwargs: Varkwargs.
-            """
-            pass
 
     ref_gen = GhostRef(
         name="DummyGenFull",
         api_path="DummyGenFull",
         kind="class",
-        params=[
-            GhostParam(name="existing_param", kind=ParameterKind.POSITIONAL_OR_KEYWORD)
-        ],
+        params=[GhostParam(name="existing_param", kind=ParameterKind.POSITIONAL_OR_KEYWORD)],
     )
     mocker.stopall()
-    hf_mod._extract_generation_kwargs(DummyGenFull(), ref_gen)
-    gen_param_names = [p.name for p in ref_gen.params]
-    assert "existing_param" in gen_param_names
-    assert "default_val" in gen_param_names
-    assert "no_default" in gen_param_names
-    assert "no_anno" in gen_param_names
+    hf_mod._extract_generation_kwargs(_HfDummyGenFull(), ref_gen)
+    gen_param_names = {p.name for p in ref_gen.params}
+    assert {"existing_param", "default_val", "no_default", "no_anno"} <= gen_param_names
     assert len([p for p in ref_gen.params if p.name == "existing_param"]) == 1
 
-    # 4. _parse_pretrained_config:
-    # - non-annotated class (lines 57-58: if not hasattr(obj, "__annotations__"): return)
-    # - already-existing param (branch 64 -> 60)
-    # - string annotation vs non-string annotation
-    class NoAnnotations:
-        """Class without __annotations__."""
-
-        pass
-
     ref2 = GhostRef(name="NoAnno", api_path="NoAnno", kind="class", params=[])
-    hf_mod._parse_pretrained_config(NoAnnotations(), ref2)
+    hf_mod._parse_pretrained_config(_HfNoAnnotations(), ref2)
     assert len(ref2.params) == 0
-
-    class AnnotatedConfig:
-        """Class with annotations."""
-
-        __annotations__ = {
-            "existing": int,
-            "str_anno": "str",
-            "type_anno": float,
-        }
 
     ref3 = GhostRef(
         name="AnnotatedConfig",
@@ -851,15 +776,11 @@ def test_huggingface_collect_api_all_branches(
         kind="class",
         params=[GhostParam(name="existing", kind=ParameterKind.POSITIONAL_OR_KEYWORD)],
     )
-    hf_mod._parse_pretrained_config(AnnotatedConfig, ref3)
-    param_names = [p.name for p in ref3.params]
-    assert "existing" in param_names
-    assert "str_anno" in param_names
-    assert "type_anno" in param_names
+    hf_mod._parse_pretrained_config(_HfAnnotatedConfig, ref3)
+    param_names = {p.name for p in ref3.params}
+    assert {"existing", "str_anno", "type_anno"} <= param_names
     assert len([p for p in ref3.params if p.name == "existing"]) == 1
 
-    # 5. _handle_automodel_factory:
-    # - already has config param (branch 85 -> exit)
     ref4 = GhostRef(
         name="AutoModel",
         api_path="AutoModel",
@@ -869,117 +790,82 @@ def test_huggingface_collect_api_all_branches(
     hf_mod._handle_automodel_factory(None, "AutoModel", ref4)
     assert len([p for p in ref4.params if p.name == "config"]) == 1
 
-    # 6. collect_huggingface with large transformers module (>100 attrs):
-    # - name does NOT start/end with accepted token -> line 143 continue
-    # - getattr raises Exception -> line 146 continue
-    # - obj is None -> line 148 continue
-    # - inspect raises Exception -> lines 178-179
-    class SampleGenModel:
-        """Sample model with generate method."""
 
-        def generate(self, input_ids: str = "") -> None:
-            """Generate method.
+def _mock_hf_inspect_large(obj: InspectableTarget, path: str) -> GhostRef | None:
+    """Simulate `GhostInspector.inspect` for the fake `transformers` module.
 
-            Args:
-                input_ids: Input IDs.
-            """
-            pass
+    Args:
+        obj: Inspected live object.
+        path: Dotted API path string.
 
-    class LargeMod:
-        """Large mock module simulating transformers."""
+    Raises:
+        RuntimeError: When `path` contains `'AutoInspectExc'`.
 
-        def __dir__(self) -> list[str]:
-            """Return >100 attribute names.
+    Returns:
+        Constructed `GhostRef` or `None`.
+    """
+    if "AutoInspectExc" in path:
+        raise RuntimeError("simulated inspect error")
+    if "AutoReturnNoneRef" in path:
+        return None
+    return GhostRef(
+        name=path.split(".")[-1],
+        api_path=path,
+        kind="function",
+        params=[],
+    )
 
-            Returns:
-                List of string attribute names.
-            """
-            names = [f"ignored_symbol_{i}" for i in range(105)]
-            names.extend(
-                [
-                    "_private_skip",
-                    "AutoConfig",
-                    "AutoModelWithGen",
-                    "PreTrainedModelValid",
-                    "CustomPipeline",
-                    "CustomTokenizer",
-                    "CustomTokenizerFast",
-                    "TFAutoModelValid",
-                    "FlaxAutoModelValid",
-                    "AutoScheduler",
-                    "pipeline_fn",
-                    "AutoRaiseGetattr",
-                    "AutoNone",
-                    "AutoReturnNoneRef",
-                    "AutoInspectExc",
-                ]
-            )
-            return names
 
-        def __getattr__(self, name: str) -> InspectableTarget:
-            """Simulate getattr results.
+def test_huggingface_collect_api_all_branches(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
+    """Exercise `huggingface.collect_huggingface` and library entrypoints across all branches.
 
-            Args:
-                name: Attribute name.
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    mapping = {SemanticTier.MODEL: ["Model"]}
+    assert hf_mod.collect_huggingface("transformers", mapping, SemanticTier.OPTIMIZER) == []
 
-            Raises:
-                RuntimeError: When simulated getattr error is requested.
+    real_import = importlib.import_module
 
-            Returns:
-                Attribute value or None.
-            """
-            if name == "AutoRaiseGetattr":
-                raise RuntimeError("simulated getattr failure")
-            if name == "AutoNone":
-                return None
-            if name == "AutoReturnNoneRef":
-                return lambda: None
-            if name == "AutoInspectExc":
-                return lambda: None
-            if name == "AutoConfig":
-                return type("AutoConfig", (), {"__annotations__": {"vocab_size": int}})
-            if name == "AutoModelWithGen":
-                return SampleGenModel()
-            return lambda: None
+    def mock_import_err(name: str, package: str | None = None) -> types.ModuleType:
+        """Raise `ImportError` when importing `transformers`.
 
-    def mock_import_large(
-        name: str, package: str | None = None
-    ) -> types.ModuleType | LargeMod:
-        """Mock import returning LargeMod.
+        Args:
+            name: Module name.
+            package: Optional package anchor.
+
+        Raises:
+            ImportError: When `name` equals `'transformers'`.
+
+        Returns:
+            Imported module for other package names.
+        """
+        if name == "transformers":
+            raise ImportError("simulated transformers error")
+        return real_import(name, package)
+
+    with patch("importlib.import_module", side_effect=mock_import_err):
+        assert hf_mod.collect_huggingface("transformers", mapping, SemanticTier.MODEL) == []
+
+    _check_hf_helper_extractors(mocker)
+
+    def mock_import_large(name: str, package: str | None = None) -> types.ModuleType | _HfLargeMod:
+        """Return `_HfLargeMod` when importing `transformers`.
 
         Args:
             name: Module name.
             package: Optional package anchor.
 
         Returns:
-            Imported module.
+            Fake large `transformers` module or real module.
         """
         if name == "transformers":
-            return LargeMod()
+            return _HfLargeMod()
         return real_import(name, package)
 
-    def mock_inspect_large(obj: InspectableTarget, path: str) -> GhostRef | None:
-        """Mock inspect for large transformers module.
-
-        Args:
-            obj: Object to inspect.
-            path: Target path string.
-
-        Returns:
-            GhostRef or raises Exception.
-        """
-        if "AutoInspectExc" in path:
-            raise RuntimeError("simulated inspect error")
-        if "AutoReturnNoneRef" in path:
-            return None
-        return GhostRef(
-            name=path.split(".")[-1],
-            api_path=path,
-            kind="function",
-            params=[],
-        )
-
-    mocker.patch.object(GhostInspector, "inspect", side_effect=mock_inspect_large)
+    mocker.patch.object(GhostInspector, "inspect", side_effect=_mock_hf_inspect_large)
 
     mapping_transformers = {
         SemanticTier.MODEL: [
@@ -996,7 +882,6 @@ def test_huggingface_collect_api_all_branches(
         SemanticTier.UTIL: ["other"],
     }
     with patch("importlib.import_module", side_effect=mock_import_large):
-        # MODEL category
         res_large_model = hf_mod.collect_huggingface(
             "transformers",
             mapping_transformers,
@@ -1004,68 +889,54 @@ def test_huggingface_collect_api_all_branches(
             include_nonpublic=False,
         )
         names_large_model = {r.name for r in res_large_model}
-        assert "AutoConfig" in names_large_model
-        assert "AutoModelWithGen" in names_large_model
-        assert "PreTrainedModelValid" in names_large_model
-        assert "CustomPipeline" in names_large_model
-        assert "CustomTokenizer" in names_large_model
-        assert "CustomTokenizerFast" in names_large_model
-        assert "TFAutoModelValid" in names_large_model
-        assert "FlaxAutoModelValid" in names_large_model
+        expected_models = {
+            "AutoConfig",
+            "AutoModelWithGen",
+            "PreTrainedModelValid",
+            "CustomPipeline",
+            "CustomTokenizer",
+            "CustomTokenizerFast",
+            "TFAutoModelValid",
+            "FlaxAutoModelValid",
+        }
+        assert expected_models <= names_large_model
         assert "ignored_symbol_0" not in names_large_model
 
-        # OPTIMIZER category
-        res_large_opt = hf_mod.collect_huggingface(
-            "transformers", mapping_transformers, SemanticTier.OPTIMIZER
-        )
-        names_large_opt = {r.name for r in res_large_opt}
-        assert "AutoScheduler" in names_large_opt
+        res_large_opt = hf_mod.collect_huggingface("transformers", mapping_transformers, SemanticTier.OPTIMIZER)
+        assert "AutoScheduler" in {r.name for r in res_large_opt}
 
-        # UTIL category
         res_large_util = hf_mod.collect_huggingface(
             "transformers",
             mapping_transformers,
             SemanticTier.UTIL,
             include_nonpublic=True,
         )
-        names_large_util = {r.name for r in res_large_util}
-        assert "pipeline_fn" in names_large_util
-
-        # Direct calls to collect_transformers, collect_diffusers, collect_tokenizers
-        res_tr = hf_mod.collect_transformers(SemanticTier.MODEL)
-        assert len(res_tr) > 0
+        assert "pipeline_fn" in {r.name for r in res_large_util}
+        assert len(hf_mod.collect_transformers(SemanticTier.MODEL)) > 0
 
     fake_diff_lib = types.ModuleType("diffusers")
-    pytest.MonkeyPatch().setattr(
-        fake_diff_lib, "DiffusionPipeline", lambda: None, raising=False
-    )
-
+    pytest.MonkeyPatch().setattr(fake_diff_lib, "DiffusionPipeline", _mlx_noop, raising=False)
     fake_tok_lib = types.ModuleType("tokenizers")
-    pytest.MonkeyPatch().setattr(
-        fake_tok_lib, "TokenizerModel", lambda: None, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_tok_lib, "TokenizerModel", _mlx_noop, raising=False)
+    fake_libs = {"diffusers": fake_diff_lib, "tokenizers": fake_tok_lib}
 
     def mock_import_helpers(name: str, package: str | None = None) -> types.ModuleType:
-        """Mock import for helper functions.
+        """Return fake `diffusers` or `tokenizers` modules on import.
 
         Args:
             name: Module name.
             package: Optional package anchor.
 
         Returns:
-            Fake module.
+            Fake module if matched, otherwise real imported module.
         """
-        if name == "diffusers":
-            return fake_diff_lib
-        if name == "tokenizers":
-            return fake_tok_lib
+        if name in fake_libs:
+            return fake_libs[name]
         return real_import(name, package)
 
     with patch("importlib.import_module", side_effect=mock_import_helpers):
-        res_diff = hf_mod.collect_diffusers(SemanticTier.MODEL)
-        assert len(res_diff) >= 1
-        res_tok = hf_mod.collect_tokenizers(SemanticTier.MODEL)
-        assert len(res_tok) >= 1
+        assert len(hf_mod.collect_diffusers(SemanticTier.MODEL)) >= 1
+        assert len(hf_mod.collect_tokenizers(SemanticTier.MODEL)) >= 1
 
 
 def test_tensorflow_collect_api_inspection_failures(
@@ -1107,9 +978,7 @@ def test_tensorflow_collect_api_inspection_failures(
     pytest.MonkeyPatch().setattr(fake_tf, "linalg", fake_linalg, raising=False)
     pytest.MonkeyPatch().setattr(fake_tf, "raw_ops", fake_raw_ops, raising=False)
     pytest.MonkeyPatch().setattr(fake_tf, "concat", lambda: None, raising=False)
-    pytest.MonkeyPatch().setattr(
-        fake_tf, "custom_tensor_op", lambda: None, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_tf, "custom_tensor_op", lambda: None, raising=False)
     pytest.MonkeyPatch().setattr(fake_tf, "Tensor", FakeTensor, raising=False)
     pytest.MonkeyPatch().setattr(fake_tf, "Variable", FakeVariable, raising=False)
 
@@ -1165,9 +1034,7 @@ def test_jax_sharding_and_pallas_collection(mocker: pytest_mock.MockerFixture) -
     fake_sharding = types.ModuleType("jax.sharding")
     pytest.MonkeyPatch().setattr(fake_sharding, "Mesh", Mesh, raising=False)
     pytest.MonkeyPatch().setattr(fake_sharding, "shard_map", shard_map, raising=False)
-    pytest.MonkeyPatch().setattr(
-        fake_sharding, "_priv_sharding", _priv_sharding, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_sharding, "_priv_sharding", _priv_sharding, raising=False)
     pytest.MonkeyPatch().setattr(fake_sharding, "not_callable", 42, raising=False)
 
     def pallas_call() -> None:
@@ -1180,30 +1047,18 @@ def test_jax_sharding_and_pallas_collection(mocker: pytest_mock.MockerFixture) -
 
     fake_pallas = types.ModuleType("jax.experimental.pallas")
     pytest.MonkeyPatch().setattr(fake_pallas, "pallas_call", pallas_call, raising=False)
-    pytest.MonkeyPatch().setattr(
-        fake_pallas, "_priv_pallas", _priv_pallas, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_pallas, "_priv_pallas", _priv_pallas, raising=False)
     pytest.MonkeyPatch().setattr(fake_pallas, "not_callable", 99, raising=False)
 
     fake_experimental = types.ModuleType("jax.experimental")
-    pytest.MonkeyPatch().setattr(
-        fake_experimental, "pallas", fake_pallas, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_experimental, "pallas", fake_pallas, raising=False)
 
     fake_jax = types.ModuleType("jax")
     pytest.MonkeyPatch().setattr(fake_jax, "sharding", fake_sharding, raising=False)
-    pytest.MonkeyPatch().setattr(
-        fake_jax, "experimental", fake_experimental, raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        fake_jax, "lax", types.ModuleType("jax.lax"), raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        fake_jax, "random", types.ModuleType("jax.random"), raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        fake_jax, "Array", type("Array", (), {}), raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_jax, "experimental", fake_experimental, raising=False)
+    pytest.MonkeyPatch().setattr(fake_jax, "lax", types.ModuleType("jax.lax"), raising=False)
+    pytest.MonkeyPatch().setattr(fake_jax, "random", types.ModuleType("jax.random"), raising=False)
+    pytest.MonkeyPatch().setattr(fake_jax, "Array", type("Array", (), {}), raising=False)
 
     fake_jnp = types.ModuleType("jax.numpy")
     fake_numpy = types.ModuleType("numpy")
@@ -1264,27 +1119,19 @@ def test_jax_array_ops_inspect_exceptions(mocker: pytest_mock.MockerFixture) -> 
             pass
 
     fake_sharding = types.ModuleType("jax.sharding")
-    pytest.MonkeyPatch().setattr(
-        fake_sharding, "shard_map", lambda: None, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_sharding, "shard_map", lambda: None, raising=False)
 
     fake_pallas = types.ModuleType("jax.experimental.pallas")
-    pytest.MonkeyPatch().setattr(
-        fake_pallas, "pallas_call", lambda: None, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_pallas, "pallas_call", lambda: None, raising=False)
 
     fake_experimental = types.ModuleType("jax.experimental")
-    pytest.MonkeyPatch().setattr(
-        fake_experimental, "pallas", fake_pallas, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_experimental, "pallas", fake_pallas, raising=False)
 
     fake_jax = types.ModuleType("jax")
     pytest.MonkeyPatch().setattr(fake_jax, "lax", fake_lax, raising=False)
     pytest.MonkeyPatch().setattr(fake_jax, "random", fake_random, raising=False)
     pytest.MonkeyPatch().setattr(fake_jax, "sharding", fake_sharding, raising=False)
-    pytest.MonkeyPatch().setattr(
-        fake_jax, "experimental", fake_experimental, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_jax, "experimental", fake_experimental, raising=False)
     pytest.MonkeyPatch().setattr(fake_jax, "jit", lambda fn: fn, raising=False)
     pytest.MonkeyPatch().setattr(fake_jax, "grad", lambda fn: fn, raising=False)
     pytest.MonkeyPatch().setattr(fake_jax, "vmap", lambda fn: fn, raising=False)
@@ -1309,9 +1156,7 @@ def test_jax_array_ops_inspect_exceptions(mocker: pytest_mock.MockerFixture) -> 
         },
     )
 
-    def mock_inspect(
-        obj: InspectableTarget, name: str, **kwargs: InspectableTarget
-    ) -> GhostRef:
+    def mock_inspect(obj: InspectableTarget, name: str, **kwargs: InspectableTarget) -> GhostRef:
         """Mock inspect function.
 
         Args:
@@ -1346,15 +1191,9 @@ def test_jax_pallas_import_failure(mocker: pytest_mock.MockerFixture) -> None:
         None.
     """
     fake_jax = types.ModuleType("jax")
-    pytest.MonkeyPatch().setattr(
-        fake_jax, "lax", types.ModuleType("jax.lax"), raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        fake_jax, "random", types.ModuleType("jax.random"), raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        fake_jax, "Array", type("Array", (), {}), raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_jax, "lax", types.ModuleType("jax.lax"), raising=False)
+    pytest.MonkeyPatch().setattr(fake_jax, "random", types.ModuleType("jax.random"), raising=False)
+    pytest.MonkeyPatch().setattr(fake_jax, "Array", type("Array", (), {}), raising=False)
     fake_jnp = types.ModuleType("jax.numpy")
     fake_numpy = types.ModuleType("numpy")
     pytest.MonkeyPatch().setattr(fake_numpy, "float32", float, raising=False)
@@ -1366,36 +1205,12 @@ def test_jax_pallas_import_failure(mocker: pytest_mock.MockerFixture) -> None:
             "jax.numpy": fake_jnp,
             "jax.lax": fake_jax.lax,
             "jax.random": fake_jax.random,
+            "jax.experimental": None,
+            "jax.experimental.pallas": None,
             "numpy": fake_numpy,
         },
     )
 
-    real_import = builtins.__import__
-
-    def mock_import(
-        name: str,
-        globals: typing.Mapping[str, InspectableTarget] | None = None,
-        locals: typing.Mapping[str, InspectableTarget] | None = None,
-        fromlist: typing.Sequence[str] = (),
-        level: int = 0,
-    ) -> types.ModuleType:
-        """Mock import raising on pallas.
-
-        Args:
-            name: Module name.
-            globals: Globals dictionary.
-            locals: Locals dictionary.
-            fromlist: From-import list.
-            level: Relative import level.
-
-        Returns:
-            Imported module or raises RuntimeError.
-        """
-        if "pallas" in name:
-            raise RuntimeError("pallas not supported")
-        return real_import(name, globals, locals, fromlist, level)
-
-    mocker.patch("builtins.__import__", side_effect=mock_import)
     refs = jax_fw.collect_api(SemanticTier.ARRAY_API)
     assert len(refs) > 0
     assert any(ref.api_path == "jax.numpy.float32" for ref in refs)
@@ -1410,30 +1225,5 @@ def test_jax_array_ops_import_error(mocker: pytest_mock.MockerFixture) -> None:
     Returns:
         None.
     """
-    real_import = builtins.__import__
-
-    def mock_import(
-        name: str,
-        globals: typing.Mapping[str, InspectableTarget] | None = None,
-        locals: typing.Mapping[str, InspectableTarget] | None = None,
-        fromlist: typing.Sequence[str] = (),
-        level: int = 0,
-    ) -> types.ModuleType:
-        """Mock import raising on jax.
-
-        Args:
-            name: Module name.
-            globals: Globals dictionary.
-            locals: Locals dictionary.
-            fromlist: From-import list.
-            level: Relative import level.
-
-        Returns:
-            Imported module or raises ImportError.
-        """
-        if name == "jax":
-            raise ImportError("no jax")
-        return real_import(name, globals, locals, fromlist, level)
-
-    mocker.patch("builtins.__import__", side_effect=mock_import)
+    mocker.patch.dict("sys.modules", {"jax": None})
     assert jax_fw.collect_api(SemanticTier.ARRAY_API) == []

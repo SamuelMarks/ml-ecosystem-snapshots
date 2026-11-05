@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import json
-import pytest_mock
 from pathlib import Path
 
+import pytest_mock
 from ml_ecosystem_snapshots.tools.matrix_runner import (
-    build_and_run,
-    upload_to_s3,
-    main,
     DEFAULT_MATRIX,
+    build_and_run,
+    main,
+    upload_to_s3,
 )
 
 
@@ -31,17 +31,16 @@ def test_build_and_run(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> Non
     assert mock_run.call_count == 3
 
 
-def test_build_and_run_error_cleanup(
-    mocker: pytest_mock.MockerFixture, tmp_path: Path
-) -> None:
+def test_build_and_run_error_cleanup(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
     """Verify docker rmi cleanup runs even if docker build raises CalledProcessError.
 
     Args:
         mocker: Pytest mocker fixture.
         tmp_path: Temporary directory path fixture.
     """
-    import pytest
     import subprocess
+
+    import pytest
 
     calls: list[list[str]] = []
 
@@ -73,9 +72,7 @@ def test_build_and_run_error_cleanup(
     assert calls[1] == ["docker", "rmi", "snapshot-runner-torch-2.0.1"]
 
 
-def test_upload_to_s3_success(
-    mocker: pytest_mock.MockerFixture, tmp_path: Path
-) -> None:
+def test_upload_to_s3_success(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
     """Test upload_to_s3 function with boto3.
 
     Args:
@@ -102,14 +99,10 @@ def test_upload_to_s3_success(
 
     assert mock_s3.upload_file.call_count == 2
     mock_s3.upload_file.assert_any_call(str(f1), "my-bucket", "snapshots/test1.json")
-    mock_s3.upload_file.assert_any_call(
-        str(f2), "my-bucket", "snapshots/sub/test2.json"
-    )
+    mock_s3.upload_file.assert_any_call(str(f2), "my-bucket", "snapshots/sub/test2.json")
 
 
-def test_upload_to_s3_empty_dir(
-    mocker: pytest_mock.MockerFixture, tmp_path: Path
-) -> None:
+def test_upload_to_s3_empty_dir(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
     """Test upload_to_s3 with empty directory.
 
     Args:
@@ -128,9 +121,7 @@ def test_upload_to_s3_empty_dir(
     assert mock_s3.upload_file.call_count == 0
 
 
-def test_upload_to_s3_import_error(
-    mocker: pytest_mock.MockerFixture, tmp_path: Path
-) -> None:
+def test_upload_to_s3_import_error(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
     """Test upload_to_s3 function without boto3.
 
     Args:
@@ -144,9 +135,7 @@ def test_upload_to_s3_import_error(
     mock_print.assert_called_with("boto3 not installed. Skipping S3 upload.")
 
 
-def test_upload_to_s3_other_error(
-    mocker: pytest_mock.MockerFixture, tmp_path: Path
-) -> None:
+def test_upload_to_s3_other_error(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
     """Test upload_to_s3 function handling generic exceptions.
 
     Args:
@@ -171,9 +160,7 @@ def test_main_default(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None
         tmp_path: Temporary directory path fixture.
     """
     mocker.patch("sys.argv", ["matrix_runner.py", "--output-dir", str(tmp_path)])
-    mock_build = mocker.patch(
-        "ml_ecosystem_snapshots.tools.matrix_runner.build_and_run"
-    )
+    mock_build = mocker.patch("ml_ecosystem_snapshots.tools.matrix_runner.build_and_run")
 
     main()
 
@@ -182,9 +169,7 @@ def test_main_default(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None
     assert mock_build.call_count == expected_calls
 
 
-def test_main_with_matrix_and_s3(
-    mocker: pytest_mock.MockerFixture, tmp_path: Path
-) -> None:
+def test_main_with_matrix_and_s3(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
     """Test main function with custom matrix and s3.
 
     Args:
@@ -206,12 +191,8 @@ def test_main_with_matrix_and_s3(
             "test-bucket",
         ],
     )
-    mock_build = mocker.patch(
-        "ml_ecosystem_snapshots.tools.matrix_runner.build_and_run"
-    )
-    mock_upload = mocker.patch(
-        "ml_ecosystem_snapshots.tools.matrix_runner.upload_to_s3"
-    )
+    mock_build = mocker.patch("ml_ecosystem_snapshots.tools.matrix_runner.build_and_run")
+    mock_upload = mocker.patch("ml_ecosystem_snapshots.tools.matrix_runner.upload_to_s3")
 
     main()
 
@@ -219,9 +200,7 @@ def test_main_with_matrix_and_s3(
     mock_upload.assert_called_once_with(tmp_path, "test-bucket")
 
 
-def test_matrix_runner_main_entrypoint(
-    mocker: pytest_mock.MockerFixture, tmp_path: Path
-) -> None:
+def test_matrix_runner_main_entrypoint(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
     """Test running matrix_runner as __main__ executes without error on an empty matrix.
 
     Args:
@@ -230,7 +209,6 @@ def test_matrix_runner_main_entrypoint(
     """
     import runpy
     import sys
-    from ml_ecosystem_snapshots.tools import matrix_runner
 
     mock_subproc = mocker.patch("subprocess.run")
     matrix_file = tmp_path / "empty_matrix.json"
@@ -246,6 +224,10 @@ def test_matrix_runner_main_entrypoint(
             str(matrix_file),
         ],
     )
-    res = runpy.run_path(matrix_runner.__file__, run_name="__main__")
+    import importlib.util
+
+    spec = importlib.util.find_spec("ml_ecosystem_snapshots.tools.matrix_runner")
+    assert spec is not None and spec.origin is not None
+    res = runpy.run_path(spec.origin, run_name="__main__")
     assert "main" in res
     mock_subproc.assert_not_called()

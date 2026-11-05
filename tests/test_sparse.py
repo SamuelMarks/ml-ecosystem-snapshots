@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-
 import sys
 import types
-import pytest
 
+import pytest
 from ml_ecosystem_snapshots.frameworks.sparse import (
     CANONICAL_SPARSE_OPS,
     _get_sparse,
@@ -75,9 +74,7 @@ def test_collect_api_sparse_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
     real_inspect = GhostInspector.inspect
 
-    def mock_inspect(
-        obj: InspectableTarget, name: str, is_public: bool = True
-    ) -> ExtendedGhostRef:
+    def mock_inspect(obj: InspectableTarget, name: str, is_public: bool = True) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -116,9 +113,7 @@ def test_collect_api_sparse_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.sparse._get_sparse", lambda: None
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.sparse._get_sparse", lambda: None)
     refs = collect_api(SemanticTier.ARRAY_API)
     assert len(refs) == len(CANONICAL_SPARSE_OPS)
     names = {ref.name for ref in refs}
@@ -144,38 +139,7 @@ def test_get_sparse_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    import builtins
-    import typing
-
-    real_import = builtins.__import__
-
-    def mock_import(
-        name: str,
-        globals: typing.Mapping[str, InspectableTarget] | None = None,
-        locals: typing.Mapping[str, InspectableTarget] | None = None,
-        fromlist: typing.Sequence[str] = (),
-        level: int = 0,
-    ) -> types.ModuleType:
-        """Mock import raising ImportError on sparse.
-
-        Args:
-            name: Module name.
-            globals: Globals dictionary.
-            locals: Locals dictionary.
-            fromlist: From-import list.
-            level: Relative import level.
-
-        Returns:
-            Imported module.
-
-        Raises:
-            ImportError: When importing sparse.
-        """
-        if "sparse" in name:
-            raise ImportError("Simulated sparse absent")
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", mock_import)
+    monkeypatch.setitem(sys.modules, "sparse", None)
     assert _get_sparse() is None
 
 
@@ -193,9 +157,7 @@ def test_collect_api_sparse_inspection_exception(
 
         COO = "broken"
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.sparse._get_sparse", lambda: FlakySparse()
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.sparse._get_sparse", lambda: FlakySparse())
 
     def mock_inspect(*args: InspectableTarget, **kwargs: InspectableTarget) -> None:
         """Mock inspect raising RuntimeError.
@@ -209,9 +171,7 @@ def test_collect_api_sparse_inspection_exception(
         """
         raise RuntimeError("Inspection failure")
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.sparse.GhostInspector.inspect", mock_inspect
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.sparse.GhostInspector.inspect", mock_inspect)
     refs = collect_api(SemanticTier.ARRAY_API)
     assert refs == []
 

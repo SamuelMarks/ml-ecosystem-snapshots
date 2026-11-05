@@ -8,12 +8,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import types
-import typing
-import pytest
-import pytest_mock
 from unittest import mock
 
+import pytest
+import pytest_mock
 from ml_ecosystem_snapshots.index import IndexedSymbolRecord
 from ml_ecosystem_snapshots.mcp_server import (
     CONCEPT_ALIAS_MAP,
@@ -57,9 +55,7 @@ def test_version_aware_mcp_queries(mocker: pytest_mock.MockerFixture) -> None:
         }
     }
 
-    def mock_get_snap(
-        framework: str, version: str | None = None
-    ) -> dict[str, JsonValue]:
+    def mock_get_snap(framework: str, version: str | None = None) -> dict[str, JsonValue]:
         """Mock framework snapshot getter returning version-specific mock snapshot.
 
         Args:
@@ -182,9 +178,7 @@ def test_expanded_semantic_concept_maps() -> None:
     ]
 
     for concept in required_concepts:
-        assert (
-            concept in CONCEPT_ALIAS_MAP
-        ), f"Concept '{concept}' missing from CONCEPT_ALIAS_MAP"
+        assert concept in CONCEPT_ALIAS_MAP, f"Concept '{concept}' missing from CONCEPT_ALIAS_MAP"
         aliases = CONCEPT_ALIAS_MAP[concept]
         assert isinstance(aliases, dict)
         assert "torch" in aliases
@@ -198,10 +192,7 @@ def test_expanded_semantic_concept_maps() -> None:
         return_value={"categories": {}},
     ):
         assert any("layer_norm" in a for a in search_apis("torch", "normalization"))
-        assert any(
-            "scaled_dot_product_attention" in a
-            for a in search_apis("torch", "attention")
-        )
+        assert any("scaled_dot_product_attention" in a for a in search_apis("torch", "attention"))
         assert any("gelu" in a for a in search_apis("torch", "activations"))
         assert any("all_reduce" in a for a in search_apis("torch", "collective"))
         assert any("gather" in a for a in search_apis("torch", "gather"))
@@ -210,9 +201,7 @@ def test_expanded_semantic_concept_maps() -> None:
         # Test load_concept_map and custom ontology
         from ml_ecosystem_snapshots.mcp_server import load_concept_map
 
-        custom_map: dict[str, JsonValue] = {
-            "custom_op": {"torch": ["torch.my_custom_op"]}
-        }
+        custom_map: dict[str, JsonValue] = {"custom_op": {"torch": ["torch.my_custom_op"]}}
         with mock.patch.dict(CONCEPT_ALIAS_MAP, custom_map, clear=False):
             res_custom = search_apis("torch", "custom_op")
             assert "torch.my_custom_op" in res_custom
@@ -230,9 +219,7 @@ def test_expanded_semantic_concept_maps() -> None:
                 assert load_concept_map("/bad.json") == {}
 
         # Test search_apis with custom concept map loaded from file path string
-        with mock.patch(
-            "builtins.open", mock.mock_open(read_data=json.dumps(custom_map))
-        ):
+        with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(custom_map))):
             with mock.patch("os.path.exists", return_value=True):
                 loaded_map = load_concept_map("/custom.json")
                 with mock.patch.dict(CONCEPT_ALIAS_MAP, loaded_map, clear=False):
@@ -241,13 +228,12 @@ def test_expanded_semantic_concept_maps() -> None:
 
     # Test load_concept_map with ML_SNAPSHOTS_CONCEPT_MAP
     import os
+
     from ml_ecosystem_snapshots.mcp_server import DEFAULT_CONCEPT_MAP
 
     with mock.patch.dict(os.environ, {"ML_SNAPSHOTS_CONCEPT_MAP": "/env_map.json"}):
         with mock.patch("os.path.exists", return_value=True):
-            with mock.patch(
-                "builtins.open", mock.mock_open(read_data=json.dumps(custom_map))
-            ):
+            with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(custom_map))):
                 assert load_concept_map() == custom_map
             with mock.patch("builtins.open", mock.mock_open(read_data="[1, 2, 3]")):
                 assert load_concept_map() == DEFAULT_CONCEPT_MAP
@@ -287,9 +273,7 @@ def test_check_code_block_python(mocker: pytest_mock.MockerFixture) -> None:
         }
     }
 
-    def mock_get_snap(
-        framework: str, version: str | None = None
-    ) -> dict[str, JsonValue]:
+    def mock_get_snap(framework: str, version: str | None = None) -> dict[str, JsonValue]:
         """Mock framework snapshot getter returning mock torch snapshot.
 
         Args:
@@ -398,9 +382,7 @@ def test_handle_mcp_message_check_code_block() -> None:
     assert '"is_valid": false' in resp["result"]["content"][0]["text"]
 
 
-def test_mcp_server_disk_and_index_fallbacks(
-    mocker: pytest_mock.MockerFixture, tmp_path: Path
-) -> None:
+def test_mcp_server_disk_and_index_fallbacks(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
     """Test get_framework_snapshot and get_api_signature edge cases and fallbacks.
 
     Args:
@@ -436,11 +418,7 @@ def test_mcp_server_disk_and_index_fallbacks(
         "ml_ecosystem_snapshots.index.lookup_symbol",
         side_effect=RuntimeError("Index lookup error"),
     )
-    mock_data = {
-        "categories": {
-            "all": [{"api_path": "custom_fw.fn", "name": "fn", "kind": "function"}]
-        }
-    }
+    mock_data = {"categories": {"all": [{"api_path": "custom_fw.fn", "name": "fn", "kind": "function"}]}}
     mocker.patch(
         "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_data,
@@ -890,9 +868,7 @@ def test_shape_and_dtype_grounding(mocker: pytest_mock.MockerFixture) -> None:
     orig_get_framework_snapshot = get_framework_snapshot
     orig_lookup_symbol = lookup_symbol
 
-    def mock_get_snap(
-        framework: str, version: str | None = None
-    ) -> dict[str, JsonValue]:
+    def mock_get_snap(framework: str, version: str | None = None) -> dict[str, JsonValue]:
         """Return mock snapshot for torch, otherwise delegate to original getter.
 
         Args:
@@ -906,9 +882,7 @@ def test_shape_and_dtype_grounding(mocker: pytest_mock.MockerFixture) -> None:
             return mock_snap
         return orig_get_framework_snapshot(framework, version)
 
-    def mock_lookup(
-        framework: str, api_path: str, version: str | None = None
-    ) -> IndexedSymbolRecord | None:
+    def mock_lookup(framework: str, api_path: str, version: str | None = None) -> IndexedSymbolRecord | None:
         """Mock lookup_symbol returning None for torch.
 
         Args:
@@ -933,14 +907,10 @@ def test_shape_and_dtype_grounding(mocker: pytest_mock.MockerFixture) -> None:
     )
 
     # 1. Elementwise broadcasting
-    res_add_valid = check_hallucination(
-        "torch", "torch.add", arg_shapes=[[2, 3], [1, 3]]
-    )
+    res_add_valid = check_hallucination("torch", "torch.add", arg_shapes=[[2, 3], [1, 3]])
     assert res_add_valid["is_hallucinated"] is False
 
-    res_add_invalid = check_hallucination(
-        "torch", "torch.add", arg_shapes=[[2, 3], [3, 2]]
-    )
+    res_add_invalid = check_hallucination("torch", "torch.add", arg_shapes=[[2, 3], [3, 2]])
     assert res_add_invalid["is_hallucinated"] is True
     assert "Broadcasting error" in res_add_invalid["reason"]
 
@@ -948,29 +918,21 @@ def test_shape_and_dtype_grounding(mocker: pytest_mock.MockerFixture) -> None:
     res_mm_valid = check_hallucination("torch", "torch.mm", arg_shapes=[[2, 3], [3, 4]])
     assert res_mm_valid["is_hallucinated"] is False
 
-    res_mm_3d = check_hallucination(
-        "torch", "torch.mm", arg_shapes=[[2, 3, 4], [2, 4, 5]]
-    )
+    res_mm_3d = check_hallucination("torch", "torch.mm", arg_shapes=[[2, 3, 4], [2, 4, 5]])
     assert res_mm_3d["is_hallucinated"] is True
     assert "Strict 2D" in res_mm_3d["reason"]
 
-    res_matmul_k_err = check_hallucination(
-        "torch", "torch.matmul", arg_shapes=[[2, 3], [4, 5]]
-    )
+    res_matmul_k_err = check_hallucination("torch", "torch.matmul", arg_shapes=[[2, 3], [4, 5]])
     assert res_matmul_k_err["is_hallucinated"] is True
     assert "contracting dimension mismatch" in res_matmul_k_err["reason"]
 
     # 3. Logical/bitwise float dtype rejection
-    res_bitwise = check_hallucination(
-        "torch", "torch.bitwise_and", arg_dtypes=["float32", "float32"]
-    )
+    res_bitwise = check_hallucination("torch", "torch.bitwise_and", arg_dtypes=["float32", "float32"])
     assert res_bitwise["is_hallucinated"] is True
     assert "require integer or boolean" in res_bitwise["reason"]
 
     # 4. Quantization low-precision constraint
-    res_quant = check_hallucination(
-        "torch", "torch.quantize_per_tensor", kwarg_values={"dtype": "float32"}
-    )
+    res_quant = check_hallucination("torch", "torch.quantize_per_tensor", kwarg_values={"dtype": "float32"})
     assert res_quant["is_hallucinated"] is True
     assert "not a valid quantization dtype" in res_quant["reason"]
 
@@ -1134,9 +1096,7 @@ def test_mcp_edge_error_handling(mocker: pytest_mock.MockerFixture) -> None:
     orig_get_framework_snapshot = get_framework_snapshot
     orig_lookup_symbol = lookup_symbol
 
-    def mock_get_snap(
-        framework: str, version: str | None = None
-    ) -> dict[str, JsonValue]:
+    def mock_get_snap(framework: str, version: str | None = None) -> dict[str, JsonValue]:
         """Return mock snapshot for torch, otherwise delegate to original getter.
 
         Args:
@@ -1150,9 +1110,7 @@ def test_mcp_edge_error_handling(mocker: pytest_mock.MockerFixture) -> None:
             return mock_snap
         return orig_get_framework_snapshot(framework, version)
 
-    def mock_lookup(
-        framework: str, api_path: str, version: str | None = None
-    ) -> IndexedSymbolRecord | None:
+    def mock_lookup(framework: str, api_path: str, version: str | None = None) -> IndexedSymbolRecord | None:
         """Mock lookup_symbol returning None for torch.
 
         Args:
@@ -1288,10 +1246,7 @@ def test_check_sass_fp4_microscopic_scaling_architecture_gating() -> None:
     # sm_90 target architecture should fail for FP4 instruction
     res_sm90 = check_sass_instruction("MMA_SCALE_FP4", sm_arch="sm_90")
     assert res_sm90["is_valid"] is False
-    assert any(
-        "Microscopic scaling and FP4/FP6 instructions" in err
-        for err in res_sm90["errors"]
-    )
+    assert any("Microscopic scaling and FP4/FP6 instructions" in err for err in res_sm90["errors"])
 
     # sm_100 target architecture should succeed
     res_sm100 = check_sass_instruction("MMA_SCALE_FP4", sm_arch="sm_100")
@@ -1412,15 +1367,13 @@ def test_check_hallucination_known_enums_without_allowed_values(
         kwarg_values={"reduction": "invalid_reduction_mode"},
     )
     assert res["is_hallucinated"] is True
-    assert (
-        "Invalid enum value 'invalid_reduction_mode' for parameter 'reduction'"
-        in res["reason"]
-    )
+    assert "Invalid enum value 'invalid_reduction_mode' for parameter 'reduction'" in res["reason"]
 
 
 def test_run_mcp_server_parse_error() -> None:
     """Test run_mcp_server handles malformed JSON input and returns JSON-RPC parse error."""
     import io
+
     from ml_ecosystem_snapshots.mcp_server import run_mcp_server
 
     in_stream = io.StringIO("not-valid-json\n")
@@ -1436,9 +1389,7 @@ def test_run_mcp_server_parse_error() -> None:
     assert "Parse error" in resp["error"]["message"]
 
 
-def test_get_framework_snapshot_corrupt_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_get_framework_snapshot_corrupt_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test get_framework_snapshot exception handling when reading corrupt snapshot file.
 
     Args:
@@ -1461,9 +1412,7 @@ def test_get_framework_snapshot_corrupt_file(
     assert snap is not None
 
 
-def test_get_framework_snapshot_list_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_get_framework_snapshot_list_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test get_framework_snapshot loading a list format JSON file.
 
     Args:
@@ -1471,6 +1420,7 @@ def test_get_framework_snapshot_list_file(
         monkeypatch: Pytest monkeypatch fixture.
     """
     import json
+
     from ml_ecosystem_snapshots.mcp_server import (
         _SNAPSHOT_CACHE,
         get_framework_snapshot,
@@ -1518,38 +1468,12 @@ def test_mcp_server_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    import builtins
     import importlib
+    import sys
+
     import ml_ecosystem_snapshots.mcp_server as mcp_mod
 
-    from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
-
-    orig_import = builtins.__import__
-
-    def fake_import(
-        name: str,
-        globals: typing.Mapping[str, InspectableTarget] | None = None,
-        locals: typing.Mapping[str, InspectableTarget] | None = None,
-        fromlist: typing.Sequence[str] = (),
-        level: int = 0,
-    ) -> types.ModuleType:
-        """Simulate missing ml_ecosystem_snapshots.api.
-
-        Args:
-            name: Module name.
-            globals: Globals dictionary.
-            locals: Locals dictionary.
-            fromlist: From-import list.
-            level: Relative import level.
-
-        Returns:
-            Imported module.
-        """
-        if name == "ml_ecosystem_snapshots.api":
-            raise ImportError("simulated missing api")
-        return orig_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
+    monkeypatch.setitem(sys.modules, "ml_ecosystem_snapshots.api", None)
     try:
         importlib.reload(mcp_mod)
         assert mcp_mod.FRAMEWORK_COLLECTORS == {}
@@ -1563,12 +1487,12 @@ def test_mcp_server_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_extended_dtypes_normalization() -> None:
     """Test normalization of newly introduced quantized, sub-byte, and generic dtypes."""
-    from ml_ecosystem_snapshots.mcp_server import normalize_dtype_name
     from ml_ecosystem_snapshots.compliance import (
         estimate_tensor_memory_bytes,
         get_dtype_bitwidth,
         validate_dtype_for_op,
     )
+    from ml_ecosystem_snapshots.mcp_server import normalize_dtype_name
 
     # Quantized types
     assert normalize_dtype_name("torch.qint8") == "qint8"
@@ -1641,6 +1565,7 @@ def test_matches_rank_constraint_variants() -> None:
 def test_check_hallucination_non_int_rank() -> None:
     """Test check_hallucination handles non-integer passed rank gracefully."""
     from unittest.mock import patch
+
     from ml_ecosystem_snapshots.mcp_server import check_hallucination
 
     mock_snap = {
@@ -1648,9 +1573,7 @@ def test_check_hallucination_non_int_rank() -> None:
             "all": [
                 {
                     "api_path": "torch.mm",
-                    "params": [
-                        {"name": "input", "kind": "POSITIONAL_OR_KEYWORD", "rank": 2}
-                    ],
+                    "params": [{"name": "input", "kind": "POSITIONAL_OR_KEYWORD", "rank": 2}],
                 }
             ]
         }
@@ -1659,9 +1582,7 @@ def test_check_hallucination_non_int_rank() -> None:
         "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
         return_value=mock_snap,
     ):
-        res = check_hallucination(
-            "torch", "torch.mm", kwarg_ranks={"input": "non_int_val"}
-        )
+        res = check_hallucination("torch", "torch.mm", kwarg_ranks={"input": "non_int_val"})
         assert res["api_exists"] is True
         assert res["is_hallucinated"] is False
 

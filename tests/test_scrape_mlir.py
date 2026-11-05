@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
-import pytest_mock
 from unittest import mock
+
+import pytest_mock
 from ml_ecosystem_snapshots.tools import scrape_mlir
 
 
@@ -112,6 +113,7 @@ def test_inspect_mlir_python_module(mocker: pytest_mock.MockerFixture) -> None:
         """Mock dialect module with dir method."""
 
         AddFOp = MockAddFOp
+        _internal = 1
 
         def __dir__(self) -> list[str]:
             """Return attributes of the mock dialect module.
@@ -155,9 +157,7 @@ def test_tablegen_helpers() -> None:
     assert "//" not in clean
     assert "let y = 2;" in clean
 
-    operands, attributes = scrape_mlir.parse_tablegen_args(
-        "FloatLike:$lhs, FloatLike:$rhs, FastMathFlagsAttr:$fastmath, I64Attr:$dim, anonymous"
-    )
+    operands, attributes = scrape_mlir.parse_tablegen_args("FloatLike:$lhs, FloatLike:$rhs, FastMathFlagsAttr:$fastmath, I64Attr:$dim, anonymous")
     assert len(operands) == 3
     assert operands[0]["name"] == "lhs"
     assert len(attributes) == 2
@@ -205,9 +205,7 @@ def test_tablegen_inheritance_resolution() -> None:
 def test_tablegen_parsing_missing_branches() -> None:
     """Test parse_tablegen_args, results, and regions edge-case formatting branches."""
     # Empty token in args and empty arg name after colon (lines 162, 174)
-    ops, attrs = scrape_mlir.parse_tablegen_args(
-        "FloatType:$lhs, , FloatType:, FastMathAttr:$"
-    )
+    ops, attrs = scrape_mlir.parse_tablegen_args("FloatType:$lhs, , FloatType:, FastMathAttr:$")
     assert len(ops) == 2
     assert len(attrs) == 1
 
@@ -292,9 +290,7 @@ def test_main_tablegen_empty_and_duplicate_ops(
             return json_dump
         return td_with_dups
 
-    mocker.patch(
-        "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_url", side_effect=mock_fetch
-    )
+    mocker.patch("ml_ecosystem_snapshots.tools.scrape_mlir.fetch_url", side_effect=mock_fetch)
 
     mocker.patch(
         "ml_ecosystem_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
@@ -606,9 +602,7 @@ def test_dump_ast_via_llvm_tooling() -> None:
     mock_proc_success.returncode = 0
     mock_proc_success.stdout = mock_json_stdout
     with mock.patch("subprocess.run", return_value=mock_proc_success):
-        res_succ = scrape_mlir.dump_ast_via_llvm_tooling(
-            "test.td", "arith", tool_binary="/usr/bin/llvm-tblgen"
-        )
+        res_succ = scrape_mlir.dump_ast_via_llvm_tooling("test.td", "arith", tool_binary="/usr/bin/llvm-tblgen")
         assert res_succ is not None
         assert len(res_succ) == 1
         assert res_succ[0]["api_path"] == "arith.addf"
@@ -618,16 +612,12 @@ def test_dump_ast_via_llvm_tooling() -> None:
     mock_proc_fail.returncode = 1
     mock_proc_fail.stdout = ""
     with mock.patch("subprocess.run", return_value=mock_proc_fail):
-        res_fail = scrape_mlir.dump_ast_via_llvm_tooling(
-            "test.td", "arith", tool_binary="/usr/bin/llvm-tblgen"
-        )
+        res_fail = scrape_mlir.dump_ast_via_llvm_tooling("test.td", "arith", tool_binary="/usr/bin/llvm-tblgen")
         assert res_fail is None
 
     # 4. Binary raises exception
     with mock.patch("subprocess.run", side_effect=OSError("Exec format error")):
-        res_err = scrape_mlir.dump_ast_via_llvm_tooling(
-            "test.td", "arith", tool_binary="/usr/bin/llvm-tblgen"
-        )
+        res_err = scrape_mlir.dump_ast_via_llvm_tooling("test.td", "arith", tool_binary="/usr/bin/llvm-tblgen")
         assert res_err is None
 
 
@@ -638,10 +628,13 @@ def test_scrape_mlir_sys_path_insert() -> None:
         None.
     """
     import importlib
-    from pathlib import Path
+    import importlib.util
     import sys
+    from pathlib import Path
 
-    _src_dir = str(Path(scrape_mlir.__file__).resolve().parent.parent.parent)
+    spec = importlib.util.find_spec("ml_ecosystem_snapshots.tools.scrape_mlir")
+    assert spec is not None and spec.origin is not None
+    _src_dir = str(Path(spec.origin).resolve().parent.parent.parent)
     orig_path = list(sys.path)
     try:
         sys.path = [p for p in sys.path if p != _src_dir]
@@ -671,14 +664,17 @@ def test_scrape_mlir_main_entrypoint(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
+    import importlib.util
     import runpy
 
+    spec = importlib.util.find_spec("ml_ecosystem_snapshots.tools.scrape_mlir")
+    assert spec is not None and spec.origin is not None
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
     mocker.patch(
         "ml_ecosystem_snapshots.network_env.fetch_url",
         return_value="<html></html>",
     )
-    res = runpy.run_path(scrape_mlir.__file__, run_name="__main__")
+    res = runpy.run_path(spec.origin, run_name="__main__")
     assert "main" in res
     assert mock_open.called
 

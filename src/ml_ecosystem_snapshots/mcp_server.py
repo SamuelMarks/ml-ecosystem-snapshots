@@ -10,17 +10,21 @@ from __future__ import annotations
 import typing
 
 from ml_ecosystem_snapshots.mcp.cache import (
+    _SNAPSHOT_CACHE,
     ExtractSnapshotFn,
     SnapshotRepository,
-    _SNAPSHOT_CACHE,
     get_framework_snapshot,
     resolve_snapshot,
 )
 
 try:
     from ml_ecosystem_snapshots.api import (
-        CollectorFn,
         FRAMEWORK_COLLECTORS as _imported_collectors,
+    )
+    from ml_ecosystem_snapshots.api import (
+        CollectorFn,
+    )
+    from ml_ecosystem_snapshots.api import (
         extract_snapshot as _imported_extract_snapshot,
     )
 
@@ -113,9 +117,7 @@ def run_mcp_server(
         input_stream: Input stream to read from (defaults to sys.stdin).
         output_stream: Output stream to write to (defaults to sys.stdout).
     """
-    run_stdio_loop(
-        handle_mcp_message, input_stream=input_stream, output_stream=output_stream
-    )
+    run_stdio_loop(handle_mcp_message, input_stream=input_stream, output_stream=output_stream)
 
 
 __all__ = [

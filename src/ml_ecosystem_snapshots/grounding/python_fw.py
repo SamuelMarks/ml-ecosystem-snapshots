@@ -4,12 +4,31 @@ from __future__ import annotations
 
 import typing
 
+import pydantic
+import typing_extensions
+
 from ml_ecosystem_snapshots.grounding.engine import GroundingEngine
 from ml_ecosystem_snapshots.grounding.models import (
     DiagnosticSeverity,
     GroundingReport,
 )
 from ml_ecosystem_snapshots.models import ExtendedGhostRef, GhostRef, JsonValue
+
+
+class PythonCallValidationOptions(pydantic.BaseModel):
+    """Optional tensor dtype, rank, and shape constraints for `validate_python_call`."""
+
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    arg_dtypes: list[str] | dict[str, str] | None = None
+    kwarg_dtypes: dict[str, str] | None = None
+    arg_ranks: list[int | str] | dict[str, int | str] | None = None
+    kwarg_ranks: dict[str, int | str] | None = None
+    arg_shapes: list[typing.Sequence[int | str]] | None = None
+    kwarg_shapes: dict[str, typing.Sequence[int | str]] | None = None
+
+
+_PythonCallOptionValue: typing_extensions.TypeAlias = "list[str] | dict[str, str] | list[int | str] | dict[str, int | str] " "| list[typing.Sequence[int | str]] | dict[str, typing.Sequence[int | str]] | None"
 
 
 def _normalize_candidate_dict(
@@ -50,16 +69,110 @@ def _check_candidate_overload(
         _validate_candidate_positional_arity,
     )
 
-    invalid, _unrecognized, _has_var_kw, _is_opaque, _warn, _names = (
-        _validate_candidate_kwargs(
-            cand=cand,
-            kwargs=kwargs,
-            strict_kwargs=False,
-            strict_c_extensions=False,
-        )
+    invalid, _unrecognized, _has_var_kw, _is_opaque, _warn, _names = _validate_candidate_kwargs(
+        cand=cand,
+        kwargs=kwargs,
+        strict_kwargs=False,
+        strict_c_extensions=False,
     )
     pos_err = _validate_candidate_positional_arity(cand, args_count)
     return invalid, pos_err
+
+
+def _collect_candidate_param_names(
+    ref: ExtendedGhostRef,
+    candidates: list[dict[str, JsonValue]],
+) -> set[str]:
+    """Gather all recognized parameter and accepted_kwargs names across candidate overloads.
+
+    Args:
+        ref: Primary `ExtendedGhostRef` specification.
+        candidates: List of normalized candidate signature dictionaries.
+
+    Returns:
+        Set of recognized parameter names.
+    """
+    all_param_names: set[str] = set()
+    for cand in candidates:
+        cand_params = cand.get("params")
+        assert isinstance(cand_params, list)
+        for p in cand_params:
+            if isinstance(p, dict) and p.get("name"):
+                all_param_names.add(str(p["name"]))
+    if ref.accepted_kwargs:
+        all_param_names.update(ref.accepted_kwargs)
+    return all_param_names
+
+
+def _suggest_python_kwarg_fix(
+    clean_fw: str,
+    kw: str,
+    all_param_names: set[str],
+) -> str | None:
+    """Suggest a canonical keyword argument name for common cross-framework mixups.
+
+    Args:
+        clean_fw: Normalized lowercase framework name.
+        kw: Unrecognized keyword argument name.
+        all_param_names: Set of all valid parameter names across candidate signatures.
+
+    Returns:
+        Suggested canonical parameter name if a known mapping applies, or None.
+    """
+    if clean_fw == "torch" and kw == "axis" and "dim" in all_param_names:
+        return "dim"
+    if clean_fw in ("numpy", "jax", "tensorflow") and kw == "dim" and "axis" in all_param_names:
+        return "axis"
+    if clean_fw == "torch" and kw == "keepdims" and "keepdim" in all_param_names:
+        return "keepdim"
+    if clean_fw in ("numpy", "jax", "tensorflow") and kw == "keepdim" and "keepdims" in all_param_names:
+        return "keepdims"
+    return None
+
+
+def _record_python_call_diagnostics(
+    clean_fw: str,
+    api_path: str,
+    ref: ExtendedGhostRef,
+    candidates: list[dict[str, JsonValue]],
+    args_len: int,
+    all_param_names: set[str],
+    best_invalid_kws: list[str],
+    report: GroundingReport,
+) -> None:
+    """Record keyword and positional arity diagnostics on `report` when no overload matched.
+
+    Args:
+        clean_fw: Normalized lowercase framework name.
+        api_path: Fully qualified API symbol path.
+        ref: Primary `ExtendedGhostRef` specification.
+        candidates: List of normalized candidate signature dictionaries.
+        args_len: Count of positional arguments passed to the call.
+        all_param_names: Set of all valid parameter names across overloads.
+        best_invalid_kws: Invalid keyword arguments from the closest candidate overload.
+        report: Mutable `GroundingReport` to record diagnostics on.
+    """
+    for kw in best_invalid_kws:
+        if kw not in all_param_names:
+            suggested_kw = _suggest_python_kwarg_fix(clean_fw, kw, all_param_names)
+            report.add_diagnostic(
+                field=f"kwargs.{kw}",
+                message=f"Unexpected or hallucinated keyword argument '{kw}' for '{api_path}'.",
+                severity=DiagnosticSeverity.ERROR,
+                suggested_fix=suggested_kw,
+            )
+
+    pos_params = [p for p in ref.params if "KEYWORD_ONLY" not in str(p.kind) and "VAR_POSITIONAL" not in str(p.kind) and "VAR_KEYWORD" not in str(p.kind)]
+    has_var_args = bool(ref.has_varargs) or any("VAR_POSITIONAL" in str(p.kind) for p in ref.params)
+
+    if not has_var_args and args_len > len(pos_params) and pos_params:
+        overload_accepts_len = any(_check_candidate_overload(cand=cand, args_count=args_len, kwargs=[])[1] is None for cand in candidates[1:])
+        if not overload_accepts_len:
+            report.add_diagnostic(
+                field="args",
+                message=(f"Too many positional arguments passed to '{api_path}'. Expected at most {len(pos_params)}, but received {args_len}."),
+                severity=DiagnosticSeverity.ERROR,
+            )
 
 
 def validate_python_call(
@@ -68,12 +181,7 @@ def validate_python_call(
     args: typing.Sequence[JsonValue],
     kwargs: typing.Mapping[str, JsonValue],
     engine: GroundingEngine | None = None,
-    arg_dtypes: list[str] | dict[str, str] | None = None,
-    kwarg_dtypes: dict[str, str] | None = None,
-    arg_ranks: list[int | str] | dict[str, int | str] | None = None,
-    kwarg_ranks: dict[str, int | str] | None = None,
-    arg_shapes: list[typing.Sequence[int | str]] | None = None,
-    kwarg_shapes: dict[str, typing.Sequence[int | str]] | None = None,
+    **options: _PythonCallOptionValue,
 ) -> GroundingReport:
     """Verify a Python framework API call against the ground-truth offline snapshot.
 
@@ -86,12 +194,8 @@ def validate_python_call(
         args: List of positional arguments provided to the call.
         kwargs: Dictionary of keyword arguments provided to the call.
         engine: Optional GroundingEngine instance.
-        arg_dtypes: Optional list or dictionary of positional argument tensor dtypes.
-        kwarg_dtypes: Optional dictionary of keyword argument tensor dtypes.
-        arg_ranks: Optional list or dictionary of positional argument tensor ranks.
-        kwarg_ranks: Optional dictionary of keyword argument tensor ranks.
-        arg_shapes: Optional list of positional argument tensor shapes.
-        kwarg_shapes: Optional dictionary of keyword argument tensor shapes.
+        **options: Optional keyword arguments (`arg_dtypes`, `kwarg_dtypes`, `arg_ranks`,
+            `kwarg_ranks`, `arg_shapes`, `kwarg_shapes`) specifying tensor metadata.
 
     Returns:
         GroundingReport containing validation status, diagnostics, and suggested fixes.
@@ -102,6 +206,7 @@ def validate_python_call(
         _validate_candidate_shapes,
     )
 
+    opts = PythonCallValidationOptions.model_validate(options)
     eng = engine or GroundingEngine()
     clean_fw = framework.lower().strip()
 
@@ -124,21 +229,11 @@ def validate_python_call(
 
     report.matched_ref = ref
 
-    primary_cand = _normalize_candidate_dict(ref)
-    candidates: list[dict[str, JsonValue]] = [primary_cand]
+    candidates: list[dict[str, JsonValue]] = [_normalize_candidate_dict(ref)]
     for ov in ref.overloads or ():
         candidates.append(_normalize_candidate_dict(ov))
 
-    all_param_names: set[str] = set()
-    for cand in candidates:
-        cand_params = cand.get("params")
-        assert isinstance(cand_params, list)
-        for p in cand_params:
-            if isinstance(p, dict) and p.get("name"):
-                all_param_names.add(str(p["name"]))
-    if ref.accepted_kwargs:
-        all_param_names.update(ref.accepted_kwargs)
-
+    all_param_names = _collect_candidate_param_names(ref, candidates)
     kw_names = list(kwargs.keys())
     clean_api = api_path.split(".")[-1].lower()
 
@@ -158,17 +253,17 @@ def validate_python_call(
             api_path=api_path,
             framework=clean_fw,
             kwarg_values=dict(kwargs),
-            arg_dtypes=arg_dtypes,
-            kwarg_dtypes=kwarg_dtypes,
-            arg_ranks=arg_ranks,
-            kwarg_ranks=kwarg_ranks,
+            arg_dtypes=opts.arg_dtypes,
+            kwarg_dtypes=opts.kwarg_dtypes,
+            arg_ranks=opts.arg_ranks,
+            kwarg_ranks=opts.kwarg_ranks,
         )
         shape_errs = _validate_candidate_shapes(
             cand=cand,
             api_path=api_path,
             clean_api=clean_api,
-            arg_shapes=arg_shapes,
-            kwarg_shapes=kwarg_shapes,
+            arg_shapes=opts.arg_shapes,
+            kwarg_shapes=opts.kwarg_shapes,
         )
         extra_errs = enum_errs + dtype_errs + rank_errs + shape_errs
         total_err_count = len(invalid_kws) + (1 if pos_err else 0) + len(extra_errs)
@@ -179,63 +274,16 @@ def validate_python_call(
             best_invalid_kws = invalid_kws
             best_extra_errors = extra_errs
 
-    for kw in best_invalid_kws:
-        if kw not in all_param_names:
-            suggested_kw: str | None = None
-            if clean_fw == "torch" and kw == "axis" and "dim" in all_param_names:
-                suggested_kw = "dim"
-            elif (
-                clean_fw in ("numpy", "jax", "tensorflow")
-                and kw == "dim"
-                and "axis" in all_param_names
-            ):
-                suggested_kw = "axis"
-            elif (
-                clean_fw == "torch"
-                and kw == "keepdims"
-                and "keepdim" in all_param_names
-            ):
-                suggested_kw = "keepdim"
-            elif (
-                clean_fw in ("numpy", "jax", "tensorflow")
-                and kw == "keepdim"
-                and "keepdims" in all_param_names
-            ):
-                suggested_kw = "keepdims"
-
-            report.add_diagnostic(
-                field=f"kwargs.{kw}",
-                message=f"Unexpected or hallucinated keyword argument '{kw}' for '{api_path}'.",
-                severity=DiagnosticSeverity.ERROR,
-                suggested_fix=suggested_kw,
-            )
-
-    pos_params = [
-        p
-        for p in ref.params
-        if "KEYWORD_ONLY" not in str(p.kind)
-        and "VAR_POSITIONAL" not in str(p.kind)
-        and "VAR_KEYWORD" not in str(p.kind)
-    ]
-    has_var_args = bool(ref.has_varargs) or any(
-        "VAR_POSITIONAL" in str(p.kind) for p in ref.params
+    _record_python_call_diagnostics(
+        clean_fw=clean_fw,
+        api_path=api_path,
+        ref=ref,
+        candidates=candidates,
+        args_len=len(args),
+        all_param_names=all_param_names,
+        best_invalid_kws=best_invalid_kws,
+        report=report,
     )
-
-    if not has_var_args and len(args) > len(pos_params) and pos_params:
-        overload_accepts_len = any(
-            _check_candidate_overload(cand=cand, args_count=len(args), kwargs=[])[1]
-            is None
-            for cand in candidates[1:]
-        )
-        if not overload_accepts_len:
-            report.add_diagnostic(
-                field="args",
-                message=(
-                    f"Too many positional arguments passed to '{api_path}'. "
-                    f"Expected at most {len(pos_params)}, but received {len(args)}."
-                ),
-                severity=DiagnosticSeverity.ERROR,
-            )
 
     for err_msg in best_extra_errors:
         report.add_diagnostic(
@@ -248,6 +296,7 @@ def validate_python_call(
 
 
 __all__ = [
+    "PythonCallValidationOptions",
     "_check_candidate_overload",
     "_normalize_candidate_dict",
     "validate_python_call",

@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import tempfile
+from pathlib import Path
 from unittest import mock
 from unittest.mock import patch
 
 import pytest
-
 from ml_ecosystem_snapshots.index import (
     clear_index,
     compute_file_sha256,
@@ -31,9 +30,7 @@ from ml_ecosystem_snapshots.index import (
 from ml_ecosystem_snapshots.models import JsonValue
 
 
-def test_get_cache_dir_custom_env(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_get_cache_dir_custom_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Test get_cache_dir when ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR is set.
 
     Args:
@@ -62,9 +59,7 @@ def test_get_cache_dir_xdg_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
     assert os.path.isdir(res)
 
 
-def test_get_cache_dir_fallback(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_get_cache_dir_fallback(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Test get_cache_dir fallback to ~/.cache.
 
     Args:
@@ -73,9 +68,7 @@ def test_get_cache_dir_fallback(
     """
     monkeypatch.delenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", raising=False)
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
-    monkeypatch.setattr(
-        "os.path.expanduser", lambda path: str(tmp_path) if path == "~" else path
-    )
+    monkeypatch.setattr("os.path.expanduser", lambda path: str(tmp_path) if path == "~" else path)
     res = get_cache_dir()
     expected = os.path.join(str(tmp_path), ".cache", "ml_ecosystem_snapshots")
     assert res == expected
@@ -142,9 +135,7 @@ def test_get_cache_dir_filenotfound_and_fallback_error(
     assert res == expected
 
 
-def test_get_cache_dir_fileexists_fallback(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_get_cache_dir_fileexists_fallback(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Test get_cache_dir ignores FileExistsError when path exists as file or isdir is mocked.
 
     Args:
@@ -153,9 +144,7 @@ def test_get_cache_dir_fileexists_fallback(
     """
     monkeypatch.delenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", raising=False)
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
-    monkeypatch.setattr(
-        "os.path.expanduser", lambda path: str(tmp_path) if path == "~" else path
-    )
+    monkeypatch.setattr("os.path.expanduser", lambda path: str(tmp_path) if path == "~" else path)
 
     def mock_makedirs(path: str, exist_ok: bool = False) -> None:
         """Mock makedirs raising FileExistsError.
@@ -217,7 +206,7 @@ def test_extract_framework_and_version() -> None:
 
 
 def test_init_db_and_index_snapshot_file(tmp_path: Path) -> None:
-    """Test creating database schema and indexing snapshot items.
+    """Test creating database schema, indexing snapshot items, and FTS re-indexing eviction.
 
     Args:
         tmp_path: Pytest temporary directory fixture.
@@ -296,6 +285,15 @@ def test_init_db_and_index_snapshot_file(tmp_path: Path) -> None:
 
     cur.execute("SELECT rowid FROM symbols_fts WHERE symbols_fts MATCH 'prod'")
     assert len(cur.fetchall()) == 1
+
+
+def test_index_snapshot_file_payload_formats(tmp_path: Path) -> None:
+    """Test index_snapshot_file across items, list, instructions, operations, and invalid payloads.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
+    conn = init_db(str(tmp_path / "formats_test.db"))
 
     # 5. Test indexing dict with 'items' key and list format
     items_snap = {
@@ -387,9 +385,7 @@ def test_init_db_and_index_snapshot_file(tmp_path: Path) -> None:
         index_snapshot_file(json_scalar_path, conn)
 
 
-def test_ensure_index_and_search_index(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_ensure_index_and_search_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test ensure_index populates database and search_index queries FTS5.
 
     Args:
@@ -437,10 +433,7 @@ def test_ensure_index_and_search_index(
     # Empty query or only FTS5 reserved operators
     assert search_index("", db_path=db_file) == []
     assert search_index("AND OR NOT NEAR", db_path=db_file) == []
-    assert (
-        search_index("sum AND", framework="torch", version="2.2.0", db_path=db_file)
-        != []
-    )
+    assert search_index("sum AND", framework="torch", version="2.2.0", db_path=db_file) != []
 
     # Query matching sum
     results = search_index("sum", framework="torch", version="2.2.0", db_path=db_file)
@@ -452,9 +445,7 @@ def test_ensure_index_and_search_index(
     assert any(r.get("api_path") == "torch.add" for r in all_res)
 
     # Test corrupted json_data handling in search_index
-    conn.execute(
-        "INSERT INTO symbols (file_path, framework, version, api_path, name, kind, docstring, json_data) VALUES ('f', 'fw', '1', 'corrupt_unique_token.api', 'corrupt_unique_token', 'fn', 'corrupt_unique_token doc', '{corrupt json')"
-    )
+    conn.execute("INSERT INTO symbols (file_path, framework, version, api_path, name, kind, docstring, json_data) VALUES ('f', 'fw', '1', 'corrupt_unique_token.api', 'corrupt_unique_token', 'fn', 'corrupt_unique_token doc', '{corrupt json')")
     sym_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.execute(
         "INSERT INTO symbols_fts (rowid, api_path, name, docstring) VALUES (?, 'corrupt_unique_token.api', 'corrupt_unique_token', 'corrupt_unique_token doc')",
@@ -548,9 +539,7 @@ def test_clear_index(tmp_path: Path) -> None:
         assert clear_index(db_file) is False
 
 
-def test_get_available_snapshot_files(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_get_available_snapshot_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test get_available_snapshot_files discovers files from search paths.
 
     Args:
@@ -574,6 +563,7 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Path) -> None:
         tmp_path: Pytest temporary directory fixture.
     """
     import sqlite3
+
     from ml_ecosystem_snapshots.index import (
         clean_index_cache,
         get_readonly_connection,
@@ -632,9 +622,7 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Path) -> None:
         assert isinstance(conn_res, sqlite3.Connection)
         return conn_res
 
-    with patch(
-        "ml_ecosystem_snapshots.index.sqlite3.connect", side_effect=mock_connect
-    ):
+    with patch("ml_ecosystem_snapshots.index.sqlite3.connect", side_effect=mock_connect):
         conn_fallback = get_readonly_connection(db_file)
         assert conn_fallback is not None
         conn_fallback.close()
@@ -667,7 +655,7 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Path) -> None:
                 raise sqlite3.OperationalError("WAL not supported")
             return mock.MagicMock()
 
-        def __enter__(self) -> "MockConn":
+        def __enter__(self) -> MockConn:
             """Enter context manager."""
             return self
 
@@ -695,9 +683,7 @@ def test_index_snapshot_file_with_target_and_version(tmp_path: Path) -> None:
     snap = {
         "target": "custom_ml",
         "version": "3.2.1",
-        "categories": {
-            "core": [{"name": "custom_op", "api_path": "custom_ml.custom_op"}]
-        },
+        "categories": {"core": [{"name": "custom_op", "api_path": "custom_ml.custom_op"}]},
     }
     json_path = str(tmp_path / "unknown_name.json")
     with open(json_path, "w", encoding="utf-8") as f:
@@ -706,16 +692,12 @@ def test_index_snapshot_file_with_target_and_version(tmp_path: Path) -> None:
     count = index_snapshot_file(json_path, conn)
     assert count == 1
 
-    res = lookup_symbol(
-        "custom_ml", "custom_ml.custom_op", version="3.2.1", db_path=db_file
-    )
+    res = lookup_symbol("custom_ml", "custom_ml.custom_op", version="3.2.1", db_path=db_file)
     assert res is not None
     assert res["name"] == "custom_op"
 
 
-def test_discover_local_snapshots_filtering(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_discover_local_snapshots_filtering(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test get_available_snapshot_files filters non-json files.
 
     Args:

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import argparse
 from unittest.mock import MagicMock, patch
-import pytest
 
+import pytest
 from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli import cmd_check_aten
 from ml_ecosystem_snapshots.frameworks import aten
@@ -34,9 +34,7 @@ def test_collect_api_unsupported_category() -> None:
 
 def test_collect_api_fallback_mode() -> None:
     """Verify that collect_api successfully generates canonical operators in offline mode."""
-    with patch(
-        "ml_ecosystem_snapshots.frameworks.aten._get_torch_ops_aten", return_value=None
-    ):
+    with patch("ml_ecosystem_snapshots.frameworks.aten._get_torch_ops_aten", return_value=None):
         refs = aten.collect_api(SemanticTier.NEURAL_OPS)
         assert len(refs) >= 20
 
@@ -184,15 +182,11 @@ def test_get_torch_ops_aten_branches() -> None:
     # Case where torch lacks ops.aten
     fake_torch = MagicMock()
     del fake_torch.ops
-    with patch(
-        "ml_ecosystem_snapshots.frameworks.aten._resolve_torch", return_value=fake_torch
-    ):
+    with patch("ml_ecosystem_snapshots.frameworks.aten._resolve_torch", return_value=fake_torch):
         assert aten._get_torch_ops_aten() is None
 
     # Case where _resolve_torch returns None
-    with patch(
-        "ml_ecosystem_snapshots.frameworks.aten._resolve_torch", return_value=None
-    ):
+    with patch("ml_ecosystem_snapshots.frameworks.aten._resolve_torch", return_value=None):
         assert aten._get_torch_ops_aten() is None
 
     # Case where _resolve_torch raises exception

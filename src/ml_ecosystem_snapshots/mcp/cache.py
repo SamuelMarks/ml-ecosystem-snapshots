@@ -8,8 +8,12 @@ import threading
 import typing
 
 from ml_ecosystem_snapshots.api import (
-    CollectorFn,
     FRAMEWORK_COLLECTORS as FRAMEWORK_COLLECTORS,
+)
+from ml_ecosystem_snapshots.api import (
+    CollectorFn,
+)
+from ml_ecosystem_snapshots.api import (
     extract_snapshot as _imported_extract_snapshot,
 )
 from ml_ecosystem_snapshots.models import JsonValue
@@ -44,6 +48,108 @@ extract_snapshot: ExtractSnapshotFn | None = _imported_extract_snapshot
 _SNAPSHOT_CACHE: dict[str, dict[str, JsonValue]] = {}
 
 
+def _matches_snapshot_filename(
+    fname: str,
+    clean_fw: str,
+    version: str | None,
+    clean_ver: str | None,
+) -> bool:
+    """Check whether a snapshot JSON filename matches the requested framework and version.
+
+    Args:
+        fname: Candidate `.json` filename.
+        clean_fw: Normalized lowercase framework identifier.
+        version: Optional requested version string.
+        clean_ver: Optional version string stripped of leading `v`/`V`.
+
+    Returns:
+        True if the filename matches the target framework and version constraint.
+    """
+    if clean_ver:
+        return (
+            fname
+            in (
+                f"{clean_fw}_v{clean_ver}.json",
+                f"{clean_fw}_{clean_ver}.json",
+                f"{clean_fw}_v{version}.json",
+                f"{clean_fw}_{version}.json",
+            )
+            or fname.startswith(f"{clean_fw}_v{clean_ver}")
+            or fname.startswith(f"{clean_fw}_{clean_ver}")
+        )
+    return fname.startswith(clean_fw) or fname.startswith(f"{clean_fw}_")
+
+
+def _coerce_snapshot_json_payload(data: JsonValue) -> dict[str, JsonValue] | None:
+    """Normalize a raw JSON payload into a categorized snapshot dictionary.
+
+    Args:
+        data: Parsed JSON value from a snapshot file.
+
+    Returns:
+        Normalized dictionary containing a `'categories'` mapping, or None if unrecognized.
+    """
+    if isinstance(data, dict) and "categories" in data:
+        return dict(data)
+    if isinstance(data, dict) and ("operations" in data or "instructions" in data):
+        items = data.get("operations") or data.get("instructions") or []
+        return {
+            **data,
+            "categories": {"UTIL": items},
+        }
+    if isinstance(data, list):
+        return {"categories": {"UTIL": data}}
+    return None
+
+
+def _load_bundled_snapshot(
+    clean_fw: str,
+    version: str | None,
+    custom_paths: list[str],
+) -> tuple[dict[str, JsonValue] | None, str]:
+    """Scan custom, bundled, and local cache directories for a matching snapshot JSON file.
+
+    Args:
+        clean_fw: Normalized lowercase framework identifier.
+        version: Optional version constraint string.
+        custom_paths: List of custom snapshot search directory paths.
+
+    Returns:
+        Tuple of `(loaded_snapshot_dict_or_none, source_kind_label)`.
+    """
+    from ml_ecosystem_snapshots.index import get_cache_dir
+
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    clean_ver = version.lstrip("vV") if version else None
+
+    custom_dirs: list[tuple[str, str]] = [(cd, "custom_path") for cd in custom_paths]
+    candidates: list[tuple[str, str]] = custom_dirs + [
+        (os.path.join(base_dir, "snapshots"), "bundled_package"),
+        (os.path.join(base_dir, "frameworks"), "bundled_package"),
+        (os.path.join(get_cache_dir(), "snapshots"), "local_cache"),
+    ]
+    loaded_data: dict[str, JsonValue] | None = None
+    source_kind = "not_found"
+    for candidate_dir, source_label in candidates:
+        if os.path.isdir(candidate_dir):
+            candidate_files = sorted(
+                (f for f in os.listdir(candidate_dir) if f.endswith(".json")),
+                reverse=True,
+            )
+            for fname in candidate_files:
+                if _matches_snapshot_filename(fname, clean_fw, version, clean_ver):
+                    try:
+                        with open(os.path.join(candidate_dir, fname), encoding="utf-8") as f:
+                            loaded_data = _coerce_snapshot_json_payload(json.load(f))
+                            source_kind = source_label
+                            break
+                    except (OSError, ValueError):
+                        pass
+            if loaded_data:
+                break
+    return loaded_data, source_kind
+
+
 def get_framework_snapshot(
     framework: str,
     version: str | None = None,
@@ -72,83 +178,13 @@ def get_framework_snapshot(
     if cache_key not in active_cache:
         loaded_data: dict[str, JsonValue] | None = None
         source_kind = "not_found"
-        use_bundled = (
-            prefer_bundled
-            if prefer_bundled is not None
-            else (
-                active_extract is None or active_extract == _imported_extract_snapshot
-            )
-        )
+        use_bundled = prefer_bundled if prefer_bundled is not None else (active_extract is None or active_extract == _imported_extract_snapshot)
         if use_bundled:
-            from ml_ecosystem_snapshots.index import get_cache_dir
-
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            clean_ver = version.lstrip("vV") if version else None
-
-            custom_dirs: list[tuple[str, str]] = [
-                (cd, "custom_path") for cd in active_custom_paths()
-            ]
-            candidates: list[tuple[str, str]] = custom_dirs + [
-                (os.path.join(base_dir, "snapshots"), "bundled_package"),
-                (os.path.join(base_dir, "frameworks"), "bundled_package"),
-                (os.path.join(get_cache_dir(), "snapshots"), "local_cache"),
-            ]
-            for candidate_dir, source_label in candidates:
-                if os.path.isdir(candidate_dir):
-                    candidate_files = [
-                        f for f in os.listdir(candidate_dir) if f.endswith(".json")
-                    ]
-                    candidate_files.sort(reverse=True)
-                    for fname in candidate_files:
-                        matches = False
-                        if clean_ver:
-                            if (
-                                fname
-                                in (
-                                    f"{clean_fw}_v{clean_ver}.json",
-                                    f"{clean_fw}_{clean_ver}.json",
-                                    f"{clean_fw}_v{version}.json",
-                                    f"{clean_fw}_{version}.json",
-                                )
-                                or fname.startswith(f"{clean_fw}_v{clean_ver}")
-                                or fname.startswith(f"{clean_fw}_{clean_ver}")
-                            ):
-                                matches = True
-                        else:
-                            if fname.startswith(clean_fw) or fname.startswith(
-                                f"{clean_fw}_"
-                            ):
-                                matches = True
-                        if matches:
-                            try:
-                                with open(
-                                    os.path.join(candidate_dir, fname),
-                                    "r",
-                                    encoding="utf-8",
-                                ) as f:
-                                    data: JsonValue = json.load(f)
-                                    if isinstance(data, dict) and "categories" in data:
-                                        loaded_data = dict(data)
-                                    elif isinstance(data, dict) and (
-                                        "operations" in data or "instructions" in data
-                                    ):
-                                        items = (
-                                            data.get("operations")
-                                            or data.get("instructions")
-                                            or []
-                                        )
-                                        loaded_data = {
-                                            **data,
-                                            "categories": {"UTIL": items},
-                                        }
-                                    elif isinstance(data, list):
-                                        loaded_data = {"categories": {"UTIL": data}}
-                                    source_kind = source_label
-                                    break
-                            except (OSError, ValueError):
-                                pass
-                    if loaded_data:
-                        break
+            loaded_data, source_kind = _load_bundled_snapshot(
+                clean_fw=clean_fw,
+                version=version,
+                custom_paths=active_custom_paths(),
+            )
 
         if loaded_data:
             loaded_data["_snapshot_source"] = source_kind
@@ -185,9 +221,7 @@ def get_framework_snapshot(
 class SnapshotRepository:
     """Thread-safe repository managing in-memory framework snapshot caches."""
 
-    def __init__(
-        self, backing_store: dict[str, dict[str, JsonValue]] | None = None
-    ) -> None:
+    def __init__(self, backing_store: dict[str, dict[str, JsonValue]] | None = None) -> None:
         """Initialize the snapshot repository with a thread lock and backing dictionary.
 
         Args:
@@ -195,9 +229,7 @@ class SnapshotRepository:
                 the canonical `_SNAPSHOT_CACHE`.
         """
         self._lock = threading.RLock()
-        self._store: dict[str, dict[str, JsonValue]] = (
-            backing_store if backing_store is not None else _SNAPSHOT_CACHE
-        )
+        self._store: dict[str, dict[str, JsonValue]] = backing_store if backing_store is not None else _SNAPSHOT_CACHE
 
     def clear(self) -> None:
         """Clear all cached framework snapshots."""
@@ -225,9 +257,7 @@ class SnapshotRepository:
             cache_key = f"{clean_fw}@{version}" if version else clean_fw
             if cache_key in self._store:
                 return self._store[cache_key]
-            snap = get_framework_snapshot(
-                framework=framework, version=version, prefer_bundled=prefer_bundled
-            )
+            snap = get_framework_snapshot(framework=framework, version=version, prefer_bundled=prefer_bundled)
             self._store[cache_key] = snap
             return snap
 
@@ -283,13 +313,9 @@ def resolve_snapshot(
         Categorized snapshot dictionary.
     """
     if repository is not None:
-        return repository.get(
-            framework=framework, version=version, prefer_bundled=prefer_bundled
-        )
+        return repository.get(framework=framework, version=version, prefer_bundled=prefer_bundled)
     if prefer_bundled is not None:
-        return get_framework_snapshot(
-            framework, version=version, prefer_bundled=prefer_bundled
-        )
+        return get_framework_snapshot(framework, version=version, prefer_bundled=prefer_bundled)
     if version is not None:
         return get_framework_snapshot(framework, version=version)
     return get_framework_snapshot(framework)

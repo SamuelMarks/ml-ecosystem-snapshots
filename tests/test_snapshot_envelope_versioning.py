@@ -207,16 +207,14 @@ def test_scraper_cli_arguments_and_envelope_emission() -> None:
             )
             assert os.path.exists(out_snap)
             assert os.path.exists(out_exh)
-            with open(out_snap, "r") as f:
+            with open(out_snap) as f:
                 snap_data = json.load(f)
                 assert snap_data["version"] == "2.0.0"
                 assert snap_data["upstream_commit"] == "v2.0.0"
 
         # MLIR
         out_mlir = os.path.join(tmpdir, "mlir_custom.json")
-        with mock.patch(
-            "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_url", return_value=""
-        ):
+        with mock.patch("ml_ecosystem_snapshots.tools.scrape_mlir.fetch_url", return_value=""):
             with mock.patch(
                 "ml_ecosystem_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
                 return_value=[],
@@ -236,7 +234,7 @@ def test_scraper_cli_arguments_and_envelope_emission() -> None:
                         ]
                     )
                     assert os.path.exists(out_mlir)
-                    with open(out_mlir, "r") as f:
+                    with open(out_mlir) as f:
                         mlir_data = json.load(f)
                         assert mlir_data["version"] == "20.1.0"
                         assert mlir_data["upstream_commit"] == "llvmorg-20.1.0"
@@ -258,7 +256,7 @@ def test_scraper_cli_arguments_and_envelope_emission() -> None:
                 ]
             )
             assert os.path.exists(out_ptx)
-            with open(out_ptx, "r") as f:
+            with open(out_ptx) as f:
                 ptx_data = json.load(f)
                 assert ptx_data["version"] == "8.6"
                 assert ptx_data["upstream_version"] == "cuda-12.8.0"
@@ -279,7 +277,7 @@ def test_scraper_cli_arguments_and_envelope_emission() -> None:
             ]
         )
         assert os.path.exists(out_sass)
-        with open(out_sass, "r") as f:
+        with open(out_sass) as f:
             sass_data = json.load(f)
             assert sass_data["version"] == "12.8.0"
             assert sass_data["upstream_commit"] == "cuda-12.8.0-toolkit"
@@ -301,7 +299,7 @@ def test_scraper_cli_arguments_and_envelope_emission() -> None:
                 ]
             )
             assert os.path.exists(out_rdna)
-            with open(out_rdna, "r") as f:
+            with open(out_rdna) as f:
                 rdna_data = json.load(f)
                 assert rdna_data["version"] == "20.1.0"
                 assert rdna_data["upstream_version"] == "rocm-6.3.0"

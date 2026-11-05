@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import os
 from unittest import mock
-from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, SemanticTier
-from ml_ecosystem_snapshots.frameworks import nvidia_ptx
+
 from ml_ecosystem_snapshots import mcp_server
+from ml_ecosystem_snapshots.frameworks import nvidia_ptx
+from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, SemanticTier
 
 
 def test_nvidia_ptx_collect_api_layer() -> None:
@@ -126,9 +127,7 @@ def test_validate_ptx_instruction() -> None:
     assert any("not valid for instruction" in e for e in err_disallowed_space)
 
     # Unsupported type on fma
-    err_type = nvidia_ptx.validate_ptx_instruction(
-        "fma", types=[".u16"], operands=["%r0", "%r1", "%r2", "%r3"]
-    )
+    err_type = nvidia_ptx.validate_ptx_instruction("fma", types=[".u16"], operands=["%r0", "%r1", "%r2", "%r3"])
     assert any("is not supported for PTX instruction" in e for e in err_type)
 
     # Operands count mismatch
@@ -141,10 +140,7 @@ def test_validate_ptx_instruction() -> None:
 
     # Vector width mismatch where vector_widths is present but vector_width not in allowed
     err_vw = nvidia_ptx.validate_ptx_instruction("add", vector_width=".v8")
-    assert any(
-        "Vector width '.v8' is not supported for PTX instruction 'add' (supported:" in e
-        for e in err_vw
-    )
+    assert any("Vector width '.v8' is not supported for PTX instruction 'add' (supported:" in e for e in err_vw)
 
 
 def test_load_exhaustive_ptx_missing_file() -> None:
@@ -165,9 +161,7 @@ def test_load_exhaustive_ptx_dict_envelope() -> None:
             "non_list_cat": "invalid",
         },
     }
-    with mock.patch(
-        "builtins.open", mock.mock_open(read_data=json.dumps(mock_envelope))
-    ):
+    with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_envelope))):
         with mock.patch("os.path.exists", return_value=True):
             ops = nvidia_ptx._load_exhaustive_ptx()
             assert len(ops) == 2
@@ -176,18 +170,14 @@ def test_load_exhaustive_ptx_dict_envelope() -> None:
     mock_inst_dict = {
         "instructions": [{"mnemonic": "mock_op"}],
     }
-    with mock.patch(
-        "builtins.open", mock.mock_open(read_data=json.dumps(mock_inst_dict))
-    ):
+    with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_inst_dict))):
         with mock.patch("os.path.exists", return_value=True):
             ops = nvidia_ptx._load_exhaustive_ptx()
             assert len(ops) == 1
             assert ops[0]["mnemonic"] == "mock_op"
 
     mock_raw_list = [{"mnemonic": "mock_raw_op"}]
-    with mock.patch(
-        "builtins.open", mock.mock_open(read_data=json.dumps(mock_raw_list))
-    ):
+    with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_raw_list))):
         with mock.patch("os.path.exists", return_value=True):
             ops = nvidia_ptx._load_exhaustive_ptx()
             assert len(ops) == 1
@@ -196,9 +186,7 @@ def test_load_exhaustive_ptx_dict_envelope() -> None:
 
 def test_check_ptx_instruction_mcp() -> None:
     """Test check_ptx_instruction via MCP server endpoint and call_tool dispatch."""
-    res_valid = mcp_server.check_ptx_instruction(
-        "add", types=[".f32"], operands=["%f0", "%f1", "%f2"]
-    )
+    res_valid = mcp_server.check_ptx_instruction("add", types=[".f32"], operands=["%f0", "%f1", "%f2"])
     assert res_valid["is_valid"] is True
     assert res_valid["mnemonic_exists"] is True
 
@@ -265,9 +253,7 @@ def test_validate_ptx_instruction_scopes_and_vectors() -> None:
 
     # Scope on arithmetic add (invalid)
     err_scope = nvidia_ptx.validate_ptx_instruction("add", scope=".cta")
-    assert any(
-        "only memory and barrier instructions accept scopes" in e for e in err_scope
-    )
+    assert any("only memory and barrier instructions accept scopes" in e for e in err_scope)
 
     # Vector width on add (valid .v2)
     assert (

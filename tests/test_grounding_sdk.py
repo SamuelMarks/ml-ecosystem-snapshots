@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import gzip
-from pathlib import Path
-import pytest
 import json
 import os
+from pathlib import Path
 
-from ml_ecosystem_snapshots.models import GhostRef, JsonValue
+import pytest
 from ml_ecosystem_snapshots.grounding import (
     DiagnosticSeverity,
     GroundingDiagnostic,
@@ -21,6 +20,7 @@ from ml_ecosystem_snapshots.grounding import (
     validate_sass_instruction,
     validate_stablehlo_op,
 )
+from ml_ecosystem_snapshots.models import GhostRef, JsonValue
 
 
 def test_compute_levenshtein() -> None:
@@ -96,9 +96,7 @@ def test_grounding_engine_custom_dir(tmp_path: Path) -> None:
             ]
         }
     }
-    with gzip.open(
-        os.path.join(custom_dir, "gz_exhaustive.json.gz"), "wt", encoding="utf-8"
-    ) as gf:
+    with gzip.open(os.path.join(custom_dir, "gz_exhaustive.json.gz"), "wt", encoding="utf-8") as gf:
         json.dump(gz_data, gf)
 
     # 3. Snapshot with items list
@@ -224,12 +222,7 @@ def test_grounding_engine_suggestions_and_fuzzy(tmp_path: Path) -> None:
     assert suggested == "stablehlo.dot_general"
 
     # Distance too large returns None
-    assert (
-        engine.suggest_closest_symbol(
-            "testtarget", "completely_unrelated_xyz", max_distance=2
-        )
-        is None
-    )
+    assert engine.suggest_closest_symbol("testtarget", "completely_unrelated_xyz", max_distance=2) is None
 
     # Unknown target returns None
     assert engine.suggest_closest_symbol("unknown_target", "abc") is None
@@ -265,10 +258,7 @@ def test_validate_sass_instruction() -> None:
         operands=["R1", "R2"],
     )
     assert not report_invalid_mnem.is_grounded
-    assert any(
-        d.field == "mnemonic" and d.suggested_fix == "FFMA"
-        for d in report_invalid_mnem.diagnostics
-    )
+    assert any(d.field == "mnemonic" and d.suggested_fix == "FFMA" for d in report_invalid_mnem.diagnostics)
 
     # Test invalid architecture
     report_bad_arch = validate_sass_instruction(
@@ -324,10 +314,7 @@ def test_validate_rdna_instruction() -> None:
         operands=["v[1:2]", "v[2:3]"],
     )
     assert not report_odd_reg.is_grounded
-    assert any(
-        "operands[0]" in d.field and "even-aligned" in d.message
-        for d in report_odd_reg.diagnostics
-    )
+    assert any("operands[0]" in d.field and "even-aligned" in d.message for d in report_odd_reg.diagnostics)
 
 
 def test_validate_stablehlo_op() -> None:
@@ -347,10 +334,7 @@ def test_validate_stablehlo_op() -> None:
         attributes={},
     )
     assert not report_dot_missing.is_grounded
-    assert any(
-        d.field == "attributes.dot_dimension_numbers"
-        for d in report_dot_missing.diagnostics
-    )
+    assert any(d.field == "attributes.dot_dimension_numbers" for d in report_dot_missing.diagnostics)
 
     # Test convolution missing dimension_numbers
     report_conv_missing = validate_stablehlo_op(
@@ -359,10 +343,7 @@ def test_validate_stablehlo_op() -> None:
         attributes={},
     )
     assert not report_conv_missing.is_grounded
-    assert any(
-        d.field == "attributes.dimension_numbers"
-        for d in report_conv_missing.diagnostics
-    )
+    assert any(d.field == "attributes.dimension_numbers" for d in report_conv_missing.diagnostics)
 
     # Test unrecognized op with suggestion
     report_typo = validate_stablehlo_op(
@@ -481,10 +462,7 @@ def test_validate_python_call(tmp_path: Path) -> None:
         engine=engine,
     )
     assert not res_unrec.is_grounded
-    assert any(
-        d.field == "api_path" and d.suggested_fix == "torch.sum"
-        for d in res_unrec.diagnostics
-    )
+    assert any(d.field == "api_path" and d.suggested_fix == "torch.sum" for d in res_unrec.diagnostics)
 
     # Hallucinated axis kwarg on torch -> suggests dim
     res_halluc_axis = validate_python_call(
@@ -495,10 +473,7 @@ def test_validate_python_call(tmp_path: Path) -> None:
         engine=engine,
     )
     assert not res_halluc_axis.is_grounded
-    assert any(
-        d.field == "kwargs.axis" and d.suggested_fix == "dim"
-        for d in res_halluc_axis.diagnostics
-    )
+    assert any(d.field == "kwargs.axis" and d.suggested_fix == "dim" for d in res_halluc_axis.diagnostics)
 
     # Hallucinated dim kwarg on numpy -> suggests axis
     res_halluc_dim = validate_python_call(
@@ -509,10 +484,7 @@ def test_validate_python_call(tmp_path: Path) -> None:
         engine=engine,
     )
     assert not res_halluc_dim.is_grounded
-    assert any(
-        d.field == "kwargs.dim" and d.suggested_fix == "axis"
-        for d in res_halluc_dim.diagnostics
-    )
+    assert any(d.field == "kwargs.dim" and d.suggested_fix == "axis" for d in res_halluc_dim.diagnostics)
 
     # Hallucinated arbitrary kwarg
     res_rand_kw = validate_python_call(
@@ -536,8 +508,8 @@ def test_validate_python_call(tmp_path: Path) -> None:
     assert any(d.field == "args" for d in res_too_many_args.diagnostics)
 
     # Overloads (dict & object) and accepted_kwargs coverage
-    from ml_switcheroo_ir.schema.ghost import ParameterKind
     from ml_ecosystem_snapshots.models import ExtendedGhostRef, GhostParam, GhostRef
+    from ml_switcheroo_ir.schema.ghost import ParameterKind
 
     mock_ref = ExtendedGhostRef(
         name="fn",
@@ -567,14 +539,11 @@ def test_validate_python_call(tmp_path: Path) -> None:
     assert res_ov.is_grounded
 
 
-def test_grounding_engine_edge_branches(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Test edge branches in compiler, hardware, and engine modules.
+def test_grounding_engine_edge_branches(tmp_path: Path) -> None:
+    """Test edge branches in compiler, hardware, and engine suggestion tie-breaking.
 
     Args:
         tmp_path: Temporary directory path fixture.
-        monkeypatch: Pytest monkeypatch fixture.
     """
     # 1. Compiler: convolution with dimension_numbers present and zero expected operands
     conv_report = validate_stablehlo_op(
@@ -653,33 +622,12 @@ def test_grounding_engine_edge_branches(
     tie_data = {
         "categories": {
             "valid": [
-                # Short candidate first, longer candidate with same distance second
                 {"name": "ab", "api_path": "tie.ab", "kind": "function", "params": []},
-                {
-                    "name": "abc",
-                    "api_path": "tie.abc",
-                    "kind": "function",
-                    "params": [],
-                },
+                {"name": "abc", "api_path": "tie.abc", "kind": "function", "params": []},
                 {"name": "only_name", "api_path": "", "kind": "function", "params": []},
-                {
-                    "name": "",
-                    "api_path": "tie.only_api",
-                    "kind": "function",
-                    "params": [],
-                },
-                {
-                    "name": "aaaaa",
-                    "api_path": "tie.aaaaa",
-                    "kind": "function",
-                    "params": [],
-                },
-                {
-                    "name": "aaa",
-                    "api_path": "tie.aaa",
-                    "kind": "function",
-                    "params": [],
-                },
+                {"name": "", "api_path": "tie.only_api", "kind": "function", "params": []},
+                {"name": "aaaaa", "api_path": "tie.aaaaa", "kind": "function", "params": []},
+                {"name": "aaa", "api_path": "tie.aaa", "kind": "function", "params": []},
             ],
             "not_a_list": "invalid_value",
         }
@@ -688,23 +636,20 @@ def test_grounding_engine_edge_branches(
         json.dump(tie_data, f)
 
     tie_eng = GroundingEngine(base_dirs=[tie_dir])
-    # Query 'a': distance is 1 to 'ab' (len 2). Later candidate 'abc' (len 3) has distance 2 (> 1).
-    # Query 'a' vs 'ab' and 'abc':
-    sugg = tie_eng.suggest_closest_symbol("tie", "a", max_distance=3)
-    assert sugg == "ab"
-
-    # Query 'aaaa': distance is 1 for 'aaaaa' (len 5), 1 for 'aaa' (len 3)
-    sugg2 = tie_eng.suggest_closest_symbol("tie", "aaaa", max_distance=3)
-    assert sugg2 == "aaa"
-
-    # Test short-map case-insensitive lookup via get_symbol and has_symbol
+    assert tie_eng.suggest_closest_symbol("tie", "a", max_distance=3) == "ab"
+    assert tie_eng.suggest_closest_symbol("tie", "aaaa", max_distance=3) == "aaa"
     assert tie_eng.has_symbol("tie", "AAA") is True
     assert tie_eng.get_symbol("tie", "AAA") is not None
+    assert no_sig_eng.suggest_closest_symbol("nvidia_sass", "NOSI", max_distance=2) == "NOSIG"
 
-    # Test suggestion with mnemonic
-    sugg_mnem = no_sig_eng.suggest_closest_symbol("nvidia_sass", "NOSI", max_distance=2)
-    assert sugg_mnem == "NOSIG"
 
+def test_grounding_engine_tie_break_and_hydrate_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test GroundingEngine candidate tie-breaking, scalar JSON files, and hydrate errors.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     # Test candidate tie-breaking where first candidate is longer and second is shorter
     tie_break_dir = str(tmp_path / "tie_break_dir")
     os.makedirs(tie_break_dir, exist_ok=True)
@@ -722,8 +667,6 @@ def test_grounding_engine_edge_branches(
             f,
         )
     tb_eng = GroundingEngine(base_dirs=[tie_break_dir])
-    # Query 'ab': distance to 'abcd' is 2 (len 4), distance to 'xy' is 2 (len 2).
-    # 'abcd' comes before 'xy' alphabetically, so 'xy' triggers len(cand) < len(best_candidate).
     sugg_tb = tb_eng.suggest_closest_symbol("tb", "ab", max_distance=3)
     assert sugg_tb == "xy"
 
@@ -765,9 +708,7 @@ def test_grounding_engine_edge_branches(
     assert fail_eng.load_target("fail") == {}
 
 
-def test_grounding_engine_collector_fallback(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_grounding_engine_collector_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test GroundingEngine collector fallback when files are absent on disk.
 
     Args:
@@ -962,7 +903,7 @@ def test_grounding_new_verifiers() -> None:
 
 
 def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
-    """Verify unified Grounding SDK and MCP validator branches across Python, ISA, IR, and Engine.
+    """Verify unified Grounding SDK and MCP validator branches across Python and ISA.
 
     Args:
         tmp_path: Pytest temporary directory fixture.
@@ -1043,9 +984,7 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
             f,
         )
     eng_ov = GroundingEngine(base_dirs=[ov_dir])
-    res_ov_pos = validate_python_call(
-        "ovfw", "ovfw.func", args=[1, 2], kwargs={}, engine=eng_ov
-    )
+    res_ov_pos = validate_python_call("ovfw", "ovfw.func", args=[1, 2], kwargs={}, engine=eng_ov)
     assert res_ov_pos.is_grounded
 
     res_ov_pos_bad_kw = validate_python_call(
@@ -1096,11 +1035,15 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
         operands=["v0", "s0", "s1"],
     )
     assert not rdna_cbus.is_grounded
-    assert any(
-        "Constant bus" in d.message or "constant bus" in d.message.lower()
-        for d in rdna_cbus.diagnostics
-    )
+    assert any("Constant bus" in d.message or "constant bus" in d.message.lower() for d in rdna_cbus.diagnostics)
 
+
+def test_unified_grounding_ir_and_keepdim_branches(tmp_path: Path) -> None:
+    """Verify unified Grounding SDK branches for MLIR/StableHLO ops and keepdim suggestions.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
     # MLIR variadic op with operand_count != len(expected_operands)
     mlir_var_dir = str(tmp_path / "mlir_var_dir")
     os.makedirs(mlir_var_dir, exist_ok=True)
@@ -1127,9 +1070,7 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
             f,
         )
     eng_mlir_var = GroundingEngine(base_dirs=[mlir_var_dir])
-    var_rep = validate_mlir_op(
-        "func", "variadic_op", operand_count=3, attributes={}, engine=eng_mlir_var
-    )
+    var_rep = validate_mlir_op("func", "variadic_op", operand_count=3, attributes={}, engine=eng_mlir_var)
     assert var_rep.is_grounded
 
     # Python keepdim / keepdims suggestion branches
@@ -1174,13 +1115,9 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
             f,
         )
     eng_keep = GroundingEngine(base_dirs=[keep_dir])
-    rep_t_kd = validate_python_call(
-        "torch", "torch.sum", args=[1], kwargs={"keepdims": True}, engine=eng_keep
-    )
+    rep_t_kd = validate_python_call("torch", "torch.sum", args=[1], kwargs={"keepdims": True}, engine=eng_keep)
     assert any(d.suggested_fix == "keepdim" for d in rep_t_kd.diagnostics)
-    rep_np_kd = validate_python_call(
-        "numpy", "numpy.sum", args=[1], kwargs={"keepdim": True}, engine=eng_keep
-    )
+    rep_np_kd = validate_python_call("numpy", "numpy.sum", args=[1], kwargs={"keepdim": True}, engine=eng_keep)
     assert any(d.suggested_fix == "keepdims" for d in rep_np_kd.diagnostics)
 
     # 4. StableHLO & MLIR: type errors, trait errors, structured attribute errors, region errors
@@ -1214,9 +1151,7 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
     # Custom MLIR op with explicit type constraint to trigger operand type error
     mlir_custom_dir = str(tmp_path / "mlir_custom")
     os.makedirs(mlir_custom_dir, exist_ok=True)
-    with open(
-        os.path.join(mlir_custom_dir, "mlir_exhaustive.json"), "w", encoding="utf-8"
-    ) as f:
+    with open(os.path.join(mlir_custom_dir, "mlir_exhaustive.json"), "w", encoding="utf-8") as f:
         json.dump(
             [
                 {
@@ -1307,10 +1242,10 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
 
 def test_grounding_models_cross_repo_identity() -> None:
     """Verify Grounding models and compute_levenshtein share identity with ml_switcheroo_ir."""
-    from ml_switcheroo_ir.validation import core as ir_core
-    from ml_switcheroo_ir.validation import grounding as ir_grounding
     from ml_ecosystem_snapshots.grounding import engine as snap_engine
     from ml_ecosystem_snapshots.grounding import models as snap_models
+    from ml_switcheroo_ir.validation import core as ir_core
+    from ml_switcheroo_ir.validation import grounding as ir_grounding
 
     assert snap_models.DiagnosticSeverity is ir_grounding.DiagnosticSeverity
     assert snap_models.GroundingDiagnostic is ir_grounding.GroundingDiagnostic

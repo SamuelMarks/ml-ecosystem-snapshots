@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-
 import sys
 import types
-import pytest
 
+import pytest
 from ml_ecosystem_snapshots.frameworks.bohrium import (
     CANONICAL_BOHRIUM_OPS,
     _get_bohrium,
@@ -26,9 +25,7 @@ def test_collect_api_bohrium_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.bohrium._get_bohrium", lambda: None
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.bohrium._get_bohrium", lambda: None)
     refs = collect_api(SemanticTier.ARRAY_API)
     assert len(refs) == len(CANONICAL_BOHRIUM_OPS)
     names = {ref.name for ref in refs}
@@ -61,9 +58,7 @@ def test_collect_api_bohrium_live(monkeypatch: pytest.MonkeyPatch) -> None:
             """Mock flush call."""
             pass
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.bohrium._get_bohrium", lambda: FakeBohrium()
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.bohrium._get_bohrium", lambda: FakeBohrium())
     refs = collect_api(SemanticTier.ARRAY_API)
     assert len(refs) >= 2
     names = {ref.name for ref in refs}
@@ -94,35 +89,7 @@ def test_get_bohrium_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    import builtins
-    import typing
-
-    real_import = builtins.__import__
-
-    def mock_import(
-        name: str,
-        globals: typing.Mapping[str, InspectableTarget] | None = None,
-        locals: typing.Mapping[str, InspectableTarget] | None = None,
-        fromlist: typing.Sequence[str] = (),
-        level: int = 0,
-    ) -> types.ModuleType:
-        """Mock import function.
-
-        Args:
-            name: The module name.
-            globals: Globals dictionary.
-            locals: Locals dictionary.
-            fromlist: From-import list.
-            level: Relative import level.
-
-        Returns:
-            The imported module or raises.
-        """
-        if "bohrium" in name:
-            raise ImportError("Simulated bohrium absent")
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", mock_import)
+    monkeypatch.setitem(sys.modules, "bohrium", None)
     assert _get_bohrium() is None
 
 
@@ -140,13 +107,9 @@ def test_collect_api_bohrium_inspection_exception(
 
         array = "broken"
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.bohrium._get_bohrium", lambda: FlakyBohrium()
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.bohrium._get_bohrium", lambda: FlakyBohrium())
 
-    def mock_inspect(
-        *args: InspectableTarget, **kwargs: InspectableTarget
-    ) -> ExtendedGhostRef:
+    def mock_inspect(*args: InspectableTarget, **kwargs: InspectableTarget) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -158,9 +121,7 @@ def test_collect_api_bohrium_inspection_exception(
         """
         raise RuntimeError("Inspection failure")
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.bohrium.GhostInspector.inspect", mock_inspect
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.bohrium.GhostInspector.inspect", mock_inspect)
     refs = collect_api(SemanticTier.ARRAY_API)
     assert refs == []
 

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import os
-
+from pathlib import Path
 from unittest.mock import patch
+
 from ml_ecosystem_snapshots.cli import resolve_snapshot_path
 
 
@@ -44,9 +44,7 @@ def test_resolve_snapshot_path_fallback_to_repo(tmp_path: Path) -> None:
         tmp_path: Temporary directory path fixture.
     """
     # Mock __file__ so repo root points to our temp directory
-    pkg_dir = Path(
-        os.path.join(Path(os.path.join(tmp_path, "src")), "ml_ecosystem_snapshots")
-    )
+    pkg_dir = Path(os.path.join(Path(os.path.join(tmp_path, "src")), "ml_ecosystem_snapshots"))
     pkg_dir.mkdir(parents=True)
 
     snapshots_dir = Path(os.path.join(tmp_path, "snapshots"))
@@ -94,9 +92,7 @@ def test_resolve_multiple_matches(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    pkg_dir = Path(
-        os.path.join(Path(os.path.join(tmp_path, "src")), "ml_ecosystem_snapshots")
-    )
+    pkg_dir = Path(os.path.join(Path(os.path.join(tmp_path, "src")), "ml_ecosystem_snapshots"))
     pkg_dir.mkdir(parents=True)
 
     snapshots_dir = Path(os.path.join(tmp_path, "snapshots"))
@@ -119,9 +115,7 @@ def test_resolve_no_matches_in_existing_dir(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    pkg_dir = Path(
-        os.path.join(Path(os.path.join(tmp_path, "src")), "ml_ecosystem_snapshots")
-    )
+    pkg_dir = Path(os.path.join(Path(os.path.join(tmp_path, "src")), "ml_ecosystem_snapshots"))
     pkg_dir.mkdir(parents=True)
 
     snapshots_dir = Path(os.path.join(tmp_path, "snapshots"))
@@ -141,11 +135,7 @@ def test_resolve_snapshot_path_from_pkg_snapshots(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory fixture.
     """
-    pkg_dir = Path(
-        os.path.join(
-            Path(os.path.join(tmp_path, "site-packages")), "ml_ecosystem_snapshots"
-        )
-    )
+    pkg_dir = Path(os.path.join(Path(os.path.join(tmp_path, "site-packages")), "ml_ecosystem_snapshots"))
     snapshots_dir = Path(os.path.join(pkg_dir, "snapshots"))
     snapshots_dir.mkdir(parents=True)
 
@@ -175,11 +165,7 @@ def test_resolve_snapshot_path_from_pkg_frameworks(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory fixture.
     """
-    pkg_dir = Path(
-        os.path.join(
-            Path(os.path.join(tmp_path, "site-packages")), "ml_ecosystem_snapshots"
-        )
-    )
+    pkg_dir = Path(os.path.join(Path(os.path.join(tmp_path, "site-packages")), "ml_ecosystem_snapshots"))
     frameworks_dir = Path(os.path.join(pkg_dir, "frameworks"))
     frameworks_dir.mkdir(parents=True)
 

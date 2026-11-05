@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
-import pytest_mock
 import sys
+from pathlib import Path
+
 import pytest
+import pytest_mock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from scripts.update_shields import get_test_coverage, get_doc_coverage, get_color, main
+from scripts.update_shields import get_color, get_doc_coverage, get_test_coverage, main
 
 
 def test_get_test_coverage_success(mocker: pytest_mock.MockerFixture) -> None:
@@ -177,9 +178,7 @@ def test_main(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
         os.chdir(orig_cwd)
 
 
-def test_main_replace_existing(
-    mocker: pytest_mock.MockerFixture, tmp_path: Path
-) -> None:
+def test_main_replace_existing(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
     """Test main function replaces existing badges.
 
     Args:
@@ -190,9 +189,7 @@ def test_main_replace_existing(
     mocker.patch("scripts.update_shields.get_doc_coverage", return_value="85")
 
     readme_path = tmp_path / "README.md"
-    readme_path.write_text(
-        "[![License](license)]()\n[![Test Coverage](oldtests)]()\n[![Docs](olddocs)]()\n"
-    )
+    readme_path.write_text("[![License](license)]()\n[![Test Coverage](oldtests)]()\n[![Docs](olddocs)]()\n")
 
     orig_cwd = os.getcwd()
     os.chdir(tmp_path)
@@ -207,9 +204,7 @@ def test_main_replace_existing(
         os.chdir(orig_cwd)
 
 
-def test_update_shields_main_entrypoint(
-    mocker: pytest_mock.MockerFixture, tmp_path: Path
-) -> None:
+def test_update_shields_main_entrypoint(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
     """Test running scripts/update_shields.py as __main__.
 
     Args:
@@ -217,21 +212,18 @@ def test_update_shields_main_entrypoint(
         tmp_path: Temporary directory path fixture.
     """
     import runpy
-    import scripts.update_shields as us_mod
 
-    mocker.patch(
-        "subprocess.run"
-    ).return_value.stdout = (
-        "TOTAL 100 0 100%\nRESULT: PASSED (minimum: 80.0%, actual: 100.0%)\n"
-    )
+    mocker.patch("subprocess.run").return_value.stdout = "TOTAL 100 0 100%\nRESULT: PASSED (minimum: 80.0%, actual: 100.0%)\n"
     readme_path = tmp_path / "README.md"
-    readme_path.write_text(
-        "[![License](license)]()\n[![Tests](oldtests)]()\n[![Docs](olddocs)]()\n"
-    )
+    readme_path.write_text("[![License](license)]()\n[![Tests](oldtests)]()\n[![Docs](olddocs)]()\n")
+    import importlib.util
+
+    spec = importlib.util.find_spec("scripts.update_shields")
+    assert spec is not None and spec.origin is not None
     orig_cwd = os.getcwd()
     os.chdir(tmp_path)
     try:
-        runpy.run_path(us_mod.__file__, run_name="__main__")
+        runpy.run_path(spec.origin, run_name="__main__")
         assert "test%20coverage-100%25-brightgreen.svg" in readme_path.read_text()
     finally:
         os.chdir(orig_cwd)

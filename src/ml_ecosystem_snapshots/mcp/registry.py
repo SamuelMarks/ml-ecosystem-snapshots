@@ -4,20 +4,16 @@ from __future__ import annotations
 
 import json
 import typing
-import typing_extensions
 
 import pydantic
+import typing_extensions
 
-from ml_ecosystem_snapshots.mcp.tools.domain_ops import build_domain_op_tool_schemas
 from ml_ecosystem_snapshots.mcp.protocol import JsonRpcResponseDict, JsonRpcResultDict
+from ml_ecosystem_snapshots.mcp.tools.domain_ops import build_domain_op_tool_schemas
 from ml_ecosystem_snapshots.models import JsonValue
 
-ToolHandlerResult: typing_extensions.TypeAlias = (
-    "pydantic.BaseModel | dict[str, JsonValue] | list[str] | None"
-)
-ToolHandlerFn: typing_extensions.TypeAlias = (
-    "typing.Callable[[dict[str, JsonValue]], ToolHandlerResult]"
-)
+ToolHandlerResult: typing_extensions.TypeAlias = "pydantic.BaseModel | dict[str, JsonValue] | list[str] | None"
+ToolHandlerFn: typing_extensions.TypeAlias = "typing.Callable[[dict[str, JsonValue]], ToolHandlerResult]"
 
 
 class McpToolSpec(pydantic.BaseModel):
@@ -681,18 +677,12 @@ def dispatch_tool_call(
         )
 
     res = handler(args)
-    payload = (
-        res.model_dump(exclude_none=True)
-        if isinstance(res, pydantic.BaseModel)
-        else res
-    )
+    payload = res.model_dump(exclude_none=True) if isinstance(res, pydantic.BaseModel) else res
     return JsonRpcResponseDict(
         {
             "jsonrpc": "2.0",
             "id": msg_id,
-            "result": JsonRpcResultDict(
-                {"content": [{"type": "text", "text": json.dumps(payload, indent=2)}]}
-            ),
+            "result": JsonRpcResultDict({"content": [{"type": "text", "text": json.dumps(payload, indent=2)}]}),
         }
     )
 

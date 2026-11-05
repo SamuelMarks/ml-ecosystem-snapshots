@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
 import os
 import sys
 from unittest.mock import patch
+
+import pytest
 
 
 def test_ghostref_from_obj_griffe_import_error() -> None:
@@ -56,9 +57,7 @@ def test_fetch_amdgpu_td_file_cache_write_error(
     """
     from ml_ecosystem_snapshots.tools.scrape_amd_rdna import fetch_td_file
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.network_env.fetch_url", lambda url: "content"
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.network_env.fetch_url", lambda url: "content")
 
     def mock_makedirs(*args: str | int, **kwargs: bool | int) -> None:
         """Mock makedirs throwing OSError.
@@ -82,9 +81,7 @@ def test_fetch_amdgpu_td_file_fetch_none(monkeypatch: pytest.MonkeyPatch) -> Non
     """
     from ml_ecosystem_snapshots.tools.scrape_amd_rdna import fetch_td_file
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.network_env.fetch_url", lambda url: None
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.network_env.fetch_url", lambda url: None)
     res = fetch_td_file("foo.td", use_cache=True)
     assert res == ""
 
@@ -97,9 +94,7 @@ def test_fetch_amdgpu_td_file_no_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     from ml_ecosystem_snapshots.tools.scrape_amd_rdna import fetch_td_file
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.network_env.fetch_url", lambda url: "content"
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.network_env.fetch_url", lambda url: "content")
     res = fetch_td_file("foo.td", use_cache=False)
     assert res == "content"
 

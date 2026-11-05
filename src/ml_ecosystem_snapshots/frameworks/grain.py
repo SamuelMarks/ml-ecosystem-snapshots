@@ -33,7 +33,6 @@ from ml_ecosystem_snapshots.introspection.static_parsers import (
 )
 from ml_ecosystem_snapshots.network_env import is_offline_mode
 
-
 _GRAIN_OP_DEFS: list[
     tuple[
         str,
@@ -709,19 +708,14 @@ def _build_grain_canonical_ops(
             api_path=api_path,
             kind=kind,
             submodule=submodule,
-            params=[
-                CanonicalParamSpec(name=pn, kind=pk, default=pd)
-                for pn, pk, pd in params
-            ],
+            params=[CanonicalParamSpec(name=pn, kind=pk, default=pd) for pn, pk, pd in params],
             docstring=doc,
         )
         for name, api_path, kind, submodule, params, doc in defs
     ]
 
 
-CANONICAL_GRAIN_OPS: list[CanonicalSubmoduleOpSpec] = _build_grain_canonical_ops(
-    _GRAIN_OP_DEFS
-)
+CANONICAL_GRAIN_OPS: list[CanonicalSubmoduleOpSpec] = _build_grain_canonical_ops(_GRAIN_OP_DEFS)
 
 
 def _get_grain_module() -> dict[str, types.ModuleType | None]:
@@ -766,15 +760,38 @@ def _attach_grain_python_alias(ref: GhostRef) -> None:
     Args:
         ref: Target `GhostRef` to enrich with `grain.python.*` alias.
     """
-    if ref.api_path.startswith("grain.") and not ref.api_path.startswith(
-        "grain.python."
-    ):
+    if ref.api_path.startswith("grain.") and not ref.api_path.startswith("grain.python."):
         suffix = ref.api_path[len("grain.") :]
         py_alias = f"grain.python.{suffix}"
         existing = list(ref.aliases or [])
         if py_alias not in existing:
             existing.append(py_alias)
             ref.aliases = existing
+
+
+def _append_grain_ref(
+    ref: GhostRef,
+    env_tags: tuple[str, ...],
+    seen_paths: set[str],
+    results: list[GhostRef],
+    merge_env_tags: bool = False,
+) -> None:
+    """Append a `GhostRef` with Grain `grain.python.*` alias if not yet recorded.
+
+    Args:
+        ref: Discovered `GhostRef` candidate.
+        env_tags: Environment tags to merge when `merge_env_tags` is True.
+        seen_paths: Mutable set of already recorded `api_path` strings.
+        results: Mutable destination list of `GhostRef` objects.
+        merge_env_tags: Whether to append missing `env_tags` onto `ref.environment_tags`.
+    """
+    if ref.api_path in seen_paths:
+        return
+    if merge_env_tags:
+        ref.environment_tags = list(ref.environment_tags or ()) + [t for t in env_tags if t not in (ref.environment_tags or ())]
+    _attach_grain_python_alias(ref)
+    results.append(ref)
+    seen_paths.add(ref.api_path)
 
 
 def collect_grain_api(include_nonpublic: bool = False) -> list[GhostRef]:
@@ -805,13 +822,7 @@ def collect_grain_api(include_nonpublic: bool = False) -> list[GhostRef]:
                     include_nonpublic=include_nonpublic,
                     inspector_fn=GhostInspector.inspect,
                 ):
-                    if ref.api_path not in seen_paths:
-                        ref.environment_tags = list(ref.environment_tags or ()) + [
-                            t for t in env_tags if t not in (ref.environment_tags or ())
-                        ]
-                        _attach_grain_python_alias(ref)
-                        results.append(ref)
-                        seen_paths.add(ref.api_path)
+                    _append_grain_ref(ref, env_tags, seen_paths, results, merge_env_tags=True)
 
         if _get_grain_griffe_module() is not None:
             for ref in scan_griffe_module_members(
@@ -822,10 +833,7 @@ def collect_grain_api(include_nonpublic: bool = False) -> list[GhostRef]:
                 framework_name="grain",
                 inspector_fn=GhostInspector.inspect,
             ):
-                if ref.api_path not in seen_paths:
-                    _attach_grain_python_alias(ref)
-                    results.append(ref)
-                    seen_paths.add(ref.api_path)
+                _append_grain_ref(ref, env_tags, seen_paths, results)
 
     for spec in CANONICAL_GRAIN_OPS:
         if spec.api_path not in seen_paths:
@@ -835,16 +843,12 @@ def collect_grain_api(include_nonpublic: bool = False) -> list[GhostRef]:
                 environment_tags=env_tags,
                 domain_metadata={"submodule": spec.submodule or "dataset"},
             )
-            _attach_grain_python_alias(ref)
-            results.append(ref)
-            seen_paths.add(spec.api_path)
+            _append_grain_ref(ref, env_tags, seen_paths, results)
 
     return results
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect Grain API definitions for the requested semantic tier.
 
     Args:

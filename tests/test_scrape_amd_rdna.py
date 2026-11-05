@@ -4,25 +4,25 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import tempfile
 import urllib.request
+from pathlib import Path
 from unittest import mock
+
 import pytest
 import pytest_mock
-
 from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.tools import scrape_amd_rdna
 
 
 def test_fetch_td_file_success() -> None:
     """Test fetch_td_file on success."""
-    with mock.patch("urllib.request.urlopen") as mock_urlopen:
-        mock_response = mock.MagicMock()
-        mock_response.read.return_value = b'defm V_ADD_F32 : VOP1Inst <"v_add_f32"'
-        mock_response.__enter__.return_value = mock_response
-        mock_urlopen.return_value = mock_response
+    import io
 
+    with mock.patch(
+        "urllib.request.urlopen",
+        return_value=io.BytesIO(b'defm V_ADD_F32 : VOP1Inst <"v_add_f32"'),
+    ):
         content = scrape_amd_rdna.fetch_td_file("test.td")
         assert "defm V_ADD_F32" in content
 
@@ -34,6 +34,8 @@ def test_fetch_td_file_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         tmp_path: Pytest temporary directory fixture.
         monkeypatch: Pytest monkeypatch fixture.
     """
+    import io
+
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     cache_dir = os.path.join(str(tmp_path), "ml_ecosystem_snapshots", "amdgpu_td")
     os.makedirs(cache_dir, exist_ok=True)
@@ -46,27 +48,25 @@ def test_fetch_td_file_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert cached_content == "cached_td_content"
 
     # Miss cache and write new file
-    with mock.patch("urllib.request.urlopen") as mock_urlopen:
-        mock_response = mock.MagicMock()
-        mock_response.read.return_value = b"downloaded_td_content"
-        mock_response.__enter__.return_value = mock_response
-        mock_urlopen.return_value = mock_response
-
+    with mock.patch(
+        "urllib.request.urlopen",
+        return_value=io.BytesIO(b"downloaded_td_content"),
+    ):
         downloaded = scrape_amd_rdna.fetch_td_file("new.td", use_cache=True)
         assert downloaded == "downloaded_td_content"
         new_cache_file = os.path.join(cache_dir, "new.td")
         assert os.path.isfile(new_cache_file)
 
 
-def test_fetch_td_file_cache_exceptions(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_fetch_td_file_cache_exceptions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test fetch_td_file handling of read/write cache exceptions and empty content.
 
     Args:
         tmp_path: Pytest temporary directory fixture.
         monkeypatch: Pytest monkeypatch fixture.
     """
+    import io
+
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     cache_dir = os.path.join(str(tmp_path), "ml_ecosystem_snapshots", "amdgpu_td")
     os.makedirs(cache_dir, exist_ok=True)
@@ -75,36 +75,28 @@ def test_fetch_td_file_cache_exceptions(
         f.write("content")
 
     # 1. Read exception falls through to urlopen
-    with mock.patch(
-        "builtins.open", side_effect=[OSError("Permission denied"), mock.mock_open()()]
-    ):
-        with mock.patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = mock.MagicMock()
-            mock_resp.read.return_value = b"fallback_content"
-            mock_resp.__enter__.return_value = mock_resp
-            mock_urlopen.return_value = mock_resp
-
+    with mock.patch("builtins.open", side_effect=[OSError("Permission denied"), mock.mock_open()()]):
+        with mock.patch(
+            "urllib.request.urlopen",
+            return_value=io.BytesIO(b"fallback_content"),
+        ):
             res = scrape_amd_rdna.fetch_td_file("unreadable.td", use_cache=True)
             assert res == "fallback_content"
 
     # 2. Write exception after download does not crash
     with mock.patch("os.makedirs", side_effect=OSError("Disk full")):
-        with mock.patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = mock.MagicMock()
-            mock_resp.read.return_value = b"no_write_content"
-            mock_resp.__enter__.return_value = mock_resp
-            mock_urlopen.return_value = mock_resp
-
+        with mock.patch(
+            "urllib.request.urlopen",
+            return_value=io.BytesIO(b"no_write_content"),
+        ):
             res2 = scrape_amd_rdna.fetch_td_file("no_write.td", use_cache=True)
             assert res2 == "no_write_content"
 
     # 3. Empty downloaded content (branch use_cache and content: content is "")
-    with mock.patch("urllib.request.urlopen") as mock_urlopen:
-        mock_resp = mock.MagicMock()
-        mock_resp.read.return_value = b""
-        mock_resp.__enter__.return_value = mock_resp
-        mock_urlopen.return_value = mock_resp
-
+    with mock.patch(
+        "urllib.request.urlopen",
+        return_value=io.BytesIO(b""),
+    ):
         res3 = scrape_amd_rdna.fetch_td_file("empty.td", use_cache=True)
         assert res3 == ""
 
@@ -129,9 +121,7 @@ def S_MOV_B32 : SOP1_32 <"s_mov_b32">;
     with tempfile.TemporaryDirectory() as temp_dir:
         output_path = os.path.join(temp_dir, "amd_rdna_exhaustive.json")
 
-        with mock.patch(
-            "ml_ecosystem_snapshots.tools.scrape_amd_rdna.fetch_td_file"
-        ) as mock_fetch:
+        with mock.patch("ml_ecosystem_snapshots.tools.scrape_amd_rdna.fetch_td_file") as mock_fetch:
 
             def fetch_side_effect(filename: str, local_dir: str | None = None) -> str:
                 """Mock fetch_td_file side effect.
@@ -149,9 +139,7 @@ def S_MOV_B32 : SOP1_32 <"s_mov_b32">;
 
             mock_fetch.side_effect = fetch_side_effect
 
-            with mock.patch(
-                "ml_ecosystem_snapshots.tools.scrape_amd_rdna.open"
-            ) as mock_open:
+            with mock.patch("ml_ecosystem_snapshots.tools.scrape_amd_rdna.open") as mock_open:
                 import io
 
                 def open_side_effect(
@@ -184,11 +172,9 @@ def S_MOV_B32 : SOP1_32 <"s_mov_b32">;
                 scrape_amd_rdna.main()
 
         assert os.path.exists(output_path)
-        with open(output_path, "r") as f:
+        with open(output_path) as f:
             raw_data = json.load(f)
-            result_data = (
-                raw_data["instructions"] if isinstance(raw_data, dict) else raw_data
-            )
+            result_data = raw_data["instructions"] if isinstance(raw_data, dict) else raw_data
 
         assert len(result_data) == 3
 
@@ -205,88 +191,62 @@ def S_MOV_B32 : SOP1_32 <"s_mov_b32">;
 def test_resolve_td_instruction_info_profiles() -> None:
     """Test resolving instruction definitions across all major TableGen classes and architectures."""
     # VOP1
-    vop1 = scrape_amd_rdna.resolve_td_instruction_info(
-        "V_MOV_B32", "VOP1Inst", "v_mov_b32"
-    )
+    vop1 = scrape_amd_rdna.resolve_td_instruction_info("V_MOV_B32", "VOP1Inst", "v_mov_b32")
     assert vop1["encoding"] == "VOP1"
     assert ["VGPR", "VGPR"] in vop1["operands"]
 
     # VOP3
-    vop3 = scrape_amd_rdna.resolve_td_instruction_info(
-        "V_FMA_F32", "VOP3Inst_gfx10", "v_fma_f32"
-    )
+    vop3 = scrape_amd_rdna.resolve_td_instruction_info("V_FMA_F32", "VOP3Inst_gfx10", "v_fma_f32")
     assert vop3["encoding"] == "VOP3"
     assert "clamp" in vop3["modifiers"]
     assert vop3["architecture"] == "GFX10/RDNA1"
 
     # VOPC
-    vopc = scrape_amd_rdna.resolve_td_instruction_info(
-        "V_CMP_EQ_F32", "VOPCInst_gfx11", "v_cmp_eq_f32"
-    )
+    vopc = scrape_amd_rdna.resolve_td_instruction_info("V_CMP_EQ_F32", "VOPCInst_gfx11", "v_cmp_eq_f32")
     assert vopc["encoding"] == "VOPC"
     assert ["VCC", "VGPR", "VGPR"] in vopc["operands"]
     assert vopc["architecture"] == "GFX11/RDNA3"
 
     # VOP3P
-    vop3p = scrape_amd_rdna.resolve_td_instruction_info(
-        "V_PK_ADD_F16", "VOP3PInst_gfx12", "v_pk_add_f16"
-    )
+    vop3p = scrape_amd_rdna.resolve_td_instruction_info("V_PK_ADD_F16", "VOP3PInst_gfx12", "v_pk_add_f16")
     assert vop3p["encoding"] == "VOP3P"
     assert vop3p["architecture"] == "GFX12/RDNA4"
 
     # SOP2
-    sop2 = scrape_amd_rdna.resolve_td_instruction_info(
-        "S_ADD_U32", "SOP2_32_gfx10_3", "s_add_u32"
-    )
+    sop2 = scrape_amd_rdna.resolve_td_instruction_info("S_ADD_U32", "SOP2_32_gfx10_3", "s_add_u32")
     assert sop2["encoding"] == "SOP2"
     assert sop2["architecture"] == "GFX10.3/RDNA2"
 
     # SOPK
-    sopk = scrape_amd_rdna.resolve_td_instruction_info(
-        "S_MOVK_I32", "SOPK_32", "s_movk_i32"
-    )
+    sopk = scrape_amd_rdna.resolve_td_instruction_info("S_MOVK_I32", "SOPK_32", "s_movk_i32")
     assert sopk["encoding"] == "SOPK"
     assert ["SGPR", "simm16"] in sopk["operands"]
 
     # SOPP
-    sopp = scrape_amd_rdna.resolve_td_instruction_info(
-        "S_BRANCH", "SOPP_Pseudo", "s_branch"
-    )
+    sopp = scrape_amd_rdna.resolve_td_instruction_info("S_BRANCH", "SOPP_Pseudo", "s_branch")
     assert sopp["encoding"] == "SOPP"
 
     # Memory: SM, FLAT, BUF, DS
-    sm = scrape_amd_rdna.resolve_td_instruction_info(
-        "S_LOAD_DWORD", "SM_Real_gfx9", "s_load_dword"
-    )
+    sm = scrape_amd_rdna.resolve_td_instruction_info("S_LOAD_DWORD", "SM_Real_gfx9", "s_load_dword")
     assert sm["encoding"] == "SM"
     assert sm["architecture"] == "GFX9/CDNA"
 
-    flat = scrape_amd_rdna.resolve_td_instruction_info(
-        "FLAT_LOAD_DWORD", "FLAT_Real_gfx11_5", "flat_load_dword"
-    )
+    flat = scrape_amd_rdna.resolve_td_instruction_info("FLAT_LOAD_DWORD", "FLAT_Real_gfx11_5", "flat_load_dword")
     assert flat["encoding"] == "FLAT"
     assert flat["architecture"] == "GFX11.5"
 
-    buf = scrape_amd_rdna.resolve_td_instruction_info(
-        "BUFFER_LOAD_DWORD", "BUF_Real", "buffer_load_dword"
-    )
+    buf = scrape_amd_rdna.resolve_td_instruction_info("BUFFER_LOAD_DWORD", "BUF_Real", "buffer_load_dword")
     assert buf["encoding"] == "BUF"
 
-    ds = scrape_amd_rdna.resolve_td_instruction_info(
-        "DS_READ_B32", "DS_Real", "ds_read_b32"
-    )
+    ds = scrape_amd_rdna.resolve_td_instruction_info("DS_READ_B32", "DS_Real", "ds_read_b32")
     assert ds["encoding"] == "DS"
 
     # Fallback / default
-    fallback = scrape_amd_rdna.resolve_td_instruction_info(
-        "CUSTOM_INST", "CUSTOM_CLASS", "custom_inst"
-    )
+    fallback = scrape_amd_rdna.resolve_td_instruction_info("CUSTOM_INST", "CUSTOM_CLASS", "custom_inst")
     assert fallback["encoding"] == "VOP1"
 
     # VOPD (dual-issue)
-    vopd = scrape_amd_rdna.resolve_td_instruction_info(
-        "V_DUAL_ADD_F32", "VOPD_Real_gfx11", "v_dual_add_f32"
-    )
+    vopd = scrape_amd_rdna.resolve_td_instruction_info("V_DUAL_ADD_F32", "VOPD_Real_gfx11", "v_dual_add_f32")
     assert vopd["encoding"] == "VOPD"
     assert "dual" in vopd["modifiers"]
     assert vopd["architecture"] == "GFX11/RDNA3"
@@ -406,9 +366,7 @@ def test_scrape_amd_rdna_with_tblgen_json(tmp_path: Path) -> None:
     json_path.write_text(json.dumps(mock_tblgen), encoding="utf-8")
     out_path = tmp_path / "out.json"
 
-    result = scrape_amd_rdna.scrape_amd_rdna(
-        output_path=str(out_path), tblgen_json_path=str(json_path)
-    )
+    result = scrape_amd_rdna.scrape_amd_rdna(output_path=str(out_path), tblgen_json_path=str(json_path))
     assert len(result) == 1
     assert result[0]["mnemonic"] == "v_add_f32"
     assert result[0]["encoding"] == "VOP2"
@@ -474,9 +432,7 @@ def test_scrape_amd_rdna_duplicate_operand_signatures(tmp_path: Path) -> None:
     json_path.write_text(json.dumps(mock_tblgen), encoding="utf-8")
     out_path = tmp_path / "out_dup.json"
 
-    result = scrape_amd_rdna.scrape_amd_rdna(
-        output_path=str(out_path), tblgen_json_path=str(json_path)
-    )
+    result = scrape_amd_rdna.scrape_amd_rdna(output_path=str(out_path), tblgen_json_path=str(json_path))
     assert len(result) == 1
     assert result[0]["mnemonic"] == "v_add_f32"
     assert len(result[0]["operands"]) == 1
@@ -491,16 +447,12 @@ def test_fetch_td_file_local_dir(tmp_path: Path) -> None:
     local_td = tmp_path / "VOPDInstructions.td"
     local_td.write_text('def V_DUAL_ADD : VOPD<"v_dual_add">;', encoding="utf-8")
 
-    content = scrape_amd_rdna.fetch_td_file(
-        "VOPDInstructions.td", local_dir=str(tmp_path)
-    )
+    content = scrape_amd_rdna.fetch_td_file("VOPDInstructions.td", local_dir=str(tmp_path))
     assert 'def V_DUAL_ADD : VOPD<"v_dual_add">' in content
 
     # Test scrape_amd_rdna using local_dir
     out_path = tmp_path / "local_out.json"
-    res = scrape_amd_rdna.scrape_amd_rdna(
-        output_path=str(out_path), local_dir=str(tmp_path)
-    )
+    res = scrape_amd_rdna.scrape_amd_rdna(output_path=str(out_path), local_dir=str(tmp_path))
     assert isinstance(res, list)
 
 
@@ -510,10 +462,13 @@ def test_scrape_amd_rdna_main_entrypoint(mocker: pytest_mock.MockerFixture) -> N
     Args:
         mocker: Pytest mocker fixture.
     """
+    import importlib.util
     import runpy
 
+    spec = importlib.util.find_spec("ml_ecosystem_snapshots.tools.scrape_amd_rdna")
+    assert spec is not None and spec.origin is not None
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
     mocker.patch("ml_ecosystem_snapshots.network_env.fetch_url", return_value="")
-    res = runpy.run_path(scrape_amd_rdna.__file__, run_name="__main__")
+    res = runpy.run_path(spec.origin, run_name="__main__")
     assert "main" in res
     assert mock_open.called

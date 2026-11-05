@@ -10,7 +10,6 @@ from unittest.mock import patch
 
 import pytest
 import pytest_mock
-
 from ml_ecosystem_snapshots.introspection.ast_kwargs import (
     extract_accepted_kwargs_from_ast,
 )
@@ -51,8 +50,7 @@ class DerivedClassModel(BaseParentModel):
         Args:
             a: Parameter a.
         """
-        OtherHelperModel.__init__(helper_instance)
-        super().__init__(arg1=a)
+        pass
 
 
 class SimpleClassModel:
@@ -118,7 +116,7 @@ class MroChildClass(MroParentClass):
         Args:
             **kwargs: Keyword args passed to super.
         """
-        super().__init__(**kwargs)
+        pass
 
 
 def test_extract_accepted_kwargs_subscript_branches() -> None:
@@ -127,13 +125,7 @@ def test_extract_accepted_kwargs_subscript_branches() -> None:
     Returns:
         None.
     """
-    tree = ast.parse(
-        "def sample_fn(**kwargs):\n"
-        "    kwargs[123]\n"
-        "    kwargs['alpha']\n"
-        "    kwargs[var]\n"
-        "    other_dict['ignored']\n"
-    )
+    tree = ast.parse("def sample_fn(**kwargs):\n    kwargs[123]\n    kwargs['alpha']\n    kwargs[var]\n    other_dict['ignored']\n")
 
     with patch("inspect.getsource", return_value="def sample_fn(**kwargs): pass"):
         with patch(
@@ -255,12 +247,21 @@ def test_ghost_inspector_griffe_docstring_exception(
     assert ref.has_arg("x")
 
 
-def test_ghost_inspector_super_init_branches() -> None:
+def test_ghost_inspector_super_init_branches(
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test GhostInspector AST inspection branches for super().__init__ calls.
+
+    Args:
+        mocker: Pytest mocker fixture.
 
     Returns:
         None.
     """
+    mocker.patch(
+        "ml_ecosystem_snapshots.introspection.inspector.get_runtime_source",
+        return_value=("class DerivedClassModel(BaseParentModel):\n    def __init__(self, a: int = 10, **kwargs: int) -> None:\n        OtherHelperModel.__init__(helper_instance)\n        super().__init__(arg1=a)\n"),
+    )
     ref = GhostInspector.inspect(DerivedClassModel, "DerivedClassModel")
     assert ref.has_arg("a")
 
@@ -400,11 +401,19 @@ def test_ghost_inspector_parent_mro_signature_exception(
         Returns:
             Signature object.
         """
-        if obj == MroParentClass.__init__:
+        from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+            get_member_dict,
+        )
+
+        if obj == get_member_dict(MroParentClass).get("__init__"):
             raise TypeError("parent init signature failure")
         assert isinstance(obj, (types.FunctionType, types.MethodType, type))
         return real_signature(obj)
 
+    mocker.patch(
+        "ml_ecosystem_snapshots.introspection.inspector.get_runtime_source",
+        return_value=("class MroChildClass(MroParentClass):\n    def __init__(self, **kwargs: int) -> None:\n        super().__init__(**kwargs)\n"),
+    )
     mocker.patch("inspect.signature", side_effect=mock_signature)
 
     ref = GhostInspector.inspect(MroChildClass, "MroChildClass")
@@ -483,6 +492,10 @@ def test_ghost_inspector_c_ext_overload_infer_exception(
     Returns:
         None.
     """
+    from ml_ecosystem_snapshots.c_extension_sig import (
+        CExtensionSignature,
+        ParsedParamTuple,
+    )
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     mocker.patch.object(
@@ -491,18 +504,19 @@ def test_ghost_inspector_c_ext_overload_infer_exception(
         side_effect=RuntimeError("simulated c_ext infer error"),
     )
 
-    ParamTuple = tuple[str, str, typing.Optional[str], typing.Optional[str]]
-
-    class CExtSignature(list[ParamTuple]):
-        """Mock C-extension signature list subclass."""
-
-        overloads: list[list[ParamTuple]] = []
-        returns_type: str = "Tensor"
-
-    fake_sig = CExtSignature([("x", "POSITIONAL_OR_KEYWORD", None, "Tensor")])
-    fake_sig.overloads = [
-        [("x", "POSITIONAL_OR_KEYWORD", None, "Tensor")],
-    ]
+    param = ParsedParamTuple(
+        name="x",
+        kind="POSITIONAL_OR_KEYWORD",
+        default=None,
+        annotation="Tensor",
+    )
+    fake_sig = CExtensionSignature(
+        params=[param],
+        returns_type="Tensor",
+        overloads=[
+            CExtensionSignature(params=[param], returns_type="Tensor"),
+        ],
+    )
 
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",

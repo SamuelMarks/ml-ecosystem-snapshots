@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import operator
+import inspect
 import types
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
@@ -19,9 +19,7 @@ except Exception:
     cp = None
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect cupy API.
 
     Args:
@@ -36,15 +34,13 @@ def collect_api(
         return results
 
     if category == SemanticTier.ACTIVATION:
-        cp_names = set(dir(cp))
+        cp_members: dict[str, InspectableTarget] = dict(inspect.getmembers(cp))
         for name in ["tanh", "exp", "maximum", "minimum"]:
-            if name in cp_names:
-                obj: InspectableTarget = operator.attrgetter(name)(cp)
+            if name in cp_members:
+                obj: InspectableTarget = cp_members[name]
                 if callable(obj):
                     try:
-                        res = GhostInspector.inspect(
-                            obj, f"cupy.{name}", is_public=True
-                        )
+                        res = GhostInspector.inspect(obj, f"cupy.{name}", is_public=True)
                         results.append(res)
                     except (
                         AttributeError,

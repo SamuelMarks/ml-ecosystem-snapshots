@@ -6,19 +6,16 @@ and threadgroup synchronization operations from the Apple Metal Shading Language
 
 from __future__ import annotations
 
+import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     OperandDirection,
     SemanticTier,
 )
-import pydantic
 
 from ml_ecosystem_snapshots.frameworks._base import CanonicalSsaOpSpec
 
-
-CANONICAL_METAL_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(
-    list[CanonicalSsaOpSpec]
-).validate_python(
+CANONICAL_METAL_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(list[CanonicalSsaOpSpec]).validate_python(
     [
         # SIMD-group Matrix Operations (simdgroup_matrix)
         {
@@ -78,9 +75,7 @@ CANONICAL_METAL_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(
             "address_space": "threadgroup",
             "inputs": ["mem_flags"],
             "outputs": [],
-            "attributes": [
-                {"name": "scope", "type": "str", "default": "mem_flags::mem_none"}
-            ],
+            "attributes": [{"name": "scope", "type": "str", "default": "mem_flags::mem_none"}],
             "description": "Synchronize execution and memory fences across threads within a SIMDgroup.",
         },
         # SIMD-group Collective Communications
@@ -109,9 +104,7 @@ CANONICAL_METAL_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(
             "address_space": "device",
             "inputs": ["object", "operand", "memory_order"],
             "outputs": ["original"],
-            "attributes": [
-                {"name": "order", "type": "str", "default": "memory_order_relaxed"}
-            ],
+            "attributes": [{"name": "order", "type": "str", "default": "memory_order_relaxed"}],
             "description": "Atomically add operand to object and return original value.",
         },
         {
@@ -120,9 +113,7 @@ CANONICAL_METAL_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(
             "address_space": "device",
             "inputs": ["object", "operand", "memory_order"],
             "outputs": ["original"],
-            "attributes": [
-                {"name": "order", "type": "str", "default": "memory_order_relaxed"}
-            ],
+            "attributes": [{"name": "order", "type": "str", "default": "memory_order_relaxed"}],
             "description": "Atomically compute maximum of operand and object and store.",
         },
         # Core Math Intrinsics
@@ -166,9 +157,7 @@ def _load_metal_ops() -> list[CanonicalSsaOpSpec]:
     return CANONICAL_METAL_OPS
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect Apple Metal Shading Language (MSL) operation definitions.
 
     Args:
@@ -193,14 +182,8 @@ def collect_api(
         api_prefix="metal",
         name_key="name",
         operand_annotation_fn=lambda op, inp: f"{op.get('address_space', 'thread')} T*",
-        operand_description_fn=lambda op, inp: (
-            f"MSL operand {inp} in {op.get('address_space', 'thread')} address space"
-        ),
-        operand_direction_fn=lambda op, inp: (
-            OperandDirection.WRITE
-            if "store" in op["name"] and inp in ("ptr", "dest")
-            else OperandDirection.READ
-        ),
+        operand_description_fn=lambda op, inp: f"MSL operand {inp} in {op.get('address_space', 'thread')} address space",
+        operand_direction_fn=lambda op, inp: OperandDirection.WRITE if "store" in op["name"] and inp in ("ptr", "dest") else OperandDirection.READ,
         attr_description_prefix="MSL attribute",
         result_type="T",
         empty_return_type="None",

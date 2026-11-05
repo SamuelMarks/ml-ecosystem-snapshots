@@ -64,9 +64,7 @@ _HTML_TAGS = [
 ]
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Entrypoint to collect the HTML DSL API signature.
 
     Args:

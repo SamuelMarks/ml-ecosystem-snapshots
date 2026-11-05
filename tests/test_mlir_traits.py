@@ -10,11 +10,10 @@ from unittest import mock
 
 import pytest
 import pytest_mock
-
-from ml_switcheroo_ir.schema.ghost import SemanticTier
+from ml_ecosystem_snapshots.cli import cmd_check_mlir
 from ml_ecosystem_snapshots.frameworks import mlir
 from ml_ecosystem_snapshots.mcp_server import check_mlir_op
-from ml_ecosystem_snapshots.cli import cmd_check_mlir
+from ml_switcheroo_ir.schema.ghost import SemanticTier
 
 
 def test_classify_mlir_type() -> None:
@@ -55,19 +54,12 @@ def test_validate_mlir_type() -> None:
     assert any("Malformed MLIR integer type" in e for e in err_i)
 
     # Constraints
-    assert (
-        mlir.validate_mlir_type("tensor<4xf32>", constraint="RankedTensorOf<[F32]>")
-        == []
-    )
-    err_ranked = mlir.validate_mlir_type(
-        "tensor<*xf32>", constraint="RankedTensorOf<[F32]>"
-    )
+    assert mlir.validate_mlir_type("tensor<4xf32>", constraint="RankedTensorOf<[F32]>") == []
+    err_ranked = mlir.validate_mlir_type("tensor<*xf32>", constraint="RankedTensorOf<[F32]>")
     assert any("RankedTensorOf" in e for e in err_ranked)
 
     assert mlir.validate_mlir_type("tensor<*xf32>", constraint="UnrankedTensorOf") == []
-    err_unranked = mlir.validate_mlir_type(
-        "tensor<4xf32>", constraint="UnrankedTensorOf"
-    )
+    err_unranked = mlir.validate_mlir_type("tensor<4xf32>", constraint="UnrankedTensorOf")
     assert any("UnrankedTensorOf" in e for e in err_unranked)
 
     assert mlir.validate_mlir_type("vector<4xf32>", constraint="VectorOf<[F32]>") == []
@@ -100,20 +92,12 @@ def test_validate_mlir_type() -> None:
         constraint="HLO_StaticShapeTensorOrPerAxisQuantizedTensor",
     )
     assert any("static shape constraint" in e for e in err_dynamic)
-    err_not_tensor = mlir.validate_mlir_type(
-        "i32", constraint="HLO_StaticShapeTensorOrPerAxisQuantizedTensor"
-    )
+    err_not_tensor = mlir.validate_mlir_type("i32", constraint="HLO_StaticShapeTensorOrPerAxisQuantizedTensor")
     assert any("tensor constraint" in e for e in err_not_tensor)
 
     assert mlir.validate_mlir_type("index", constraint="index") == []
-    assert any(
-        "expected 'index' type" in e
-        for e in mlir.validate_mlir_type("f32", constraint="index")
-    )
-    assert (
-        mlir.validate_mlir_type("f32", constraint="custom_unrecognized_constraint")
-        == []
-    )
+    assert any("expected 'index' type" in e for e in mlir.validate_mlir_type("f32", constraint="index"))
+    assert mlir.validate_mlir_type("f32", constraint="custom_unrecognized_constraint") == []
 
 
 def test_validate_mlir_traits() -> None:
@@ -166,10 +150,7 @@ def test_validate_mlir_traits() -> None:
         traits=["AttrSizedOperandSegments"],
         attributes=[],
     )
-    assert any(
-        "Missing required attribute 'operand_segment_sizes'" in e
-        for e in err_seg_missing
-    )
+    assert any("Missing required attribute 'operand_segment_sizes'" in e for e in err_seg_missing)
 
     err_seg_mismatch = mlir.validate_mlir_traits(
         "test.custom",
@@ -193,10 +174,7 @@ def test_validate_mlir_traits() -> None:
         traits=["AttrSizedResultSegments"],
         attributes=[],
     )
-    assert any(
-        "Missing required attribute 'result_segment_sizes'" in e
-        for e in err_res_missing
-    )
+    assert any("Missing required attribute 'result_segment_sizes'" in e for e in err_res_missing)
 
 
 def test_check_mlir_op_with_traits() -> None:
@@ -216,10 +194,7 @@ def test_check_mlir_op_with_traits() -> None:
         operand_types=["tensor<4xf32>", "tensor<4xi32>"],
     )
     assert res_bad["is_valid"] is False
-    assert any(
-        "SameOperandsAndResultType" in e or "SameTypeOperands" in e
-        for e in res_bad["errors"]
-    )
+    assert any("SameOperandsAndResultType" in e or "SameTypeOperands" in e for e in res_bad["errors"])
 
 
 def test_cli_check_mlir(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
@@ -325,12 +300,7 @@ def test_validate_mlir_traits_edge_cases() -> None:
     """Test edge cases in validate_mlir_traits."""
     # Traits empty or no types
     assert mlir.validate_mlir_traits("test.op", traits=[]) == []
-    assert (
-        mlir.validate_mlir_traits(
-            "test.op", traits=["SameTypeOperands"], operand_types=["i32"]
-        )
-        == []
-    )
+    assert mlir.validate_mlir_traits("test.op", traits=["SameTypeOperands"], operand_types=["i32"]) == []
     assert (
         mlir.validate_mlir_traits(
             "test.custom",
@@ -361,15 +331,8 @@ def test_validate_mlir_traits_edge_cases() -> None:
     )
 
     # 5. Commutative trait
-    assert (
-        mlir.validate_mlir_traits(
-            "test.add", traits=["Commutative"], operand_types=["i32", "i32"]
-        )
-        == []
-    )
-    err_comm = mlir.validate_mlir_traits(
-        "test.add", traits=["Commutative"], operand_types=["i32"]
-    )
+    assert mlir.validate_mlir_traits("test.add", traits=["Commutative"], operand_types=["i32", "i32"]) == []
+    err_comm = mlir.validate_mlir_traits("test.add", traits=["Commutative"], operand_types=["i32"])
     assert any("Commutative trait requires at least 2 operands" in e for e in err_comm)
 
     # 6. Elementwise trait
@@ -428,9 +391,7 @@ def test_mlir_collect_api_variants() -> None:
         },
     }
     with mock.patch("os.path.exists", return_value=True):
-        with mock.patch(
-            "builtins.open", mock.mock_open(read_data=json.dumps(mock_envelope))
-        ):
+        with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_envelope))):
             refs = mlir.collect_api(SemanticTier.UTIL)
             assert len(refs) == 1
             assert refs[0].api_path == "test.op1"
@@ -439,18 +400,14 @@ def test_mlir_collect_api_variants() -> None:
         mock_dict = {
             "operations": [{"api_path": "test.op2", "summary": "op2"}],
         }
-        with mock.patch(
-            "builtins.open", mock.mock_open(read_data=json.dumps(mock_dict))
-        ):
+        with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_dict))):
             refs = mlir.collect_api(SemanticTier.UTIL)
             assert len(refs) == 1
             assert refs[0].api_path == "test.op2"
 
         # 3. Raw list
         mock_list = [{"api_path": "test.op3", "summary": "op3"}]
-        with mock.patch(
-            "builtins.open", mock.mock_open(read_data=json.dumps(mock_list))
-        ):
+        with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_list))):
             refs = mlir.collect_api(SemanticTier.UTIL)
             assert len(refs) == 1
             assert refs[0].api_path == "test.op3"
@@ -563,9 +520,7 @@ def test_mlir_collect_api_with_regions() -> None:
         }
     }
     with mock.patch("os.path.exists", return_value=True):
-        with mock.patch(
-            "builtins.open", mock.mock_open(read_data=json.dumps(mock_envelope))
-        ):
+        with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_envelope))):
             refs = mlir.collect_api(SemanticTier.UTIL)
             assert len(refs) == 1
             assert any(p.name == "body" for p in refs[0].params)

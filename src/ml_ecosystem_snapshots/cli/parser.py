@@ -181,20 +181,14 @@ DOMAIN_CHECK_SUBPARSERS: list[SubparserCheckSpec] = [
 ]
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build and configure the top-level CLI `ArgumentParser` with all subcommands.
+def _register_core_subparsers(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """Register core snapshot management, diff, export, stub, index, and compliance subparsers.
 
-    Returns:
-        Configured `argparse.ArgumentParser` instance with subcommand handlers bound via `set_defaults(func=...)`.
+    Args:
+        subparsers: Top-level subparser action container to populate.
     """
-    parser = argparse.ArgumentParser(description="ML Framework Snapshots CLI")
-    parser.add_argument(
-        "--offline",
-        action="store_true",
-        help="Enforce offline mode (disables network operations and live framework imports)",
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
     # capture
     parser_capture = subparsers.add_parser("capture", help="Capture snapshots")
     parser_capture.add_argument(
@@ -203,31 +197,21 @@ def build_parser() -> argparse.ArgumentParser:
         default=["all"],
         help="Frameworks to capture, or 'all' for all supported frameworks",
     )
-    parser_capture.add_argument(
-        "--out-dir", type=str, default="snapshots", help="Output directory"
-    )
-    parser_capture.add_argument(
-        "--include-nonpublic", action="store_true", help="Include non-public APIs"
-    )
+    parser_capture.add_argument("--out-dir", type=str, default="snapshots", help="Output directory")
+    parser_capture.add_argument("--include-nonpublic", action="store_true", help="Include non-public APIs")
     parser_capture.set_defaults(func=cmd_capture)
 
     # diff
     parser_diff = subparsers.add_parser("diff", help="Diff two snapshots")
     parser_diff.add_argument("json1", type=str, help="First snapshot JSON")
     parser_diff.add_argument("json2", type=str, help="Second snapshot JSON")
-    parser_diff.add_argument(
-        "--changelog", action="store_true", help="Generate a markdown changelog"
-    )
+    parser_diff.add_argument("--changelog", action="store_true", help="Generate a markdown changelog")
     parser_diff.set_defaults(func=cmd_diff)
 
     # generate-stubs
     parser_stubs = subparsers.add_parser("generate-stubs", help="Generate .pyi stubs")
-    parser_stubs.add_argument(
-        "--input", type=str, required=True, help="Input JSON snapshot"
-    )
-    parser_stubs.add_argument(
-        "--out-dir", type=str, required=True, help="Output directory for stubs"
-    )
+    parser_stubs.add_argument("--input", type=str, required=True, help="Input JSON snapshot")
+    parser_stubs.add_argument("--out-dir", type=str, required=True, help="Output directory for stubs")
     parser_stubs.add_argument(
         "--include-nonpublic",
         action="store_true",
@@ -236,15 +220,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser_stubs.set_defaults(func=cmd_stubs)
 
     # export
-    parser_export = subparsers.add_parser(
-        "export", help="Export to JSON Schema, OpenAPI, Pydantic, or Protobuf"
-    )
-    parser_export.add_argument(
-        "--input", type=str, required=True, help="Input JSON snapshot"
-    )
-    parser_export.add_argument(
-        "--out-dir", type=str, required=True, help="Output directory"
-    )
+    parser_export = subparsers.add_parser("export", help="Export to JSON Schema, OpenAPI, Pydantic, or Protobuf")
+    parser_export.add_argument("--input", type=str, required=True, help="Input JSON snapshot")
+    parser_export.add_argument("--out-dir", type=str, required=True, help="Output directory")
     parser_export.add_argument(
         "--format",
         choices=[
@@ -268,18 +246,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser_export.set_defaults(func=cmd_export)
 
     # mcp
-    parser_mcp = subparsers.add_parser(
-        "mcp", help="Start Model Context Protocol (MCP) JSON-RPC tool server"
-    )
+    parser_mcp = subparsers.add_parser("mcp", help="Start Model Context Protocol (MCP) JSON-RPC tool server")
     parser_mcp.set_defaults(func=cmd_mcp)
 
     # check
-    parser_check = subparsers.add_parser(
-        "check", help="Check compliance of a target implementation against a snapshot"
-    )
-    parser_check.add_argument(
-        "snapshot_json", type=str, help="Reference snapshot JSON file"
-    )
+    parser_check = subparsers.add_parser("check", help="Check compliance of a target implementation against a snapshot")
+    parser_check.add_argument("snapshot_json", type=str, help="Reference snapshot JSON file")
     parser_check.add_argument(
         "target_path",
         type=str,
@@ -301,9 +273,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser_check.set_defaults(func=cmd_check)
 
     # list-snapshots
-    parser_list = subparsers.add_parser(
-        "list-snapshots", help="List available pre-bundled snapshots"
-    )
+    parser_list = subparsers.add_parser("list-snapshots", help="List available pre-bundled snapshots")
     parser_list.set_defaults(func=cmd_list_snapshots)
 
     # pull
@@ -356,9 +326,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser_verify_cache.set_defaults(func=cmd_verify_local_cache)
 
     # index
-    p_idx = subparsers.add_parser(
-        "index", help="Manage ephemeral local SQLite search index"
-    )
+    p_idx = subparsers.add_parser("index", help="Manage ephemeral local SQLite search index")
     p_idx.add_argument(
         "--rebuild",
         action="store_true",
@@ -373,6 +341,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_idx.add_argument("--status", action="store_true", help="Display index statistics")
     p_idx.set_defaults(func=cmd_index)
 
+
+def _register_asm_and_ir_subparsers(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """Register SASS, RDNA, PTX, MLIR, StableHLO, WGSL, and domain check subparsers.
+
+    Args:
+        subparsers: Top-level subparser action container to populate.
+    """
     # check-sass
     parser_check_sass = subparsers.add_parser(
         "check-sass",
@@ -536,9 +513,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     ):
         p_ir = subparsers.add_parser(ir_cmd, help=ir_help)
-        p_ir.add_argument(
-            "op_name", type=str, nargs="?", default=None, help=ir_pos_help
-        )
+        p_ir.add_argument("op_name", type=str, nargs="?", default=None, help=ir_pos_help)
         p_ir.add_argument(
             ir_cnt_flag,
             type=int,
@@ -566,12 +541,26 @@ def build_parser() -> argparse.ArgumentParser:
         if spec.extra_flag is not None:
             flag_name, flag_default, flag_help = spec.extra_flag
             p_dom.add_argument(flag_name, default=flag_default, help=flag_help)
-        p_dom.add_argument(
-            spec.count_flag, type=int, default=None, help=spec.count_help
-        )
+        p_dom.add_argument(spec.count_flag, type=int, default=None, help=spec.count_help)
         p_dom.add_argument("--attributes", default=None, help=spec.attr_help)
         p_dom.set_defaults(func=spec.handler)
 
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build and configure the top-level CLI `ArgumentParser` with all subcommands.
+
+    Returns:
+        Configured `argparse.ArgumentParser` instance with subcommand handlers bound via `set_defaults(func=...)`.
+    """
+    parser = argparse.ArgumentParser(description="ML Framework Snapshots CLI")
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Enforce offline mode (disables network operations and live framework imports)",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    _register_core_subparsers(subparsers)
+    _register_asm_and_ir_subparsers(subparsers)
     return parser
 
 

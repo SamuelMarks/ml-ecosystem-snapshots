@@ -68,24 +68,14 @@ def _scan_module(
             if is_estimator and BaseEstimator is not None:
                 if not issubclass(obj, BaseEstimator):
                     continue
-            found.append(
-                GhostInspector.inspect(
-                    obj, f"{prefix}.{name}", is_public=not name.startswith("_")
-                )
-            )
+            found.append(GhostInspector.inspect(obj, f"{prefix}.{name}", is_public=not name.startswith("_")))
         elif kind == "function" and inspect.isfunction(obj):
-            found.append(
-                GhostInspector.inspect(
-                    obj, f"{prefix}.{name}", is_public=not name.startswith("_")
-                )
-            )
+            found.append(GhostInspector.inspect(obj, f"{prefix}.{name}", is_public=not name.startswith("_")))
 
     return found
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect all API signatures for a given category from Scikit-Learn.
 
     Args:
@@ -104,18 +94,18 @@ def collect_api(
 
     if category == SemanticTier.LAYER:
         try:
-            import sklearn.ensemble as sk_ensemble
-            import sklearn.linear_model as sk_linear_model
-            import sklearn.tree as sk_tree
-            import sklearn.svm as sk_svm
-            import sklearn.neighbors as sk_neighbors
             import sklearn.cluster as sk_cluster
-            import sklearn.decomposition as sk_decomposition
-            import sklearn.manifold as sk_manifold
-            import sklearn.preprocessing as sk_preprocessing
-            import sklearn.feature_extraction as sk_feature_extraction
-            import sklearn.pipeline as sk_pipeline
             import sklearn.compose as sk_compose
+            import sklearn.decomposition as sk_decomposition
+            import sklearn.ensemble as sk_ensemble
+            import sklearn.feature_extraction as sk_feature_extraction
+            import sklearn.linear_model as sk_linear_model
+            import sklearn.manifold as sk_manifold
+            import sklearn.neighbors as sk_neighbors
+            import sklearn.pipeline as sk_pipeline
+            import sklearn.preprocessing as sk_preprocessing
+            import sklearn.svm as sk_svm
+            import sklearn.tree as sk_tree
         except ImportError:
             return []
 

@@ -9,19 +9,16 @@ from __future__ import annotations
 import importlib
 import types
 
+import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     SemanticTier,
 )
-import pydantic
 
 from ml_ecosystem_snapshots.frameworks._base import CanonicalSubmoduleOpSpec
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
-
-CANONICAL_ARRAY_API_OPS: list[CanonicalSubmoduleOpSpec] = pydantic.TypeAdapter(
-    list[CanonicalSubmoduleOpSpec]
-).validate_python(
+CANONICAL_ARRAY_API_OPS: list[CanonicalSubmoduleOpSpec] = pydantic.TypeAdapter(list[CanonicalSubmoduleOpSpec]).validate_python(
     [
         # Elementwise binary ops
         {
@@ -991,9 +988,7 @@ def _get_array_api_module() -> types.ModuleType | None:
     return None
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect Python Array API standard function and operator definitions.
 
     Args:

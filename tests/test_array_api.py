@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import argparse
 from unittest.mock import MagicMock, patch
-import pytest
 
+import pytest
 from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli import cmd_check_array_api
 from ml_ecosystem_snapshots.frameworks import array_api

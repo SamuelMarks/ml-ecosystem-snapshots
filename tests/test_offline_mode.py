@@ -8,11 +8,12 @@ and that zero database files are stored within the repository or package tree.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import os
 import socket
-import pytest
+from pathlib import Path
 
+import pytest
+from ml_ecosystem_snapshots.index import get_index_db_path
 from ml_ecosystem_snapshots.mcp_server import (
     check_mlir_op,
     check_rdna_instruction,
@@ -21,7 +22,6 @@ from ml_ecosystem_snapshots.mcp_server import (
     get_framework_snapshot,
     search_apis,
 )
-from ml_ecosystem_snapshots.index import get_index_db_path
 
 
 @pytest.fixture(autouse=True)
@@ -91,26 +91,16 @@ def test_zero_db_files_in_repo() -> None:
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     forbidden_exts = (".db", ".db-wal", ".db-journal", ".sqlite", ".sqlite3")
 
-    for dirpath, dirnames, filenames in os.walk(root_dir):
+    for dirpath, _dirnames, filenames in os.walk(root_dir):
         # Skip git directory and temporary test outputs
-        if (
-            ".git" in dirpath
-            or ".pytest_cache" in dirpath
-            or ".mypy_cache" in dirpath
-            or ".venv" in dirpath
-            or "test_out" in dirpath
-        ):
+        if ".git" in dirpath or ".pytest_cache" in dirpath or ".mypy_cache" in dirpath or ".venv" in dirpath or "test_out" in dirpath:
             continue
         for fname in filenames:
             for ext in forbidden_exts:
-                assert not fname.endswith(
-                    ext
-                ), f"Forbidden database file detected in repo: {os.path.join(dirpath, fname)}"
+                assert not fname.endswith(ext), f"Forbidden database file detected in repo: {os.path.join(dirpath, fname)}"
 
 
-def test_index_db_stored_in_cache_dir_only(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_index_db_stored_in_cache_dir_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that index database is strictly placed in local user cache directory.
 
     Args:
@@ -131,9 +121,7 @@ def test_wheel_package_contents_and_no_db(tmp_path: Path) -> None:
     """
     import zipfile
 
-    wheel_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dist"
-    )
+    wheel_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dist")
     if not os.path.isdir(wheel_dir):
         return
 
@@ -146,9 +134,7 @@ def test_wheel_package_contents_and_no_db(tmp_path: Path) -> None:
         namelist = zf.namelist()
         # Assert no database files
         for name in namelist:
-            assert not name.endswith(
-                (".db", ".sqlite", ".sqlite3")
-            ), f"Database file inside wheel: {name}"
+            assert not name.endswith((".db", ".sqlite", ".sqlite3")), f"Database file inside wheel: {name}"
 
         # Assert JSON snapshots are present if bundled
         json_files = [n for n in namelist if n.endswith(".json")]
@@ -165,9 +151,7 @@ def test_wheel_package_contents_and_no_db(tmp_path: Path) -> None:
             assert len(unpacked_jsons) >= 4
 
         # Verify zero .db or .sqlite files
-        unpacked_dbs = list(unpack_dir.glob("**/*.db*")) + list(
-            unpack_dir.glob("**/*.sqlite*")
-        )
+        unpacked_dbs = list(unpack_dir.glob("**/*.db*")) + list(unpack_dir.glob("**/*.sqlite*"))
         assert len(unpacked_dbs) == 0
 
 
@@ -179,6 +163,7 @@ def test_offline_cli_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         monkeypatch: Pytest monkeypatch fixture.
     """
     import sys
+
     from ml_ecosystem_snapshots import cli
 
     # 1. check-sass
@@ -204,9 +189,7 @@ def test_offline_cli_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     cli.main()
 
     # 3. check-mlir
-    monkeypatch.setattr(
-        sys, "argv", ["ml_ecosystem_snapshots", "check-mlir", "arith.muli"]
-    )
+    monkeypatch.setattr(sys, "argv", ["ml_ecosystem_snapshots", "check-mlir", "arith.muli"])
     cli.main()
 
     # 4. check-stablehlo
@@ -286,20 +269,18 @@ def test_offline_cli_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     cli.main()
 
 
-def test_offline_mode_env_vars_and_custom_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_offline_mode_env_vars_and_custom_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify is_offline_mode and get_custom_snapshots_paths detection.
 
     Args:
         tmp_path: Pytest temporary directory fixture.
         monkeypatch: Pytest monkeypatch fixture.
     """
+    from ml_ecosystem_snapshots.mcp_server import get_framework_snapshot
     from ml_ecosystem_snapshots.network_env import (
         get_custom_snapshots_paths,
         is_offline_mode,
     )
-    from ml_ecosystem_snapshots.mcp_server import get_framework_snapshot
 
     # Test offline mode detection
     monkeypatch.delenv("ML_SNAPSHOTS_OFFLINE", raising=False)
@@ -335,6 +316,7 @@ def test_offline_cli_pull_forbidden(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch: Pytest monkeypatch fixture.
     """
     import sys
+
     from ml_ecosystem_snapshots import cli
 
     monkeypatch.setenv("ML_SNAPSHOTS_OFFLINE", "1")
@@ -348,9 +330,7 @@ def test_offline_cli_pull_forbidden(monkeypatch: pytest.MonkeyPatch) -> None:
     assert exc_info.value.code == 1
 
 
-def test_cli_import_and_list_snapshots_without_rich(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_import_and_list_snapshots_without_rich(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     """Verify CLI imports and executes list-snapshots without optional rich package installed.
 
     Args:
@@ -360,6 +340,7 @@ def test_cli_import_and_list_snapshots_without_rich(
     """
     import importlib
     import sys
+
     import ml_ecosystem_snapshots.cli as cli_mod
     import ml_ecosystem_snapshots.cli.commands.capture as capture_mod
 
@@ -375,15 +356,10 @@ def test_cli_import_and_list_snapshots_without_rich(
     monkeypatch.setattr(sys, "argv", ["ml_ecosystem_snapshots", "list-snapshots"])
     reloaded_cli.main()
     captured = capsys.readouterr()
-    assert (
-        "Available Snapshots:" in captured.out
-        or "No snapshot files found." in captured.out
-    )
+    assert "Available Snapshots:" in captured.out or "No snapshot files found." in captured.out
 
 
-def test_offline_smoke_without_griffe_or_cdd(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_offline_smoke_without_griffe_or_cdd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     """Verify CLI, MCP server, and introspection modules import and run without griffe or cdd.
 
     Args:
@@ -393,6 +369,7 @@ def test_offline_smoke_without_griffe_or_cdd(
     """
     import importlib
     import sys
+
     import ml_ecosystem_snapshots.cli as cli_mod
     import ml_ecosystem_snapshots.cli.commands.capture as capture_mod
     import ml_ecosystem_snapshots.introspection.inspector as inspector_mod
@@ -425,20 +402,11 @@ def test_offline_smoke_without_griffe_or_cdd(
         monkeypatch.setattr(sys, "argv", ["ml_ecosystem_snapshots", "list-snapshots"])
         reloaded_cli.main()
         captured = capsys.readouterr()
-        assert (
-            "Available Snapshots:" in captured.out
-            or "No snapshot files found." in captured.out
-        )
+        assert "Available Snapshots:" in captured.out or "No snapshot files found." in captured.out
         assert reloaded_mcp.check_sass_instruction("FADD")["is_valid"]
         assert reloaded_mcp.check_rdna_instruction("v_add_f32")["is_valid"]
         assert reloaded_mcp.check_ptx_instruction("add")["is_valid"]
     finally:
-        pytest.MonkeyPatch().setattr(
-            static_parsers_mod, "_GRIFFE_CACHE", orig_griffe_cache, raising=False
-        )
-        pytest.MonkeyPatch().setattr(
-            inspector_mod, "_GRIFFE_CACHE", orig_griffe_cache, raising=False
-        )
-        pytest.MonkeyPatch().setattr(
-            inspector_mod, "GhostInspector", orig_ghost_inspector, raising=False
-        )
+        pytest.MonkeyPatch().setattr(static_parsers_mod, "_GRIFFE_CACHE", orig_griffe_cache, raising=False)
+        pytest.MonkeyPatch().setattr(inspector_mod, "_GRIFFE_CACHE", orig_griffe_cache, raising=False)
+        pytest.MonkeyPatch().setattr(inspector_mod, "GhostInspector", orig_ghost_inspector, raising=False)

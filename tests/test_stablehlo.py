@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-import pytest
-import pytest_mock
 import os
+from pathlib import Path
 from unittest import mock
 
+import pytest
+import pytest_mock
 from ml_ecosystem_snapshots.frameworks import stablehlo as stablehlo_fw
 from ml_ecosystem_snapshots.models import GhostMlirRef
 from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -51,9 +51,7 @@ def test_stablehlo_collect_mocked(mocker: pytest_mock.MockerFixture) -> None:
         },
     ]
 
-    mocker.patch(
-        "builtins.open", mocker.mock_open(read_data=json.dumps(mock_json_data))
-    )
+    mocker.patch("builtins.open", mocker.mock_open(read_data=json.dumps(mock_json_data)))
 
     api = stablehlo_fw.collect_api(SemanticTier.UTIL)
     assert len(api) == 2
@@ -110,67 +108,49 @@ def test_stablehlo_regions_and_structured_schemas() -> None:
     refs = stablehlo_fw.collect_api(SemanticTier.UTIL)
     ref_map = {r.api_path: r for r in refs}
 
-    assert "stablehlo.reduce" in ref_map
     reduce_op = ref_map["stablehlo.reduce"]
     assert isinstance(reduce_op, GhostMlirRef)
     assert reduce_op.domain_metadata is not None
-    assert "regions" in reduce_op.domain_metadata
     reduce_regions = reduce_op.domain_metadata["regions"]
     assert isinstance(reduce_regions, dict)
-    assert "body" in reduce_regions
     reduce_body = reduce_regions["body"]
     assert isinstance(reduce_body, dict)
-    assert "block_arguments" in reduce_body
-    assert reduce_body["block_arguments"] == [
-        "tensor<T>",
-        "tensor<T>",
-    ]
+    assert reduce_body["block_arguments"] == ["tensor<T>", "tensor<T>"]
 
-    assert "stablehlo.while" in ref_map
     while_op = ref_map["stablehlo.while"]
-    assert isinstance(while_op, GhostMlirRef)
-    assert while_op.domain_metadata is not None
+    assert isinstance(while_op, GhostMlirRef) and while_op.domain_metadata is not None
     while_regions = while_op.domain_metadata["regions"]
     assert isinstance(while_regions, dict)
-    assert "cond" in while_regions
-    assert "body" in while_regions
+    assert "cond" in while_regions and "body" in while_regions
 
-    assert "stablehlo.sort" in ref_map
     sort_op = ref_map["stablehlo.sort"]
-    assert isinstance(sort_op, GhostMlirRef)
-    assert sort_op.domain_metadata is not None
+    assert isinstance(sort_op, GhostMlirRef) and sort_op.domain_metadata is not None
     sort_regions = sort_op.domain_metadata["regions"]
     assert isinstance(sort_regions, dict)
-    assert "comparator" in sort_regions
     sort_comp = sort_regions["comparator"]
     assert isinstance(sort_comp, dict)
-    assert sort_comp["block_arguments"] == [
-        "tensor<T>",
-        "tensor<T>",
-    ]
+    assert sort_comp["block_arguments"] == ["tensor<T>", "tensor<T>"]
 
-    assert "structured_attribute_schemas" in reduce_op.domain_metadata
     schemas = reduce_op.domain_metadata["structured_attribute_schemas"]
     assert isinstance(schemas, dict)
-    assert "DotDimensionNumbersAttr" in schemas
-    assert "ConvDimensionNumbersAttr" in schemas
-    assert "ComparisonDirectionAttr" in schemas
-    assert "PrecisionAttr" in schemas
+    for attr_name in (
+        "DotDimensionNumbersAttr",
+        "ConvDimensionNumbersAttr",
+        "ComparisonDirectionAttr",
+        "PrecisionAttr",
+    ):
+        assert attr_name in schemas
 
     # Verify attributes scoping per operation
     abs_op = ref_map["stablehlo.abs"]
-    assert isinstance(abs_op, GhostMlirRef)
-    assert abs_op.attributes is None
+    assert isinstance(abs_op, GhostMlirRef) and abs_op.attributes is None
 
     dot_op = ref_map["stablehlo.dot_general"]
-    assert isinstance(dot_op, GhostMlirRef)
-    assert dot_op.attributes is not None
-    assert "dot_dimension_numbers" in dot_op.attributes
+    assert isinstance(dot_op, GhostMlirRef) and dot_op.attributes is not None
     dot_dim_nums = dot_op.attributes["dot_dimension_numbers"]
     assert isinstance(dot_dim_nums, dict)
     dot_props = dot_dim_nums["properties"]
-    assert isinstance(dot_props, dict)
-    assert "lhs_batch_dimensions" in dot_props
+    assert isinstance(dot_props, dict) and "lhs_batch_dimensions" in dot_props
 
 
 def test_validate_dot_dimension_numbers() -> None:
@@ -184,10 +164,7 @@ def test_validate_dot_dimension_numbers() -> None:
         "lhs_contracting_dimensions": [2],
         "rhs_contracting_dimensions": [1],
     }
-    assert (
-        stablehlo_fw.validate_dot_dimension_numbers(valid_dot, lhs_rank=3, rhs_rank=3)
-        == []
-    )
+    assert stablehlo_fw.validate_dot_dimension_numbers(valid_dot, lhs_rank=3, rhs_rank=3) == []
 
     # Count mismatch
     bad_count: dict[str, JsonValue] = {
@@ -208,10 +185,7 @@ def test_validate_dot_dimension_numbers() -> None:
         "rhs_contracting_dimensions": [1],
     }
     errs_overlap = stablehlo_fw.validate_dot_dimension_numbers(overlap_lhs)
-    assert any(
-        "LHS batch and contracting dimensions must be disjoint" in e
-        for e in errs_overlap
-    )
+    assert any("LHS batch and contracting dimensions must be disjoint" in e for e in errs_overlap)
 
     overlap_rhs: dict[str, JsonValue] = {
         "lhs_batch_dimensions": [0],
@@ -219,10 +193,7 @@ def test_validate_dot_dimension_numbers() -> None:
         "lhs_contracting_dimensions": [1],
         "rhs_contracting_dimensions": [1],
     }
-    assert any(
-        "RHS batch and contracting dimensions must be disjoint" in e
-        for e in stablehlo_fw.validate_dot_dimension_numbers(overlap_rhs)
-    )
+    assert any("RHS batch and contracting dimensions must be disjoint" in e for e in stablehlo_fw.validate_dot_dimension_numbers(overlap_rhs))
 
     # Rank bounds
     out_of_bounds: dict[str, JsonValue] = {
@@ -231,9 +202,7 @@ def test_validate_dot_dimension_numbers() -> None:
         "lhs_contracting_dimensions": [1],
         "rhs_contracting_dimensions": [5],
     }
-    errs_oob = stablehlo_fw.validate_dot_dimension_numbers(
-        out_of_bounds, lhs_rank=2, rhs_rank=2
-    )
+    errs_oob = stablehlo_fw.validate_dot_dimension_numbers(out_of_bounds, lhs_rank=2, rhs_rank=2)
     assert any("LHS dimension 5" in e for e in errs_oob)
     assert any("RHS dimension 5" in e for e in errs_oob)
 
@@ -254,12 +223,7 @@ def test_validate_conv_dimension_numbers() -> None:
         "output_feature_dimension": 1,
         "output_spatial_dimensions": [2, 3],
     }
-    assert (
-        stablehlo_fw.validate_conv_dimension_numbers(
-            valid_conv, input_rank=4, kernel_rank=4, output_rank=4
-        )
-        == []
-    )
+    assert stablehlo_fw.validate_conv_dimension_numbers(valid_conv, input_rank=4, kernel_rank=4, output_rank=4) == []
 
     # Spatial count mismatch
     bad_spatial: dict[str, JsonValue] = {
@@ -275,58 +239,38 @@ def test_validate_conv_dimension_numbers() -> None:
         "input_feature_dimension": 0,
     }
     errs_in = stablehlo_fw.validate_conv_dimension_numbers(bad_in)
-    assert any(
-        "Input dimensions in ConvDimensionNumbersAttr must be distinct" in e
-        for e in errs_in
-    )
+    assert any("Input dimensions in ConvDimensionNumbersAttr must be distinct" in e for e in errs_in)
 
     # Input rank out of bounds
     bad_in_rank: dict[str, JsonValue] = {
         **valid_conv,
         "input_batch_dimension": 4,
     }
-    assert any(
-        "exceeds input rank" in e
-        for e in stablehlo_fw.validate_conv_dimension_numbers(bad_in_rank, input_rank=4)
-    )
+    assert any("exceeds input rank" in e for e in stablehlo_fw.validate_conv_dimension_numbers(bad_in_rank, input_rank=4))
 
     # Overlapping kernel dimensions
     bad_k: dict[str, JsonValue] = {
         **valid_conv,
         "kernel_output_feature_dimension": 1,
     }
-    assert any(
-        "Kernel dimensions in ConvDimensionNumbersAttr must be distinct" in e
-        for e in stablehlo_fw.validate_conv_dimension_numbers(bad_k)
-    )
+    assert any("Kernel dimensions in ConvDimensionNumbersAttr must be distinct" in e for e in stablehlo_fw.validate_conv_dimension_numbers(bad_k))
     bad_k_rank: dict[str, JsonValue] = {
         **valid_conv,
         "kernel_input_feature_dimension": 4,
     }
-    assert any(
-        "exceeds kernel rank" in e
-        for e in stablehlo_fw.validate_conv_dimension_numbers(bad_k_rank, kernel_rank=4)
-    )
+    assert any("exceeds kernel rank" in e for e in stablehlo_fw.validate_conv_dimension_numbers(bad_k_rank, kernel_rank=4))
 
     # Output disjointness
     bad_out: dict[str, JsonValue] = {
         **valid_conv,
         "output_feature_dimension": 0,
     }
-    assert any(
-        "Output dimensions in ConvDimensionNumbersAttr must be distinct" in e
-        for e in stablehlo_fw.validate_conv_dimension_numbers(bad_out)
-    )
+    assert any("Output dimensions in ConvDimensionNumbersAttr must be distinct" in e for e in stablehlo_fw.validate_conv_dimension_numbers(bad_out))
     bad_out_rank: dict[str, JsonValue] = {
         **valid_conv,
         "output_batch_dimension": 4,
     }
-    assert any(
-        "exceeds output rank" in e
-        for e in stablehlo_fw.validate_conv_dimension_numbers(
-            bad_out_rank, output_rank=4
-        )
-    )
+    assert any("exceeds output rank" in e for e in stablehlo_fw.validate_conv_dimension_numbers(bad_out_rank, output_rank=4))
 
     # Empty dictionary
     assert stablehlo_fw.validate_conv_dimension_numbers({}) == []
@@ -349,10 +293,7 @@ def test_validate_scatter_and_gather_dimension_numbers() -> None:
         **valid_scatter,
         "inserted_window_dims": [1],
     }
-    assert any(
-        "must be disjoint" in e
-        for e in stablehlo_fw.validate_scatter_dimension_numbers(overlap_scatter)
-    )
+    assert any("must be disjoint" in e for e in stablehlo_fw.validate_scatter_dimension_numbers(overlap_scatter))
 
     # Gather disjointness
     valid_gather: dict[str, JsonValue] = {
@@ -367,54 +308,26 @@ def test_validate_scatter_and_gather_dimension_numbers() -> None:
         **valid_gather,
         "collapsed_slice_dims": [1],
     }
-    assert any(
-        "must be disjoint" in e
-        for e in stablehlo_fw.validate_gather_dimension_numbers(overlap_gather)
-    )
+    assert any("must be disjoint" in e for e in stablehlo_fw.validate_gather_dimension_numbers(overlap_gather))
 
 
 def test_validate_stablehlo_region() -> None:
     """Test region arguments and terminator constraints for reduce, while, and sort."""
     # Reduce
-    assert (
-        stablehlo_fw.validate_stablehlo_region(
-            "stablehlo.reduce", "body", ["tensor<f32>", "tensor<f32>"], ["tensor<f32>"]
-        )
-        == []
-    )
-    err_reduce_odd = stablehlo_fw.validate_stablehlo_region(
-        "stablehlo.reduce", "body", ["tensor<f32>"], ["tensor<f32>"]
-    )
-    assert any(
-        "takes 2 scalar arguments per reduce operand" in e for e in err_reduce_odd
-    )
+    assert stablehlo_fw.validate_stablehlo_region("stablehlo.reduce", "body", ["tensor<f32>", "tensor<f32>"], ["tensor<f32>"]) == []
+    err_reduce_odd = stablehlo_fw.validate_stablehlo_region("stablehlo.reduce", "body", ["tensor<f32>"], ["tensor<f32>"])
+    assert any("takes 2 scalar arguments per reduce operand" in e for e in err_reduce_odd)
 
-    err_reduce_yield = stablehlo_fw.validate_stablehlo_region(
-        "stablehlo.reduce", "body", ["tensor<f32>", "tensor<f32>"], []
-    )
+    err_reduce_yield = stablehlo_fw.validate_stablehlo_region("stablehlo.reduce", "body", ["tensor<f32>", "tensor<f32>"], [])
     assert any("terminator yield count" in e for e in err_reduce_yield)
 
     # While
-    assert (
-        stablehlo_fw.validate_stablehlo_region(
-            "stablehlo.while", "cond", ["tensor<i32>"], ["tensor<i1>"]
-        )
-        == []
-    )
-    err_while_cond = stablehlo_fw.validate_stablehlo_region(
-        "stablehlo.while", "cond", ["tensor<i32>"], ["tensor<i32>"]
-    )
+    assert stablehlo_fw.validate_stablehlo_region("stablehlo.while", "cond", ["tensor<i32>"], ["tensor<i1>"]) == []
+    err_while_cond = stablehlo_fw.validate_stablehlo_region("stablehlo.while", "cond", ["tensor<i32>"], ["tensor<i32>"])
     assert any("must terminate with tensor<i1>" in e for e in err_while_cond)
 
-    assert (
-        stablehlo_fw.validate_stablehlo_region(
-            "stablehlo.while", "body", ["tensor<i32>"], ["tensor<i32>"]
-        )
-        == []
-    )
-    err_while_body = stablehlo_fw.validate_stablehlo_region(
-        "stablehlo.while", "body", ["tensor<i32>"], ["tensor<f32>"]
-    )
+    assert stablehlo_fw.validate_stablehlo_region("stablehlo.while", "body", ["tensor<i32>"], ["tensor<i32>"]) == []
+    err_while_body = stablehlo_fw.validate_stablehlo_region("stablehlo.while", "body", ["tensor<i32>"], ["tensor<f32>"])
     assert any("must match block arguments" in e for e in err_while_body)
 
     # Sort
@@ -427,55 +340,33 @@ def test_validate_stablehlo_region() -> None:
         )
         == []
     )
-    err_sort_args = stablehlo_fw.validate_stablehlo_region(
-        "stablehlo.sort", "comparator", ["tensor<f32>"], ["tensor<i1>"]
-    )
+    err_sort_args = stablehlo_fw.validate_stablehlo_region("stablehlo.sort", "comparator", ["tensor<f32>"], ["tensor<i1>"])
     assert any("takes 2 scalar arguments" in e for e in err_sort_args)
 
-    err_sort_yield = stablehlo_fw.validate_stablehlo_region(
-        "stablehlo.sort", "comparator", ["tensor<f32>", "tensor<f32>"], ["tensor<f32>"]
-    )
+    err_sort_yield = stablehlo_fw.validate_stablehlo_region("stablehlo.sort", "comparator", ["tensor<f32>", "tensor<f32>"], ["tensor<f32>"])
     assert any("must terminate with tensor<i1>" in e for e in err_sort_yield)
 
     # Unknown op or region
-    assert (
-        stablehlo_fw.validate_stablehlo_region("stablehlo.unknown", "body", [], [])
-        == []
-    )
-    assert (
-        stablehlo_fw.validate_stablehlo_region("stablehlo.while", "other", [], []) == []
-    )
-    assert (
-        stablehlo_fw.validate_stablehlo_region("stablehlo.sort", "other", [], []) == []
-    )
+    assert stablehlo_fw.validate_stablehlo_region("stablehlo.unknown", "body", [], []) == []
+    assert stablehlo_fw.validate_stablehlo_region("stablehlo.while", "other", [], []) == []
+    assert stablehlo_fw.validate_stablehlo_region("stablehlo.sort", "other", [], []) == []
 
 
 def test_validate_broadcast_and_binary_broadcasting() -> None:
     """Test broadcast_in_dim and binary broadcast invariant validation."""
     # broadcast_in_dim valid
-    assert (
-        stablehlo_fw.validate_broadcast_in_dim(
-            operand_shape=[1, 3], result_shape=[2, 3], broadcast_dimensions=[0, 1]
-        )
-        == []
-    )
+    assert stablehlo_fw.validate_broadcast_in_dim(operand_shape=[1, 3], result_shape=[2, 3], broadcast_dimensions=[0, 1]) == []
 
     # broadcast_dimensions length mismatch
-    err_len = stablehlo_fw.validate_broadcast_in_dim(
-        operand_shape=[1, 3], result_shape=[2, 3], broadcast_dimensions=[0]
-    )
+    err_len = stablehlo_fw.validate_broadcast_in_dim(operand_shape=[1, 3], result_shape=[2, 3], broadcast_dimensions=[0])
     assert any("must match operand rank" in e for e in err_len)
 
     # broadcast_dimensions out of bounds
-    err_oob = stablehlo_fw.validate_broadcast_in_dim(
-        operand_shape=[3], result_shape=[2, 3], broadcast_dimensions=[5]
-    )
+    err_oob = stablehlo_fw.validate_broadcast_in_dim(operand_shape=[3], result_shape=[2, 3], broadcast_dimensions=[5])
     assert any("out of bounds for result rank" in e for e in err_oob)
 
     # broadcast dimension size mismatch
-    err_mismatch = stablehlo_fw.validate_broadcast_in_dim(
-        operand_shape=[4], result_shape=[2, 3], broadcast_dimensions=[1]
-    )
+    err_mismatch = stablehlo_fw.validate_broadcast_in_dim(operand_shape=[4], result_shape=[2, 3], broadcast_dimensions=[1])
     assert any("Broadcast dimension mismatch" in e for e in err_mismatch)
 
     # binary broadcast valid
@@ -495,18 +386,17 @@ def test_validate_broadcast_and_binary_broadcasting() -> None:
     assert any("Incompatible broadcast dimensions" in e for e in bad_errs)
 
 
-def test_cli_check_stablehlo(
-    capsys: pytest.CaptureFixture[str], tmp_path: Path
-) -> None:
+def test_cli_check_stablehlo(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     """Test CLI check-stablehlo subcommand.
 
     Args:
         capsys: Pytest capsys fixture.
         tmp_path: Pytest temporary directory fixture.
     """
-    from ml_ecosystem_snapshots.cli import cmd_check_stablehlo
     import argparse
+
     import pytest
+    from ml_ecosystem_snapshots.cli import cmd_check_stablehlo
 
     # 1. Valid op
     args_valid = argparse.Namespace(
@@ -540,9 +430,7 @@ def test_cli_check_stablehlo(
 
     # 4. Valid file
     valid_file = tmp_path / "valid.mlir"
-    valid_file.write_text(
-        "%0 = stablehlo.abs(%arg0) : tensor<4xf32>\n", encoding="utf-8"
-    )
+    valid_file.write_text("%0 = stablehlo.abs(%arg0) : tensor<4xf32>\n", encoding="utf-8")
     args_file_valid = argparse.Namespace(
         file=str(valid_file),
         op_name=None,
@@ -587,9 +475,7 @@ def test_stablehlo_collect_api_variants() -> None:
         },
     }
     with mock.patch("os.path.exists", return_value=True):
-        with mock.patch(
-            "builtins.open", mock.mock_open(read_data=json.dumps(mock_envelope))
-        ):
+        with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_envelope))):
             refs = stablehlo_fw.collect_api(SemanticTier.UTIL)
             assert len(refs) == 1
             assert refs[0].api_path == "stablehlo.test_op1"
@@ -598,18 +484,14 @@ def test_stablehlo_collect_api_variants() -> None:
         mock_dict = {
             "operations": [{"api_path": "stablehlo.test_op2", "name": "TestOp2"}],
         }
-        with mock.patch(
-            "builtins.open", mock.mock_open(read_data=json.dumps(mock_dict))
-        ):
+        with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_dict))):
             refs = stablehlo_fw.collect_api(SemanticTier.UTIL)
             assert len(refs) == 1
             assert refs[0].api_path == "stablehlo.test_op2"
 
         # 3. Raw list
         mock_list = [{"api_path": "stablehlo.test_op3", "name": "TestOp3"}]
-        with mock.patch(
-            "builtins.open", mock.mock_open(read_data=json.dumps(mock_list))
-        ):
+        with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_list))):
             refs = stablehlo_fw.collect_api(SemanticTier.UTIL)
             assert len(refs) == 1
             assert refs[0].api_path == "stablehlo.test_op3"

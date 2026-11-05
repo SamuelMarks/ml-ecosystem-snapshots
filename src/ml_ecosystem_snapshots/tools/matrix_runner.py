@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import subprocess
 import json
-import tempfile
 import os
+import subprocess
+import tempfile
 from pathlib import Path
 
 DEFAULT_MATRIX = {
@@ -16,9 +16,7 @@ DEFAULT_MATRIX = {
 }
 
 
-def build_and_run(
-    framework: str, version: str, output_dir: Path, check: bool = False
-) -> Path:
+def build_and_run(framework: str, version: str, output_dir: Path, check: bool = False) -> Path:
     """Build a Docker image and run the snapshot extraction.
 
     Args:
@@ -98,7 +96,7 @@ def upload_to_s3(directory: Path, bucket: str) -> None:
         import boto3
 
         s3 = boto3.client("s3")
-        for root, dirs, files in os.walk(directory):
+        for root, _dirs, files in os.walk(directory):
             for file in files:
                 if file.endswith(".json"):
                     local_path = os.path.join(root, file)
@@ -115,21 +113,15 @@ def upload_to_s3(directory: Path, bucket: str) -> None:
 def main() -> None:
     """Execute the matrix runner process."""
     parser = argparse.ArgumentParser(description="Multi-Version Matrix Runner")
-    parser.add_argument(
-        "--matrix", type=str, help="Path to JSON matrix config", default=None
-    )
-    parser.add_argument(
-        "--output-dir", type=str, default=os.path.join(".", "matrix_snapshots")
-    )
-    parser.add_argument(
-        "--s3-bucket", type=str, help="S3 bucket for upload", default=None
-    )
+    parser.add_argument("--matrix", type=str, help="Path to JSON matrix config", default=None)
+    parser.add_argument("--output-dir", type=str, default=os.path.join(".", "matrix_snapshots"))
+    parser.add_argument("--s3-bucket", type=str, help="S3 bucket for upload", default=None)
 
     args = parser.parse_args()
 
     matrix = DEFAULT_MATRIX
     if args.matrix:
-        with open(args.matrix, "r") as f:
+        with open(args.matrix) as f:
             matrix = json.load(f)
 
     out_dir = Path(args.output_dir)

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-import pytest_mock
 import os
 import urllib.error
 from unittest import mock
 
+import pytest_mock
 from ml_ecosystem_snapshots.tools import scrape_nvidia_ptx
 
 
@@ -21,20 +21,18 @@ def test_fetch_nvptx_td_file_local_dir(tmp_path: os.PathLike[str]) -> None:
     with open(td_file, "w", encoding="utf-8") as f:
         f.write('def ADD_F32 : NVPTXInst<"add.f32">;')
 
-    content = scrape_nvidia_ptx.fetch_nvptx_td_file(
-        "NVPTXInstrInfo.td", local_dir=str(tmp_path)
-    )
+    content = scrape_nvidia_ptx.fetch_nvptx_td_file("NVPTXInstrInfo.td", local_dir=str(tmp_path))
     assert 'def ADD_F32 : NVPTXInst<"add.f32">' in content
 
 
 def test_fetch_nvptx_td_file_remote_success() -> None:
     """Test fetching TableGen file successfully over HTTP mock."""
-    with mock.patch("urllib.request.urlopen") as mock_urlopen:
-        mock_response = mock.MagicMock()
-        mock_response.read.return_value = b'def SUB_F32 : NVPTXInst<"sub.f32">;'
-        mock_response.__enter__.return_value = mock_response
-        mock_urlopen.return_value = mock_response
+    import io
 
+    with mock.patch(
+        "urllib.request.urlopen",
+        return_value=io.BytesIO(b'def SUB_F32 : NVPTXInst<"sub.f32">;'),
+    ):
         content = scrape_nvidia_ptx.fetch_nvptx_td_file("NVPTXInstrInfo.td")
         assert 'def SUB_F32 : NVPTXInst<"sub.f32">' in content
 
@@ -78,7 +76,7 @@ def test_scrape_ptx_end_to_end(tmp_path: os.PathLike[str]) -> None:
         assert any(op["mnemonic"] == "cp.async" for op in catalog)
         assert any(op["mnemonic"] == "wgmma.mma_async" for op in catalog)
 
-        with open(out_file, "r", encoding="utf-8") as f:
+        with open(out_file, encoding="utf-8") as f:
             saved = json.load(f)
             saved_items = saved["instructions"] if isinstance(saved, dict) else saved
             assert len(saved_items) == len(catalog)
@@ -90,15 +88,13 @@ def test_fetch_nvptx_td_file_candidate_not_file(tmp_path: os.PathLike[str]) -> N
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    with mock.patch("urllib.request.urlopen") as mock_urlopen:
-        mock_resp = mock.MagicMock()
-        mock_resp.read.return_value = b'def FALLBACK : NVPTXInst<"fallback">;'
-        mock_resp.__enter__.return_value = mock_resp
-        mock_urlopen.return_value = mock_resp
+    import io
 
-        content = scrape_nvidia_ptx.fetch_nvptx_td_file(
-            "nonexistent.td", local_dir=str(tmp_path)
-        )
+    with mock.patch(
+        "urllib.request.urlopen",
+        return_value=io.BytesIO(b'def FALLBACK : NVPTXInst<"fallback">;'),
+    ):
+        content = scrape_nvidia_ptx.fetch_nvptx_td_file("nonexistent.td", local_dir=str(tmp_path))
         assert 'def FALLBACK : NVPTXInst<"fallback">' in content
 
 
@@ -129,9 +125,7 @@ def test_scrape_ptx_with_empty_fetch(tmp_path: os.PathLike[str]) -> None:
 
 def test_main_invocation() -> None:
     """Test the main entrypoint function invokes scrape_ptx."""
-    with mock.patch(
-        "ml_ecosystem_snapshots.tools.scrape_nvidia_ptx.scrape_ptx"
-    ) as mock_scrape:
+    with mock.patch("ml_ecosystem_snapshots.tools.scrape_nvidia_ptx.scrape_ptx") as mock_scrape:
         scrape_nvidia_ptx.main()
         mock_scrape.assert_called_once()
 
@@ -142,10 +136,13 @@ def test_scrape_nvidia_ptx_main_entrypoint(mocker: pytest_mock.MockerFixture) ->
     Args:
         mocker: Pytest mocker fixture.
     """
+    import importlib.util
     import runpy
 
+    spec = importlib.util.find_spec("ml_ecosystem_snapshots.tools.scrape_nvidia_ptx")
+    assert spec is not None and spec.origin is not None
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
     mocker.patch("ml_ecosystem_snapshots.network_env.fetch_url", return_value="")
-    res = runpy.run_path(scrape_nvidia_ptx.__file__, run_name="__main__")
+    res = runpy.run_path(spec.origin, run_name="__main__")
     assert "main" in res
     assert mock_open.called

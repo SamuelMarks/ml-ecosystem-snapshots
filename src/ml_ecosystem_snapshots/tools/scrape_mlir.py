@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import inspect
 import json
-import operator
 import os
-from pathlib import Path
 import sys
 import typing
+from pathlib import Path
 
 _src_dir = str(Path(__file__).resolve().parent.parent.parent)
 if _src_dir not in sys.path:
@@ -81,14 +81,9 @@ def inspect_mlir_python_module(
     for dialect in target_dialects:
         try:
             mod = importlib.import_module(f"mlir.dialects.{dialect}")
-            for attr_name in dir(mod):
+            for attr_name, cls in inspect.getmembers(mod):
                 if attr_name.endswith("Op") and not attr_name.startswith("_"):
-                    cls: type = operator.attrgetter(attr_name)(mod)
-                    op_mnemonic = (
-                        cls.OPERATION_NAME
-                        if isinstance(cls, _MlirOpClassProtocol)
-                        else f"{dialect}.{attr_name[:-2].lower()}"
-                    )
+                    op_mnemonic = cls.OPERATION_NAME if isinstance(cls, _MlirOpClassProtocol) else f"{dialect}.{attr_name[:-2].lower()}"
                     ops.append(
                         TableGenRecordModel(
                             {
@@ -97,8 +92,7 @@ def inspect_mlir_python_module(
                                 "class_name": attr_name,
                                 "operands": [],
                                 "attributes": [],
-                                "description": cls.__doc__
-                                or f"MLIR {attr_name} operation.",
+                                "description": inspect.getdoc(cls) or f"MLIR {attr_name} operation.",
                             }
                         )
                     )
@@ -108,6 +102,60 @@ def inspect_mlir_python_module(
     return ops
 
 
+def _append_unique_ops(
+    ops: typing.Sequence[TableGenRecordModel],
+    all_ops: list[TableGenRecordModel],
+    seen_paths: set[str],
+) -> None:
+    """Append operations with previously unseen `api_path` keys into `all_ops`.
+
+    Args:
+        ops: Sequence of candidate `TableGenRecordModel` operation records.
+        all_ops: Destination list accumulating unique operation records.
+        seen_paths: Set of `api_path` strings already added to `all_ops`.
+    """
+    for op in ops:
+        api_p = str(op.get("api_path", ""))
+        if api_p not in seen_paths:
+            seen_paths.add(api_p)
+            all_ops.append(op)
+
+
+def _fetch_upstream_dialect_ops(
+    tag_ref: str,
+    all_ops: list[TableGenRecordModel],
+    seen_paths: set[str],
+) -> None:
+    """Fetch and parse upstream LLVM MLIR TableGen definitions across core dialects.
+
+    Args:
+        tag_ref: Git tag or commit reference in `llvm/llvm-project`.
+        all_ops: Destination list accumulating unique operation records.
+        seen_paths: Set of `api_path` strings already added to `all_ops`.
+    """
+    dialect_map = {
+        "arith": ("Arith", ["ArithOps.td"]),
+        "math": ("Math", ["MathOps.td"]),
+        "tensor": ("Tensor", ["TensorOps.td"]),
+        "linalg": ("Linalg", ["LinalgOps.td", "LinalgStructuredOps.td"]),
+        "scf": ("SCF", ["SCFOps.td"]),
+        "func": ("Func", ["FuncOps.td"]),
+        "memref": ("MemRef", ["MemRefOps.td"]),
+        "gpu": ("GPU", ["GPUOps.td"]),
+        "vector": ("Vector", ["VectorOps.td"]),
+        "llvm": ("LLVMIR", ["LLVMOps.td"]),
+    }
+
+    for dialect_name, (d_cap, files) in dialect_map.items():
+        subpath = f"{d_cap}" if d_cap == "LLVMIR" else f"{d_cap}/IR"
+        for td_file in files:
+            url = f"https://raw.githubusercontent.com/llvm/llvm-project/{tag_ref}/mlir/include/mlir/Dialect/{subpath}/{td_file}"
+            td_content = fetch_url(url)
+            if td_content:
+                parsed = parse_llvm_tblgen_json(td_content, dialect_name) if td_content.strip().startswith("{") else parse_mlir_tablegen(td_content, dialect_name)
+                _append_unique_ops(parsed, all_ops, seen_paths)
+
+
 def main(argv: list[str] | None = None) -> None:
     """Run the scraper and output enveloped mlir_exhaustive.json.
 
@@ -115,9 +163,7 @@ def main(argv: list[str] | None = None) -> None:
         argv: Optional list of command-line arguments.
     """
     nl = chr(10)
-    parser = argparse.ArgumentParser(
-        description="Scrape exhaustive MLIR dialect operations."
-    )
+    parser = argparse.ArgumentParser(description="Scrape exhaustive MLIR dialect operations.")
     parser.add_argument(
         "--tag",
         type=str,
@@ -138,76 +184,19 @@ def main(argv: list[str] | None = None) -> None:
     )
     args, _ = parser.parse_known_args(argv)
 
-    output_path = args.output_path or os.path.join(
-        os.path.dirname(__file__), "..", "frameworks", "mlir_exhaustive.json"
-    )
+    output_path = args.output_path or os.path.join(os.path.dirname(__file__), "..", "frameworks", "mlir_exhaustive.json")
 
     all_ops: list[TableGenRecordModel] = []
     seen_paths: set[str] = set()
 
-    dialect_map = {
-        "arith": ["ArithOps.td"],
-        "math": ["MathOps.td"],
-        "tensor": ["TensorOps.td"],
-        "linalg": ["LinalgOps.td", "LinalgStructuredOps.td"],
-        "scf": ["SCFOps.td"],
-        "func": ["FuncOps.td"],
-        "memref": ["MemRefOps.td"],
-        "gpu": ["GPUOps.td"],
-        "vector": ["VectorOps.td"],
-        "llvm": ["LLVMOps.td"],
-    }
-    capital_map = {
-        "arith": "Arith",
-        "math": "Math",
-        "tensor": "Tensor",
-        "linalg": "Linalg",
-        "scf": "SCF",
-        "func": "Func",
-        "memref": "MemRef",
-        "gpu": "GPU",
-        "vector": "Vector",
-        "llvm": "LLVMIR",
-    }
-
-    tag_ref = args.tag
-    for d, files in dialect_map.items():
-        d_cap = capital_map[d]
-        for td_file in files:
-            url = (
-                f"https://raw.githubusercontent.com/llvm/llvm-project/{tag_ref}/mlir/include/mlir/Dialect/{d_cap}/{td_file}"
-                if d_cap == "LLVMIR"
-                else f"https://raw.githubusercontent.com/llvm/llvm-project/{tag_ref}/mlir/include/mlir/Dialect/{d_cap}/IR/{td_file}"
-            )
-            td_content = fetch_url(url)
-            if td_content:
-                parsed = (
-                    parse_llvm_tblgen_json(td_content, d)
-                    if td_content.strip().startswith("{")
-                    else parse_mlir_tablegen(td_content, d)
-                )
-                for op in parsed:
-                    api_p = str(op.get("api_path", ""))
-                    if api_p not in seen_paths:
-                        seen_paths.add(api_p)
-                        all_ops.append(op)
-
-    live_ops = inspect_mlir_python_module()
-    for op in live_ops:
-        api_p = str(op.get("api_path", ""))
-        if api_p not in seen_paths:
-            seen_paths.add(api_p)
-            all_ops.append(op)
+    _fetch_upstream_dialect_ops(args.tag, all_ops, seen_paths)
+    _append_unique_ops(inspect_mlir_python_module(), all_ops, seen_paths)
 
     try:
         stablehlo_ops = extract_ops()
     except RuntimeError:
         stablehlo_ops = []
-    for op in stablehlo_ops:
-        api_p = str(op.get("api_path", ""))
-        if api_p not in seen_paths:
-            seen_paths.add(api_p)
-            all_ops.append(op)
+    _append_unique_ops(stablehlo_ops, all_ops, seen_paths)
 
     exhaustive_data = {
         "schema_version": "2.0.0",

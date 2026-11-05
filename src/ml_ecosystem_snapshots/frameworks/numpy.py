@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import inspect
-import operator
 import types
 import typing
 
@@ -36,9 +35,43 @@ except ImportError:
     np = None
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def _collect_numpy_callables(mod: types.ModuleType, prefix: str, target_names: list[str] | None = None) -> list[GhostRef]:
+    """Collect public callable functions from a NumPy module or submodule.
+
+    Args:
+        mod: NumPy module or submodule (`numpy`, `numpy.linalg`, `numpy.fft`).
+        prefix: Qualified API path prefix.
+        target_names: Optional explicit list of function names to filter by.
+
+    Returns:
+        List of inspected `GhostRef` items.
+    """
+    results: list[GhostRef] = []
+    members: dict[str, InspectableTarget] = dict(inspect.getmembers(mod))
+    names = target_names if target_names is not None else sorted(members.keys())
+    for name in names:
+        if name.startswith("_") or name not in members:
+            continue
+        obj = members[name]
+        if callable(obj) and (target_names is not None or not inspect.isclass(obj)):
+            try:
+                results.append(GhostInspector.inspect(obj, f"{prefix}.{name}", is_public=True))
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                IndexError,
+                SyntaxError,
+                OSError,
+                ImportError,
+                RuntimeError,
+            ):
+                pass
+    return results
+
+
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect numpy API.
 
     Args:
@@ -48,104 +81,18 @@ def collect_api(
     Returns:
         List of GhostRefs.
     """
-    results: list[GhostRef] = []
     if not np:
-        return results
+        return []
 
     if category == SemanticTier.ACTIVATION:
-        # Numpy doesn't have an "activation" module per se, but we can capture basic math ops
-        np_names = set(dir(np))
-        for name in ["tanh", "exp", "maximum", "minimum"]:
-            if name in np_names:
-                obj: InspectableTarget = operator.attrgetter(name)(np)
-                if callable(obj):
-                    try:
-                        res = GhostInspector.inspect(
-                            obj, f"numpy.{name}", is_public=True
-                        )
-                        results.append(res)
-                    except (
-                        AttributeError,
-                        TypeError,
-                        ValueError,
-                        KeyError,
-                        IndexError,
-                        SyntaxError,
-                        OSError,
-                        ImportError,
-                        RuntimeError,
-                    ):
-                        pass
-    elif category == SemanticTier.ARRAY_API:
-        for name in dir(np):
-            if not name.startswith("_"):
-                obj_arr: InspectableTarget = operator.attrgetter(name)(np)
-                if callable(obj_arr) and not inspect.isclass(obj_arr):
-                    try:
-                        res = GhostInspector.inspect(
-                            obj_arr, f"numpy.{name}", is_public=True
-                        )
-                        results.append(res)
-                    except (
-                        AttributeError,
-                        TypeError,
-                        ValueError,
-                        KeyError,
-                        IndexError,
-                        SyntaxError,
-                        OSError,
-                        ImportError,
-                        RuntimeError,
-                    ):
-                        pass
+        return _collect_numpy_callables(np, "numpy", target_names=["tanh", "exp", "maximum", "minimum"])
 
-        # Introspect numpy.linalg.*
+    if category == SemanticTier.ARRAY_API:
+        results = _collect_numpy_callables(np, "numpy")
         if isinstance(np, _NumpyWithLinalgProtocol):
-            for name in dir(np.linalg):
-                if not name.startswith("_"):
-                    obj_la: InspectableTarget = operator.attrgetter(name)(np.linalg)
-                    if callable(obj_la) and not inspect.isclass(obj_la):
-                        try:
-                            results.append(
-                                GhostInspector.inspect(
-                                    obj_la, f"numpy.linalg.{name}", is_public=True
-                                )
-                            )
-                        except (
-                            AttributeError,
-                            TypeError,
-                            ValueError,
-                            KeyError,
-                            IndexError,
-                            SyntaxError,
-                            OSError,
-                            ImportError,
-                            RuntimeError,
-                        ):
-                            pass
-
-        # Introspect numpy.fft.*
+            results.extend(_collect_numpy_callables(np.linalg, "numpy.linalg"))
         if isinstance(np, _NumpyWithFftProtocol):
-            for name in dir(np.fft):
-                if not name.startswith("_"):
-                    obj_fft: InspectableTarget = operator.attrgetter(name)(np.fft)
-                    if callable(obj_fft) and not inspect.isclass(obj_fft):
-                        try:
-                            results.append(
-                                GhostInspector.inspect(
-                                    obj_fft, f"numpy.fft.{name}", is_public=True
-                                )
-                            )
-                        except (
-                            AttributeError,
-                            TypeError,
-                            ValueError,
-                            KeyError,
-                            IndexError,
-                            SyntaxError,
-                            OSError,
-                            ImportError,
-                            RuntimeError,
-                        ):
-                            pass
-    return results
+            results.extend(_collect_numpy_callables(np.fft, "numpy.fft"))
+        return results
+
+    return []

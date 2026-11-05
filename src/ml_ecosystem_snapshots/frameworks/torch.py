@@ -13,13 +13,16 @@ import types
 import typing
 import warnings
 
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 import pydantic
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.c_extension_sig import CExtensionSignature
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
-from ml_ecosystem_snapshots.models import JsonValue
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    InspectableTarget,
+    get_member_dict,
+)
+from ml_ecosystem_snapshots.models import ExtendedGhostRef, JsonValue
 from ml_ecosystem_snapshots.utils import get_all_members
 
 
@@ -70,13 +73,6 @@ class TorchModuleWithOpsProtocol(typing.Protocol):
     """Protocol for `torch` exposing `.ops`."""
 
     ops: TorchOpsContainerProtocol
-
-
-@typing.runtime_checkable
-class _NamedTargetProtocol(typing.Protocol):
-    """Protocol for runtime objects exposing a `__name__` attribute."""
-
-    __name__: str
 
 
 warnings.filterwarnings(
@@ -262,9 +258,7 @@ def _scan_schedulers(include_nonpublic: bool) -> list[GhostRef]:
         if inspect.isclass(obj) and name != "LRScheduler":
             if not include_nonpublic and name.startswith("_"):
                 continue
-            found.append(
-                GhostInspector.inspect(obj, f"torch.optim.lr_scheduler.{name}")
-            )
+            found.append(GhostInspector.inspect(obj, f"torch.optim.lr_scheduler.{name}"))
     return found
 
 
@@ -363,14 +357,60 @@ def _collect_torch_namespace(
     """
     collected: list[GhostRef] = []
     for name, obj in get_all_members(ns_obj):
-        if (
-            (include_nonpublic or not name.startswith("_"))
-            and callable(obj)
-            and not inspect.isclass(obj)
-        ):
+        if (include_nonpublic or not name.startswith("_")) and callable(obj) and not inspect.isclass(obj):
             try:
                 collected.append(GhostInspector.inspect(obj, f"{api_prefix}.{name}"))
             except Exception:
+                pass
+    return collected
+
+
+def _tag_in_place_tensor_method(ref: ExtendedGhostRef, name: str) -> None:
+    """Attach in-place mutation domain metadata and environment tags to a `torch.Tensor` method ref.
+
+    Args:
+        ref: Inspected `ExtendedGhostRef` for the tensor method.
+        name: Method name on `torch.Tensor`.
+    """
+    is_in_place = name.endswith("_") and not name.startswith("__")
+    if ref.domain_metadata is None:
+        ref.domain_metadata = {}
+    ref.domain_metadata["is_in_place"] = is_in_place
+    if is_in_place:
+        if ref.environment_tags is None:
+            ref.environment_tags = []
+        if "in_place_mutation" not in ref.environment_tags:
+            ref.environment_tags.append("in_place_mutation")
+
+
+def _collect_torch_tensor_methods(tensor_cls: type, include_nonpublic: bool) -> list[GhostRef]:
+    """Collect instance methods from `torch.Tensor` with in-place mutation metadata.
+
+    Args:
+        tensor_cls: The `torch.Tensor` class to introspect.
+        include_nonpublic: Whether to include private methods starting with an underscore.
+
+    Returns:
+        List of `GhostRef` method descriptors for `torch.Tensor`.
+    """
+    collected: list[GhostRef] = []
+    for name, obj in inspect.getmembers(tensor_cls):
+        if (include_nonpublic or not name.startswith("_")) and callable(obj) and not inspect.isclass(obj):
+            try:
+                ref = GhostInspector.inspect(obj, f"torch.Tensor.{name}", kind="method")
+                _tag_in_place_tensor_method(ref, name)
+                collected.append(ref)
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                IndexError,
+                SyntaxError,
+                OSError,
+                ImportError,
+                RuntimeError,
+            ):
                 pass
     return collected
 
@@ -396,14 +436,7 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
         import torch
 
         # 1. Top-level array API functions
-        for name, obj in get_all_members(torch):
-            if not include_nonpublic and name.startswith("_"):
-                continue
-            if callable(obj) and not inspect.isclass(obj):
-                try:
-                    found.append(GhostInspector.inspect(obj, f"torch.{name}"))
-                except Exception:
-                    pass
+        found.extend(_collect_torch_namespace(torch, "torch", include_nonpublic))
 
         # 2-7. Submodule namespaces
         torch_members: dict[str, types.ModuleType] = dict(inspect.getmembers(torch))
@@ -417,9 +450,7 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
                     )
                 )
 
-        if isinstance(torch, TorchModuleWithNnProtocol) and isinstance(
-            torch.nn, TorchNnWithFunctionalProtocol
-        ):
+        if isinstance(torch, TorchModuleWithNnProtocol) and isinstance(torch.nn, TorchNnWithFunctionalProtocol):
             found.extend(
                 _collect_torch_namespace(
                     torch.nn.functional,
@@ -430,24 +461,14 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
 
         # 8. torch.Tensor instance methods
         if isinstance(torch, TorchModuleWithTensorProtocol):
-            for name, obj in inspect.getmembers(torch.Tensor):
-                if not include_nonpublic and name.startswith("_"):
-                    continue
-                if callable(obj) and not inspect.isclass(obj):
+            found.extend(_collect_torch_tensor_methods(torch.Tensor, include_nonpublic))
+
+        # 9. torch.ops.aten operations
+        if isinstance(torch, TorchModuleWithOpsProtocol) and isinstance(torch.ops, TorchOpsContainerProtocol):
+            for name, obj in inspect.getmembers(torch.ops.aten):
+                if not name.startswith("_") and callable(obj) and not inspect.isclass(obj):
                     try:
-                        ref = GhostInspector.inspect(
-                            obj, f"torch.Tensor.{name}", kind="method"
-                        )
-                        is_in_place = name.endswith("_") and not name.startswith("__")
-                        if ref.domain_metadata is None:
-                            ref.domain_metadata = {}
-                        ref.domain_metadata["is_in_place"] = is_in_place
-                        if is_in_place:
-                            if ref.environment_tags is None:
-                                ref.environment_tags = []
-                            if "in_place_mutation" not in ref.environment_tags:
-                                ref.environment_tags.append("in_place_mutation")
-                        found.append(ref)
+                        found.append(GhostInspector.inspect(obj, f"torch.ops.aten.{name}"))
                     except (
                         AttributeError,
                         TypeError,
@@ -461,39 +482,13 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
                     ):
                         pass
 
-        # 9. torch.ops.aten operations
-        if isinstance(torch, TorchModuleWithOpsProtocol) and isinstance(
-            torch.ops, TorchOpsContainerProtocol
-        ):
-            for name, obj in inspect.getmembers(torch.ops.aten):
-                if not name.startswith("_"):
-                    if callable(obj) and not inspect.isclass(obj):
-                        try:
-                            found.append(
-                                GhostInspector.inspect(obj, f"torch.ops.aten.{name}")
-                            )
-                        except (
-                            AttributeError,
-                            TypeError,
-                            ValueError,
-                            KeyError,
-                            IndexError,
-                            SyntaxError,
-                            OSError,
-                            ImportError,
-                            RuntimeError,
-                        ):
-                            pass
-
     except ImportError:
         pass
 
     return found
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Entrypoint to collect the PyTorch API signature for a given category.
 
     Args:
@@ -504,24 +499,20 @@ def collect_api(
         A list of GhostRef items discovered for the requested category.
 
     """
-    if category == SemanticTier.LOSS:
-        return _scan_losses(include_nonpublic)
-    elif category == SemanticTier.OPTIMIZER:
-        return _scan_optimizers(include_nonpublic)
-    elif category == SemanticTier.ACTIVATION:
-        return _scan_activations(include_nonpublic)
-    elif category == SemanticTier.LAYER:
-        return _scan_layers(include_nonpublic)
-    elif category == SemanticTier.SCHEDULER:
-        return _scan_schedulers(include_nonpublic)
-    elif category == SemanticTier.INITIALIZER:
-        return _scan_initializers(include_nonpublic)
-    elif category == SemanticTier.METRIC:
-        return _scan_metrics(include_nonpublic)
-    elif category == SemanticTier.DATALOADER:
-        return _scan_dataloaders(include_nonpublic)
-    elif category == SemanticTier.ARRAY_API:
-        return _scan_array_api(include_nonpublic)
+    scanners: dict[SemanticTier, typing.Callable[[bool], list[GhostRef]]] = {
+        SemanticTier.LOSS: _scan_losses,
+        SemanticTier.OPTIMIZER: _scan_optimizers,
+        SemanticTier.ACTIVATION: _scan_activations,
+        SemanticTier.LAYER: _scan_layers,
+        SemanticTier.SCHEDULER: _scan_schedulers,
+        SemanticTier.INITIALIZER: _scan_initializers,
+        SemanticTier.METRIC: _scan_metrics,
+        SemanticTier.DATALOADER: _scan_dataloaders,
+        SemanticTier.ARRAY_API: _scan_array_api,
+    }
+    scanner = scanners.get(category)
+    if scanner is not None:
+        return scanner(include_nonpublic)
     return []
 
 
@@ -604,9 +595,7 @@ class AtenSchemaArg(pydantic.BaseModel):
     def __getitem__(self, key: typing.Literal["is_out"]) -> bool: ...
 
     @typing.overload
-    def __getitem__(
-        self, key: typing.Literal["default", "rank_constraint", "rank"]
-    ) -> str | None: ...
+    def __getitem__(self, key: typing.Literal["default", "rank_constraint", "rank"]) -> str | None: ...
 
     @typing.overload
     def __getitem__(self, key: str) -> JsonValue: ...
@@ -664,9 +653,7 @@ class AtenOpSchema(pydantic.BaseModel):
         return d[key]
 
 
-def infer_torch_dtype_and_rank(
-    op_name: str, param_name: str, type_str: str = ""
-) -> tuple[list[str] | None, str | None]:
+def infer_torch_dtype_and_rank(op_name: str, param_name: str, type_str: str = "") -> tuple[list[str] | None, str | None]:
     """Infer allowed PyTorch tensor dtypes and rank constraints for an operator parameter.
 
     Args:
@@ -727,7 +714,7 @@ def parse_native_functions_yaml(
 
     content = yaml_content_or_path
     if os.path.exists(yaml_content_or_path):
-        with open(yaml_content_or_path, "r", encoding="utf-8") as f:
+        with open(yaml_content_or_path, encoding="utf-8") as f:
             content = f.read()
 
     data = yaml.safe_load(content)
@@ -735,9 +722,7 @@ def parse_native_functions_yaml(
         return {}
 
     ops: dict[str, list[AtenOpSchema]] = {}
-    sig_pattern = re.compile(
-        r"^([a-zA-Z0-9_]+)(?:\.([a-zA-Z0-9_]+))?\((.*)\)\s*->\s*(.*)$"
-    )
+    sig_pattern = re.compile(r"^([a-zA-Z0-9_]+)(?:\.([a-zA-Z0-9_]+))?\((.*)\)\s*->\s*(.*)$")
 
     for item in data:
         if not isinstance(item, dict) or "func" not in item:
@@ -1003,9 +988,7 @@ def get_jit_schemas_for_op(op_name: str) -> list[AtenOpSchema]:
     try:
         import torch
 
-        if not isinstance(torch, TorchModuleWithCProtocol) or not isinstance(
-            torch._C, TorchCModuleProtocol
-        ):
+        if not isinstance(torch, TorchModuleWithCProtocol) or not isinstance(torch._C, TorchCModuleProtocol):
             return []
     except Exception:
         return []
@@ -1021,11 +1004,7 @@ def get_jit_schemas_for_op(op_name: str) -> list[AtenOpSchema]:
             cache.setdefault(s_short, []).append(s)
         _JIT_SCHEMAS_CACHE = cache
 
-    schemas = (
-        _JIT_SCHEMAS_CACHE.get(clean_op)
-        or _JIT_SCHEMAS_CACHE.get(f"aten::{clean_op}")
-        or []
-    )
+    schemas = _JIT_SCHEMAS_CACHE.get(clean_op) or _JIT_SCHEMAS_CACHE.get(f"aten::{clean_op}") or []
     if not schemas:
         return []
 
@@ -1089,21 +1068,15 @@ def get_aten_op_schema(op_name: str) -> list[AtenOpSchema] | None:
         return None
 
     clean_op = op_name.split(".")[-1]
-    aten_members: dict[str, TorchAtenOverloadPacketProtocol | InspectableTarget] = dict(
-        inspect.getmembers(torch.ops.aten)
-    )
+    aten_members: dict[str, TorchAtenOverloadPacketProtocol | InspectableTarget] = dict(inspect.getmembers(torch.ops.aten))
     aten_op = aten_members.get(clean_op)
     results: list[AtenOpSchema] = []
 
     if isinstance(aten_op, TorchAtenOverloadPacketProtocol):
-        ov_members: dict[str, TorchAtenOverloadVariantProtocol | InspectableTarget] = (
-            dict(inspect.getmembers(aten_op))
-        )
+        ov_members: dict[str, TorchAtenOverloadVariantProtocol | InspectableTarget] = dict(inspect.getmembers(aten_op))
         for ov_name in aten_op.overloads():
             ov = ov_members.get(ov_name)
-            schema = (
-                ov._schema if isinstance(ov, TorchAtenOverloadVariantProtocol) else None
-            )
+            schema = ov._schema if isinstance(ov, TorchAtenOverloadVariantProtocol) else None
             if not schema:
                 continue
 
@@ -1165,9 +1138,7 @@ def _coerce_aten_schema(
     return AtenOpSchema.model_validate(dict(ov))
 
 
-def extract_aten_c_extension_signature(
-    target: InspectableTarget, name: str | None = None, is_method: bool = False
-) -> CExtensionSignature | None:
+def extract_aten_c_extension_signature(target: InspectableTarget, name: str | None = None, is_method: bool = False) -> CExtensionSignature | None:
     """Extract a CExtensionSignature with exhaustive overloads from torch.ops.aten.
 
     Args:
@@ -1178,7 +1149,8 @@ def extract_aten_c_extension_signature(
     Returns:
         CExtensionSignature with primary parameters and overloads if found, else None.
     """
-    target_name = target.__name__ if isinstance(target, _NamedTargetProtocol) else ""
+    raw_t_name = get_member_dict(target).get("__name__")
+    target_name = str(raw_t_name) if raw_t_name is not None else ""
     op_name = str(name or target_name or "")
     raw_schemas = get_aten_op_schema(op_name)
     if not raw_schemas:

@@ -36,9 +36,7 @@ class IndexedSymbolRecord(pydantic.BaseModel):
     data: dict[str, JsonValue] = pydantic.Field(default_factory=dict)
 
     @classmethod
-    def from_raw_dict(
-        cls, raw: typing.Mapping[str, JsonValue], framework: str = ""
-    ) -> IndexedSymbolRecord:
+    def from_raw_dict(cls, raw: typing.Mapping[str, JsonValue], framework: str = "") -> IndexedSymbolRecord:
         """Construct an `IndexedSymbolRecord` from a raw JSON symbol dictionary.
 
         Args:
@@ -48,9 +46,7 @@ class IndexedSymbolRecord(pydantic.BaseModel):
         Returns:
             Populated `IndexedSymbolRecord` instance.
         """
-        api_path = str(
-            raw.get("api_path") or raw.get("name") or raw.get("mnemonic") or ""
-        )
+        api_path = str(raw.get("api_path") or raw.get("name") or raw.get("mnemonic") or "")
         kind = str(raw.get("kind") or "function")
         category = str(raw.get("category") or "")
         return cls(
@@ -97,9 +93,7 @@ def get_cache_dir() -> str:
         if xdg:
             base = os.path.join(xdg, "ml_ecosystem_snapshots")
         else:
-            base = os.path.join(
-                os.path.expanduser("~"), ".cache", "ml_ecosystem_snapshots"
-            )
+            base = os.path.join(os.path.expanduser("~"), ".cache", "ml_ecosystem_snapshots")
     try:
         os.makedirs(base, exist_ok=True)
     except FileNotFoundError:
@@ -303,6 +297,143 @@ def extract_framework_and_version(file_name: str) -> tuple[str, str]:
     return base, "latest"
 
 
+def _load_snapshot_json_payload(
+    json_path: str,
+) -> dict[str, JsonValue] | list[JsonValue]:
+    """Load and validate a raw snapshot JSON or gzipped JSON file.
+
+    Args:
+        json_path: Path to the snapshot `.json` or `.json.gz` file.
+
+    Returns:
+        Parsed JSON dictionary or list payload.
+
+    Raises:
+        SnapshotSchemaError: If the file cannot be parsed or is not a JSON object or array.
+    """
+    try:
+        if json_path.endswith(".gz"):
+            with gzip.open(json_path, "rt", encoding="utf-8") as gf:
+                data: JsonValue = json.load(gf)
+        else:
+            with open(json_path, encoding="utf-8") as f:
+                data = json.load(f)
+    except (json.JSONDecodeError, OSError, EOFError) as exc:
+        raise SnapshotSchemaError(f"Invalid snapshot JSON payload in '{json_path}': {exc}") from exc
+
+    if not isinstance(data, (dict, list)):
+        type_repr = repr(type(data))
+        type_label = type_repr[8:-2] if type_repr.startswith("<class '") and type_repr.endswith("'>") else type_repr
+        raise SnapshotSchemaError(f"Snapshot payload in '{json_path}' must be a JSON object or array, got {type_label}.")
+
+    return data
+
+
+def _extract_snapshot_symbol_items(
+    data: dict[str, JsonValue] | list[JsonValue],
+) -> list[dict[str, JsonValue]]:
+    """Extract the flat list of symbol dictionaries from a parsed snapshot payload.
+
+    Args:
+        data: Validated snapshot dictionary or list payload.
+
+    Returns:
+        Flat list of symbol definition dictionaries.
+    """
+    if isinstance(data, list):
+        items: list[dict[str, JsonValue]] = []
+        for raw_elem in data:
+            assert isinstance(raw_elem, dict)
+            items.append(dict(raw_elem))
+        return items
+
+    raw_cats = data.get("categories")
+    if isinstance(raw_cats, dict):
+        cat_out: list[dict[str, JsonValue]] = []
+        for cat_items in raw_cats.values():
+            if isinstance(cat_items, list):
+                cat_out.extend(dict(x) for x in cat_items if isinstance(x, dict))
+        return cat_out
+
+    for list_key in ("operations", "instructions", "items"):
+        raw_list = data.get(list_key)
+        if isinstance(raw_list, list):
+            return [dict(x) for x in raw_list if isinstance(x, dict)]
+
+    return []
+
+
+def _store_indexed_symbols(
+    conn: sqlite3.Connection,
+    cur: sqlite3.Cursor,
+    json_path: str,
+    file_hash: str,
+    framework: str,
+    version: str,
+    items: list[dict[str, JsonValue]],
+) -> int:
+    """Write extracted symbol records and FTS5 entries into SQLite within a transaction.
+
+    Args:
+        conn: Open SQLite connection.
+        cur: Active SQLite cursor.
+        json_path: Source snapshot file path.
+        file_hash: SHA256 digest of the snapshot file.
+        framework: Resolved framework name.
+        version: Resolved snapshot version string.
+        items: List of symbol dictionaries to insert.
+
+    Returns:
+        Number of inserted symbol rows.
+    """
+    with conn:
+        cur.execute(
+            "SELECT id, api_path, name, docstring FROM symbols WHERE file_path = ?",
+            (json_path,),
+        )
+        old_rows = cur.fetchall()
+        if old_rows:
+            for r in old_rows:
+                cur.execute(
+                    "INSERT INTO symbols_fts(symbols_fts, rowid, api_path, name, docstring) VALUES('delete', ?, ?, ?, ?)",
+                    (r["id"], r["api_path"], r["name"], r["docstring"]),
+                )
+            cur.execute("DELETE FROM symbols WHERE file_path = ?", (json_path,))
+
+        inserted = 0
+        for item in items:
+            api_path = str(item.get("api_path") or item.get("name") or item.get("mnemonic") or "")
+            name = str(item.get("name") or item.get("mnemonic") or api_path.split(".")[-1])
+            kind = str(item.get("kind", "function"))
+            doc = str(item.get("docstring") or "")
+            raw_json = json.dumps(item)
+
+            cur.execute(
+                """
+                INSERT INTO symbols (file_path, framework, version, api_path, name, kind, docstring, json_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (json_path, framework, version, api_path, name, kind, doc, raw_json),
+            )
+            cur.execute(
+                """
+                INSERT INTO symbols_fts (rowid, api_path, name, docstring)
+                VALUES (?, ?, ?, ?)
+                """,
+                (cur.lastrowid, api_path, name, doc),
+            )
+            inserted += 1
+
+        cur.execute(
+            """
+            INSERT OR REPLACE INTO indexed_files (file_path, file_hash, framework, version, symbol_count)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (json_path, file_hash, framework, version, inserted),
+        )
+    return inserted
+
+
 def index_snapshot_file(json_path: str, conn: sqlite3.Connection) -> int:
     """Index a single snapshot JSON file into the database.
 
@@ -329,104 +460,16 @@ def index_snapshot_file(json_path: str, conn: sqlite3.Connection) -> int:
     if row and row["file_hash"] == file_hash:
         return 0
 
-    try:
-        if json_path.endswith(".gz"):
-            with gzip.open(json_path, "rt", encoding="utf-8") as gf:
-                data: JsonValue = json.load(gf)
-        else:
-            with open(json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-    except (json.JSONDecodeError, OSError, EOFError) as exc:
-        raise SnapshotSchemaError(
-            f"Invalid snapshot JSON payload in '{json_path}': {exc}"
-        ) from exc
-
-    if not isinstance(data, (dict, list)):
-        raise SnapshotSchemaError(
-            f"Snapshot payload in '{json_path}' must be a JSON object or array, got {type(data).__name__}."
-        )
-
-    file_name = os.path.basename(json_path)
-    framework, version = extract_framework_and_version(file_name)
+    data = _load_snapshot_json_payload(json_path)
+    framework, version = extract_framework_and_version(os.path.basename(json_path))
     if isinstance(data, dict):
         if data.get("target"):
             framework = str(data["target"])
         if data.get("version"):
             version = str(data["version"])
 
-    items: list[dict[str, JsonValue]] = []
-    if isinstance(data, dict):
-        raw_cats = data.get("categories")
-        raw_ops = data.get("operations")
-        raw_insts = data.get("instructions")
-        raw_items = data.get("items")
-        if isinstance(raw_cats, dict):
-            for _cat, cat_items in raw_cats.items():
-                if isinstance(cat_items, list):
-                    items.extend([dict(x) for x in cat_items if isinstance(x, dict)])
-        elif isinstance(raw_ops, list):
-            items.extend([dict(x) for x in raw_ops if isinstance(x, dict)])
-        elif isinstance(raw_insts, list):
-            items.extend([dict(x) for x in raw_insts if isinstance(x, dict)])
-        elif isinstance(raw_items, list):
-            items.extend([dict(x) for x in raw_items if isinstance(x, dict)])
-    else:
-        for raw_elem in data:
-            assert isinstance(raw_elem, dict)
-            items.append(dict(raw_elem))
-
-    with conn:
-        cur.execute(
-            "SELECT id, api_path, name, docstring FROM symbols WHERE file_path = ?",
-            (json_path,),
-        )
-        old_rows = cur.fetchall()
-        if old_rows:
-            for r in old_rows:
-                cur.execute(
-                    "INSERT INTO symbols_fts(symbols_fts, rowid, api_path, name, docstring) VALUES('delete', ?, ?, ?, ?)",
-                    (r["id"], r["api_path"], r["name"], r["docstring"]),
-                )
-            cur.execute("DELETE FROM symbols WHERE file_path = ?", (json_path,))
-
-        inserted = 0
-        for item in items:
-            api_path = str(
-                item.get("api_path") or item.get("name") or item.get("mnemonic") or ""
-            )
-            name = str(
-                item.get("name") or item.get("mnemonic") or api_path.split(".")[-1]
-            )
-            kind = str(item.get("kind", "function"))
-            doc = str(item.get("docstring") or "")
-            raw_json = json.dumps(item)
-
-            cur.execute(
-                """
-                INSERT INTO symbols (file_path, framework, version, api_path, name, kind, docstring, json_data)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (json_path, framework, version, api_path, name, kind, doc, raw_json),
-            )
-            sym_id = cur.lastrowid
-            cur.execute(
-                """
-                INSERT INTO symbols_fts (rowid, api_path, name, docstring)
-                VALUES (?, ?, ?, ?)
-                """,
-                (sym_id, api_path, name, doc),
-            )
-            inserted += 1
-
-        cur.execute(
-            """
-            INSERT OR REPLACE INTO indexed_files (file_path, file_hash, framework, version, symbol_count)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (json_path, file_hash, framework, version, inserted),
-        )
-
-    return inserted
+    items = _extract_snapshot_symbol_items(data)
+    return _store_indexed_symbols(conn, cur, json_path, file_hash, framework, version, items)
 
 
 def get_available_snapshot_files() -> list[str]:
@@ -492,9 +535,7 @@ def search_index(
     if not clean_q:
         return []
 
-    tokens = [
-        t for t in clean_q.split() if t.upper() not in ("AND", "OR", "NOT", "NEAR")
-    ]
+    tokens = [t for t in clean_q.split() if t.upper() not in ("AND", "OR", "NOT", "NEAR")]
     if not tokens:
         return []
 
@@ -531,11 +572,7 @@ def search_index(
             try:
                 parsed: JsonValue = json.loads(r["json_data"])
                 assert isinstance(parsed, dict)
-                results.append(
-                    IndexedSymbolRecord.from_raw_dict(
-                        parsed, framework=str(r["framework"] or "")
-                    )
-                )
+                results.append(IndexedSymbolRecord.from_raw_dict(parsed, framework=str(r["framework"] or "")))
             except Exception:
                 pass
         return results
@@ -582,9 +619,7 @@ def lookup_symbol(
         if row:
             parsed_sym: JsonValue = json.loads(row["json_data"])
             assert isinstance(parsed_sym, dict)
-            return IndexedSymbolRecord.from_raw_dict(
-                parsed_sym, framework=str(row["framework"] or clean_fw)
-            )
+            return IndexedSymbolRecord.from_raw_dict(parsed_sym, framework=str(row["framework"] or clean_fw))
         return None
 
 

@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-
 import types
-import pytest
 
+import pytest
 from ml_ecosystem_snapshots.frameworks.dpnp import (
     CANONICAL_DPNP_OPS,
     _get_dpnp,
@@ -25,9 +24,7 @@ def test_collect_api_dpnp_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.dpnp._get_dpnp", lambda: None
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.dpnp._get_dpnp", lambda: None)
     refs = collect_api(SemanticTier.ARRAY_API)
     assert len(refs) == len(CANONICAL_DPNP_OPS)
     names = {ref.name for ref in refs}
@@ -64,9 +61,7 @@ def test_collect_api_dpnp_live(monkeypatch: pytest.MonkeyPatch) -> None:
             """
             return shape
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.dpnp._get_dpnp", lambda: FakeDPNP()
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.dpnp._get_dpnp", lambda: FakeDPNP())
     refs = collect_api(SemanticTier.ARRAY_API)
     assert len(refs) >= 2
     names = {ref.name for ref in refs}
@@ -99,35 +94,9 @@ def test_get_dpnp_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    import builtins
-    import typing
+    import sys
 
-    real_import = builtins.__import__
-
-    def mock_import(
-        name: str,
-        globals: typing.Mapping[str, InspectableTarget] | None = None,
-        locals: typing.Mapping[str, InspectableTarget] | None = None,
-        fromlist: typing.Sequence[str] = (),
-        level: int = 0,
-    ) -> types.ModuleType:
-        """Mock import function.
-
-        Args:
-            name: The module name.
-            globals: Globals dictionary.
-            locals: Locals dictionary.
-            fromlist: From-import list.
-            level: Relative import level.
-
-        Returns:
-            The imported module or raises.
-        """
-        if "dpnp" in name:
-            raise ImportError("Simulated dpnp absent")
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", mock_import)
+    monkeypatch.setitem(sys.modules, "dpnp", None)
     assert _get_dpnp() is None
 
 
@@ -143,13 +112,9 @@ def test_collect_api_dpnp_inspection_exception(monkeypatch: pytest.MonkeyPatch) 
 
         array = "broken"
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.dpnp._get_dpnp", lambda: FlakyDPNP()
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.dpnp._get_dpnp", lambda: FlakyDPNP())
 
-    def mock_inspect(
-        *args: InspectableTarget, **kwargs: InspectableTarget
-    ) -> ExtendedGhostRef:
+    def mock_inspect(*args: InspectableTarget, **kwargs: InspectableTarget) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -161,9 +126,7 @@ def test_collect_api_dpnp_inspection_exception(monkeypatch: pytest.MonkeyPatch) 
         """
         raise RuntimeError("Inspection failure")
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.dpnp.GhostInspector.inspect", mock_inspect
-    )
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.dpnp.GhostInspector.inspect", mock_inspect)
     refs = collect_api(SemanticTier.ARRAY_API)
     assert refs == []
 

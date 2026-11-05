@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import typing
-import typing_extensions
 
 import pydantic
+import typing_extensions
 
 from ml_ecosystem_snapshots.frameworks._base import (
     CanonicalPythonOpSpec,
@@ -34,12 +34,7 @@ class DomainOpCheckConfig(pydantic.BaseModel):
     is_python_params: bool
     loader_fn: typing.Callable[
         [],
-        typing.Sequence[
-            CanonicalSsaOpSpec
-            | CanonicalPythonOpSpec
-            | CanonicalSubmoduleOpSpec
-            | dict[str, JsonValue]
-        ],
+        typing.Sequence[CanonicalSsaOpSpec | CanonicalPythonOpSpec | CanonicalSubmoduleOpSpec | dict[str, JsonValue]],
     ]
     tool_description: str
     op_arg_name: str = "op_name"
@@ -47,6 +42,95 @@ class DomainOpCheckConfig(pydantic.BaseModel):
     count_arg_name: str = "inputs_count"
     count_arg_description: str = "Optional inputs count."
     attr_arg_description: str = "Optional attributes."
+
+
+def _normalize_domain_op_name(
+    config: DomainOpCheckConfig,
+    op_name: str,
+) -> str:
+    """Normalize an operation name according to the domain configuration's prefix and casing rules.
+
+    Args:
+        config: Declarative `DomainOpCheckConfig` instance.
+        op_name: Raw operation name or mnemonic.
+
+    Returns:
+        Normalized operation name string.
+    """
+    clean_name = op_name.strip()
+    if config.lowercase:
+        clean_name = clean_name.lower()
+
+    if config.split_last_dot and (not config.prefixes or any(clean_name.startswith(p) for p in config.prefixes)):
+        clean_name = clean_name.split(".")[-1]
+    else:
+        for prefix in config.prefixes:
+            if clean_name.startswith(prefix):
+                clean_name = clean_name[len(prefix) :]
+                break
+    return clean_name
+
+
+def _find_domain_op_record(
+    config: DomainOpCheckConfig,
+    ops: typing.Sequence[DomainOpRecord],
+    clean_name: str,
+    domain: str | None,
+) -> DomainOpRecord | None:
+    """Locate a matching domain operation record by key and optional domain.
+
+    Args:
+        config: Declarative `DomainOpCheckConfig` instance.
+        ops: Sequence of canonical domain operation records.
+        clean_name: Normalized operation name.
+        domain: Optional operator domain (e.g., for ONNX).
+
+    Returns:
+        Matched `DomainOpRecord`, or None if no matching operation exists.
+    """
+    if domain is not None:
+        op_map_dom = {(str(op.get("domain") or ""), str(op[config.key_field])): op for op in ops}
+        matched = op_map_dom.get((domain, clean_name))
+        if matched is None and domain == "":
+            for (_d, n), op in op_map_dom.items():
+                if n == clean_name:
+                    matched = op
+                    break
+        return matched
+    op_map = {str(op[config.key_field]): op for op in ops}
+    return op_map.get(clean_name)
+
+
+def _extract_domain_op_signature(
+    config: DomainOpCheckConfig,
+    matched: DomainOpRecord,
+) -> tuple[list[str], list[str]]:
+    """Extract expected positional inputs and keyword/attribute names from a matched record.
+
+    Args:
+        config: Declarative `DomainOpCheckConfig` instance.
+        matched: Matched `DomainOpRecord` specification.
+
+    Returns:
+        Tuple of `(expected_inputs, expected_attributes)`.
+    """
+    if config.is_python_params:
+        assert isinstance(matched, CanonicalPythonOpSpec)
+        exp_inputs = [p.name for p in matched.params if p.kind in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")]
+        exp_attrs = [p.name for p in matched.params if p.kind in ("KEYWORD_ONLY", "POSITIONAL_OR_KEYWORD")]
+        return exp_inputs, exp_attrs
+    if isinstance(matched, CanonicalSsaOpSpec):
+        exp_inputs = list(matched.inputs)
+        exp_attrs = [a.name for a in matched.attributes if a.name]
+        return exp_inputs, exp_attrs
+    assert isinstance(matched, dict)
+    raw_inputs = matched.get("inputs")
+    assert isinstance(raw_inputs, list)
+    exp_inputs = [str(i) for i in raw_inputs]
+    raw_attrs = matched.get("attributes")
+    assert isinstance(raw_attrs, list)
+    exp_attrs = [str(a.get("name")) for a in raw_attrs if isinstance(a, dict) and a.get("name")]
+    return exp_inputs, exp_attrs
 
 
 def check_domain_op_generic(
@@ -71,118 +155,41 @@ def check_domain_op_generic(
         Validation report model with `is_valid`, `op_exists`, `expected_inputs`,
         `expected_attributes`, and `errors`.
     """
-    clean_name = op_name.strip()
-    if config.lowercase:
-        clean_name = clean_name.lower()
-
-    if config.split_last_dot and (
-        not config.prefixes or any(clean_name.startswith(p) for p in config.prefixes)
-    ):
-        clean_name = clean_name.split(".")[-1]
-    else:
-        for prefix in config.prefixes:
-            if clean_name.startswith(prefix):
-                clean_name = clean_name[len(prefix) :]
-                break
-
+    clean_name = _normalize_domain_op_name(config, op_name)
     ops = config.loader_fn()
+    matched = _find_domain_op_record(config, ops, clean_name, domain)
+    if matched is None:
+        err_msg = f"Unknown {config.unknown_label}: '{op_name}' in domain '{domain}'" if domain is not None else f"Unknown {config.unknown_label}: '{op_name}'"
+        return DomainOpCheckResult(
+            is_valid=False,
+            op_exists=False,
+            expected_inputs=[],
+            expected_attributes=[],
+            errors=[err_msg],
+        )
 
-    matched: DomainOpRecord | None = None
-    if domain is not None:
-        op_map_dom = {
-            (str(op.get("domain") or ""), str(op[config.key_field])): op for op in ops
-        }
-        matched = op_map_dom.get((domain, clean_name))
-        if matched is None and domain == "":
-            for (_d, n), op in op_map_dom.items():
-                if n == clean_name:
-                    matched = op
-                    break
-        if matched is None:
-            return DomainOpCheckResult(
-                is_valid=False,
-                op_exists=False,
-                expected_inputs=[],
-                expected_attributes=[],
-                errors=[
-                    f"Unknown {config.unknown_label}: '{op_name}' in domain '{domain}'"
-                ],
-            )
-    else:
-        op_map = {str(op[config.key_field]): op for op in ops}
-        if clean_name not in op_map:
-            return DomainOpCheckResult(
-                is_valid=False,
-                op_exists=False,
-                expected_inputs=[],
-                expected_attributes=[],
-                errors=[f"Unknown {config.unknown_label}: '{op_name}'"],
-            )
-        matched = op_map[clean_name]
-
-    exp_inputs: list[str] = []
-    exp_attrs: list[str] = []
-    if config.is_python_params:
-        assert isinstance(matched, CanonicalPythonOpSpec)
-        exp_inputs = [
-            p.name
-            for p in matched.params
-            if p.kind in ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
-        ]
-        exp_attrs = [
-            p.name
-            for p in matched.params
-            if p.kind in ("KEYWORD_ONLY", "POSITIONAL_OR_KEYWORD")
-        ]
-    else:
-        if isinstance(matched, CanonicalSsaOpSpec):
-            exp_inputs = list(matched.inputs)
-            exp_attrs = [a.name for a in matched.attributes if a.name]
-        else:
-            assert isinstance(matched, dict)
-            raw_inputs = matched.get("inputs")
-            assert isinstance(raw_inputs, list)
-            exp_inputs = [str(i) for i in raw_inputs]
-            raw_attrs = matched.get("attributes")
-            assert isinstance(raw_attrs, list)
-            exp_attrs = [
-                str(a.get("name"))
-                for a in raw_attrs
-                if isinstance(a, dict) and a.get("name")
-            ]
+    exp_inputs, exp_attrs = _extract_domain_op_signature(config, matched)
 
     errors: list[str] = []
     if inputs_count is not None and inputs_count != len(exp_inputs):
         if config.is_python_params:
-            errors.append(
-                f"Operation '{clean_name}' expects {len(exp_inputs)} positional inputs, but got {inputs_count}."
-            )
+            errors.append(f"Operation '{clean_name}' expects {len(exp_inputs)} positional inputs, but got {inputs_count}.")
         else:
-            errors.append(
-                f"{config.op_label} '{clean_name}' expects {len(exp_inputs)} inputs, but got {inputs_count}."
-            )
+            errors.append(f"{config.op_label} '{clean_name}' expects {len(exp_inputs)} inputs, but got {inputs_count}.")
 
     matched_addr = matched.get("address_space")
     if address_space is not None and matched_addr != address_space:
-        errors.append(
-            f"Operation '{clean_name}' operates in '{matched_addr}' address space, expected '{address_space}'."
-        )
+        errors.append(f"Operation '{clean_name}' operates in '{matched_addr}' address space, expected '{address_space}'.")
 
     if attributes:
         for attr in attributes:
             if attr not in exp_attrs:
                 if config.is_python_params:
-                    errors.append(
-                        f"Operation '{clean_name}' does not accept keyword argument '{attr}'."
-                    )
+                    errors.append(f"Operation '{clean_name}' does not accept keyword argument '{attr}'.")
                 elif config.display_name:
-                    errors.append(
-                        f"Attribute '{attr}' is not valid for {config.display_name} {config.op_label.lower()} '{clean_name}'."
-                    )
+                    errors.append(f"Attribute '{attr}' is not valid for {config.display_name} {config.op_label.lower()} '{clean_name}'.")
                 else:
-                    errors.append(
-                        f"Attribute '{attr}' is not valid for {config.op_label.lower()} '{clean_name}'."
-                    )
+                    errors.append(f"Attribute '{attr}' is not valid for {config.op_label.lower()} '{clean_name}'.")
 
     return DomainOpCheckResult(
         is_valid=len(errors) == 0,

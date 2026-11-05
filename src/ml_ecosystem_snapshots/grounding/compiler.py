@@ -32,20 +32,8 @@ def _extract_ref_expected_operands(
     Returns:
         List of operand `GhostParam` specifications.
     """
-    raw_operands = (
-        ref.operands if isinstance(ref, (GhostMlirRef, GhostOperationRef)) else None
-    )
-    return (
-        list(raw_operands)
-        if raw_operands is not None
-        else [
-            p
-            for p in ref.params
-            if "ATTRIBUTE"
-            not in str(p.role if isinstance(p, ExtendedGhostParam) else "")
-            and p.annotation != "Region"
-        ]
-    )
+    raw_operands = ref.operands if isinstance(ref, (GhostMlirRef, GhostOperationRef)) else None
+    return list(raw_operands) if raw_operands is not None else [p for p in ref.params if "ATTRIBUTE" not in str(p.role if isinstance(p, ExtendedGhostParam) else "") and p.annotation != "Region"]
 
 
 def _extract_operand_type_constraint(
@@ -60,6 +48,101 @@ def _extract_operand_type_constraint(
         Type constraint string.
     """
     return str(op_info.annotation or "")
+
+
+def _check_stablehlo_required_attributes(
+    full_op_name: str,
+    attributes: typing.Mapping[str, JsonValue],
+    report: GroundingReport,
+) -> None:
+    """Verify mandatory dimension number attributes for StableHLO dot and convolution ops.
+
+    Args:
+        full_op_name: Canonical StableHLO operation name (e.g., 'stablehlo.dot_general').
+        attributes: Mapping of operation attribute names to values.
+        report: Mutable `GroundingReport` to record diagnostics on.
+    """
+    if full_op_name == "stablehlo.dot_general":
+        if "dot_dimension_numbers" not in attributes and "dimension_numbers" not in attributes:
+            report.add_diagnostic(
+                field="attributes.dot_dimension_numbers",
+                message="Operation 'stablehlo.dot_general' requires 'dot_dimension_numbers' attribute.",
+                severity=DiagnosticSeverity.ERROR,
+                suggested_fix="dot_dimension_numbers",
+            )
+
+    if full_op_name == "stablehlo.convolution":
+        if "dimension_numbers" not in attributes and "conv_dimension_numbers" not in attributes:
+            report.add_diagnostic(
+                field="attributes.dimension_numbers",
+                message="Operation 'stablehlo.convolution' requires 'dimension_numbers' attribute.",
+                severity=DiagnosticSeverity.ERROR,
+                suggested_fix="dimension_numbers",
+            )
+
+
+def _check_stablehlo_operands(
+    full_op_name: str,
+    ref: ExtendedGhostRef,
+    operand_types: list[str],
+    report: GroundingReport,
+) -> None:
+    """Validate StableHLO operand counts and SSA type constraints against the operation spec.
+
+    Args:
+        full_op_name: Canonical StableHLO operation name.
+        ref: Hydrated `ExtendedGhostRef` operation specification.
+        operand_types: List of SSA input operand type strings.
+        report: Mutable `GroundingReport` to record diagnostics on.
+    """
+    from ml_ecosystem_snapshots.frameworks.mlir import validate_mlir_type
+
+    expected_operands = _extract_ref_expected_operands(ref)
+    if expected_operands:
+        is_variadic = bool(ref.has_varargs) or any("variadic" in _extract_operand_type_constraint(o).lower() for o in expected_operands)
+        if not is_variadic and len(operand_types) != len(expected_operands):
+            report.add_diagnostic(
+                field="operands",
+                message=(f"Operation '{full_op_name}' expects {len(expected_operands)} operands, but received {len(operand_types)}."),
+                severity=DiagnosticSeverity.ERROR,
+            )
+
+        for i, (op_info, actual_type) in enumerate(zip(expected_operands, operand_types)):
+            constraint = _extract_operand_type_constraint(op_info)
+            for te in validate_mlir_type(actual_type, constraint=constraint):
+                report.add_diagnostic(
+                    field=f"operands[{i}]",
+                    message=f"Operand {i} for '{full_op_name}': {te}",
+                    severity=DiagnosticSeverity.ERROR,
+                )
+
+
+def _check_stablehlo_regions(
+    full_op_name: str,
+    regions: typing.Mapping[str, JsonValue],
+    report: GroundingReport,
+) -> None:
+    """Validate StableHLO region block arguments and yield types.
+
+    Args:
+        full_op_name: Canonical StableHLO operation name.
+        regions: Mapping of region names to region specification dictionaries.
+        report: Mutable `GroundingReport` to record diagnostics on.
+    """
+    from ml_ecosystem_snapshots.frameworks.stablehlo import validate_stablehlo_region
+
+    for reg_name, reg_spec in regions.items():
+        assert isinstance(reg_spec, dict)
+        raw_b_args = reg_spec.get("block_arguments") or reg_spec.get("block_args")
+        b_args = [str(a) for a in raw_b_args] if isinstance(raw_b_args, list) else []
+        raw_y_types = reg_spec.get("yield_types")
+        y_types = [str(t) for t in raw_y_types] if isinstance(raw_y_types, list) else []
+        for reg_err in validate_stablehlo_region(full_op_name, reg_name, b_args, y_types):
+            report.add_diagnostic(
+                field=f"regions.{reg_name}",
+                message=reg_err,
+                severity=DiagnosticSeverity.ERROR,
+            )
 
 
 def validate_stablehlo_op(
@@ -87,20 +170,14 @@ def validate_stablehlo_op(
     Returns:
         GroundingReport containing diagnostic results and grounding status.
     """
-    from ml_ecosystem_snapshots.frameworks.mlir import (
-        validate_mlir_traits,
-        validate_mlir_type,
-    )
-    from ml_ecosystem_snapshots.frameworks.stablehlo import validate_stablehlo_region
+    from ml_ecosystem_snapshots.frameworks.mlir import validate_mlir_traits
     from ml_ecosystem_snapshots.mcp.tools.ir import (
         _infer_implicit_mlir_traits,
         _validate_mlir_structured_attributes,
     )
 
     eng = engine or GroundingEngine()
-    full_op_name = (
-        op_name if op_name.startswith("stablehlo.") else f"stablehlo.{op_name}"
-    )
+    full_op_name = op_name if op_name.startswith("stablehlo.") else f"stablehlo.{op_name}"
 
     report = GroundingReport(
         is_grounded=True,
@@ -121,61 +198,11 @@ def validate_stablehlo_op(
 
     report.matched_ref = ref
 
-    if full_op_name == "stablehlo.dot_general":
-        if (
-            "dot_dimension_numbers" not in attributes
-            and "dimension_numbers" not in attributes
-        ):
-            report.add_diagnostic(
-                field="attributes.dot_dimension_numbers",
-                message="Operation 'stablehlo.dot_general' requires 'dot_dimension_numbers' attribute.",
-                severity=DiagnosticSeverity.ERROR,
-                suggested_fix="dot_dimension_numbers",
-            )
-
-    if full_op_name == "stablehlo.convolution":
-        if (
-            "dimension_numbers" not in attributes
-            and "conv_dimension_numbers" not in attributes
-        ):
-            report.add_diagnostic(
-                field="attributes.dimension_numbers",
-                message="Operation 'stablehlo.convolution' requires 'dimension_numbers' attribute.",
-                severity=DiagnosticSeverity.ERROR,
-                suggested_fix="dimension_numbers",
-            )
-
-    expected_operands = _extract_ref_expected_operands(ref)
-    if expected_operands:
-        is_variadic = bool(ref.has_varargs) or any(
-            "variadic" in _extract_operand_type_constraint(o).lower()
-            for o in expected_operands
-        )
-        if not is_variadic and len(operand_types) != len(expected_operands):
-            report.add_diagnostic(
-                field="operands",
-                message=(
-                    f"Operation '{full_op_name}' expects {len(expected_operands)} operands, "
-                    f"but received {len(operand_types)}."
-                ),
-                severity=DiagnosticSeverity.ERROR,
-            )
-
-        for i, (op_info, actual_type) in enumerate(
-            zip(expected_operands, operand_types)
-        ):
-            constraint = _extract_operand_type_constraint(op_info)
-            for te in validate_mlir_type(actual_type, constraint=constraint):
-                report.add_diagnostic(
-                    field=f"operands[{i}]",
-                    message=f"Operand {i} for '{full_op_name}': {te}",
-                    severity=DiagnosticSeverity.ERROR,
-                )
+    _check_stablehlo_required_attributes(full_op_name, attributes, report)
+    _check_stablehlo_operands(full_op_name, ref, operand_types, report)
 
     meta = ref.domain_metadata or {}
-    ref_traits = (
-        ref.traits if isinstance(ref, (GhostMlirRef, GhostOperationRef)) else None
-    )
+    ref_traits = ref.traits if isinstance(ref, (GhostMlirRef, GhostOperationRef)) else None
     raw_traits = meta.get("traits") or ref_traits or []
     base_traits = [str(t) for t in raw_traits] if isinstance(raw_traits, list) else []
     traits = _infer_implicit_mlir_traits(full_op_name, base_traits)
@@ -207,24 +234,7 @@ def validate_stablehlo_op(
             )
 
     if regions:
-        for reg_name, reg_spec in regions.items():
-            assert isinstance(reg_spec, dict)
-            raw_b_args = reg_spec.get("block_arguments") or reg_spec.get("block_args")
-            b_args = (
-                [str(a) for a in raw_b_args] if isinstance(raw_b_args, list) else []
-            )
-            raw_y_types = reg_spec.get("yield_types")
-            y_types = (
-                [str(t) for t in raw_y_types] if isinstance(raw_y_types, list) else []
-            )
-            for reg_err in validate_stablehlo_region(
-                full_op_name, reg_name, b_args, y_types
-            ):
-                report.add_diagnostic(
-                    field=f"regions.{reg_name}",
-                    message=reg_err,
-                    severity=DiagnosticSeverity.ERROR,
-                )
+        _check_stablehlo_regions(full_op_name, regions, report)
 
     return report
 
@@ -288,24 +298,16 @@ def validate_mlir_op(
 
     expected_operands = _extract_ref_expected_operands(ref)
     if expected_operands and operand_count != len(expected_operands):
-        is_variadic = bool(ref.has_varargs) or any(
-            "variadic" in _extract_operand_type_constraint(o).lower()
-            for o in expected_operands
-        )
+        is_variadic = bool(ref.has_varargs) or any("variadic" in _extract_operand_type_constraint(o).lower() for o in expected_operands)
         if not is_variadic:
             report.add_diagnostic(
                 field="operand_count",
-                message=(
-                    f"MLIR operation '{full_path}' expects {len(expected_operands)} operands, "
-                    f"but received {operand_count}."
-                ),
+                message=(f"MLIR operation '{full_path}' expects {len(expected_operands)} operands, but received {operand_count}."),
                 severity=DiagnosticSeverity.ERROR,
             )
 
     if operand_types is not None:
-        for i, (op_info, actual_type) in enumerate(
-            zip(expected_operands, operand_types)
-        ):
+        for i, (op_info, actual_type) in enumerate(zip(expected_operands, operand_types)):
             constraint = _extract_operand_type_constraint(op_info)
             for te in validate_mlir_type(actual_type, constraint=constraint):
                 report.add_diagnostic(
@@ -315,9 +317,7 @@ def validate_mlir_op(
                 )
 
     meta = ref.domain_metadata or {}
-    ref_traits = (
-        ref.traits if isinstance(ref, (GhostMlirRef, GhostOperationRef)) else None
-    )
+    ref_traits = ref.traits if isinstance(ref, (GhostMlirRef, GhostOperationRef)) else None
     raw_traits = meta.get("traits") or ref_traits or []
     base_traits = [str(t) for t in raw_traits] if isinstance(raw_traits, list) else []
     traits = _infer_implicit_mlir_traits(full_path, base_traits)
@@ -380,11 +380,7 @@ def _validate_ssa_domain_op(
         target=target_framework,
         symbol=symbol_name,
     )
-    op_exists = (
-        res.op_exists
-        if isinstance(res, DomainOpCheckResult)
-        else bool(res.get("op_exists"))
-    )
+    op_exists = res.op_exists if isinstance(res, DomainOpCheckResult) else bool(res.get("op_exists"))
     if not op_exists:
         suggested = eng.suggest_closest_symbol(target_framework, symbol_name)
         report.add_diagnostic(
@@ -395,9 +391,7 @@ def _validate_ssa_domain_op(
         )
         return report
 
-    raw_errs = (
-        res.errors if isinstance(res, DomainOpCheckResult) else res.get("errors", [])
-    )
+    raw_errs = res.errors if isinstance(res, DomainOpCheckResult) else res.get("errors", [])
     assert isinstance(raw_errs, list)
     for err in raw_errs:
         report.add_diagnostic(

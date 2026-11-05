@@ -4,22 +4,20 @@ from __future__ import annotations
 
 import inspect
 
+import pytest
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     DescriptorProtocol,
     InspectableCallableProtocol,
     WrappedTargetProtocol,
+    get_member_dict,
     get_runtime_signature,
     get_runtime_source,
-    has_runtime_attr,
-    read_runtime_attr,
 )
 from ml_ecosystem_snapshots.models import JsonValue, ScalarValue
 
 
 class _SampleCallable:
     """Sample callable implementing `InspectableCallableProtocol`."""
-
-    __doc__ = "Sample callable docstring."
 
     def __call__(self, *args: JsonValue, **kwargs: JsonValue) -> JsonValue:
         """Return first positional argument or None.
@@ -37,9 +35,7 @@ class _SampleCallable:
 class _SampleDescriptor:
     """Sample descriptor implementing `DescriptorProtocol`."""
 
-    def __get__(
-        self, instance: ScalarValue, owner: type | None = None
-    ) -> InspectableCallableProtocol | ScalarValue:
+    def __get__(self, instance: ScalarValue, owner: type | None = None) -> InspectableCallableProtocol | ScalarValue:
         """Return a scalar value when accessed on class or instance.
 
         Args:
@@ -53,12 +49,9 @@ class _SampleDescriptor:
 
 
 class _RaisingAttrTarget:
-    """Target whose property raises RuntimeError upon attribute access."""
+    """Target whose `__dir__` raises RuntimeError upon member enumeration."""
 
-    __doc__ = "Raising target."
-
-    @property
-    def boom(self) -> str:
+    def __dir__(self) -> list[str]:
         """Raise RuntimeError unconditionally.
 
         Raises:
@@ -81,7 +74,7 @@ def _sample_fn(alpha: int, beta: str = "ok") -> str:
 
 
 def test_runtime_boundary_protocols_and_helpers() -> None:
-    """Verify runtime checkable protocols and safe attribute/source/signature helpers."""
+    """Verify runtime checkable protocols and safe member/source/signature helpers."""
     callable_obj = _SampleCallable()
     assert isinstance(callable_obj, InspectableCallableProtocol)
     assert isinstance(callable_obj, WrappedTargetProtocol)
@@ -97,20 +90,21 @@ def test_runtime_boundary_protocols_and_helpers() -> None:
 
     assert _DescriptorHost.value == 42
 
-    assert has_runtime_attr(_sample_fn, "__name__") is True
-    assert has_runtime_attr(_sample_fn, "nonexistent_attr_xyz") is False
-    assert read_runtime_attr(_sample_fn, "__name__") == "_sample_fn"
-    assert (
-        read_runtime_attr(_sample_fn, "nonexistent_attr_xyz", "fallback") == "fallback"
-    )
+    fn_members = get_member_dict(_sample_fn)
+    assert fn_members.get("__name__") == "_sample_fn"
+    assert "nonexistent_attr_xyz" not in fn_members
+    assert get_member_dict(None) == {}
 
     raising_target = _RaisingAttrTarget()
-    assert has_runtime_attr(raising_target, "boom") is False
-    assert read_runtime_attr(raising_target, "boom", "safe_default") == "safe_default"
+    assert get_member_dict(raising_target) == {}
 
     src = get_runtime_source(_sample_fn)
     assert "def _sample_fn" in src
+    with pytest.raises(TypeError):
+        get_runtime_source(None)
 
     sig = get_runtime_signature(_sample_fn)
     assert isinstance(sig, inspect.Signature)
     assert list(sig.parameters.keys()) == ["alpha", "beta"]
+    with pytest.raises(TypeError):
+        get_runtime_signature(None)

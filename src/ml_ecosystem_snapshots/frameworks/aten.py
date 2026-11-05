@@ -9,6 +9,7 @@ from __future__ import annotations
 import types
 import typing
 
+import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
     GhostPythonRef,
@@ -16,7 +17,6 @@ from ml_switcheroo_ir.schema.ghost import (
     ParameterKind,
     SemanticTier,
 )
-import pydantic
 
 from ml_ecosystem_snapshots.frameworks._base import CanonicalPythonOpSpec
 
@@ -35,9 +35,7 @@ class _TorchWithOpsProtocol(typing.Protocol):
     ops: _AtenOpsContainerProtocol
 
 
-CANONICAL_ATEN_OPS: list[CanonicalPythonOpSpec] = pydantic.TypeAdapter(
-    list[CanonicalPythonOpSpec]
-).validate_python(
+CANONICAL_ATEN_OPS: list[CanonicalPythonOpSpec] = pydantic.TypeAdapter(list[CanonicalPythonOpSpec]).validate_python(
     [
         # Math & Binary Arithmetic
         {
@@ -735,9 +733,7 @@ def _get_torch_ops_aten() -> types.ModuleType | None:
     return None
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect PyTorch ATen C++ dispatch operator signatures.
 
     Args:
@@ -779,11 +775,13 @@ def collect_api(
             )
         return refs
 
+    import inspect
+
     from .torch import _coerce_aten_schema, get_aten_op_schema
 
     results: list[GhostRef] = []
     seen: set[str] = set()
-    aten_names = set(dir(aten_ops))
+    aten_names = {name for name, _ in inspect.getmembers(aten_ops)}
 
     for op in CANONICAL_ATEN_OPS:
         name = op.name

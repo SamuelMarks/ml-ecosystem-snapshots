@@ -8,10 +8,10 @@ CUDA C++, Triton, or TVM compiled kernels.
 
 from __future__ import annotations
 
-from enum import Enum
 import json
 import os
 import re
+from enum import Enum
 
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
@@ -19,6 +19,7 @@ from ml_switcheroo_ir.schema.ghost import (
     ParameterKind,
     SemanticTier,
 )
+
 from ..models import (
     ExtendedGhostParam,
     IRParameterRole,
@@ -121,9 +122,7 @@ def validate_ptx_type(type_str: str) -> list[str]:
     cleaned = type_str.strip()
     norm = cleaned if cleaned.startswith(".") else f".{cleaned}"
     if norm not in ALL_PTX_TYPES:
-        return [
-            f"Invalid PTX data type '{type_str}': must be one of {sorted(ALL_PTX_TYPES)}."
-        ]
+        return [f"Invalid PTX data type '{type_str}': must be one of {sorted(ALL_PTX_TYPES)}."]
     return []
 
 
@@ -139,9 +138,7 @@ def validate_ptx_state_space(space_str: str) -> list[str]:
     cleaned = space_str.strip()
     norm = cleaned if cleaned.startswith(".") else f".{cleaned}"
     if norm not in ALL_PTX_STATE_SPACES:
-        return [
-            f"Invalid PTX state space '{space_str}': must be one of {sorted(ALL_PTX_STATE_SPACES)}."
-        ]
+        return [f"Invalid PTX state space '{space_str}': must be one of {sorted(ALL_PTX_STATE_SPACES)}."]
     return []
 
 
@@ -157,9 +154,7 @@ def validate_ptx_scope(scope_str: str) -> list[str]:
     cleaned = scope_str.strip()
     norm = cleaned if cleaned.startswith(".") else f".{cleaned}"
     if norm not in ALL_PTX_SCOPES:
-        return [
-            f"Invalid PTX memory scope '{scope_str}': must be one of {sorted(ALL_PTX_SCOPES)}."
-        ]
+        return [f"Invalid PTX memory scope '{scope_str}': must be one of {sorted(ALL_PTX_SCOPES)}."]
     return []
 
 
@@ -175,9 +170,7 @@ def validate_ptx_vector_width(width_str: str) -> list[str]:
     cleaned = width_str.strip()
     norm = cleaned if cleaned.startswith(".") else f".{cleaned}"
     if norm not in ALL_PTX_VECTOR_WIDTHS:
-        return [
-            f"Invalid PTX vector width '{width_str}': must be one of {sorted(ALL_PTX_VECTOR_WIDTHS)}."
-        ]
+        return [f"Invalid PTX vector width '{width_str}': must be one of {sorted(ALL_PTX_VECTOR_WIDTHS)}."]
     return []
 
 
@@ -208,7 +201,7 @@ def validate_ptx_register(operand: str) -> list[str]:
             return errors
         return [f"Malformed PTX memory dereference operand '{operand}'."]
 
-    # Special registers
+    # Special and fixed predicate registers
     if cleaned in (
         "%tid",
         "%tid.x",
@@ -229,11 +222,6 @@ def validate_ptx_register(operand: str) -> list[str]:
         "%dynamic_smem_size",
         "%clock",
         "%clock64",
-    ):
-        return []
-
-    # Predicate registers
-    if cleaned in (
         "%pt",
         "!%pt",
         "%p0",
@@ -257,6 +245,95 @@ def validate_ptx_register(operand: str) -> list[str]:
     if not vreg_match and not cleaned.startswith("%"):
         # Immediate constant or label
         return []
+
+    return errors
+
+
+def _validate_ptx_inst_qualifiers(
+    mnemonic: str,
+    inst_meta: dict[str, JsonValue],
+    state_space: str | None,
+    scope: str | None,
+    vector_width: str | None,
+) -> list[str]:
+    """Validate state space, memory scope, and vector width qualifiers for a PTX instruction.
+
+    Args:
+        mnemonic: Raw instruction mnemonic string for diagnostic reporting.
+        inst_meta: Instruction metadata record from the PTX ISA database.
+        state_space: Optional memory state space qualifier (e.g. '.global').
+        scope: Optional memory scope qualifier (e.g. '.gpu', '.cta').
+        vector_width: Optional vector width qualifier (e.g. '.v2', '.v4').
+
+    Returns:
+        List of qualifier validation error messages.
+    """
+    errors: list[str] = []
+
+    if state_space:
+        errors.extend(validate_ptx_state_space(state_space))
+        raw_spaces = inst_meta.get("state_spaces", [])
+        allowed_spaces = [str(s) for s in (raw_spaces if isinstance(raw_spaces, list) else [])]
+        norm_space = state_space if state_space.startswith(".") else f".{state_space}"
+        if not allowed_spaces:
+            errors.append(f"State space '{state_space}' is not valid for instruction '{mnemonic}': instruction does not accept memory state spaces.")
+        elif norm_space not in allowed_spaces:
+            errors.append(f"State space '{state_space}' is not valid for instruction '{mnemonic}' (supported: {allowed_spaces}).")
+
+    if scope:
+        errors.extend(validate_ptx_scope(scope))
+        cat = inst_meta.get("category")
+        if cat not in ("memory", "barrier"):
+            errors.append(f"Memory scope '{scope}' is not valid for instruction '{mnemonic}': only memory and barrier instructions accept scopes.")
+
+    if vector_width:
+        errors.extend(validate_ptx_vector_width(vector_width))
+        raw_widths = inst_meta.get("vector_widths", [])
+        allowed_widths = [str(w) for w in (raw_widths if isinstance(raw_widths, list) else [])]
+        norm_vw = vector_width if vector_width.startswith(".") else f".{vector_width}"
+        if not allowed_widths:
+            errors.append(f"Vector width '{vector_width}' is not supported for PTX instruction '{mnemonic}'.")
+        elif norm_vw not in allowed_widths:
+            errors.append(f"Vector width '{vector_width}' is not supported for PTX instruction '{mnemonic}' (supported: {allowed_widths}).")
+
+    return errors
+
+
+def _validate_ptx_inst_types_and_operands(
+    mnemonic: str,
+    inst_meta: dict[str, JsonValue],
+    types: list[str] | None,
+    operands: list[str] | None,
+) -> list[str]:
+    """Validate type qualifiers and operand counts/registers for a PTX instruction.
+
+    Args:
+        mnemonic: Raw instruction mnemonic string for diagnostic reporting.
+        inst_meta: Instruction metadata record from the PTX ISA database.
+        types: Optional list of PTX type qualifiers (e.g. ['.f32']).
+        operands: Optional list of PTX operand strings (e.g. ['%f0', '%f1']).
+
+    Returns:
+        List of type and operand validation error messages.
+    """
+    errors: list[str] = []
+
+    if types:
+        for t in types:
+            errors.extend(validate_ptx_type(t))
+            norm_t = t if t.startswith(".") else f".{t}"
+            raw_supported = inst_meta.get("supported_types", [])
+            supported = [str(st) for st in (raw_supported if isinstance(raw_supported, list) else [])]
+            if supported and norm_t not in supported:
+                errors.append(f"Type '{t}' is not supported for PTX instruction '{mnemonic}' (supported: {supported}).")
+
+    if operands is not None:
+        raw_expected = inst_meta.get("operands", [])
+        expected_ops = raw_expected if isinstance(raw_expected, list) else []
+        if len(operands) != len(expected_ops):
+            errors.append(f"PTX instruction '{mnemonic}' expects {len(expected_ops)} operands, got {len(operands)}.")
+        for op in operands:
+            errors.extend(validate_ptx_register(op))
 
     return errors
 
@@ -293,75 +370,8 @@ def validate_ptx_instruction(
         return errors
 
     inst_meta = ptx_db[clean_mnem]
-
-    # Validate state space
-    if state_space:
-        errors.extend(validate_ptx_state_space(state_space))
-        raw_spaces = inst_meta.get("state_spaces", [])
-        allowed_spaces = [
-            str(s) for s in (raw_spaces if isinstance(raw_spaces, list) else [])
-        ]
-        norm_space = state_space if state_space.startswith(".") else f".{state_space}"
-        if not allowed_spaces:
-            errors.append(
-                f"State space '{state_space}' is not valid for instruction '{mnemonic}': instruction does not accept memory state spaces."
-            )
-        elif norm_space not in allowed_spaces:
-            errors.append(
-                f"State space '{state_space}' is not valid for instruction '{mnemonic}' (supported: {allowed_spaces})."
-            )
-
-    # Validate memory scope
-    if scope:
-        errors.extend(validate_ptx_scope(scope))
-        cat = inst_meta.get("category")
-        if cat not in ("memory", "barrier"):
-            errors.append(
-                f"Memory scope '{scope}' is not valid for instruction '{mnemonic}': only memory and barrier instructions accept scopes."
-            )
-
-    # Validate vector width
-    if vector_width:
-        errors.extend(validate_ptx_vector_width(vector_width))
-        raw_widths = inst_meta.get("vector_widths", [])
-        allowed_widths = [
-            str(w) for w in (raw_widths if isinstance(raw_widths, list) else [])
-        ]
-        norm_vw = vector_width if vector_width.startswith(".") else f".{vector_width}"
-        if not allowed_widths:
-            errors.append(
-                f"Vector width '{vector_width}' is not supported for PTX instruction '{mnemonic}'."
-            )
-        elif norm_vw not in allowed_widths:
-            errors.append(
-                f"Vector width '{vector_width}' is not supported for PTX instruction '{mnemonic}' (supported: {allowed_widths})."
-            )
-
-    # Validate types
-    if types:
-        for t in types:
-            errors.extend(validate_ptx_type(t))
-            norm_t = t if t.startswith(".") else f".{t}"
-            raw_supported = inst_meta.get("supported_types", [])
-            supported = [
-                str(st)
-                for st in (raw_supported if isinstance(raw_supported, list) else [])
-            ]
-            if supported and norm_t not in supported:
-                errors.append(
-                    f"Type '{t}' is not supported for PTX instruction '{mnemonic}' (supported: {supported})."
-                )
-
-    # Validate operands count and registers
-    if operands is not None:
-        raw_expected = inst_meta.get("operands", [])
-        expected_ops = raw_expected if isinstance(raw_expected, list) else []
-        if len(operands) != len(expected_ops):
-            errors.append(
-                f"PTX instruction '{mnemonic}' expects {len(expected_ops)} operands, got {len(operands)}."
-            )
-        for op in operands:
-            errors.extend(validate_ptx_register(op))
+    errors.extend(_validate_ptx_inst_qualifiers(mnemonic, inst_meta, state_space, scope, vector_width))
+    errors.extend(_validate_ptx_inst_types_and_operands(mnemonic, inst_meta, types, operands))
 
     # Architecture requirement
     if sm_arch:
@@ -369,9 +379,7 @@ def validate_ptx_instruction(
         min_num = int(re.sub(r"\D", "", min_sm) or "0")
         target_num = int(re.sub(r"\D", "", sm_arch) or "0")
         if target_num < min_num:
-            errors.append(
-                f"PTX instruction '{mnemonic}' requires at least {min_sm}, but target is '{sm_arch}'."
-            )
+            errors.append(f"PTX instruction '{mnemonic}' requires at least {min_sm}, but target is '{sm_arch}'.")
 
     return errors
 
@@ -592,38 +600,21 @@ def _load_exhaustive_ptx() -> list[dict[str, JsonValue]]:
         if os.environ.get("PTX_DISABLE_FALLBACK") == "1":
             return []
         return _get_canonical_fallback_ptx()
-    with open(json_path, "r", encoding="utf-8") as f:
+    with open(json_path, encoding="utf-8") as f:
         data: JsonValue = json.load(f)
         if isinstance(data, dict):
             if "categories" in data and isinstance(data["categories"], dict):
                 all_ops: list[dict[str, JsonValue]] = []
                 for cat_ops in data["categories"].values():
                     if isinstance(cat_ops, list):
-                        all_ops.extend(
-                            item for item in cat_ops if isinstance(item, dict)
-                        )
+                        all_ops.extend(item for item in cat_ops if isinstance(item, dict))
                 return all_ops
-            raw_cand = (
-                data.get("instructions")
-                or data.get("operations")
-                or data.get("items")
-                or []
-            )
-            return [
-                item
-                for item in (raw_cand if isinstance(raw_cand, list) else [])
-                if isinstance(item, dict)
-            ]
-        return [
-            item
-            for item in (data if isinstance(data, list) else [])
-            if isinstance(item, dict)
-        ]
+            raw_cand = data.get("instructions") or data.get("operations") or data.get("items") or []
+            return [item for item in (raw_cand if isinstance(raw_cand, list) else []) if isinstance(item, dict)]
+        return [item for item in (data if isinstance(data, list) else []) if isinstance(item, dict)]
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect NVIDIA PTX ISA definitions into standard GhostRef representations.
 
     Args:
@@ -647,11 +638,7 @@ def collect_api(
         raw_ops = inst.get("operands", [])
         for idx, op in enumerate(raw_ops if isinstance(raw_ops, list) else []):
             assert isinstance(op, dict)
-            role = (
-                IRParameterRole.RESULT
-                if op.get("role") == "dst"
-                else IRParameterRole.OPERAND
-            )
+            role = IRParameterRole.RESULT if op.get("role") == "dst" else IRParameterRole.OPERAND
             params.append(
                 ExtendedGhostParam(
                     name=str(op.get("name", f"op{idx}")),

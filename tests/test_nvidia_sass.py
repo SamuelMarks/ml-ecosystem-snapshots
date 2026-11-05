@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import operator
-
 import json
 from pathlib import Path
-import pytest
 from unittest import mock
 
-from ml_switcheroo_ir.schema.ghost import SemanticTier, GhostRef, GhostParam
+import pytest
 from ml_ecosystem_snapshots.frameworks import nvidia_sass
+from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, SemanticTier
 
 
 def test_nvidia_sass_collect_api_layer() -> None:
@@ -61,18 +59,15 @@ def test_nvidia_sass_specific_instruction() -> None:
     assert fadd.environment_tags is not None
     assert "cuda" in (fadd.environment_tags or [])
     assert "sm_80" in (fadd.environment_tags or [])
-    assert (
-        operator.attrgetter("structured_operands")(fadd)
-        if "structured_operands" in dir(fadd)
-        else None
-    ) is not None
+    from ml_ecosystem_snapshots.models import GhostIsaRef
+
+    assert isinstance(fadd, GhostIsaRef)
+    assert fadd.structured_operands is not None
 
 
 def test_build_structured_sass_operands() -> None:
     """Test building structured operand records with roles, register classes, and immediates."""
-    structured = nvidia_sass.build_structured_sass_operands(
-        ["R0", "1.5", "0x20", "UR4", "P1", "c[0][4]", "UP0", "B1"], "FADD"
-    )
+    structured = nvidia_sass.build_structured_sass_operands(["R0", "1.5", "0x20", "UR4", "P1", "c[0][4]", "UP0", "B1"], "FADD")
     assert len(structured) == 8
     assert structured[0]["role"] == "dest"
     assert isinstance(structured[0]["register_classes"], list)
@@ -131,17 +126,9 @@ def test_resolve_sm_architectures() -> None:
         "sm_100",
     ]
     assert nvidia_sass.resolve_sm_architectures("sm_90") == ["sm_90"]
-    assert (
-        nvidia_sass.resolve_sm_architectures(None) == nvidia_sass.ALL_SM_ARCHITECTURES
-    )
-    assert (
-        nvidia_sass.resolve_sm_architectures("unknown_arch")
-        == nvidia_sass.ALL_SM_ARCHITECTURES
-    )
-    assert (
-        nvidia_sass.resolve_sm_architectures("unknown+")
-        == nvidia_sass.ALL_SM_ARCHITECTURES
-    )
+    assert nvidia_sass.resolve_sm_architectures(None) == nvidia_sass.ALL_SM_ARCHITECTURES
+    assert nvidia_sass.resolve_sm_architectures("unknown_arch") == nvidia_sass.ALL_SM_ARCHITECTURES
+    assert nvidia_sass.resolve_sm_architectures("unknown+") == nvidia_sass.ALL_SM_ARCHITECTURES
 
 
 def test_normalize_sass_operand_type() -> None:
@@ -158,13 +145,8 @@ def test_normalize_sass_operand_type() -> None:
     assert nvidia_sass.normalize_sass_operand_type("FloatIMMOperand") == "FI"
     assert nvidia_sass.normalize_sass_operand_type("ADDR") == "ADDR"
     assert nvidia_sass.normalize_sass_operand_type("AddressOperand") == "ADDR"
-    assert (
-        nvidia_sass.normalize_sass_operand_type("cx[bank][offset]")
-        == "cx[bank][offset]"
-    )
-    assert (
-        nvidia_sass.normalize_sass_operand_type("c[bank][offset]") == "c[bank][offset]"
-    )
+    assert nvidia_sass.normalize_sass_operand_type("cx[bank][offset]") == "cx[bank][offset]"
+    assert nvidia_sass.normalize_sass_operand_type("c[bank][offset]") == "c[bank][offset]"
     assert nvidia_sass.normalize_sass_operand_type("UNKNOWN") == "UNKNOWN"
 
 
@@ -256,12 +238,10 @@ def test_get_sass_latency_range() -> None:
 
 
 def test_validate_sass_register() -> None:
-    """Test structured SASS register parsing, alignment, ranges, and reuse flags."""
+    """Test structured SASS register parsing, alignment, ranges, and reuse flags for GPRs and pairs."""
     # 1. Reuse flag on dst vs src
     err_reuse_dst = nvidia_sass.validate_sass_register("R0.reuse", role="dst")
-    assert any(
-        "Register reuse flag '.reuse' is not permitted" in e for e in err_reuse_dst
-    )
+    assert any("Register reuse flag '.reuse' is not permitted" in e for e in err_reuse_dst)
 
     err_reuse_src = nvidia_sass.validate_sass_register("R0.reuse", role="src0")
     assert err_reuse_src == []
@@ -304,6 +284,9 @@ def test_validate_sass_register() -> None:
     err_ur_pair_span = nvidia_sass.validate_sass_register("UR0:UR3", sm_arch="sm_80")
     assert any("Invalid uniform register pair span" in e for e in err_ur_pair_span)
 
+
+def test_validate_sass_register_scalar_predicate_and_barrier() -> None:
+    """Test structured SASS register validation for 32-bit, uniform, predicate, and barrier registers."""
     # 6. 32-bit register
     assert nvidia_sass.validate_sass_register("R0") == []
     assert nvidia_sass.validate_sass_register("R255") == []
@@ -315,18 +298,9 @@ def test_validate_sass_register() -> None:
     assert nvidia_sass.validate_sass_register("UR0", sm_arch="sm_75") == []
     assert nvidia_sass.validate_sass_register("UR63", sm_arch="sm_80") == []
     assert nvidia_sass.validate_sass_register("URZ", sm_arch="sm_80") == []
-    assert any(
-        "only supported on sm_75+" in e
-        for e in nvidia_sass.validate_sass_register("URZ", sm_arch="sm_70")
-    )
-    assert any(
-        "only supported on sm_75+" in e
-        for e in nvidia_sass.validate_sass_register("UR0", sm_arch="sm_70")
-    )
-    assert any(
-        "out of range" in e
-        for e in nvidia_sass.validate_sass_register("UR64", sm_arch="sm_80")
-    )
+    assert any("only supported on sm_75+" in e for e in nvidia_sass.validate_sass_register("URZ", sm_arch="sm_70"))
+    assert any("only supported on sm_75+" in e for e in nvidia_sass.validate_sass_register("UR0", sm_arch="sm_70"))
+    assert any("out of range" in e for e in nvidia_sass.validate_sass_register("UR64", sm_arch="sm_80"))
 
     # 8. Predicate register
     assert nvidia_sass.validate_sass_register("P0") == []
@@ -344,18 +318,9 @@ def test_validate_sass_register() -> None:
     assert nvidia_sass.validate_sass_register("UP7", sm_arch="sm_80") == []
     assert nvidia_sass.validate_sass_register("UPT", sm_arch="sm_80") == []
     assert nvidia_sass.validate_sass_register("!UPT", sm_arch="sm_80") == []
-    assert any(
-        "only supported on sm_75+" in e
-        for e in nvidia_sass.validate_sass_register("UP0", sm_arch="sm_70")
-    )
-    assert any(
-        "only supported on sm_75+" in e
-        for e in nvidia_sass.validate_sass_register("UPT", sm_arch="sm_70")
-    )
-    assert any(
-        "out of range" in e
-        for e in nvidia_sass.validate_sass_register("UP8", sm_arch="sm_80")
-    )
+    assert any("only supported on sm_75+" in e for e in nvidia_sass.validate_sass_register("UP0", sm_arch="sm_70"))
+    assert any("only supported on sm_75+" in e for e in nvidia_sass.validate_sass_register("UPT", sm_arch="sm_70"))
+    assert any("out of range" in e for e in nvidia_sass.validate_sass_register("UP8", sm_arch="sm_80"))
 
     # 10. Barrier register
     assert nvidia_sass.validate_sass_register("B0") == []
@@ -369,10 +334,7 @@ def test_validate_sass_register() -> None:
 def test_validate_sass_operand_directionality() -> None:
     """Test operand directionality checks for write slot constraints."""
     assert nvidia_sass.validate_sass_operand_directionality([], "FADD") == []
-    assert (
-        nvidia_sass.validate_sass_operand_directionality(["R0", "R1", "R2"], "FADD")
-        == []
-    )
+    assert nvidia_sass.validate_sass_operand_directionality(["R0", "R1", "R2"], "FADD") == []
 
     # Store instructions allow non-standard dst
     assert nvidia_sass.validate_sass_operand_directionality(["[R1]", "R0"], "STG") == []
@@ -381,24 +343,18 @@ def test_validate_sass_operand_directionality() -> None:
     assert nvidia_sass.validate_sass_operand_directionality(["B0"], "DEPBAR") == []
 
     # Immediate in arithmetic dst slot 0 is illegal
-    err_imm = nvidia_sass.validate_sass_operand_directionality(
-        ["42", "R1", "R2"], "FADD"
-    )
+    err_imm = nvidia_sass.validate_sass_operand_directionality(["42", "R1", "R2"], "FADD")
     assert any("cannot be an immediate" in e for e in err_imm)
 
     err_fimm = nvidia_sass.validate_sass_operand_directionality(["FI", "R1"], "FADD")
     assert any("cannot be an immediate" in e for e in err_fimm)
 
     # Constant memory in dst slot 0 is illegal
-    err_cmem = nvidia_sass.validate_sass_operand_directionality(
-        ["c[0][0]", "R1", "R2"], "FADD"
-    )
+    err_cmem = nvidia_sass.validate_sass_operand_directionality(["c[0][0]", "R1", "R2"], "FADD")
     assert any("cannot be constant bank memory" in e for e in err_cmem)
 
     # Multi constant bank operand conflict (hardware port limit)
-    err_multi_cbank = nvidia_sass.validate_sass_operand_directionality(
-        ["R0", "c[0][0]", "c[1][4]"], "FADD"
-    )
+    err_multi_cbank = nvidia_sass.validate_sass_operand_directionality(["R0", "c[0][0]", "c[1][4]"], "FADD")
     assert any("Hardware resource conflict in 'FADD'" in e for e in err_multi_cbank)
 
 
@@ -425,51 +381,19 @@ def test_validate_sass_control_code() -> None:
     # Stall count
     assert nvidia_sass.validate_sass_control_code("FADD", {"stall_count": 0}) == []
     assert nvidia_sass.validate_sass_control_code("FADD", {"stall_count": 15}) == []
-    assert any(
-        "out of valid range" in e
-        for e in nvidia_sass.validate_sass_control_code("FADD", {"stall_count": -1})
-    )
-    assert any(
-        "out of valid range" in e
-        for e in nvidia_sass.validate_sass_control_code("FADD", {"stall_count": 16})
-    )
+    assert any("out of valid range" in e for e in nvidia_sass.validate_sass_control_code("FADD", {"stall_count": -1}))
+    assert any("out of valid range" in e for e in nvidia_sass.validate_sass_control_code("FADD", {"stall_count": 16}))
 
     # Barrier masks
-    assert (
-        nvidia_sass.validate_sass_control_code("FADD", {"read_barrier_mask": 0}) == []
-    )
-    assert (
-        nvidia_sass.validate_sass_control_code("FADD", {"read_barrier_mask": 5}) == []
-    )
-    assert any(
-        "out of valid range" in e
-        for e in nvidia_sass.validate_sass_control_code(
-            "FADD", {"read_barrier_mask": 6}
-        )
-    )
-    assert (
-        nvidia_sass.validate_sass_control_code("FADD", {"write_barrier_mask": 0}) == []
-    )
-    assert any(
-        "out of valid range" in e
-        for e in nvidia_sass.validate_sass_control_code(
-            "FADD", {"write_barrier_mask": -1}
-        )
-    )
+    assert nvidia_sass.validate_sass_control_code("FADD", {"read_barrier_mask": 0}) == []
+    assert nvidia_sass.validate_sass_control_code("FADD", {"read_barrier_mask": 5}) == []
+    assert any("out of valid range" in e for e in nvidia_sass.validate_sass_control_code("FADD", {"read_barrier_mask": 6}))
+    assert nvidia_sass.validate_sass_control_code("FADD", {"write_barrier_mask": 0}) == []
+    assert any("out of valid range" in e for e in nvidia_sass.validate_sass_control_code("FADD", {"write_barrier_mask": -1}))
 
     # Latency ticks
-    assert (
-        nvidia_sass.validate_sass_control_code(
-            "FADD", {"latency_ticks": 4}, sm_arch="sm_80"
-        )
-        == []
-    )
-    assert any(
-        "out of bounds" in e
-        for e in nvidia_sass.validate_sass_control_code(
-            "FADD", {"latency_ticks": 20}, sm_arch="sm_80"
-        )
-    )
+    assert nvidia_sass.validate_sass_control_code("FADD", {"latency_ticks": 4}, sm_arch="sm_80") == []
+    assert any("out of bounds" in e for e in nvidia_sass.validate_sass_control_code("FADD", {"latency_ticks": 20}, sm_arch="sm_80"))
 
 
 def test_check_sass_instruction_extended() -> None:
@@ -533,9 +457,10 @@ def test_cli_check_sass(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> N
         capsys: Pytest stdout/stderr capture fixture.
         tmp_path: Temporary directory path fixture.
     """
-    from ml_ecosystem_snapshots.cli import cmd_check_sass
     import argparse
+
     import pytest
+    from ml_ecosystem_snapshots.cli import cmd_check_sass
 
     # 1. Valid mnemonic
     args_valid = argparse.Namespace(
@@ -614,38 +539,20 @@ def test_cli_check_sass(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> N
 def test_validate_sass_control_code_extended() -> None:
     """Test extended SASS control code rules for Hopper/Blackwell, register reuse, and dual-issue."""
     # Hopper barrier scoreboard (mask 7 valid on sm_90, invalid on sm_80)
-    assert (
-        nvidia_sass.validate_sass_control_code(
-            "FADD", {"read_barrier_mask": 7}, sm_arch="sm_90"
-        )
-        == []
-    )
-    err_b_sm80 = nvidia_sass.validate_sass_control_code(
-        "FADD", {"read_barrier_mask": 7}, sm_arch="sm_80"
-    )
+    assert nvidia_sass.validate_sass_control_code("FADD", {"read_barrier_mask": 7}, sm_arch="sm_90") == []
+    err_b_sm80 = nvidia_sass.validate_sass_control_code("FADD", {"read_barrier_mask": 7}, sm_arch="sm_80")
     assert any("out of valid range (0-5)" in e for e in err_b_sm80)
 
     # Register reuse cache flags (.reuse)
-    assert (
-        nvidia_sass.validate_sass_control_code(
-            "FADD", {"register_reuse_flags": ["R0.reuse"]}, sm_arch="sm_80"
-        )
-        == []
-    )
-    err_rf_malformed = nvidia_sass.validate_sass_control_code(
-        "FADD", {"register_reuse_flags": ["R0"]}, sm_arch="sm_80"
-    )
+    assert nvidia_sass.validate_sass_control_code("FADD", {"register_reuse_flags": ["R0.reuse"]}, sm_arch="sm_80") == []
+    err_rf_malformed = nvidia_sass.validate_sass_control_code("FADD", {"register_reuse_flags": ["R0"]}, sm_arch="sm_80")
     assert any("Malformed register reuse flag" in e for e in err_rf_malformed)
 
-    err_rf_reg = nvidia_sass.validate_sass_control_code(
-        "FADD", {"register_reuse_flags": ["R300.reuse"]}, sm_arch="sm_80"
-    )
+    err_rf_reg = nvidia_sass.validate_sass_control_code("FADD", {"register_reuse_flags": ["R300.reuse"]}, sm_arch="sm_80")
     assert any("out of range" in e for e in err_rf_reg)
 
     # Dual-issue restrictions on TENSOR and BARRIER
-    err_di_tensor = nvidia_sass.validate_sass_control_code(
-        "HMMA16816", {"dual_issue": True}
-    )
+    err_di_tensor = nvidia_sass.validate_sass_control_code("HMMA16816", {"dual_issue": True})
     assert any("does not support dual-issue" in e for e in err_di_tensor)
 
     err_di_barrier = nvidia_sass.validate_sass_control_code("BAR", {"dual_issue": True})
@@ -653,23 +560,14 @@ def test_validate_sass_control_code_extended() -> None:
 
     # Hopper/Blackwell WGMMA and TMA checks
     assert nvidia_sass.validate_sass_control_code("WGMMA", {}, sm_arch="sm_90") == []
-    err_wgmma_sm80 = nvidia_sass.validate_sass_control_code(
-        "WGMMA", {}, sm_arch="sm_80"
-    )
+    err_wgmma_sm80 = nvidia_sass.validate_sass_control_code("WGMMA", {}, sm_arch="sm_80")
     assert any("requires Hopper or Blackwell" in e for e in err_wgmma_sm80)
 
-    err_tma_sm80 = nvidia_sass.validate_sass_control_code(
-        "TMA_LOAD", {}, sm_arch="sm_80"
-    )
+    err_tma_sm80 = nvidia_sass.validate_sass_control_code("TMA_LOAD", {}, sm_arch="sm_80")
     assert any("requires Hopper or Blackwell" in e for e in err_tma_sm80)
 
     # Branches: non-list reuse_flags, dual-issue allowed on FADD, and WGMMA without sm_arch
-    assert (
-        nvidia_sass.validate_sass_control_code(
-            "FADD", {"register_reuse_flags": "not_a_list"}
-        )
-        == []
-    )
+    assert nvidia_sass.validate_sass_control_code("FADD", {"register_reuse_flags": "not_a_list"}) == []
 
 
 def test_load_exhaustive_sass_variants() -> None:
@@ -683,9 +581,7 @@ def test_load_exhaustive_sass_variants() -> None:
         },
     }
     with mock.patch("os.path.exists", return_value=True):
-        with mock.patch(
-            "builtins.open", mock.mock_open(read_data=json.dumps(mock_envelope))
-        ):
+        with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_envelope))):
             ops = nvidia_sass._load_exhaustive_sass()
             assert len(ops) == 1
             assert ops[0]["mnemonic"] == "FADD"
@@ -693,17 +589,13 @@ def test_load_exhaustive_sass_variants() -> None:
         mock_inst_dict = {
             "instructions": [{"mnemonic": "FMUL"}],
         }
-        with mock.patch(
-            "builtins.open", mock.mock_open(read_data=json.dumps(mock_inst_dict))
-        ):
+        with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_inst_dict))):
             ops = nvidia_sass._load_exhaustive_sass()
             assert len(ops) == 1
             assert ops[0]["mnemonic"] == "FMUL"
 
         mock_raw_list = [{"mnemonic": "FFMA"}]
-        with mock.patch(
-            "builtins.open", mock.mock_open(read_data=json.dumps(mock_raw_list))
-        ):
+        with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_raw_list))):
             ops = nvidia_sass._load_exhaustive_sass()
             assert len(ops) == 1
             assert ops[0]["mnemonic"] == "FFMA"
@@ -723,18 +615,14 @@ def test_tokenize_sass_line_and_code_block() -> None:
     assert nvidia_sass.tokenize_sass_line("   ") == (None, "", [], [])
 
     # Dotted modifiers and predicates
-    pred, mnem, mods, ops = nvidia_sass.tokenize_sass_line(
-        "@P0 FADD.FTZ.RN R0, R1, R2;"
-    )
+    pred, mnem, mods, ops = nvidia_sass.tokenize_sass_line("@P0 FADD.FTZ.RN R0, R1, R2;")
     assert pred == "@P0"
     assert mnem == "FADD"
     assert mods == [".FTZ", ".RN"]
     assert ops == ["R0", "R1", "R2"]
 
     # Direct check_sass_instruction with dot-separated mnemonic
-    res_direct = check_sass_instruction(
-        "FADD.FTZ.RN", operands=["R0", "R1", "R2"], sm_arch="sm_80"
-    )
+    res_direct = check_sass_instruction("FADD.FTZ.RN", operands=["R0", "R1", "R2"], sm_arch="sm_80")
     assert res_direct["is_valid"] is True
     assert res_direct["mnemonic_exists"] is True
 

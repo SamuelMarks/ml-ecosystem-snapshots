@@ -43,9 +43,7 @@ _TIKZ_SHAPES = [
 ]
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Entrypoint to collect the TikZ DSL API signature.
 
     Args:

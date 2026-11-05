@@ -22,9 +22,7 @@ def check_mlir_text_compliance(mlir_text: str) -> SnippetComplianceReport:
     total_ops = 0
     verified_ops = 0
 
-    op_pattern = re.compile(
-        r"(?:%\w+\s*=\s*)?([a-zA-Z0-9_]+\.[a-zA-Z0-9_]+)\s*(?:\(([^)]*)\))?"
-    )
+    op_pattern = re.compile(r"(?:%\w+\s*=\s*)?([a-zA-Z0-9_]+\.[a-zA-Z0-9_]+)\s*(?:\(([^)]*)\))?")
 
     for line in mlir_text.splitlines():
         cleaned = line.strip()
@@ -39,17 +37,11 @@ def check_mlir_text_compliance(mlir_text: str) -> SnippetComplianceReport:
 
             total_ops += 1
             args_str = match.group(2)
-            operands_count = (
-                len([a for a in args_str.split(",") if a.strip()])
-                if args_str is not None
-                else None
-            )
+            operands_count = len([a for a in args_str.split(",") if a.strip()]) if args_str is not None else None
 
             res = check_mlir_op(op_name, operands_count=operands_count)
             if not res.get("op_exists"):
-                errors.append(
-                    f"Invalid MLIR operation '{op_name}' on line: '{cleaned}'"
-                )
+                errors.append(f"Invalid MLIR operation '{op_name}' on line: '{cleaned}'")
             elif not res.get("is_valid"):
                 raw_errs = res.get("errors", [])
                 assert isinstance(raw_errs, list)
@@ -129,9 +121,7 @@ def check_wgsl_shader_compliance(shader_text: str) -> SnippetComplianceReport:
     )
 
 
-def check_sass_assembly_compliance(
-    assembly_text: str, sm_arch: str | None = None
-) -> SnippetComplianceReport:
+def check_sass_assembly_compliance(assembly_text: str, sm_arch: str | None = None) -> SnippetComplianceReport:
     """Verify that an NVIDIA SASS assembly snippet is valid for the target SM architecture.
 
     Args:
@@ -147,9 +137,7 @@ def check_sass_assembly_compliance(
     total_insts = 0
     verified_insts = 0
 
-    sass_line_pattern = re.compile(
-        r"^(?:@!?P\d+\s+)?([A-Z0-9_]+)((?:\.[A-Z0-9_]+)*)(?:\s+(.*?))?;?$"
-    )
+    sass_line_pattern = re.compile(r"^(?:@!?P\d+\s+)?([A-Z0-9_]+)((?:\.[A-Z0-9_]+)*)(?:\s+(.*?))?;?$")
 
     for line in assembly_text.splitlines():
         cleaned = re.sub(r"/\*.*?\*/", "", line).strip()
@@ -163,11 +151,7 @@ def check_sass_assembly_compliance(
             operands_raw = m.group(3)
 
             modifiers = [mod for mod in mods_raw.split(".") if mod] if mods_raw else []
-            operands = (
-                [op.strip() for op in operands_raw.split(",") if op.strip()]
-                if operands_raw
-                else None
-            )
+            operands = [op.strip() for op in operands_raw.split(",") if op.strip()] if operands_raw else None
 
             total_insts += 1
             res = check_sass_instruction(
@@ -191,9 +175,7 @@ def check_sass_assembly_compliance(
     )
 
 
-def check_rdna_assembly_compliance(
-    assembly_text: str, gfx_arch: str | None = None
-) -> SnippetComplianceReport:
+def check_rdna_assembly_compliance(assembly_text: str, gfx_arch: str | None = None) -> SnippetComplianceReport:
     """Verify that an AMD RDNA assembly snippet is valid for the target GFX architecture.
 
     Args:
@@ -220,11 +202,7 @@ def check_rdna_assembly_compliance(
         if m:
             mnemonic = m.group(1)
             operands_raw = m.group(2)
-            operands = (
-                [op.strip() for op in operands_raw.split(",") if op.strip()]
-                if operands_raw
-                else None
-            )
+            operands = [op.strip() for op in operands_raw.split(",") if op.strip()] if operands_raw else None
 
             total_insts += 1
             res = check_rdna_instruction(mnemonic, operands=operands, gfx_arch=gfx_arch)

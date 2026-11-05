@@ -5,8 +5,13 @@ from __future__ import annotations
 import argparse
 import os
 import tempfile
-import pytest
 
+import pytest
+from ml_ecosystem_snapshots.api import extract_snapshot, validate_snapshot_envelope
+from ml_ecosystem_snapshots.cli import cmd_check_wgsl
+from ml_ecosystem_snapshots.compliance import check_wgsl_shader_compliance
+from ml_ecosystem_snapshots.frameworks.wgsl import collect_api
+from ml_ecosystem_snapshots.mcp_server import check_wgsl_op
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     IRParameterRole,
@@ -14,11 +19,6 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
     SnapshotEnvelope,
 )
-from ml_ecosystem_snapshots.api import extract_snapshot, validate_snapshot_envelope
-from ml_ecosystem_snapshots.cli import cmd_check_wgsl
-from ml_ecosystem_snapshots.compliance import check_wgsl_shader_compliance
-from ml_ecosystem_snapshots.frameworks.wgsl import collect_api
-from ml_ecosystem_snapshots.mcp_server import check_wgsl_op
 
 
 def test_collect_api_wgsl_categories() -> None:
@@ -48,9 +48,7 @@ def test_wgsl_op_properties_and_roles() -> None:
     # storageStore: value operand has WRITE direction
     store_ref = by_name["storageStore"]
     assert store_ref.kind == "function"
-    store_params: dict[str, ExtendedGhostParam] = {
-        p.name: p for p in store_ref.params if isinstance(p, ExtendedGhostParam)
-    }
+    store_params: dict[str, ExtendedGhostParam] = {p.name: p for p in store_ref.params if isinstance(p, ExtendedGhostParam)}
     assert store_params["buffer"].direction == OperandDirection.READ
     assert store_params["index"].direction == OperandDirection.READ
     assert store_params["value"].direction == OperandDirection.WRITE
@@ -58,9 +56,7 @@ def test_wgsl_op_properties_and_roles() -> None:
 
     # atomicAdd: atomic_ptr and value
     add_ref = by_name["atomicAdd"]
-    add_params: dict[str, ExtendedGhostParam] = {
-        p.name: p for p in add_ref.params if isinstance(p, ExtendedGhostParam)
-    }
+    add_params: dict[str, ExtendedGhostParam] = {p.name: p for p in add_ref.params if isinstance(p, ExtendedGhostParam)}
     assert add_params["atomic_ptr"].direction == OperandDirection.READ
     assert add_params["value"].direction == OperandDirection.READ
 
@@ -81,9 +77,7 @@ def test_extract_snapshot_wgsl_envelope() -> None:
 def test_check_wgsl_op_validation() -> None:
     """Test check_wgsl_op for valid and invalid inputs, counts, and attributes."""
     # Valid operation
-    res_valid = check_wgsl_op(
-        "storageStore", inputs_count=3, attributes=["address_space"]
-    )
+    res_valid = check_wgsl_op("storageStore", inputs_count=3, attributes=["address_space"])
     assert res_valid["is_valid"] is True
     assert res_valid["op_exists"] is True
 
@@ -95,9 +89,7 @@ def test_check_wgsl_op_validation() -> None:
     # Invalid attribute
     res_bad_attr = check_wgsl_op("storageStore", attributes=["invalid_attr"])
     assert res_bad_attr["is_valid"] is False
-    assert any(
-        "Attribute 'invalid_attr' is not valid" in err for err in res_bad_attr["errors"]
-    )
+    assert any("Attribute 'invalid_attr' is not valid" in err for err in res_bad_attr["errors"])
 
     # Unknown operation
     res_unknown = check_wgsl_op("nonexistent_op")
@@ -231,14 +223,15 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch: Pytest monkeypatch fixture.
     """
     from unittest.mock import MagicMock
+
     from ml_ecosystem_snapshots.frameworks.wgsl import (
-        _load_wgsl_ops,
         CANONICAL_WGSL_OPS,
+        _load_wgsl_ops,
     )
 
     # Case 1: Exception on open
     mock_file = MagicMock()
-    mock_file.open.side_effect = IOError("Mock open error")
+    mock_file.open.side_effect = OSError("Mock open error")
     mock_schema_res = MagicMock()
     mock_schema_res.joinpath.return_value = mock_file
     monkeypatch.setattr("importlib.resources.files", lambda _: mock_schema_res)
@@ -274,9 +267,7 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Case 4: Non-empty ops list in json returns ops directly
     mock_file_valid = MagicMock()
-    mock_file_valid.open.return_value = io.StringIO(
-        '{"ops": [{"name": "mockOp", "domain": "wgsl"}]}'
-    )
+    mock_file_valid.open.return_value = io.StringIO('{"ops": [{"name": "mockOp", "domain": "wgsl"}]}')
     mock_schema_res_valid = MagicMock()
     mock_schema_res_valid.joinpath.return_value = mock_file_valid
     monkeypatch.setattr("importlib.resources.files", lambda _: mock_schema_res_valid)

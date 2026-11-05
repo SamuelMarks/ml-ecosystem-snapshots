@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import inspect
 import logging
-import operator
 import os
-from pathlib import Path
 import sys
 import typing
+from pathlib import Path
 
 import griffe
 from ml_switcheroo_ir.schema.ghost import GhostRef
@@ -52,9 +52,7 @@ def _temporary_sys_path(search_path: str) -> typing.Iterator[None]:
             sys.path.remove(search_path)
 
 
-def get_module_info_from_path(
-    file_path: str, target_prefix: str = ""
-) -> tuple[str, str]:
+def get_module_info_from_path(file_path: str, target_prefix: str = "") -> tuple[str, str]:
     """Resolve a file path to a root search path and a module name.
 
     This function ascends the directory tree starting from the given path
@@ -83,10 +81,7 @@ def get_module_info_from_path(
     current = path if is_dir else path.parent
 
     # Traverse upwards while an __init__.py is present
-    while (
-        Path(os.path.join(current, "__init__.py")).exists()
-        and current.parent != current
-    ):
+    while Path(os.path.join(current, "__init__.py")).exists() and current.parent != current:
         current = current.parent
 
     search_path = str(current)
@@ -113,9 +108,7 @@ def get_module_info_from_path(
     return search_path, mod_name
 
 
-def extract_target_ast(
-    file_path: str, target_prefix: str = ""
-) -> griffe.Module | griffe.Object | None:
+def extract_target_ast(file_path: str, target_prefix: str = "") -> griffe.Module | griffe.Object | None:
     """Extract the Griffe AST for an arbitrary target path.
 
     This function dynamically determines the module name and search path
@@ -131,9 +124,7 @@ def extract_target_ast(
     search_path, mod_name = get_module_info_from_path(file_path, target_prefix)
     parser_choice = get_framework_docstring_parser(mod_name.split(".")[0])
     resolved_parser = resolve_griffe_parser(parser_choice)
-    loaded = griffe.load(
-        mod_name, search_paths=[search_path], docstring_parser=resolved_parser
-    )
+    loaded = griffe.load(mod_name, search_paths=[search_path], docstring_parser=resolved_parser)
     assert isinstance(loaded, (griffe.Module, griffe.Object))
     return loaded
 
@@ -158,11 +149,7 @@ def align_namespace(
     if api_path == target_prefix:
         return reference_prefix
 
-    mapping = (
-        dict(prefix_map)
-        if prefix_map is not None
-        else dict(DEFAULT_NAMESPACE_PREFIX_MAP)
-    )
+    mapping = dict(prefix_map) if prefix_map is not None else dict(DEFAULT_NAMESPACE_PREFIX_MAP)
 
     for sub_target in ("jax", "optax"):
         candidate_prefix = f"{target_prefix}.{sub_target}."
@@ -182,9 +169,58 @@ def align_namespace(
     return api_path
 
 
-def extract_target_refs_single(
-    file_path: str, target_prefix: str, reference_prefix: str
-) -> list[GhostRef]:
+def _resolve_live_symbol(current_path: str) -> InspectableTarget:
+    """Import and resolve a live Python object from a dotted symbol path.
+
+    Args:
+        current_path: Dotted module and symbol path to resolve.
+
+    Returns:
+        Resolved live Python module, class, function, or member object.
+    """
+    parts = current_path.split(".")
+    mod_p = parts[0]
+    live_mod = importlib.import_module(mod_p)
+    i = 1
+    while i < len(parts):
+        try:
+            mod_p = f"{mod_p}.{parts[i]}"
+            live_mod = importlib.import_module(mod_p)
+            i += 1
+        except ImportError:
+            break
+
+    obj: InspectableTarget = live_mod
+    for p in parts[i:]:
+        members_map: dict[str, InspectableTarget] = dict(inspect.getmembers(obj))
+        obj = members_map[p]
+    return obj
+
+
+def _normalize_zero_jax_path(
+    node: griffe.Function | griffe.Class | griffe.Alias,
+    current_path: str,
+    target_prefix: str,
+) -> str:
+    """Normalize `zero_jax` alias paths to the target prefix convention.
+
+    Args:
+        node: Griffe AST node being inspected.
+        current_path: Current dotted traversal path.
+        target_prefix: Prefix of the target module.
+
+    Returns:
+        Normalized dotted symbol path string.
+    """
+    node_path = str(node.path or "")
+    if node_path.startswith("zero_jax."):
+        return node_path.replace("zero_jax.", f"{target_prefix}.jax.", 1).replace(".activation", "").replace(".nn.nn", ".nn").replace(".initializers.initializers", ".initializers")
+    if "zero_jax" in current_path:
+        return current_path.replace("zero_jax.", f"{target_prefix}.jax.", 1)
+    return current_path
+
+
+def extract_target_refs_single(file_path: str, target_prefix: str, reference_prefix: str) -> list[GhostRef]:
     """Extract a list of GhostRefs from a single target file path.
 
     This function parses the path using Griffe to find public definitions,
@@ -205,15 +241,11 @@ def extract_target_refs_single(
 
     parser_choice = get_framework_docstring_parser(mod_name.split(".")[0])
     resolved_parser = resolve_griffe_parser(parser_choice)
-    mod_ast = griffe.load(
-        mod_name, search_paths=[search_path], docstring_parser=resolved_parser
-    )
+    mod_ast = griffe.load(mod_name, search_paths=[search_path], docstring_parser=resolved_parser)
 
     refs: list[GhostRef] = []
 
-    def walk(
-        node: griffe.Module | griffe.Object | griffe.Alias, current_path: str
-    ) -> None:
+    def walk(node: griffe.Module | griffe.Object | griffe.Alias, current_path: str) -> None:
         """Recursively traverse a Griffe AST node and inspect public symbols.
 
         Args:
@@ -222,37 +254,9 @@ def extract_target_refs_single(
         """
         if isinstance(node, (griffe.Function, griffe.Class, griffe.Alias)):
             try:
-                parts = current_path.split(".")
-                mod_p = parts[0]
-                live_mod = importlib.import_module(mod_p)
-                i = 1
-                while i < len(parts):
-                    try:
-                        mod_p = f"{mod_p}.{parts[i]}"
-                        live_mod = importlib.import_module(mod_p)
-                        i += 1
-                    except ImportError:
-                        break
-
-                obj: InspectableTarget = live_mod
-                for p in parts[i:]:
-                    obj = operator.attrgetter(p)(obj)
-
-                node_path = str(node.path or "")
-                if node_path.startswith("zero_jax."):
-                    current_path = (
-                        node_path.replace("zero_jax.", f"{target_prefix}.jax.", 1)
-                        .replace(".activation", "")
-                        .replace(".nn.nn", ".nn")
-                        .replace(".initializers.initializers", ".initializers")
-                    )
-                elif "zero_jax" in current_path:
-                    current_path = current_path.replace(
-                        "zero_jax.", f"{target_prefix}.jax.", 1
-                    )
-                aligned_path = align_namespace(
-                    current_path, target_prefix, reference_prefix
-                )
+                obj = _resolve_live_symbol(current_path)
+                normalized_path = _normalize_zero_jax_path(node, current_path, target_prefix)
+                aligned_path = align_namespace(normalized_path, target_prefix, reference_prefix)
                 refs.append(GhostInspector.inspect(obj, aligned_path))
             except Exception as e:
                 _LOGGER.warning("Exception in walk for %s: %s", current_path, e)

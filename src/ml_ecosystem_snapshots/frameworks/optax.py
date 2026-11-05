@@ -1618,42 +1618,22 @@ def _build_optax_canonical_ops(
             name=name,
             api_path=api_path,
             kind=kind,
-            params=[
-                CanonicalParamSpec(name=pn, kind=pk, default=pd)
-                for pn, pk, pd in params
-            ],
+            params=[CanonicalParamSpec(name=pn, kind=pk, default=pd) for pn, pk, pd in params],
             docstring=doc,
         )
         for name, api_path, kind, params, doc in defs
     ]
 
 
-CANONICAL_OPTAX_OPTIMIZERS: list[CanonicalPythonOpSpec] = _build_optax_canonical_ops(
-    _OPTAX_OPTIMIZER_DEFS
-)
-CANONICAL_OPTAX_LOSSES: list[CanonicalPythonOpSpec] = _build_optax_canonical_ops(
-    _OPTAX_LOSS_DEFS
-)
-CANONICAL_OPTAX_SCHEDULERS: list[CanonicalPythonOpSpec] = _build_optax_canonical_ops(
-    _OPTAX_SCHEDULER_DEFS
-)
-CANONICAL_OPTAX_ARRAY_API: list[CanonicalPythonOpSpec] = _build_optax_canonical_ops(
-    _OPTAX_ARRAY_API_DEFS
-)
-CANONICAL_OPTAX_OPS: list[CanonicalPythonOpSpec] = (
-    CANONICAL_OPTAX_OPTIMIZERS
-    + CANONICAL_OPTAX_LOSSES
-    + CANONICAL_OPTAX_SCHEDULERS
-    + CANONICAL_OPTAX_ARRAY_API
-)
+CANONICAL_OPTAX_OPTIMIZERS: list[CanonicalPythonOpSpec] = _build_optax_canonical_ops(_OPTAX_OPTIMIZER_DEFS)
+CANONICAL_OPTAX_LOSSES: list[CanonicalPythonOpSpec] = _build_optax_canonical_ops(_OPTAX_LOSS_DEFS)
+CANONICAL_OPTAX_SCHEDULERS: list[CanonicalPythonOpSpec] = _build_optax_canonical_ops(_OPTAX_SCHEDULER_DEFS)
+CANONICAL_OPTAX_ARRAY_API: list[CanonicalPythonOpSpec] = _build_optax_canonical_ops(_OPTAX_ARRAY_API_DEFS)
+CANONICAL_OPTAX_OPS: list[CanonicalPythonOpSpec] = CANONICAL_OPTAX_OPTIMIZERS + CANONICAL_OPTAX_LOSSES + CANONICAL_OPTAX_SCHEDULERS + CANONICAL_OPTAX_ARRAY_API
 
-KNOWN_OPTAX_OPTIMIZERS: set[str] = {
-    spec.name.lower() for spec in CANONICAL_OPTAX_OPTIMIZERS
-}
+KNOWN_OPTAX_OPTIMIZERS: set[str] = {spec.name.lower() for spec in CANONICAL_OPTAX_OPTIMIZERS}
 KNOWN_OPTAX_LOSSES: set[str] = {spec.name.lower() for spec in CANONICAL_OPTAX_LOSSES}
-KNOWN_OPTAX_ARRAY_API: set[str] = {
-    spec.name.lower() for spec in CANONICAL_OPTAX_ARRAY_API
-}
+KNOWN_OPTAX_ARRAY_API: set[str] = {spec.name.lower() for spec in CANONICAL_OPTAX_ARRAY_API}
 
 
 def _get_optax_griffe_module() -> GriffeCacheEntry:
@@ -1687,10 +1667,7 @@ def _hydrate_canonical_optax_tier(
             default_doc_prefix="Optax",
             environment_tags=("optax", "jax"),
         )
-        if attach_root_alias and (
-            ref.api_path.startswith("optax.losses.")
-            or ref.api_path.startswith("optax.schedules.")
-        ):
+        if attach_root_alias and (ref.api_path.startswith("optax.losses.") or ref.api_path.startswith("optax.schedules.")):
             ref.aliases = [f"optax.{ref.name}"]
         refs.append(ref)
     return refs
@@ -1758,9 +1735,7 @@ class OptaxScanner:
             A list of `GhostRef` objects representing found losses.
         """
         if is_offline_mode():
-            return _hydrate_canonical_optax_tier(
-                CANONICAL_OPTAX_LOSSES, attach_root_alias=True
-            )
+            return _hydrate_canonical_optax_tier(CANONICAL_OPTAX_LOSSES, attach_root_alias=True)
 
         if not isinstance(optax, _OptaxWithLossesProtocol):
             return []
@@ -1772,12 +1747,7 @@ class OptaxScanner:
 
             if inspect.isfunction(obj):
                 name_lower = name.lower()
-                if (
-                    "loss" in name_lower
-                    or "error" in name_lower
-                    or "entropy" in name_lower
-                    or name_lower in KNOWN_OPTAX_LOSSES
-                ):
+                if "loss" in name_lower or "error" in name_lower or "entropy" in name_lower or name_lower in KNOWN_OPTAX_LOSSES:
                     try:
                         ref = GhostInspector.inspect(obj, f"optax.losses.{name}")
                         results.append(ref)
@@ -1797,9 +1767,7 @@ class OptaxScanner:
             A list of `GhostRef` objects representing found schedulers.
         """
         if is_offline_mode():
-            return _hydrate_canonical_optax_tier(
-                CANONICAL_OPTAX_SCHEDULERS, attach_root_alias=True
-            )
+            return _hydrate_canonical_optax_tier(CANONICAL_OPTAX_SCHEDULERS, attach_root_alias=True)
 
         if not isinstance(optax, _OptaxWithSchedulesProtocol):
             return []
@@ -1819,6 +1787,70 @@ class OptaxScanner:
         return results
 
     @staticmethod
+    def _scan_live_array_submodules(
+        optax_mod: types.ModuleType,
+        include_nonpublic: bool,
+        results: list[GhostRef],
+        seen_paths: set[str],
+    ) -> None:
+        """Scan Optax utility submodules for function members and append them to results.
+
+        Args:
+            optax_mod: Live imported `optax` module object.
+            include_nonpublic: Whether to include private underscore-prefixed functions.
+            results: Accumulator list of discovered `GhostRef` objects.
+            seen_paths: Set of already recorded canonical API paths.
+        """
+        optax_members: dict[str, types.ModuleType] = dict(inspect.getmembers(optax_mod, inspect.ismodule))
+        for submod_name in (
+            "projections",
+            "tree_utils",
+            "second_order",
+            "assignment",
+            "perturbations",
+        ):
+            submod = optax_members.get(submod_name)
+            if isinstance(submod, types.ModuleType):
+                for name, obj in get_all_members(submod):
+                    if not include_nonpublic and name.startswith("_"):
+                        continue
+                    if inspect.isfunction(obj):
+                        api_path = f"optax.{submod_name}.{name}"
+                        try:
+                            ref = GhostInspector.inspect(obj, api_path)
+                            results.append(ref)
+                            seen_paths.add(api_path)
+                        except Exception:
+                            pass
+
+    @staticmethod
+    def _scan_live_array_root(
+        optax_mod: types.ModuleType,
+        include_nonpublic: bool,
+        results: list[GhostRef],
+        seen_paths: set[str],
+    ) -> None:
+        """Scan top-level `optax` module and utility submodules for array API functions.
+
+        Args:
+            optax_mod: Live imported `optax` module object.
+            include_nonpublic: Whether to include private underscore-prefixed functions.
+            results: Accumulator list of discovered `GhostRef` objects.
+            seen_paths: Set of already recorded canonical API paths.
+        """
+        for name, obj in get_all_members(optax_mod):
+            if not include_nonpublic and name.startswith("_"):
+                continue
+            if inspect.isfunction(obj) and name.lower() in KNOWN_OPTAX_ARRAY_API:
+                try:
+                    ref = GhostInspector.inspect(obj, f"optax.{name}")
+                    results.append(ref)
+                    seen_paths.add(ref.api_path)
+                except Exception:
+                    pass
+        OptaxScanner._scan_live_array_submodules(optax_mod, include_nonpublic, results, seen_paths)
+
+    @staticmethod
     def scan_array_api(include_nonpublic: bool = False) -> list[GhostRef]:
         """Scan Optax parameter update, projection, tree_utils, second_order, assignment, and perturbation APIs.
 
@@ -1835,40 +1867,7 @@ class OptaxScanner:
         seen_paths: set[str] = set()
 
         if optax is not None:
-            for name, obj in get_all_members(optax):
-                if not include_nonpublic and name.startswith("_"):
-                    continue
-                if inspect.isfunction(obj) and name.lower() in KNOWN_OPTAX_ARRAY_API:
-                    try:
-                        ref = GhostInspector.inspect(obj, f"optax.{name}")
-                        results.append(ref)
-                        seen_paths.add(ref.api_path)
-                    except Exception:
-                        pass
-
-            optax_members: dict[str, types.ModuleType] = dict(
-                inspect.getmembers(optax, inspect.ismodule)
-            )
-            for submod_name in (
-                "projections",
-                "tree_utils",
-                "second_order",
-                "assignment",
-                "perturbations",
-            ):
-                submod = optax_members.get(submod_name)
-                if isinstance(submod, types.ModuleType):
-                    for name, obj in get_all_members(submod):
-                        if not include_nonpublic and name.startswith("_"):
-                            continue
-                        if inspect.isfunction(obj):
-                            api_path = f"optax.{submod_name}.{name}"
-                            try:
-                                ref = GhostInspector.inspect(obj, api_path)
-                                results.append(ref)
-                                seen_paths.add(api_path)
-                            except Exception:
-                                pass
+            OptaxScanner._scan_live_array_root(optax, include_nonpublic, results, seen_paths)
 
         if _get_optax_griffe_module() is not None:
             for griffe_ref in scan_griffe_module_members(
@@ -1879,10 +1878,7 @@ class OptaxScanner:
                 framework_name="optax",
                 inspector_fn=GhostInspector.inspect,
             ):
-                if (
-                    griffe_ref.name.lower() in KNOWN_OPTAX_ARRAY_API
-                    and griffe_ref.api_path not in seen_paths
-                ):
+                if griffe_ref.name.lower() in KNOWN_OPTAX_ARRAY_API and griffe_ref.api_path not in seen_paths:
                     results.append(griffe_ref)
                     seen_paths.add(griffe_ref.api_path)
 
@@ -1900,9 +1896,7 @@ class OptaxScanner:
         return results
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect Optax APIs for the requested semantic tier.
 
     Args:

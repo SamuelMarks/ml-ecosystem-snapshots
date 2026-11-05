@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import sqlite3
-import pytest
-import pytest_mock
-
-from ml_ecosystem_snapshots.cli import main
+from pathlib import Path
 from unittest.mock import mock_open
 
+import pytest
+import pytest_mock
+from ml_ecosystem_snapshots.cli import main
 
-def test_cli_capture(
-    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
+
+def test_cli_capture(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     """Verify cli capture behavior.
 
     Args:
@@ -39,9 +37,7 @@ def test_cli_capture(
             return {"version": "1.0"}
         return {}
 
-    mocker.patch(
-        "ml_ecosystem_snapshots.api.extract_snapshot", side_effect=mock_extract
-    )
+    mocker.patch("ml_ecosystem_snapshots.api.extract_snapshot", side_effect=mock_extract)
     mocker.patch(
         "ml_ecosystem_snapshots.api.write_snapshot",
         return_value=os.path.join("test_out", "torch_v1.0.json"),
@@ -55,9 +51,7 @@ def test_cli_capture(
     assert "Skipping jax, not installed" in captured.out
 
 
-def test_cli_diff(
-    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_diff(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     """Verify cli diff behavior.
 
     Args:
@@ -84,18 +78,14 @@ def test_cli_diff(
     assert "~ c" in captured.out
 
 
-def test_cli_diff_changelog(
-    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_diff_changelog(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     """Verify cli diff changelog behavior.
 
     Args:
         capsys: Pytest stdout/stderr capture fixture.
         mocker: Pytest mocker fixture.
     """
-    mocker.patch(
-        "sys.argv", ["ml-snapshots", "diff", "1.json", "2.json", "--changelog"]
-    )
+    mocker.patch("sys.argv", ["ml-snapshots", "diff", "1.json", "2.json", "--changelog"])
 
     mocker.patch("builtins.open", mocker.mock_open(read_data="{}"))
     mocker.patch("json.load", side_effect=[{"categories": {}}, {"categories": {}}])
@@ -117,9 +107,7 @@ def test_cli_diff_changelog(
     assert "## Changelog Mock" in captured.out
 
 
-def test_cli_stubs(
-    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_stubs(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     """Verify cli stubs behavior.
 
     Args:
@@ -141,9 +129,7 @@ def test_cli_stubs(
     assert "Stubs generated in out" in captured.out
 
 
-def test_cli_export_openapi(
-    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_export_openapi(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     """Verify cli export openapi behavior.
 
     Args:
@@ -181,9 +167,7 @@ def test_cli_export_openapi(
     mocker.patch("json.load", return_value=mock_snap)
     mocker.patch("os.makedirs")
 
-    mock_to_openapi = mocker.patch(
-        "ml_ecosystem_snapshots.export.to_openapi", return_value={"openapi": "3.0.0"}
-    )
+    mock_to_openapi = mocker.patch("ml_ecosystem_snapshots.export.to_openapi", return_value={"openapi": "3.0.0"})
 
     main()
     captured = capsys.readouterr()
@@ -191,9 +175,7 @@ def test_cli_export_openapi(
     assert "Exported OpenAPI spec to out/openapi.json" in captured.out
 
 
-def test_cli_export_json_schema(
-    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_export_json_schema(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     """Verify cli export json schema behavior.
 
     Args:
@@ -231,9 +213,7 @@ def test_cli_export_json_schema(
     mocker.patch("json.load", return_value=mock_snap)
     mocker.patch("os.makedirs")
 
-    mock_to_json_schema = mocker.patch(
-        "ml_ecosystem_snapshots.export.to_json_schema", return_value={"$id": "test"}
-    )
+    mock_to_json_schema = mocker.patch("ml_ecosystem_snapshots.export.to_json_schema", return_value={"$id": "test"})
 
     main()
     captured = capsys.readouterr()
@@ -241,9 +221,7 @@ def test_cli_export_json_schema(
     assert "Exported 1 JSON schemas to out" in captured.out
 
 
-def test_cli_export_pydantic(
-    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_export_pydantic(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     """Verify cli export pydantic behavior.
 
     Args:
@@ -281,9 +259,7 @@ def test_cli_export_pydantic(
     mocker.patch("json.load", return_value=mock_snap)
     mocker.patch("os.makedirs")
 
-    mock_to_pydantic = mocker.patch(
-        "ml_ecosystem_snapshots.export.to_pydantic", return_value="class Linear:"
-    )
+    mock_to_pydantic = mocker.patch("ml_ecosystem_snapshots.export.to_pydantic", return_value="class Linear:")
 
     main()
     captured = capsys.readouterr()
@@ -291,9 +267,7 @@ def test_cli_export_pydantic(
     assert "Exported 1 Pydantic models to out" in captured.out
 
 
-def test_cli_export_protobuf(
-    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_export_protobuf(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     """Verify cli export protobuf behavior.
 
     Args:
@@ -331,9 +305,7 @@ def test_cli_export_protobuf(
     mocker.patch("json.load", return_value=mock_snap)
     mocker.patch("os.makedirs")
 
-    mock_to_protobuf = mocker.patch(
-        "ml_ecosystem_snapshots.export.to_protobuf", return_value="message Linear {}"
-    )
+    mock_to_protobuf = mocker.patch("ml_ecosystem_snapshots.export.to_protobuf", return_value="message Linear {}")
 
     main()
     captured = capsys.readouterr()
@@ -341,9 +313,7 @@ def test_cli_export_protobuf(
     assert "Exported 1 Protobuf definitions to out" in captured.out
 
 
-def test_cli_export_llm_prompt(
-    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_export_llm_prompt(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     """Test the export command with llm_prompt format.
 
     Args:
@@ -404,9 +374,7 @@ def test_cli_mcp(mocker: pytest_mock.MockerFixture) -> None:
     mock_run.assert_called_once()
 
 
-def test_cli_offline_flag(
-    mocker: pytest_mock.MockerFixture, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_cli_offline_flag(mocker: pytest_mock.MockerFixture, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test passing --offline flag sets ML_SNAPSHOTS_OFFLINE environment variable.
 
     Args:
@@ -423,17 +391,15 @@ def test_cli_offline_flag(
         os.environ.pop("ML_SNAPSHOTS_OFFLINE", None)
 
 
-def test_cli_export_unknown_format(
-    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_export_unknown_format(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     """Verify cli export unknown format behavior.
 
     Args:
         capsys: Pytest stdout/stderr capture fixture.
         mocker: Pytest mocker fixture.
     """
-    from ml_ecosystem_snapshots.cli import cmd_export
     import pytest
+    from ml_ecosystem_snapshots.cli import cmd_export
 
     mock_args = mocker.Mock()
     mock_args.command = "export"
@@ -465,9 +431,7 @@ def test_cli_export_unknown_format(
         main()
 
 
-def test_cli_export_non_container(
-    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_export_non_container(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     """Test cmd_export when snapshot is neither a list nor a dict.
 
     Args:
@@ -485,9 +449,7 @@ def test_cli_export_non_container(
     mocker.patch("builtins.open", mocker.mock_open(read_data="123"))
     mocker.patch("json.load", return_value=123)
     mocker.patch("os.makedirs")
-    mock_to_openapi = mocker.patch(
-        "ml_ecosystem_snapshots.export.to_openapi", return_value={}
-    )
+    mock_to_openapi = mocker.patch("ml_ecosystem_snapshots.export.to_openapi", return_value={})
 
     cmd_export(mock_args)
     mock_to_openapi.assert_called_once_with([])
@@ -518,9 +480,7 @@ def test_cli_export_list_snapshot(mocker: pytest_mock.MockerFixture) -> None:
     mocker.patch("builtins.open", mocker.mock_open(read_data="[]"))
     mocker.patch("json.load", return_value=raw_list_snap)
     mocker.patch("os.makedirs")
-    mock_to_openapi = mocker.patch(
-        "ml_ecosystem_snapshots.export.to_openapi", return_value={}
-    )
+    mock_to_openapi = mocker.patch("ml_ecosystem_snapshots.export.to_openapi", return_value={})
 
     cmd_export(mock_args)
     mock_to_openapi.assert_called_once()
@@ -534,18 +494,15 @@ def test_cmd_capture_wildcard(capsys: pytest.CaptureFixture[str]) -> None:
     Args:
         capsys: Pytest stdout/stderr capture fixture.
     """
-    from ml_ecosystem_snapshots.cli import cmd_capture
     import argparse
     from unittest.mock import patch
 
+    from ml_ecosystem_snapshots.cli import cmd_capture
+
     args = argparse.Namespace(frameworks=["*"], include_nonpublic=False, out_dir="out")
 
-    with patch(
-        "ml_ecosystem_snapshots.api.extract_snapshot", return_value={"data": "fake"}
-    ):
-        with patch(
-            "ml_ecosystem_snapshots.api.write_snapshot", return_value="out.json"
-        ):
+    with patch("ml_ecosystem_snapshots.api.extract_snapshot", return_value={"data": "fake"}):
+        with patch("ml_ecosystem_snapshots.api.write_snapshot", return_value="out.json"):
             cmd_capture(args)
 
     captured = capsys.readouterr()
@@ -558,22 +515,18 @@ def test_cmd_capture_unsupported(capsys: pytest.CaptureFixture[str]) -> None:
     Args:
         capsys: Pytest stdout/stderr capture fixture.
     """
-    from ml_ecosystem_snapshots.cli import cmd_capture
     import argparse
     from unittest.mock import patch
 
-    args = argparse.Namespace(
-        frameworks=["unsupported_fw", "torch"], include_nonpublic=False, out_dir="out"
-    )
+    from ml_ecosystem_snapshots.cli import cmd_capture
+
+    args = argparse.Namespace(frameworks=["unsupported_fw", "torch"], include_nonpublic=False, out_dir="out")
 
     with patch("ml_ecosystem_snapshots.api.extract_snapshot", return_value=None):
         cmd_capture(args)
 
     captured = capsys.readouterr()
-    assert (
-        "Warning: The following frameworks are unsupported and will be skipped: unsupported_fw"
-        in captured.out
-    )
+    assert "Warning: The following frameworks are unsupported and will be skipped: unsupported_fw" in captured.out
     assert "Skipping torch" in captured.out
 
 
@@ -583,9 +536,10 @@ def test_cmd_capture_all(capsys: pytest.CaptureFixture[str]) -> None:
     Args:
         capsys: Pytest stdout/stderr capture fixture.
     """
-    from ml_ecosystem_snapshots.cli import cmd_capture
     import argparse
     from unittest.mock import patch
+
+    from ml_ecosystem_snapshots.cli import cmd_capture
 
     args = argparse.Namespace(frameworks=[], include_nonpublic=False, out_dir="out")
 
@@ -593,12 +547,8 @@ def test_cmd_capture_all(capsys: pytest.CaptureFixture[str]) -> None:
         "ml_ecosystem_snapshots.api.get_available_frameworks",
         return_value={"mock_fw": None},
     ):
-        with patch(
-            "ml_ecosystem_snapshots.api.extract_snapshot", return_value={"data": "fake"}
-        ):
-            with patch(
-                "ml_ecosystem_snapshots.api.write_snapshot", return_value="out.json"
-            ):
+        with patch("ml_ecosystem_snapshots.api.extract_snapshot", return_value={"data": "fake"}):
+            with patch("ml_ecosystem_snapshots.api.write_snapshot", return_value="out.json"):
                 cmd_capture(args)
 
     captured = capsys.readouterr()
@@ -611,13 +561,12 @@ def test_cmd_capture_missing(capsys: pytest.CaptureFixture[str]) -> None:
     Args:
         capsys: Pytest stdout/stderr capture fixture.
     """
-    from ml_ecosystem_snapshots.cli import cmd_capture
     import argparse
     from unittest.mock import patch
 
-    args = argparse.Namespace(
-        frameworks=["mock_fw"], include_nonpublic=False, out_dir="out"
-    )
+    from ml_ecosystem_snapshots.cli import cmd_capture
+
+    args = argparse.Namespace(frameworks=["mock_fw"], include_nonpublic=False, out_dir="out")
 
     with patch(
         "ml_ecosystem_snapshots.api.get_available_frameworks",
@@ -630,9 +579,7 @@ def test_cmd_capture_missing(capsys: pytest.CaptureFixture[str]) -> None:
     assert "Skipping mock_fw" in captured.out
 
 
-def test_cmd_list_snapshots(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_cmd_list_snapshots(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Test cmd_list_snapshots prints available snapshots.
 
     Args:
@@ -640,8 +587,9 @@ def test_cmd_list_snapshots(
         monkeypatch: Pytest monkeypatch fixture.
         tmp_path: Pytest temporary directory fixture.
     """
-    from ml_ecosystem_snapshots.cli import cmd_list_snapshots
     import argparse
+
+    from ml_ecosystem_snapshots.cli import cmd_list_snapshots
 
     snap_file = tmp_path / "test_framework_v1.0.0.json"
     snap_file.write_text("{}", encoding="utf-8")
@@ -654,17 +602,16 @@ def test_cmd_list_snapshots(
     assert "test_framework_v1.0.0.json" in captured.out
 
 
-def test_cmd_list_snapshots_empty(
-    capsys: pytest.CaptureFixture[str], mocker: pytest_mock.MockerFixture
-) -> None:
+def test_cmd_list_snapshots_empty(capsys: pytest.CaptureFixture[str], mocker: pytest_mock.MockerFixture) -> None:
     """Test cmd_list_snapshots when no snapshots exist.
 
     Args:
         capsys: Pytest stdout/stderr capture fixture.
         mocker: Pytest mocker fixture.
     """
-    from ml_ecosystem_snapshots.cli import cmd_list_snapshots
     import argparse
+
+    from ml_ecosystem_snapshots.cli import cmd_list_snapshots
 
     mocker.patch("os.path.isdir", return_value=False)
     args = argparse.Namespace()
@@ -685,8 +632,9 @@ def test_cmd_list_snapshots_duplicates(
         mocker: Pytest mocker fixture.
         tmp_path: Pytest temporary directory fixture.
     """
-    from ml_ecosystem_snapshots.cli import cmd_list_snapshots
     import argparse
+
+    from ml_ecosystem_snapshots.cli import cmd_list_snapshots
 
     fake_dir = tmp_path / "dup"
     fake_snap_dir = fake_dir / "snapshots"
@@ -724,8 +672,9 @@ def test_cmd_pull_version(
         mocker: Pytest mocker fixture.
         tmp_path: Pytest temporary directory fixture.
     """
-    from ml_ecosystem_snapshots.cli import cmd_pull
     import argparse
+
+    from ml_ecosystem_snapshots.cli import cmd_pull
 
     mock_retrieve = mocker.patch("urllib.request.urlretrieve")
     out_dir = str(tmp_path / "pulled")
@@ -750,8 +699,9 @@ def test_cmd_pull_latest_and_failure(
         mocker: Pytest mocker fixture.
         tmp_path: Pytest temporary directory fixture.
     """
-    from ml_ecosystem_snapshots.cli import cmd_pull
     import argparse
+
+    from ml_ecosystem_snapshots.cli import cmd_pull
 
     mocker.patch("urllib.request.urlretrieve", side_effect=Exception("Network error"))
     mocker.patch(
@@ -773,6 +723,7 @@ def test_cmd_pull_offline(capsys: pytest.CaptureFixture[str]) -> None:
         capsys: Pytest capsys fixture.
     """
     import argparse
+
     import pytest
     from ml_ecosystem_snapshots.cli import cmd_pull
 
@@ -781,28 +732,22 @@ def test_cmd_pull_offline(capsys: pytest.CaptureFixture[str]) -> None:
         cmd_pull(args)
     assert exc_info.value.code == 1
     captured = capsys.readouterr()
-    assert (
-        "Network access disabled: pull command cannot be executed in offline mode."
-        in captured.out
-    )
+    assert "Network access disabled: pull command cannot be executed in offline mode." in captured.out
 
 
-def test_cmd_index_clear(
-    capsys: pytest.CaptureFixture[str], mocker: pytest_mock.MockerFixture
-) -> None:
+def test_cmd_index_clear(capsys: pytest.CaptureFixture[str], mocker: pytest_mock.MockerFixture) -> None:
     """Test cmd_index with --clear flag.
 
     Args:
         capsys: Pytest capsys fixture.
         mocker: Pytest mocker fixture.
     """
-    from ml_ecosystem_snapshots.cli import cmd_index
     import argparse
 
+    from ml_ecosystem_snapshots.cli import cmd_index
+
     mocker.patch("ml_ecosystem_snapshots.index.clear_index", return_value=True)
-    mocker.patch(
-        "ml_ecosystem_snapshots.index.get_index_db_path", return_value="/tmp/test.db"
-    )
+    mocker.patch("ml_ecosystem_snapshots.index.get_index_db_path", return_value="/tmp/test.db")
     args = argparse.Namespace(clear=True, rebuild=False, status=False)
     cmd_index(args)
     captured = capsys.readouterr()
@@ -826,9 +771,10 @@ def test_cmd_index_rebuild_and_status(
         mocker: Pytest mocker fixture.
         tmp_path: Pytest temporary directory fixture.
     """
+    import argparse
+
     from ml_ecosystem_snapshots.cli import cmd_index, main
     from ml_ecosystem_snapshots.index import init_db
-    import argparse
 
     db_file = str(tmp_path / "index.db")
     mocker.patch("ml_ecosystem_snapshots.index.get_index_db_path", return_value=db_file)
@@ -852,9 +798,7 @@ def test_cmd_index_rebuild_and_status(
         """
         return init_db(db_file)
 
-    mocker.patch(
-        "ml_ecosystem_snapshots.index.ensure_index", side_effect=mock_ensure_index
-    )
+    mocker.patch("ml_ecosystem_snapshots.index.ensure_index", side_effect=mock_ensure_index)
     args_rebuild = argparse.Namespace(clear=False, rebuild=True, status=False)
     cmd_index(args_rebuild)
     captured2 = capsys.readouterr()
@@ -877,9 +821,7 @@ def test_cmd_index_rebuild_and_status(
     assert "Pulling snapshot for torch (2.2.0)" in captured_main.out
 
 
-def test_cmd_index_clear_subcommand(
-    capsys: pytest.CaptureFixture[str], mocker: pytest_mock.MockerFixture
-) -> None:
+def test_cmd_index_clear_subcommand(capsys: pytest.CaptureFixture[str], mocker: pytest_mock.MockerFixture) -> None:
     """Test index --clear CLI subcommand.
 
     Args:
@@ -912,9 +854,10 @@ def test_cmd_download_all(
         mocker: Pytest mocker fixture.
         tmp_path: Pytest temporary directory fixture.
     """
-    from ml_ecosystem_snapshots.cli import cmd_download_all, main
     import argparse
+
     import pytest
+    from ml_ecosystem_snapshots.cli import cmd_download_all, main
 
     cache_dir = str(tmp_path / "download_cache")
 
@@ -963,18 +906,19 @@ def test_cmd_verify_local_cache(
     mocker: pytest_mock.MockerFixture,
     tmp_path: Path,
 ) -> None:
-    """Test verify-local-cache CLI subcommand.
+    """Test verify-local-cache CLI subcommand for empty, valid, and duplicate directories.
 
     Args:
         capsys: Pytest capsys fixture.
         mocker: Pytest mocker fixture.
         tmp_path: Pytest temporary directory fixture.
     """
-    import gzip
-    from ml_ecosystem_snapshots.cli import cmd_verify_local_cache, main
     import argparse
+    import gzip
+    import importlib.util
     import json
-    import pytest
+
+    from ml_ecosystem_snapshots.cli import cmd_verify_local_cache
 
     empty_dir = str(tmp_path / "empty_cache")
     os.makedirs(empty_dir, exist_ok=True)
@@ -997,22 +941,17 @@ def test_cmd_verify_local_cache(
     with gzip.open(gz_path, "wt", encoding="utf-8") as gf:
         json.dump({"categories": {"ops": [{"name": "op1"}]}}, gf)
 
-    mocker.patch(
-        "ml_ecosystem_snapshots.cli.os.path.isdir", side_effect=lambda d: d == valid_dir
-    )
+    mocker.patch("ml_ecosystem_snapshots.cli.os.path.isdir", side_effect=lambda d: d == valid_dir)
     args_valid = argparse.Namespace(cache_dir=valid_dir)
     cmd_verify_local_cache(args_valid)
     captured_valid = capsys.readouterr()
     assert "Cache verification passed" in captured_valid.out
 
     # 2b. Test duplicate directory triggering seen branch
-    import ml_ecosystem_snapshots.cli as cli_mod
-
-    pkg_root = (
-        os.path.dirname(os.path.dirname(cli_mod.__file__))
-        if os.path.basename(cli_mod.__file__) == "__init__.py"
-        else os.path.dirname(cli_mod.__file__)
-    )
+    cli_spec = importlib.util.find_spec("ml_ecosystem_snapshots.cli")
+    assert cli_spec is not None and cli_spec.origin is not None
+    cli_file = cli_spec.origin
+    pkg_root = os.path.dirname(os.path.dirname(cli_file)) if os.path.basename(cli_file) == "__init__.py" else os.path.dirname(cli_file)
     fw_dir = os.path.join(pkg_root, "frameworks")
     snap_in_fw = os.path.join(fw_dir, "verify_test_snap.json")
     try:
@@ -1029,6 +968,25 @@ def test_cmd_verify_local_cache(
     finally:
         if os.path.exists(snap_in_fw):
             os.remove(snap_in_fw)
+
+
+def test_cmd_verify_local_cache_corrupt_and_dispatch(
+    capsys: pytest.CaptureFixture[str],
+    mocker: pytest_mock.MockerFixture,
+    tmp_path: Path,
+) -> None:
+    """Test verify-local-cache CLI subcommand on corrupted JSON and via main() dispatch.
+
+    Args:
+        capsys: Pytest capsys fixture.
+        mocker: Pytest mocker fixture.
+        tmp_path: Pytest temporary directory fixture.
+    """
+    import argparse
+    import json
+
+    import pytest
+    from ml_ecosystem_snapshots.cli import cmd_verify_local_cache, main
 
     # 3. Corrupted cache file
     corrupt_dir = str(tmp_path / "corrupt_cache")
@@ -1047,39 +1005,39 @@ def test_cmd_verify_local_cache(
     assert "Cache verification failed" in captured_corrupt.out
 
     # 4. Main dispatch
+    valid_dir = str(tmp_path / "valid_dispatch_cache")
+    os.makedirs(valid_dir, exist_ok=True)
+    with open(os.path.join(valid_dir, "test_snap.json"), "w") as f:
+        json.dump([{"name": "test_op"}], f)
+
     mocker.patch(
         "sys.argv",
         ["ml_ecosystem_snapshots", "verify-local-cache", "--cache-dir", valid_dir],
     )
-    mocker.patch(
-        "ml_ecosystem_snapshots.cli.os.path.isdir", side_effect=lambda d: d == valid_dir
-    )
+    mocker.patch("ml_ecosystem_snapshots.cli.os.path.isdir", side_effect=lambda d: d == valid_dir)
     main()
     captured_main = capsys.readouterr()
     assert "Cache verification passed" in captured_main.out
 
 
-def test_cli_main_entrypoint(
-    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_main_entrypoint(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     """Test running cli as __main__ executes list-snapshots and prints output.
 
     Args:
         mocker: Pytest mocker fixture.
         capsys: Pytest stdout/stderr capture fixture.
     """
+    import importlib.util
     import runpy
-    from ml_ecosystem_snapshots import cli
 
+    cli_spec = importlib.util.find_spec("ml_ecosystem_snapshots.cli")
+    assert cli_spec is not None and cli_spec.origin is not None
     mocker.patch("sys.argv", ["ml_ecosystem_snapshots", "list-snapshots"])
-    res = runpy.run_path(cli.__file__, run_name="__main__")
+    res = runpy.run_path(cli_spec.origin, run_name="__main__")
     assert "main" in res
     captured = capsys.readouterr()
     assert isinstance(captured.out, str)
-    assert (
-        "Available Snapshots:" in captured.out
-        or "No snapshot files found." in captured.out
-    )
+    assert "Available Snapshots:" in captured.out or "No snapshot files found." in captured.out
 
 
 def test_cli_check_ptx_and_new_export_formats(
@@ -1094,8 +1052,9 @@ def test_cli_check_ptx_and_new_export_formats(
         mocker: Pytest mocker fixture.
         capsys: Standard output capture fixture.
     """
-    import pytest
     import json
+
+    import pytest
     from ml_ecosystem_snapshots.cli import main
 
     # 1. check-ptx valid instruction

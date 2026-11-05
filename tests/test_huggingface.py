@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-
-from unittest.mock import patch, MagicMock
-
-from ml_switcheroo_ir.schema.ghost import SemanticTier, GhostRef
 from ml_ecosystem_snapshots.frameworks.huggingface import (
-    collect_transformers,
+    _parse_pretrained_config,
     collect_diffusers,
     collect_tokenizers,
-    _parse_pretrained_config,
+    collect_transformers,
 )
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 
 def test_collect_transformers() -> None:
@@ -61,9 +60,7 @@ def test_collect_transformers() -> None:
 
     with (
         patch("importlib.import_module", return_value=mock_mod),
-        patch(
-            "ml_ecosystem_snapshots.frameworks.huggingface.GhostInspector"
-        ) as MockInspector,
+        patch("ml_ecosystem_snapshots.frameworks.huggingface.GhostInspector") as MockInspector,
     ):
         from ml_switcheroo_ir.schema.ghost import GhostRef
 
@@ -104,15 +101,11 @@ def test_collect_diffusers() -> None:
         pass
 
     mock_mod.DummyScheduler = DummyScheduler
-    pytest.MonkeyPatch().setattr(
-        mock_mod, "__dir__", lambda self: ["DummyScheduler"], raising=False
-    )
+    pytest.MonkeyPatch().setattr(mock_mod, "__dir__", lambda self: ["DummyScheduler"], raising=False)
 
     with (
         patch("importlib.import_module", return_value=mock_mod),
-        patch(
-            "ml_ecosystem_snapshots.frameworks.huggingface.GhostInspector"
-        ) as MockInspector,
+        patch("ml_ecosystem_snapshots.frameworks.huggingface.GhostInspector") as MockInspector,
     ):
         from ml_switcheroo_ir.schema.ghost import GhostRef
 
@@ -139,15 +132,11 @@ def test_collect_tokenizers() -> None:
         pass
 
     mock_mod.DummyTokenizer = DummyTokenizer
-    pytest.MonkeyPatch().setattr(
-        mock_mod, "__dir__", lambda self: ["DummyTokenizer"], raising=False
-    )
+    pytest.MonkeyPatch().setattr(mock_mod, "__dir__", lambda self: ["DummyTokenizer"], raising=False)
 
     with (
         patch("importlib.import_module", return_value=mock_mod),
-        patch(
-            "ml_ecosystem_snapshots.frameworks.huggingface.GhostInspector"
-        ) as MockInspector,
+        patch("ml_ecosystem_snapshots.frameworks.huggingface.GhostInspector") as MockInspector,
     ):
         from ml_switcheroo_ir.schema.ghost import GhostRef
 

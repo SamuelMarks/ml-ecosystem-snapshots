@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 # ruff: noqa: D205, D415, D207, D212
-
 import inspect
 import types
 from unittest.mock import patch
+
+import pytest
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
@@ -20,9 +21,7 @@ def dummy_c_ext() -> None:
 original_sig = inspect.signature
 
 
-def patched_sig(
-    target: InspectableTarget, *args: InspectableTarget, **kwargs: InspectableTarget
-) -> inspect.Signature:
+def patched_sig(target: InspectableTarget, *args: InspectableTarget, **kwargs: InspectableTarget) -> inspect.Signature:
     """Raise ValueError for `dummy_c_ext` and delegate other targets to `inspect.signature`.
 
     Args:
@@ -274,11 +273,15 @@ def dummy_opaque_func() -> None:
     pass
 
 
-dummy_opaque_func.__doc__ = None
+def test_opaque_c_extension_existing_environment_tags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test opaque fallback when environment_tags already contains tags.
 
-
-def test_opaque_c_extension_existing_environment_tags() -> None:
-    """Test opaque fallback when environment_tags already contains tags."""
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    monkeypatch.setattr(dummy_opaque_func, "__doc__", None)
     with patch.object(inspect, "signature", side_effect=ValueError("no signature")):
         inspector = GhostInspector()
         ref = inspector.inspect(
@@ -303,7 +306,7 @@ def test_c_extension_signature_sequence_operations() -> None:
     sig = CExtensionSignature(
         params=[
             ("x", "POSITIONAL_OR_KEYWORD", None, "Tensor"),
-            ParsedParamTuple("y", "POSITIONAL_OR_KEYWORD", "1", "int"),
+            ParsedParamTuple(name="y", kind="POSITIONAL_OR_KEYWORD", default="1", annotation="int"),
         ],
         returns_type="Tensor",
     )

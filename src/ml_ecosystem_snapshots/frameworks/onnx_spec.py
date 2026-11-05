@@ -9,22 +9,19 @@ from __future__ import annotations
 import types
 import typing
 
+import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     OperandDirection,
     SemanticTier,
 )
-import pydantic
 
 from ml_ecosystem_snapshots.frameworks._base import (
     CanonicalSsaAttrSpec,
     CanonicalSsaOpSpec,
 )
 
-
-CANONICAL_ONNX_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(
-    list[CanonicalSsaOpSpec]
-).validate_python(
+CANONICAL_ONNX_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(list[CanonicalSsaOpSpec]).validate_python(
     [
         {
             "name": "Add",
@@ -281,9 +278,7 @@ def _load_onnx_ops() -> list[CanonicalSsaOpSpec]:
 
     try:
         assert isinstance(defs, _OnnxDefsModuleProtocol)
-        schemas: typing.Sequence[_OnnxOpSchemaProto] = (
-            defs.get_all_schemas_with_history()
-        )
+        schemas: typing.Sequence[_OnnxOpSchemaProto] = defs.get_all_schemas_with_history()
         latest_map: dict[tuple[str, str], _OnnxOpSchemaProto] = {}
         for s in schemas:
             key = (str(s.domain), str(s.name))
@@ -292,28 +287,20 @@ def _load_onnx_ops() -> list[CanonicalSsaOpSpec]:
                 latest_map[key] = s
 
         ops: list[CanonicalSsaOpSpec] = []
-        for (domain, name), s in sorted(
-            latest_map.items(), key=lambda x: (x[0][0], x[0][1])
-        ):
+        for (domain, name), s in sorted(latest_map.items(), key=lambda x: (x[0][0], x[0][1])):
             inputs = [str(inp.name) for inp in s.inputs]
             outputs = [str(out.name) for out in s.outputs]
             attributes: list[CanonicalSsaAttrSpec] = []
             raw_attrs = s.attributes
             assert isinstance(raw_attrs, dict)
             for attr_name, attr in raw_attrs.items():
-                desc_str = (
-                    str(attr.description or "")
-                    if isinstance(attr, _OnnxAttrDescriptionProtocol)
-                    else ""
-                )
+                desc_str = str(attr.description or "") if isinstance(attr, _OnnxAttrDescriptionProtocol) else ""
                 attributes.append(
                     CanonicalSsaAttrSpec(
                         name=str(attr_name),
                         type=str(attr.type).replace("AttrType.", "").lower(),
                         required=bool(attr.required),
-                        default=(
-                            str(attr.default_value) if attr.default_value else None
-                        ),
+                        default=(str(attr.default_value) if attr.default_value else None),
                         description=desc_str,
                     )
                 )
@@ -339,9 +326,7 @@ def _load_onnx_ops() -> list[CanonicalSsaOpSpec]:
 _get_canonical_onnx_ops = _load_onnx_ops
 
 
-def collect_api(
-    category: SemanticTier, include_nonpublic: bool = False
-) -> list[GhostRef]:
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Collect ONNX operator definitions for the specified semantic tier.
 
     Args:
@@ -361,15 +346,7 @@ def collect_api(
         return []
 
     ops = _load_onnx_ops()
-    filtered_ops = [
-        op
-        for op in ops
-        if include_nonpublic
-        or (
-            "preview" not in str(op.get("domain", ""))
-            and "internal" not in str(op.get("domain", ""))
-        )
-    ]
+    filtered_ops = [op for op in ops if include_nonpublic or ("preview" not in str(op.get("domain", "")) and "internal" not in str(op.get("domain", "")))]
 
     return build_ssa_operation_refs(
         ops=filtered_ops,
@@ -388,7 +365,5 @@ def collect_api(
         },
         default_doc_fn=lambda op_name: f"ONNX {op_name} operator.",
         environment_tags=("onnx",),
-        api_path_fn=lambda op, op_name: (
-            f"onnx.{op['domain']}.{op_name}" if op.get("domain") else f"onnx.{op_name}"
-        ),
+        api_path_fn=lambda op, op_name: f"onnx.{op['domain']}.{op_name}" if op.get("domain") else f"onnx.{op_name}",
     )

@@ -5,14 +5,14 @@ from __future__ import annotations
 import ast
 import re
 import typing
-import typing_extensions
 
 import pydantic
+import typing_extensions
 
 from ml_ecosystem_snapshots.exceptions import CExtensionSignatureError
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     InspectableTarget,
-    read_runtime_attr,
+    get_member_dict,
 )
 
 RawParamTuple: typing_extensions.TypeAlias = tuple[str, str, "str | None", "str | None"]
@@ -27,28 +27,6 @@ class ParsedParamTuple(pydantic.BaseModel):
     kind: str
     default: str | None = None
     annotation: str | None = None
-
-    def __init__(
-        self,
-        name: str,
-        kind: str,
-        default: str | None = None,
-        annotation: str | None = None,
-    ) -> None:
-        """Initialize a `ParsedParamTuple` from positional or keyword arguments.
-
-        Args:
-            name: Parameter name.
-            kind: Parameter kind string (e.g. 'POSITIONAL_OR_KEYWORD').
-            default: Optional default value string representation.
-            annotation: Optional type annotation string representation.
-        """
-        super().__init__(
-            name=name,
-            kind=kind,
-            default=default,
-            annotation=annotation,
-        )
 
     def as_tuple(self) -> RawParamTuple:
         """Return the 4-tuple `(name, kind, default, annotation)` representation.
@@ -89,7 +67,7 @@ def _to_parsed_param_tuple(
     """
     if isinstance(item, ParsedParamTuple):
         return item
-    return ParsedParamTuple(item[0], item[1], item[2], item[3])
+    return ParsedParamTuple(name=item[0], kind=item[1], default=item[2], annotation=item[3])
 
 
 class CExtensionSignature:
@@ -153,11 +131,7 @@ class CExtensionSignature:
 
     def __eq__(
         self,
-        other: (
-            CExtensionSignature
-            | typing.Sequence[ParsedParamTuple | RawParamTuple]
-            | InspectableTarget
-        ),
+        other: (CExtensionSignature | typing.Sequence[ParsedParamTuple | RawParamTuple] | InspectableTarget),
     ) -> bool:
         """Compare equality against another `CExtensionSignature` or `list` of tuples.
 
@@ -182,16 +156,14 @@ class CExtensionSignature:
         return repr([p.as_tuple() for p in self.params])
 
 
-def _normalize_c_sig_args(args_str: str) -> str:
-    """Normalize C++ / PyBind / ATen parameter syntax to Python syntax for AST parsing.
-
-    Converts signatures like 'Tensor self, bool inplace=False' into 'self: "Tensor" = False'.
+def _split_c_sig_tokens(args_str: str) -> list[str]:
+    """Split a raw C-extension parameter string by top-level commas.
 
     Args:
-        args_str: Raw parameter string from C-extension docstring.
+        args_str: Raw parameter list string from a C-extension docstring.
 
     Returns:
-        Normalized Python parameter string.
+        List of individual stripped parameter token strings.
     """
     tokens: list[str] = []
     depth = 0
@@ -210,33 +182,45 @@ def _normalize_c_sig_args(args_str: str) -> str:
             cur.append(char)
     if cur:
         tokens.append("".join(cur).strip())
+    return tokens
 
-    transformed: list[str] = []
-    for tok in tokens:
-        if not tok:
-            continue
-        if tok in ("*", "/"):
-            transformed.append(tok)
-            continue
-        if tok.startswith("*"):
-            transformed.append(tok)
-            continue
-        if ":" in tok:
-            transformed.append(tok)
-            continue
-        m = re.match(
-            r"^(?:const\s+)?([a-zA-Z_][\w:]*(?:<[^>]+>)?(?:\s*[*&]+)?)\s+([a-zA-Z_]\w*)(?:\s*=\s*(.+))?$",
-            tok,
-        )
-        if m:
-            typ, name, default = m.group(1).strip(), m.group(2).strip(), m.group(3)
-            clean_typ = typ.replace("&", "").replace("*", "").strip()
-            if default is not None:
-                transformed.append(f'{name}: "{clean_typ}" = {default.strip()}')
-            else:
-                transformed.append(f'{name}: "{clean_typ}"')
-        else:
-            transformed.append(tok)
+
+def _transform_c_sig_token(tok: str) -> str:
+    """Convert a single C++/PyBind11 parameter token into Python parameter syntax.
+
+    Args:
+        tok: Single parameter token string.
+
+    Returns:
+        Normalized Python parameter syntax string.
+    """
+    if tok in ("*", "/") or tok.startswith("*") or ":" in tok:
+        return tok
+    m = re.match(
+        r"^(?:const\s+)?([a-zA-Z_][\w:]*(?:<[^>]+>)?(?:\s*[*&]+)?)\s+([a-zA-Z_]\w*)(?:\s*=\s*(.+))?$",
+        tok,
+    )
+    if m:
+        typ, name, default = m.group(1).strip(), m.group(2).strip(), m.group(3)
+        clean_typ = typ.replace("&", "").replace("*", "").strip()
+        if default is not None:
+            return f'{name}: "{clean_typ}" = {default.strip()}'
+        return f'{name}: "{clean_typ}"'
+    return tok
+
+
+def _normalize_c_sig_args(args_str: str) -> str:
+    """Normalize C++ / PyBind / ATen parameter syntax to Python syntax for AST parsing.
+
+    Converts signatures like 'Tensor self, bool inplace=False' into 'self: "Tensor" = False'.
+
+    Args:
+        args_str: Raw parameter string from C-extension docstring.
+
+    Returns:
+        Normalized Python parameter string.
+    """
+    transformed = [_transform_c_sig_token(tok) for tok in _split_c_sig_tokens(args_str) if tok]
     return ", ".join(transformed)
 
 
@@ -266,9 +250,39 @@ def _parse_c_sig_ast_arguments(args_str: str) -> ast.arguments:
             assert isinstance(func_def, ast.FunctionDef)
             return func_def.args
         except SyntaxError as exc:
-            raise CExtensionSignatureError(
-                f"Failed to parse C-extension parameter signature: '{args_str}'"
-            ) from exc
+            raise CExtensionSignatureError(f"Failed to parse C-extension parameter signature: '{args_str}'") from exc
+
+
+def _unparse_c_sig_anno(node: ast.AST | None) -> str | None:
+    """Convert an AST annotation node back to a string.
+
+    Args:
+        node: AST annotation node or None.
+
+    Returns:
+        Unparsed annotation string or None when unannotated.
+    """
+    if node is None:
+        return None
+    return ast.unparse(node)
+
+
+def _unparse_c_sig_default(node: ast.AST) -> str:
+    """Convert an AST default value node to a string representation.
+
+    Args:
+        node: AST default value node.
+
+    Returns:
+        String representation of the default value.
+    """
+    try:
+        val = ast.literal_eval(node)
+        if isinstance(val, str):
+            return repr(val)
+        return str(val)
+    except ValueError:
+        return ast.unparse(node)
 
 
 def _parse_c_extension_sig_str(
@@ -300,36 +314,6 @@ def _parse_c_extension_sig_str(
 
     extracted_params: list[ParsedParamTuple] = []
 
-    def unparse_anno(node: ast.AST | None) -> str | None:
-        """Convert an AST annotation node back to a string.
-
-        Args:
-            node: AST node.
-
-        Returns:
-            String representation or None.
-        """
-        if node is None:
-            return None
-        return ast.unparse(node)
-
-    def unparse_default(node: ast.AST) -> str:
-        """Convert an AST default value node to a string representation.
-
-        Args:
-            node: AST node.
-
-        Returns:
-            String representation.
-        """
-        try:
-            val = ast.literal_eval(node)
-            if isinstance(val, str):
-                return repr(val)
-            return str(val)
-        except ValueError:
-            return ast.unparse(node)
-
     num_defaults = len(args.defaults)
     posonly_args = args.posonlyargs
     posonly_count = len(posonly_args)
@@ -343,60 +327,47 @@ def _parse_c_extension_sig_str(
         if p_name == "self":
             continue
         p_kind = "POSITIONAL_ONLY" if i < posonly_count else "POSITIONAL_OR_KEYWORD"
-        p_anno = unparse_anno(arg.annotation)
-        p_def = (
-            unparse_default(args.defaults[i - default_offset])
-            if i >= default_offset
-            else None
-        )
-        extracted_params.append(ParsedParamTuple(p_name, p_kind, p_def, p_anno))
+        p_anno = _unparse_c_sig_anno(arg.annotation)
+        p_def = _unparse_c_sig_default(args.defaults[i - default_offset]) if i >= default_offset else None
+        extracted_params.append(ParsedParamTuple(name=p_name, kind=p_kind, default=p_def, annotation=p_anno))
 
     if args.vararg:
         p_name = args.vararg.arg
         p_kind = "VAR_POSITIONAL"
-        p_anno = unparse_anno(args.vararg.annotation)
-        extracted_params.append(ParsedParamTuple(p_name, p_kind, None, p_anno))
+        p_anno = _unparse_c_sig_anno(args.vararg.annotation)
+        extracted_params.append(ParsedParamTuple(name=p_name, kind=p_kind, default=None, annotation=p_anno))
 
     for i, arg in enumerate(args.kwonlyargs):
         p_name = arg.arg
         p_kind = "KEYWORD_ONLY"
-        p_anno = unparse_anno(arg.annotation)
+        p_anno = _unparse_c_sig_anno(arg.annotation)
         default_node = args.kw_defaults[i]
-        p_def = unparse_default(default_node) if default_node else None
-        extracted_params.append(ParsedParamTuple(p_name, p_kind, p_def, p_anno))
+        p_def = _unparse_c_sig_default(default_node) if default_node else None
+        extracted_params.append(ParsedParamTuple(name=p_name, kind=p_kind, default=p_def, annotation=p_anno))
 
     if args.kwarg:
         p_name = args.kwarg.arg
         p_kind = "VAR_KEYWORD"
-        p_anno = unparse_anno(args.kwarg.annotation)
-        extracted_params.append(ParsedParamTuple(p_name, p_kind, None, p_anno))
+        p_anno = _unparse_c_sig_anno(args.kwarg.annotation)
+        extracted_params.append(ParsedParamTuple(name=p_name, kind=p_kind, default=None, annotation=p_anno))
 
     return func_name, extracted_params, ret_type_str
 
 
-def extract_c_extension_signature(
-    target: InspectableTarget, target_name: str
-) -> CExtensionSignature | None:
-    """Extract signature parameters from C-extension / PyBind11 docstrings.
+def _collect_docstring_signatures(
+    lines: list[str],
+    has_numbered: bool,
+) -> tuple[list[tuple[str, list[ParsedParamTuple], str | None]], bool]:
+    """Scan docstring lines for primary and overloaded C-extension signatures.
 
     Args:
-        target: The callable target to inspect.
-        target_name: The name of the callable.
+        lines: Stripped docstring lines to inspect.
+        has_numbered: Initial flag indicating whether numbered overloads exist.
 
     Returns:
-        A CExtensionSignature sequence of parameter tuples: (name, kind, default_str, annotation_str)
-        with .returns_type and .overloads populated, or None if parsing fails.
+        Tuple of `(parsed_signatures, updated_has_numbered)`.
     """
-    docstring = read_runtime_attr(target, "__doc__", None)
-    if not docstring or not isinstance(docstring, str) or not docstring.strip():
-        return None
-
-    lines = docstring.strip().splitlines()
-
     parsed_sigs: list[tuple[str, list[ParsedParamTuple], str | None]] = []
-
-    has_numbered = any(re.match(r"^\s*\d+[\.\)]", line) for line in lines)
-
     for line in lines:
         stripped = line.strip()
         if not stripped:
@@ -411,42 +382,66 @@ def extract_c_extension_signature(
                 break
         elif "overloaded function" in stripped.lower():
             has_numbered = True
+    return parsed_sigs, has_numbered
+
+
+def _fallback_target_signature(
+    lines: list[str],
+    target_name: str,
+) -> list[tuple[str, list[ParsedParamTuple], str | None]]:
+    """Search docstring lines for a fallback call example matching `target_name`.
+
+    Args:
+        lines: Docstring lines to scan.
+        target_name: Name of the callable target.
+
+    Returns:
+        Single-element list with parsed signature tuple if found, otherwise empty list.
+    """
+    for line in lines:
+        stripped = line.strip()
+        if "(" in stripped and ")" in stripped:
+            clean_cand = re.sub(r"^(?:>>>|\.\.\.)\s*", "", stripped).strip()
+            if clean_cand.startswith(f"{target_name}(") or f".{target_name}(" in clean_cand or target_name in clean_cand:
+                parsed = _parse_c_extension_sig_str(clean_cand)
+                if parsed is not None:
+                    return [parsed]
+    return []
+
+
+def extract_c_extension_signature(target: InspectableTarget, target_name: str) -> CExtensionSignature | None:
+    """Extract signature parameters from C-extension / PyBind11 docstrings.
+
+    Args:
+        target: The callable target to inspect.
+        target_name: The name of the callable.
+
+    Returns:
+        A CExtensionSignature sequence of parameter tuples: (name, kind, default_str, annotation_str)
+        with .returns_type and .overloads populated, or None if parsing fails.
+    """
+    docstring = get_member_dict(target).get("__doc__")
+    if not docstring or not isinstance(docstring, str) or not docstring.strip():
+        return None
+
+    lines = docstring.strip().splitlines()
+    has_numbered = any(re.match(r"^\s*\d+[\.\)]", line) for line in lines)
+    parsed_sigs, has_numbered = _collect_docstring_signatures(lines, has_numbered)
 
     if not parsed_sigs:
-        for line in lines:
-            stripped = line.strip()
-            if "(" in stripped and ")" in stripped:
-                clean_cand = re.sub(r"^(?:>>>|\.\.\.)\s*", "", stripped).strip()
-                if (
-                    clean_cand.startswith(f"{target_name}(")
-                    or f".{target_name}(" in clean_cand
-                    or target_name in clean_cand
-                ):
-                    parsed = _parse_c_extension_sig_str(clean_cand)
-                    if parsed is not None:
-                        parsed_sigs.append(parsed)
-                        break
+        parsed_sigs = _fallback_target_signature(lines, target_name)
 
     if not parsed_sigs:
         return None
 
-    if (
-        len(parsed_sigs) > 1
-        and has_numbered
-        and len(parsed_sigs[0][1]) == 2
-        and parsed_sigs[0][1][0][1] == "VAR_POSITIONAL"
-        and parsed_sigs[0][1][1][1] == "VAR_KEYWORD"
-    ):
+    if len(parsed_sigs) > 1 and has_numbered and len(parsed_sigs[0][1]) == 2 and parsed_sigs[0][1][0][1] == "VAR_POSITIONAL" and parsed_sigs[0][1][1][1] == "VAR_KEYWORD":
         primary = parsed_sigs[1]
         secondary = parsed_sigs[2:]
     else:
         primary = parsed_sigs[0]
         secondary = parsed_sigs[1:]
 
-    overload_objs = [
-        CExtensionSignature(params=ov[1], returns_type=ov[2], overloads=[])
-        for ov in secondary
-    ]
+    overload_objs = [CExtensionSignature(params=ov[1], returns_type=ov[2], overloads=[]) for ov in secondary]
 
     return CExtensionSignature(
         params=primary[1],

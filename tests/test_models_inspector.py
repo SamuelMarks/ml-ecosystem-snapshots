@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import pytest_mock
-
-
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostParam
@@ -45,9 +43,7 @@ def dummy_func_sphinx_docstring(y: InspectableTarget) -> None:
 
 def test_cdd_returns_and_params() -> None:
     """Verify cdd returns and params behavior."""
-    ref = GhostInspector.inspect(
-        dummy_func_with_docstring, "tests.dummy_func_with_docstring"
-    )
+    ref = GhostInspector.inspect(dummy_func_with_docstring, "tests.dummy_func_with_docstring")
     assert ref.returns_description is not None
     assert ref.params[0].name == "x"
     assert ref.params[0].description == "The x value."
@@ -55,9 +51,7 @@ def test_cdd_returns_and_params() -> None:
 
 def test_cdd_sphinx_raises() -> None:
     """Verify cdd sphinx raises behavior."""
-    ref = GhostInspector.inspect(
-        dummy_func_sphinx_docstring, "tests.dummy_func_sphinx_docstring"
-    )
+    ref = GhostInspector.inspect(dummy_func_sphinx_docstring, "tests.dummy_func_sphinx_docstring")
     assert ref.raises is not None
     assert "TypeError" in ref.raises
 
@@ -79,9 +73,7 @@ def test_cdd_exception_handling(mocker: pytest_mock.MockerFixture) -> None:
         mocker: Pytest mocker fixture.
     """
     mocker.patch("cdd.docstring.parse.docstring", side_effect=ValueError)
-    ref = GhostInspector.inspect(
-        dummy_func_with_docstring, "tests.dummy_func_with_docstring"
-    )
+    ref = GhostInspector.inspect(dummy_func_with_docstring, "tests.dummy_func_with_docstring")
     assert ref.name == "dummy_func_with_docstring"
 
 
@@ -96,9 +88,7 @@ def test_cdd_direct_raises(mocker: pytest_mock.MockerFixture) -> None:
         "cdd.docstring.parse.docstring",
         return_value={"raises": [{"typ": "KeyError"}]},
     )
-    ref = GhostInspector.inspect(
-        dummy_func_with_docstring, "tests.dummy_func_with_docstring"
-    )
+    ref = GhostInspector.inspect(dummy_func_with_docstring, "tests.dummy_func_with_docstring")
     assert ref.raises is not None
     assert "KeyError" in ref.raises
 
@@ -120,7 +110,9 @@ def test_inspect_annotation_fallback() -> None:
         """
         pass
 
-    func_annotated.__annotations__["a"] = ForwardRefStr()
+    import pytest
+
+    pytest.MonkeyPatch().setattr(func_annotated, "__annotations__", {"a": ForwardRefStr(), "return": None})
 
     ref = GhostInspector.inspect(func_annotated, "tests.func_annotated")
     assert ref.params[0].annotation is not None
@@ -145,9 +137,7 @@ def test_griffe_self_skip() -> None:
     # we need a real class importable by griffe to test griffe skipping 'self'
     import email.message
 
-    ref = GhostInspector.inspect(
-        email.message.Message.set_payload, "email.message.Message.set_payload"
-    )
+    ref = GhostInspector.inspect(email.message.Message.set_payload, "email.message.Message.set_payload")
     assert not ref.has_arg("self")
     assert ref.has_arg("payload")
 
@@ -174,9 +164,7 @@ def test_models_raises_no_typ(mocker: pytest_mock.MockerFixture) -> None:
         "ml_ecosystem_snapshots.introspection.inspector.extract_griffe_docstring_metadata",
         return_value={"params": {}, "returns": None, "raises": []},
     )
-    ref = GhostInspector.inspect(
-        dummy_func_with_docstring, "tests.dummy_func_with_docstring"
-    )
+    ref = GhostInspector.inspect(dummy_func_with_docstring, "tests.dummy_func_with_docstring")
     assert not ref.raises
 
 
@@ -202,9 +190,7 @@ def test_ghost_inspector_aten_overload_and_factory_default(
     )
     aten_sig = CExtensionSignature(
         params=[("x", "POSITIONAL_OR_KEYWORD", None, "int")],
-        overloads=[
-            CExtensionSignature(params=[("z", "POSITIONAL_OR_KEYWORD", None, "str")])
-        ],
+        overloads=[CExtensionSignature(params=[("z", "POSITIONAL_OR_KEYWORD", None, "str")])],
     )
 
     mocker.patch(
@@ -266,9 +252,7 @@ def test_ghost_inspector_aten_overload_and_factory_default(
     built_params = _build_extended_params(
         extracted_params=[("alpha", "POSITIONAL_OR_KEYWORD", None, None)],
         cdd_params={},
-        cdd_ast_params={
-            "alpha": ExtractedParamRecord(doc="alpha doc", typ="float", default=None)
-        },
+        cdd_ast_params={"alpha": ExtractedParamRecord(doc="alpha doc", typ="float", default=None)},
         is_torch_target=False,
         name="sample",
         active_sanitize_type_str=sanitize_type_str,
@@ -305,8 +289,9 @@ def test_ghost_inspector_aten_none(mocker: pytest_mock.MockerFixture) -> None:
 def test_ghost_inspector_hydrate_variations() -> None:
     """Test GhostInspector.hydrate handles missing kind and pre-hydrated parameters."""
     import typing
-    from ml_switcheroo_ir.schema.ghost import GhostParam, ParameterKind
+
     from ml_ecosystem_snapshots.models import JsonValue
+    from ml_switcheroo_ir.schema.ghost import GhostParam, ParameterKind
 
     data: dict[str, JsonValue | typing.Sequence[JsonValue | GhostParam]] = {
         "name": "op_test",

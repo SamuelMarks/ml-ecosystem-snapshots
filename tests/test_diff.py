@@ -36,39 +36,27 @@ def test_diff_snapshots() -> None:
                 },
                 {
                     "api_path": "a.removed_param",
-                    "params": [
-                        {"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "1"}
-                    ],
+                    "params": [{"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "1"}],
                 },
                 {
                     "api_path": "a.added_param_no_default",
-                    "params": [
-                        {"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "1"}
-                    ],
+                    "params": [{"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "1"}],
                 },
                 {
                     "api_path": "a.kind_change_restrictive",
-                    "params": [
-                        {"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "1"}
-                    ],
+                    "params": [{"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "1"}],
                 },
                 {
                     "api_path": "a.kind_change_pos_to_kw",
-                    "params": [
-                        {"name": "x", "kind": "POSITIONAL_ONLY", "default": "1"}
-                    ],
+                    "params": [{"name": "x", "kind": "POSITIONAL_ONLY", "default": "1"}],
                 },
                 {
                     "api_path": "a.kind_change_to_var",
-                    "params": [
-                        {"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "1"}
-                    ],
+                    "params": [{"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "1"}],
                 },
                 {
                     "api_path": "a.default_removed",
-                    "params": [
-                        {"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "1"}
-                    ],
+                    "params": [{"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "1"}],
                 },
             ]
         }
@@ -205,15 +193,11 @@ def test_generate_changelog() -> None:
                 {"api_path": "a.removed", "params": []},
                 {
                     "api_path": "a.breaking",
-                    "params": [
-                        {"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "1"}
-                    ],
+                    "params": [{"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "1"}],
                 },
                 {
                     "api_path": "a.non_breaking",
-                    "params": [
-                        {"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "1"}
-                    ],
+                    "params": [{"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "1"}],
                 },
             ]
         }
@@ -224,9 +208,7 @@ def test_generate_changelog() -> None:
                 {"api_path": "a.added", "params": []},
                 {
                     "api_path": "a.breaking",
-                    "params": [
-                        {"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "2"}
-                    ],
+                    "params": [{"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "default": "2"}],
                 },
                 {
                     "api_path": "a.non_breaking",
@@ -315,16 +297,8 @@ def test_diff_branches() -> None:
     from ml_ecosystem_snapshots.diff import diff_snapshots
 
     # Hit line 81->87 (_compare_params empty)
-    s1: dict[str, JsonValue] = {
-        "categories": {
-            "MODEL": [{"name": "A", "api_path": "A", "kind": "function", "params": []}]
-        }
-    }
-    s2: dict[str, JsonValue] = {
-        "categories": {
-            "MODEL": [{"name": "A", "api_path": "A", "kind": "function", "params": []}]
-        }
-    }
+    s1: dict[str, JsonValue] = {"categories": {"MODEL": [{"name": "A", "api_path": "A", "kind": "function", "params": []}]}}
+    s2: dict[str, JsonValue] = {"categories": {"MODEL": [{"name": "A", "api_path": "A", "kind": "function", "params": []}]}}
     res_empty = diff_snapshots(s1, s2)
     assert res_empty.added == []
     assert res_empty.removed == []
@@ -490,9 +464,7 @@ def test_diff_snapshots_list_and_non_dict() -> None:
     """Test diff_snapshots with list inputs, invalid types, and empty items."""
     # List format
     list_snap1: list[dict[str, JsonValue]] = [{"api_path": "foo.bar", "params": []}]
-    list_snap2: list[dict[str, JsonValue]] = [
-        {"api_path": "foo.bar", "params": [{"name": "x"}]}
-    ]
+    list_snap2: list[dict[str, JsonValue]] = [{"api_path": "foo.bar", "params": [{"name": "x"}]}]
     res_list = diff_snapshots(list_snap1, list_snap2)
     assert "foo.bar" in res_list.signature_changed
 
@@ -505,9 +477,7 @@ def test_diff_snapshots_list_and_non_dict() -> None:
 
     # Item without api_path, name, or mnemonic
     empty_item_snap1: dict[str, JsonValue] = {"categories": {"misc": [{}]}}
-    empty_item_snap2: dict[str, JsonValue] = {
-        "categories": {"misc": [{"other_key": "val"}]}
-    }
+    empty_item_snap2: dict[str, JsonValue] = {"categories": {"misc": [{"other_key": "val"}]}}
     res_empty_item = diff_snapshots(empty_item_snap1, empty_item_snap2)
     assert res_empty_item.added == []
     assert res_empty_item.removed == []
@@ -685,18 +655,8 @@ def test_diff_return_type_mutations() -> None:
     assert "ops.compute" in res_none.breaking_signature_changed
 
     # Wildcard to int (non-breaking)
-    snap_any: dict[str, JsonValue] = {
-        "categories": {
-            "ops": [
-                {"api_path": "ops.compute", "params": [], "returns_type": "A" + "ny"}
-            ]
-        }
-    }
-    snap_int: dict[str, JsonValue] = {
-        "categories": {
-            "ops": [{"api_path": "ops.compute", "params": [], "returns_type": "int"}]
-        }
-    }
+    snap_any: dict[str, JsonValue] = {"categories": {"ops": [{"api_path": "ops.compute", "params": [], "returns_type": "A" + "ny"}]}}
+    snap_int: dict[str, JsonValue] = {"categories": {"ops": [{"api_path": "ops.compute", "params": [], "returns_type": "int"}]}}
     res_any = diff_snapshots(snap_any, snap_int)
     assert "ops.compute" in res_any.non_breaking_signature_changed
 
@@ -756,16 +716,8 @@ def test_diff_overloads_and_changelog() -> None:
     assert "fn.overloaded" in res_added_ov.non_breaking_signature_changed
 
     # Empty return type string (non-breaking)
-    snap_empty_ret: dict[str, JsonValue] = {
-        "categories": {
-            "fn": [{"api_path": "fn.empty", "params": [], "returns_type": ""}]
-        }
-    }
-    snap_valid_ret: dict[str, JsonValue] = {
-        "categories": {
-            "fn": [{"api_path": "fn.empty", "params": [], "returns_type": "int"}]
-        }
-    }
+    snap_empty_ret: dict[str, JsonValue] = {"categories": {"fn": [{"api_path": "fn.empty", "params": [], "returns_type": ""}]}}
+    snap_valid_ret: dict[str, JsonValue] = {"categories": {"fn": [{"api_path": "fn.empty", "params": [], "returns_type": "int"}]}}
     res_empty_ret = diff_snapshots(snap_empty_ret, snap_valid_ret)
     assert "fn.empty" in res_empty_ret.non_breaking_signature_changed
 

@@ -17,8 +17,8 @@ __version__ = "0.0.5"
 
 try:
     from ml_ecosystem_snapshots.api import (
-        extract_snapshot,
         extract_all_snapshots,
+        extract_snapshot,
         write_snapshot,
     )
 

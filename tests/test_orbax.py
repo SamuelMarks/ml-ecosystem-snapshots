@@ -6,9 +6,7 @@ import argparse
 import types
 from unittest.mock import patch
 
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 import pytest
-
 from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli.commands.check import cmd_check_orbax
 from ml_ecosystem_snapshots.frameworks import orbax_checkpoint
@@ -20,6 +18,7 @@ from ml_ecosystem_snapshots.mcp.tools.hallucination import (
     explain_anti_pattern,
 )
 from ml_ecosystem_snapshots.utils import get_framework_docstring_parser
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 
 def test_orbax_docstring_parser_and_version_fallback() -> None:
@@ -130,18 +129,10 @@ def test_scan_and_collect_orbax_api_all_branches(
         """
         return x
 
-    pytest.MonkeyPatch().setattr(
-        fake_exp, "_private_export_helper", _private_export_helper, raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        fake_exp, "custom_export_fn", custom_export_fn, raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        fake_exp, "failing_export_fn", failing_export_fn, raising=False
-    )
-    pytest.MonkeyPatch().setattr(
-        fake_exp, "ExportManager", custom_export_fn, raising=False
-    )
+    pytest.MonkeyPatch().setattr(fake_exp, "_private_export_helper", _private_export_helper, raising=False)
+    pytest.MonkeyPatch().setattr(fake_exp, "custom_export_fn", custom_export_fn, raising=False)
+    pytest.MonkeyPatch().setattr(fake_exp, "failing_export_fn", failing_export_fn, raising=False)
+    pytest.MonkeyPatch().setattr(fake_exp, "ExportManager", custom_export_fn, raising=False)
     pytest.MonkeyPatch().setattr(fake_exp, "CONST_VAL", 42, raising=False)
 
     ocp_ref = GhostRef(
@@ -260,20 +251,13 @@ def test_check_orbax_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
         attributes="max_to_keep,save_interval_steps",
     )
     cmd_check_orbax(args_ok)
-    assert (
-        "Orbax Operation 'CheckpointManagerOptions' is valid."
-        in capsys.readouterr().out
-    )
+    assert "Orbax Operation 'CheckpointManagerOptions' is valid." in capsys.readouterr().out
 
-    args_fail = argparse.Namespace(
-        op_name="InvalidOrbaxOp", inputs_count=None, attributes=None
-    )
+    args_fail = argparse.Namespace(op_name="InvalidOrbaxOp", inputs_count=None, attributes=None)
     with pytest.raises(SystemExit):
         cmd_check_orbax(args_fail)
 
-    anti = explain_anti_pattern(
-        "orbax", "orbax.checkpoint.CheckpointManagerOptions", "max_checkpoints"
-    )
+    anti = explain_anti_pattern("orbax", "orbax.checkpoint.CheckpointManagerOptions", "max_checkpoints")
     assert anti["is_known_anti_pattern"] is True
     assert anti["canonical_argument"] == "max_to_keep"
 
@@ -283,9 +267,7 @@ mgr = orbax.checkpoint.CheckpointManagerOptions(max_checkpoints=3)"""
     )
     assert block_res_orbax["total_analyzed"] == 1
 
-    block_res_ocp = check_code_block(
-        """mgr = ocp.CheckpointManagerOptions(max_checkpoints=3)"""
-    )
+    block_res_ocp = check_code_block("""mgr = ocp.CheckpointManagerOptions(max_checkpoints=3)""")
     assert block_res_ocp["total_analyzed"] == 1
 
 

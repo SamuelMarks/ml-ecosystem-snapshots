@@ -5,9 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import typing
+
+from ml_switcheroo_ir.schema.ghost import GhostRef
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_switcheroo_ir.schema.ghost import GhostRef
+from ml_ecosystem_snapshots.models import JsonValue
 
 
 def cmd_stubs(args: argparse.Namespace) -> None:
@@ -20,10 +23,133 @@ def cmd_stubs(args: argparse.Namespace) -> None:
     from ml_ecosystem_snapshots.stubs import generate_stubs
 
     path = resolve_snapshot_path(args.input)
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         snap = json.load(f)
     generate_stubs(snap, args.out_dir, include_nonpublic=args.include_nonpublic)
     print(f"Stubs generated in {args.out_dir}")
+
+
+def _hydrate_snapshot_refs(snap: JsonValue) -> list[GhostRef]:
+    """Hydrate a loaded snapshot JSON list or dictionary into `GhostRef` instances.
+
+    Args:
+        snap: Loaded JSON snapshot payload (`list` or `dict`).
+
+    Returns:
+        List of hydrated `GhostRef` objects.
+    """
+    refs: list[GhostRef] = []
+    if isinstance(snap, list):
+        for item in snap:
+            assert isinstance(item, dict)
+            refs.append(GhostInspector.hydrate(item))
+    elif isinstance(snap, dict):
+        cats = snap.get("categories", {})
+        assert isinstance(cats, dict)
+        for _cat, items in cats.items():
+            assert isinstance(items, list)
+            for item in items:
+                assert isinstance(item, dict)
+                refs.append(GhostInspector.hydrate(item))
+    return refs
+
+
+def _export_prompt_format(
+    fmt: str,
+    out_dir: str,
+    refs: list[GhostRef],
+    snap: JsonValue,
+) -> bool:
+    """Export prompt context formats if `fmt` matches a prompt format identifier.
+
+    Args:
+        fmt: Requested export format string.
+        out_dir: Destination directory path.
+        refs: Hydrated `GhostRef` list.
+        snap: Raw loaded snapshot JSON payload.
+
+    Returns:
+        True if `fmt` was handled as a prompt format, False otherwise.
+    """
+    from ml_ecosystem_snapshots.export import (
+        export_llm_prompt_context,
+        export_mlir_prompt_context,
+        export_ptx_prompt_context,
+        export_rdna_prompt_context,
+        export_sass_prompt_context,
+        export_scoped_prompt_context,
+        export_stablehlo_prompt_context,
+    )
+
+    prompt_dispatch: dict[str, tuple[typing.Callable[[typing.Sequence[GhostRef]], str], str, str]] = {
+        "llm_prompt": (export_llm_prompt_context, "llm_context.md", "LLM"),
+        "sass_prompt": (export_sass_prompt_context, "sass_context.md", "SASS"),
+        "mlir_prompt": (export_mlir_prompt_context, "mlir_context.md", "MLIR"),
+        "rdna_prompt": (export_rdna_prompt_context, "rdna_context.md", "RDNA"),
+        "ptx_prompt": (export_ptx_prompt_context, "ptx_context.md", "PTX"),
+        "stablehlo_prompt": (export_stablehlo_prompt_context, "stablehlo_context.md", "StableHLO"),
+    }
+    if fmt in prompt_dispatch:
+        fn, filename, label = prompt_dispatch[fmt]
+        content = fn(refs)
+        out_path = os.path.join(out_dir, filename)
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"Exported {label} prompt context to {out_path}")
+        return True
+    if fmt == "scoped_prompt":
+        fw_name = (snap.get("target") if isinstance(snap, dict) else None) or (refs[0].model_dump().get("framework") if refs else None) or "unknown"
+        content = export_scoped_prompt_context(str(fw_name))
+        out_path = os.path.join(out_dir, "scoped_context.md")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"Exported Scoped prompt context to {out_path}")
+        return True
+    return False
+
+
+def _export_per_ref_code(
+    fmt: str,
+    out_dir: str,
+    refs: list[GhostRef],
+) -> bool:
+    """Export per-symbol code files (`pydantic`, `protobuf`, `cpp_header`) if `fmt` matches.
+
+    Args:
+        fmt: Requested export format string.
+        out_dir: Destination directory path.
+        refs: Hydrated `GhostRef` list.
+
+    Returns:
+        True if `fmt` was handled as a per-ref code format, False otherwise.
+    """
+    from ml_ecosystem_snapshots.export import to_cpp_header, to_protobuf, to_pydantic
+
+    if fmt == "pydantic":
+        for ref in refs:
+            code = to_pydantic(ref)
+            out_path = os.path.join(out_dir, f"{ref.name.lower()}.py")
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(code)
+        print(f"Exported {len(refs)} Pydantic models to {out_dir}")
+        return True
+    if fmt == "protobuf":
+        for ref in refs:
+            code = to_protobuf(ref)
+            out_path = os.path.join(out_dir, f"{ref.name.lower()}.proto")
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(code)
+        print(f"Exported {len(refs)} Protobuf definitions to {out_dir}")
+        return True
+    if fmt == "cpp_header":
+        for ref in refs:
+            code = to_cpp_header(ref)
+            out_path = os.path.join(out_dir, f"{ref.name.lower()}.hpp")
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(code)
+        print(f"Exported {len(refs)} C++ headers to {out_dir}")
+        return True
+    return False
 
 
 def cmd_export(args: argparse.Namespace) -> None:
@@ -38,19 +164,16 @@ def cmd_export(args: argparse.Namespace) -> None:
     from ml_ecosystem_snapshots.cli.resolver import resolve_snapshot_path
 
     path = resolve_snapshot_path(args.input)
-    with open(path, "r", encoding="utf-8") as f:
-        snap = json.load(f)
+    with open(path, encoding="utf-8") as f:
+        snap: JsonValue = json.load(f)
 
-    refs: list[GhostRef] = []
-    if isinstance(snap, list):
-        for item in snap:
-            refs.append(GhostInspector.hydrate(item))
-    elif isinstance(snap, dict):
-        for _cat, items in snap.get("categories", {}).items():
-            for item in items:
-                refs.append(GhostInspector.hydrate(item))
-
+    refs = _hydrate_snapshot_refs(snap)
     os.makedirs(args.out_dir, exist_ok=True)
+
+    if _export_prompt_format(args.format, args.out_dir, refs, snap):
+        return
+    if _export_per_ref_code(args.format, args.out_dir, refs):
+        return
 
     if args.format == "openapi":
         from ml_ecosystem_snapshots.export import to_openapi
@@ -71,94 +194,6 @@ def cmd_export(args: argparse.Namespace) -> None:
                 json.dump(schema, f, indent=2, sort_keys=True)
                 f.write("\n")
         print(f"Exported {len(refs)} JSON schemas to {args.out_dir}")
-    elif args.format == "pydantic":
-        from ml_ecosystem_snapshots.export import to_pydantic
-
-        for ref in refs:
-            code = to_pydantic(ref)
-            out_path = os.path.join(args.out_dir, f"{ref.name.lower()}.py")
-            with open(out_path, "w", encoding="utf-8") as f:
-                f.write(code)
-        print(f"Exported {len(refs)} Pydantic models to {args.out_dir}")
-    elif args.format == "protobuf":
-        from ml_ecosystem_snapshots.export import to_protobuf
-
-        for ref in refs:
-            code = to_protobuf(ref)
-            out_path = os.path.join(args.out_dir, f"{ref.name.lower()}.proto")
-            with open(out_path, "w", encoding="utf-8") as f:
-                f.write(code)
-        print(f"Exported {len(refs)} Protobuf definitions to {args.out_dir}")
-    elif args.format == "llm_prompt":
-        from ml_ecosystem_snapshots.export import export_llm_prompt_context
-
-        content = export_llm_prompt_context(refs)
-        out_path = os.path.join(args.out_dir, "llm_context.md")
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"Exported LLM prompt context to {out_path}")
-    elif args.format == "sass_prompt":
-        from ml_ecosystem_snapshots.export import export_sass_prompt_context
-
-        content = export_sass_prompt_context(refs)
-        out_path = os.path.join(args.out_dir, "sass_context.md")
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"Exported SASS prompt context to {out_path}")
-    elif args.format == "mlir_prompt":
-        from ml_ecosystem_snapshots.export import export_mlir_prompt_context
-
-        content = export_mlir_prompt_context(refs)
-        out_path = os.path.join(args.out_dir, "mlir_context.md")
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"Exported MLIR prompt context to {out_path}")
-    elif args.format == "rdna_prompt":
-        from ml_ecosystem_snapshots.export import export_rdna_prompt_context
-
-        content = export_rdna_prompt_context(refs)
-        out_path = os.path.join(args.out_dir, "rdna_context.md")
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"Exported RDNA prompt context to {out_path}")
-    elif args.format == "ptx_prompt":
-        from ml_ecosystem_snapshots.export import export_ptx_prompt_context
-
-        content = export_ptx_prompt_context(refs)
-        out_path = os.path.join(args.out_dir, "ptx_context.md")
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"Exported PTX prompt context to {out_path}")
-    elif args.format == "stablehlo_prompt":
-        from ml_ecosystem_snapshots.export import export_stablehlo_prompt_context
-
-        content = export_stablehlo_prompt_context(refs)
-        out_path = os.path.join(args.out_dir, "stablehlo_context.md")
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"Exported StableHLO prompt context to {out_path}")
-    elif args.format == "scoped_prompt":
-        from ml_ecosystem_snapshots.export import export_scoped_prompt_context
-
-        fw_name = (
-            (snap.get("target") if isinstance(snap, dict) else None)
-            or (refs[0].model_dump().get("framework") if refs else None)
-            or "unknown"
-        )
-        content = export_scoped_prompt_context(str(fw_name))
-        out_path = os.path.join(args.out_dir, "scoped_context.md")
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"Exported Scoped prompt context to {out_path}")
-    elif args.format == "cpp_header":
-        from ml_ecosystem_snapshots.export import to_cpp_header
-
-        for ref in refs:
-            code = to_cpp_header(ref)
-            out_path = os.path.join(args.out_dir, f"{ref.name.lower()}.hpp")
-            with open(out_path, "w", encoding="utf-8") as f:
-                f.write(code)
-        print(f"Exported {len(refs)} C++ headers to {args.out_dir}")
     elif args.format == "typescript":
         from ml_ecosystem_snapshots.export import to_typescript_interface
 

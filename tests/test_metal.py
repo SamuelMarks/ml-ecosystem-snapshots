@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import operator
-
 import argparse
-import pytest
 
+import pytest
+from ml_ecosystem_snapshots.cli import cmd_check_metal
 from ml_ecosystem_snapshots.frameworks.metal import (
     CANONICAL_METAL_OPS,
     _load_metal_ops,
     collect_api,
 )
 from ml_ecosystem_snapshots.mcp_server import check_metal_op
-from ml_ecosystem_snapshots.cli import cmd_check_metal
 from ml_switcheroo_ir.schema.ghost import (
     GhostOperationRef,
     OperandDirection,
@@ -53,10 +51,11 @@ def test_metal_op_properties_and_roles() -> None:
     assert store_ref.returns is not None and len(store_ref.returns) == 0
     assert store_ref.returns_type == "None"
     assert store_ref.operands is not None
+    from ml_ecosystem_snapshots.models import ExtendedGhostParam
+
     ptr_op = next(p for p in store_ref.operands if p.name == "ptr")
-    assert (
-        operator.attrgetter("direction")(ptr_op) if "direction" in dir(ptr_op) else None
-    ) == OperandDirection.WRITE
+    assert isinstance(ptr_op, ExtendedGhostParam)
+    assert ptr_op.direction == OperandDirection.WRITE
 
 
 def test_check_metal_op_validation() -> None:
@@ -86,9 +85,7 @@ def test_check_metal_op_validation() -> None:
         address_space="device",
     )
     assert res_space_err["is_valid"] is False
-    assert any(
-        "operates in 'thread' address space" in e for e in res_space_err["errors"]
-    )
+    assert any("operates in 'thread' address space" in e for e in res_space_err["errors"])
 
     # 4. Invalid attribute
     res_attr_err = check_metal_op(
@@ -96,9 +93,7 @@ def test_check_metal_op_validation() -> None:
         attributes=["nonexistent_dim"],
     )
     assert res_attr_err["is_valid"] is False
-    assert any(
-        "Attribute 'nonexistent_dim' is not valid" in e for e in res_attr_err["errors"]
-    )
+    assert any("Attribute 'nonexistent_dim' is not valid" in e for e in res_attr_err["errors"])
 
     # 5. Non-existent operator
     res_nonexistent = check_metal_op("nonexistent_metal_op")

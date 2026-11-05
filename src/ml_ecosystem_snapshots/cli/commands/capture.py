@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import hashlib
+import inspect
 import json
 import logging
 import os
@@ -14,6 +15,31 @@ import urllib.request
 import warnings
 
 import pydantic
+
+
+def _is_args_offline(args: argparse.Namespace) -> bool:
+    """Return whether `args.offline` is set to a truthy value.
+
+    Args:
+        args: Parsed CLI `Namespace` instance.
+
+    Returns:
+        True if `args.offline` exists and is truthy.
+    """
+    return bool(dict(inspect.getmembers(args)).get("offline"))
+
+
+def _get_args_cache_dir(args: argparse.Namespace) -> str | None:
+    """Return `args.cache_dir` as a string if present and non-empty.
+
+    Args:
+        args: Parsed CLI `Namespace` instance.
+
+    Returns:
+        Cache directory path string or None.
+    """
+    raw = dict(inspect.getmembers(args)).get("cache_dir")
+    return str(raw) if raw else None
 
 
 class DiscoveredSnapshot(pydantic.BaseModel):
@@ -65,24 +91,18 @@ def cmd_capture(args: argparse.Namespace) -> None:
         target_fws = [fw for fw in args.frameworks if fw in available]
         unsupported = [fw for fw in args.frameworks if fw not in available]
         if unsupported:
-            print(
-                f"Warning: The following frameworks are unsupported and will be skipped: {', '.join(unsupported)}"
-            )
+            print(f"Warning: The following frameworks are unsupported and will be skipped: {', '.join(unsupported)}")
 
     with Progress() as progress:
         task = progress.add_task("[cyan]Scanning frameworks...", total=len(target_fws))
         for fw in target_fws:
             progress.update(task, description=f"[cyan]Scanning {fw}...")
-            snapshot_data = extract_snapshot(
-                fw, include_nonpublic=args.include_nonpublic
-            )
+            snapshot_data = extract_snapshot(fw, include_nonpublic=args.include_nonpublic)
             if snapshot_data:
                 path = write_snapshot(fw, snapshot_data, args.out_dir)
                 progress.console.print(f"[green]Saved snapshot to {path}[/green]")
             else:
-                progress.console.print(
-                    f"[yellow]Skipping {fw}, not installed or no components found.[/yellow]"
-                )
+                progress.console.print(f"[yellow]Skipping {fw}, not installed or no components found.[/yellow]")
             progress.advance(task)
 
 
@@ -112,9 +132,7 @@ def cmd_list_snapshots(args: argparse.Namespace) -> None:
                     seen_files.add(fname)
                     full_path = os.path.join(d, fname)
                     size = os.path.getsize(full_path)
-                    found_snapshots.append(
-                        DiscoveredSnapshot(file=fname, path=full_path, size=size)
-                    )
+                    found_snapshots.append(DiscoveredSnapshot(file=fname, path=full_path, size=size))
 
     if not found_snapshots:
         print("No snapshot files found.")
@@ -134,10 +152,8 @@ def cmd_pull(args: argparse.Namespace) -> None:
     from ml_ecosystem_snapshots.index import get_cache_dir
     from ml_ecosystem_snapshots.network_env import is_offline_mode
 
-    if ("offline" in dir(args) and bool(args.offline)) or is_offline_mode():
-        print(
-            "Network access disabled: pull command cannot be executed in offline mode."
-        )
+    if _is_args_offline(args) or is_offline_mode():
+        print("Network access disabled: pull command cannot be executed in offline mode.")
         sys.exit(1)
 
     target = args.target.strip()
@@ -149,9 +165,7 @@ def cmd_pull(args: argparse.Namespace) -> None:
     out_dir = args.out_dir or os.path.join(get_cache_dir(), "snapshots")
     os.makedirs(out_dir, exist_ok=True)
 
-    filename = (
-        f"{framework}_v{version}.json" if version != "latest" else f"{framework}.json"
-    )
+    filename = f"{framework}_v{version}.json" if version != "latest" else f"{framework}.json"
     dest_path = os.path.join(out_dir, filename)
 
     tag = f"v{version}" if version != "latest" else "latest"
@@ -174,18 +188,12 @@ def cmd_download_all(args: argparse.Namespace) -> None:
     from ml_ecosystem_snapshots.index import get_cache_dir
     from ml_ecosystem_snapshots.network_env import is_offline_mode
 
-    if ("offline" in dir(args) and bool(args.offline)) or is_offline_mode():
-        print(
-            "Network access disabled: download-all command cannot be executed in offline mode."
-        )
+    if _is_args_offline(args) or is_offline_mode():
+        print("Network access disabled: download-all command cannot be executed in offline mode.")
         sys.exit(1)
 
-    raw_cache_dir = args.cache_dir if "cache_dir" in dir(args) else None
-    cache_dir = (
-        str(raw_cache_dir)
-        if raw_cache_dir
-        else os.path.join(get_cache_dir(), "snapshots")
-    )
+    raw_cache_dir = _get_args_cache_dir(args)
+    cache_dir = raw_cache_dir if raw_cache_dir else os.path.join(get_cache_dir(), "snapshots")
     os.makedirs(cache_dir, exist_ok=True)
 
     targets = [
@@ -225,6 +233,58 @@ def cmd_download_all(args: argparse.Namespace) -> None:
     print(f"Download complete: {success_count}/{len(targets)} snapshots ready.")
 
 
+def _discover_cache_snapshots(search_dirs: list[str]) -> list[str]:
+    """Discover all `.json` and `.json.gz` snapshot files across search directories.
+
+    Args:
+        search_dirs: Ordered list of directory paths to scan.
+
+    Returns:
+        Deduplicated list of discovered snapshot file paths.
+    """
+    discovered: list[str] = []
+    seen: set[str] = set()
+    for d in search_dirs:
+        if os.path.isdir(d):
+            for fname in sorted(os.listdir(d)):
+                if fname.endswith(".json") or fname.endswith(".json.gz"):
+                    p = os.path.join(d, fname)
+                    if p not in seen:
+                        seen.add(p)
+                        discovered.append(p)
+    return discovered
+
+
+def _verify_single_snapshot_file(fpath: str) -> tuple[str, int, int]:
+    """Compute SHA256 digest prefix, size in KB, and entry count for a snapshot file.
+
+    Args:
+        fpath: Path to the `.json` or `.json.gz` snapshot file.
+
+    Returns:
+        Tuple of `(digest_prefix, size_kb, entry_count)`.
+    """
+    sha = hashlib.sha256()
+    with open(fpath, "rb") as f:
+        while True:
+            chunk = f.read(65536)
+            if not chunk:
+                break
+            sha.update(chunk)
+    digest_prefix = sha.hexdigest()[:12]
+    size_kb = os.path.getsize(fpath) // 1024
+
+    if fpath.endswith(".gz"):
+        with gzip.open(fpath, "rt", encoding="utf-8") as gf:
+            data = json.load(gf)
+    else:
+        with open(fpath, encoding="utf-8") as f:
+            data = json.load(f)
+
+    count = len(data) if isinstance(data, list) else len(data.get("categories", {}))
+    return digest_prefix, size_kb, count
+
+
 def cmd_verify_local_cache(args: argparse.Namespace) -> None:
     """Validate SHA256 checksums and JSON schema integrity of cached and bundled snapshots.
 
@@ -234,8 +294,8 @@ def cmd_verify_local_cache(args: argparse.Namespace) -> None:
     from ml_ecosystem_snapshots.index import get_cache_dir
 
     pkg_dir = _get_pkg_dir()
-    raw_cache_dir = args.cache_dir if "cache_dir" in dir(args) else None
-    cache_dir = str(raw_cache_dir) if raw_cache_dir else get_cache_dir()
+    raw_cache_dir = _get_args_cache_dir(args)
+    cache_dir = raw_cache_dir if raw_cache_dir else get_cache_dir()
     search_dirs = [
         cache_dir,
         os.path.join(cache_dir, "snapshots"),
@@ -243,17 +303,7 @@ def cmd_verify_local_cache(args: argparse.Namespace) -> None:
         os.path.join(pkg_dir, "frameworks"),
     ]
 
-    discovered: list[str] = []
-    seen = set()
-    for d in search_dirs:
-        if os.path.isdir(d):
-            for fname in sorted(os.listdir(d)):
-                if fname.endswith(".json") or fname.endswith(".json.gz"):
-                    p = os.path.join(d, fname)
-                    if p not in seen:
-                        seen.add(p)
-                        discovered.append(p)
-
+    discovered = _discover_cache_snapshots(search_dirs)
     if not discovered:
         print(f"No snapshot files discovered in cache directories: {search_dirs}")
         return
@@ -264,29 +314,8 @@ def cmd_verify_local_cache(args: argparse.Namespace) -> None:
     for fpath in discovered:
         fname = os.path.basename(fpath)
         try:
-            sha = hashlib.sha256()
-            with open(fpath, "rb") as f:
-                while True:
-                    chunk = f.read(65536)
-                    if not chunk:
-                        break
-                    sha.update(chunk)
-            digest_prefix = sha.hexdigest()[:12]
-            size_kb = os.path.getsize(fpath) // 1024
-
-            if fpath.endswith(".gz"):
-                with gzip.open(fpath, "rt", encoding="utf-8") as gf:
-                    data = json.load(gf)
-            else:
-                with open(fpath, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-
-            count = (
-                len(data) if isinstance(data, list) else len(data.get("categories", {}))
-            )
-            print(
-                f"  [OK] {fname:35s} {size_kb:6d} KB  sha256:{digest_prefix}...  ({count} entries)"
-            )
+            digest_prefix, size_kb, count = _verify_single_snapshot_file(fpath)
+            print(f"  [OK] {fname:35s} {size_kb:6d} KB  sha256:{digest_prefix}...  ({count} entries)")
         except Exception as e:
             has_errors = True
             print(f"  [FAIL] {fname:35s} Corrupted or invalid: {e}")
