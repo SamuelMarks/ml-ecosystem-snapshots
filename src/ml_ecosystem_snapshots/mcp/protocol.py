@@ -17,12 +17,12 @@ class JsonRpcToolList(list[JsonValue]):
     if typing.TYPE_CHECKING:
 
         @typing.overload
-        def __getitem__(self, index: typing.SupportsIndex) -> dict[str, JsonValue]: ...
+        def __getitem__(self, index: typing.SupportsIndex, /) -> dict[str, JsonValue]: ...
 
         @typing.overload
-        def __getitem__(self, index: IntSlice) -> list[JsonValue]: ...
+        def __getitem__(self, index: IntSlice, /) -> list[JsonValue]: ...
 
-        def __getitem__(self, index: typing.SupportsIndex | IntSlice) -> dict[str, JsonValue] | list[JsonValue]:
+        def __getitem__(self, index: typing.SupportsIndex | IntSlice, /) -> dict[str, JsonValue] | list[JsonValue]:
             """Return tool dictionary or slice at `index`.
 
             Args:

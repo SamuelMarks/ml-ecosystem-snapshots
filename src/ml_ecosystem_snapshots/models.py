@@ -109,12 +109,12 @@ class CanonicalOpSpec(pydantic.BaseModel):
 
 
 class IntSlice(typing.Protocol):
-    """Structural protocol representing a `slice` object with integer bounds."""
+    """Structural protocol representing a `slice` object with index bounds."""
 
     if typing.TYPE_CHECKING:
 
         @property
-        def start(self) -> int | None:
+        def start(self) -> typing.SupportsIndex | None:
             """Return slice start index.
 
             Returns:
@@ -123,7 +123,7 @@ class IntSlice(typing.Protocol):
             ...
 
         @property
-        def stop(self) -> int | None:
+        def stop(self) -> typing.SupportsIndex | None:
             """Return slice stop index.
 
             Returns:
@@ -132,7 +132,7 @@ class IntSlice(typing.Protocol):
             ...
 
         @property
-        def step(self) -> int | None:
+        def step(self) -> typing.SupportsIndex | None:
             """Return slice step stride.
 
             Returns:
@@ -164,12 +164,12 @@ class JsonStringDictList(list[JsonValue]):
     if typing.TYPE_CHECKING:
 
         @typing.overload
-        def __getitem__(self, index: typing.SupportsIndex) -> JsonStringDict: ...
+        def __getitem__(self, index: typing.SupportsIndex, /) -> JsonStringDict: ...
 
         @typing.overload
-        def __getitem__(self, index: IntSlice) -> list[JsonValue]: ...
+        def __getitem__(self, index: IntSlice, /) -> list[JsonValue]: ...
 
-        def __getitem__(self, index: typing.SupportsIndex | IntSlice) -> JsonStringDict | list[JsonValue]:
+        def __getitem__(self, index: typing.SupportsIndex | IntSlice, /) -> JsonStringDict | list[JsonValue]:
             """Return element or slice at `index`.
 
             Args:
@@ -195,12 +195,12 @@ class JsonStringList(list[JsonValue]):
     if typing.TYPE_CHECKING:
 
         @typing.overload
-        def __getitem__(self, index: typing.SupportsIndex) -> str: ...
+        def __getitem__(self, index: typing.SupportsIndex, /) -> str: ...
 
         @typing.overload
-        def __getitem__(self, index: IntSlice) -> list[JsonValue]: ...
+        def __getitem__(self, index: IntSlice, /) -> list[JsonValue]: ...
 
-        def __getitem__(self, index: typing.SupportsIndex | IntSlice) -> str | list[JsonValue]:
+        def __getitem__(self, index: typing.SupportsIndex | IntSlice, /) -> str | list[JsonValue]:
             """Return string element or slice at `index`.
 
             Args:
@@ -226,12 +226,12 @@ class JsonNestedStringList(list[JsonValue]):
     if typing.TYPE_CHECKING:
 
         @typing.overload
-        def __getitem__(self, index: typing.SupportsIndex) -> JsonStringList: ...
+        def __getitem__(self, index: typing.SupportsIndex, /) -> JsonStringList: ...
 
         @typing.overload
-        def __getitem__(self, index: IntSlice) -> list[JsonValue]: ...
+        def __getitem__(self, index: IntSlice, /) -> list[JsonValue]: ...
 
-        def __getitem__(self, index: typing.SupportsIndex | IntSlice) -> JsonStringList | list[JsonValue]:
+        def __getitem__(self, index: typing.SupportsIndex | IntSlice, /) -> JsonStringList | list[JsonValue]:
             """Return `JsonStringList` element or slice at `index`.
 
             Args:
@@ -400,12 +400,12 @@ class JsonSymbolList(list[JsonValue]):
     if typing.TYPE_CHECKING:
 
         @typing.overload
-        def __getitem__(self, index: typing.SupportsIndex) -> SnapshotSymbolDict: ...
+        def __getitem__(self, index: typing.SupportsIndex, /) -> SnapshotSymbolDict: ...
 
         @typing.overload
-        def __getitem__(self, index: IntSlice) -> list[JsonValue]: ...
+        def __getitem__(self, index: IntSlice, /) -> list[JsonValue]: ...
 
-        def __getitem__(self, index: typing.SupportsIndex | IntSlice) -> SnapshotSymbolDict | list[JsonValue]:
+        def __getitem__(self, index: typing.SupportsIndex | IntSlice, /) -> SnapshotSymbolDict | list[JsonValue]:
             """Return `SnapshotSymbolDict` element or slice at `index`.
 
             Args:

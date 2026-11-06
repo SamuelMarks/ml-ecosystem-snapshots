@@ -9,3 +9,4 @@ interrogate
 hatchling
 hatch-requirements-txt
 mypy
+ruff
