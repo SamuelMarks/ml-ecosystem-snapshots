@@ -96,8 +96,9 @@ def upload_to_s3(directory: Path, bucket: str) -> None:
         import boto3
 
         s3 = boto3.client("s3")
-        for root, _dirs, files in os.walk(directory):
-            for file in files:
+        for root, dirs, files in os.walk(directory):
+            dirs.sort()
+            for file in sorted(files):
                 if file.endswith(".json"):
                     local_path = os.path.join(root, file)
                     rel_path = os.path.relpath(local_path, directory)

@@ -10,11 +10,12 @@ import argparse
 from unittest.mock import MagicMock, patch
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
+
 from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli import cmd_check_array_api
 from ml_ecosystem_snapshots.frameworks import array_api
 from ml_ecosystem_snapshots.mcp_server import check_array_api_op
-from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
 
 
 def test_array_api_version() -> None:

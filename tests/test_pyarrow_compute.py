@@ -6,6 +6,11 @@ import sys
 import types
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import (
+    GhostPythonRef,
+    SemanticTier,
+)
+
 from ml_ecosystem_snapshots.frameworks.pyarrow_compute import (
     CANONICAL_PYARROW_COMPUTE_OPS,
     _get_pyarrow_compute,
@@ -14,10 +19,6 @@ from ml_ecosystem_snapshots.frameworks.pyarrow_compute import (
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
-from ml_switcheroo_ir.schema.ghost import (
-    GhostPythonRef,
-    SemanticTier,
-)
 
 
 def test_collect_api_pyarrow_compute_live(monkeypatch: pytest.MonkeyPatch) -> None:

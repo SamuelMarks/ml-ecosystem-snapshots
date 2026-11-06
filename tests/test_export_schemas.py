@@ -8,13 +8,14 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+
 from ml_ecosystem_snapshots.export import (
     COMMON_HALLUCINATION_GUARDS,
     export_scoped_prompt_context,
     to_protobuf,
     to_pydantic,
 )
-from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
 
 def test_to_pydantic_overloaded_signatures() -> None:

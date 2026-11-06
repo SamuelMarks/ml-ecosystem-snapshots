@@ -6,6 +6,7 @@ import json
 from unittest import mock
 
 import pytest_mock
+
 from ml_ecosystem_snapshots.tools import scrape_mlir
 
 

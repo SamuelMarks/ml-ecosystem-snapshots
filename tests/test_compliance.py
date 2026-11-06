@@ -7,6 +7,7 @@ from pathlib import Path
 
 import griffe
 import pytest
+
 from ml_ecosystem_snapshots.compliance import (
     align_namespace,
     extract_target_ast,

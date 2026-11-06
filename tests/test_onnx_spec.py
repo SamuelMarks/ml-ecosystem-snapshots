@@ -7,6 +7,12 @@ import sys
 import types
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import (
+    GhostOperationRef,
+    IRParameterRole,
+    SemanticTier,
+)
+
 from ml_ecosystem_snapshots.cli import cmd_check_onnx
 from ml_ecosystem_snapshots.frameworks.onnx_spec import (
     CANONICAL_ONNX_OPS,
@@ -15,11 +21,6 @@ from ml_ecosystem_snapshots.frameworks.onnx_spec import (
     collect_api,
 )
 from ml_ecosystem_snapshots.mcp_server import check_onnx_op
-from ml_switcheroo_ir.schema.ghost import (
-    GhostOperationRef,
-    IRParameterRole,
-    SemanticTier,
-)
 
 
 def test_collect_api_onnx_categories() -> None:
@@ -175,7 +176,11 @@ def test_load_onnx_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock defs raising exception."""
 
         def get_all_schemas_with_history(self) -> list[str]:
-            """Raise simulation error."""
+            """Raise simulation error.
+
+            Returns:
+                Never returns.
+            """
             raise RuntimeError("Corrupt schema defs")
 
     monkeypatch.setattr(
@@ -356,7 +361,11 @@ def test_onnx_schema_older_version_skipped(monkeypatch: pytest.MonkeyPatch) -> N
         """Mock Defs object."""
 
         def get_all_schemas_with_history(self) -> list[FakeSchema]:
-            """Return schema versions."""
+            """Return schema versions.
+
+            Returns:
+                List of FakeSchema instances.
+            """
             return [
                 FakeSchema("TestOp", "", 10),
                 FakeSchema("TestOp", "", 5),
@@ -382,7 +391,11 @@ def test_onnx_load_empty_schemas(monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock defs returning empty list."""
 
         def get_all_schemas_with_history(self) -> list[str]:
-            """Return empty schema list."""
+            """Return empty schema list.
+
+            Returns:
+                Empty list of schemas.
+            """
             return []
 
     monkeypatch.setattr(

@@ -8,6 +8,7 @@ import urllib.error
 from unittest import mock
 
 import pytest_mock
+
 from ml_ecosystem_snapshots.tools import scrape_nvidia_ptx
 
 

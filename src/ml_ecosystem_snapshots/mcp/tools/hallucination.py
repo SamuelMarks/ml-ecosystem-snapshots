@@ -43,7 +43,7 @@ class _HallucinationOptions(pydantic.BaseModel):
 
 
 _HallucinationOptionValue: typing_extensions.TypeAlias = (
-    "str | bool | SnapshotRepository | typing.Sequence[str] | typing.Mapping[str, str] " "| typing.Sequence[int | str] | typing.Mapping[str, int | str] " "| typing.Sequence[typing.Sequence[int | str]] | typing.Mapping[str, typing.Sequence[int | str]] | JsonValue"
+    "str | bool | SnapshotRepository | typing.Sequence[str] | typing.Mapping[str, str] | typing.Sequence[int | str] | typing.Mapping[str, int | str] | typing.Sequence[typing.Sequence[int | str]] | typing.Mapping[str, typing.Sequence[int | str]] | JsonValue"
 )
 
 DTYPE_CANONICAL_ALIASES: dict[str, str] = {

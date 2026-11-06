@@ -21,6 +21,8 @@ from unittest.mock import patch
 
 import pytest
 import pytest_mock
+from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+
 from ml_ecosystem_snapshots.compliance import score_compliance
 from ml_ecosystem_snapshots.diff import diff_snapshots
 from ml_ecosystem_snapshots.export import export_llm_prompt_context
@@ -36,7 +38,6 @@ from ml_ecosystem_snapshots.mcp_server import (
 )
 from ml_ecosystem_snapshots.models import ExtendedGhostRef, JsonValue
 from ml_ecosystem_snapshots.stubs import validate_pyi_stub
-from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
 
 def test_hallucination_argument_name_discrepancy() -> None:

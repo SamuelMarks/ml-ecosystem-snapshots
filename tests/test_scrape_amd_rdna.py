@@ -11,6 +11,7 @@ from unittest import mock
 
 import pytest
 import pytest_mock
+
 from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.tools import scrape_amd_rdna
 

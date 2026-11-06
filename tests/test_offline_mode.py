@@ -13,6 +13,7 @@ import socket
 from pathlib import Path
 
 import pytest
+
 from ml_ecosystem_snapshots.index import get_index_db_path
 from ml_ecosystem_snapshots.mcp_server import (
     check_mlir_op,

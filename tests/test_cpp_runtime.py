@@ -5,6 +5,12 @@ from __future__ import annotations
 import argparse
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import (
+    GhostOperationRef,
+    OperandDirection,
+    SemanticTier,
+)
+
 from ml_ecosystem_snapshots.cli import cmd_check_cpp
 from ml_ecosystem_snapshots.frameworks.cpp_runtime import (
     CANONICAL_CPP_RUNTIME_OPS,
@@ -13,11 +19,6 @@ from ml_ecosystem_snapshots.frameworks.cpp_runtime import (
 )
 from ml_ecosystem_snapshots.mcp_server import check_cpp_op
 from ml_ecosystem_snapshots.models import ExtendedGhostParam
-from ml_switcheroo_ir.schema.ghost import (
-    GhostOperationRef,
-    OperandDirection,
-    SemanticTier,
-)
 
 
 def test_collect_api_cpp_runtime_categories() -> None:

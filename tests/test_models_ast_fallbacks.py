@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import ast
 import inspect
-import types
 import typing
 from unittest.mock import patch
 
 import pytest
 import pytest_mock
+from ml_switcheroo_ir.schema.ghost import GhostRef
+
 from ml_ecosystem_snapshots.introspection.ast_kwargs import (
     extract_accepted_kwargs_from_ast,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
-from ml_switcheroo_ir.schema.ghost import GhostRef
 
 
 class BaseParentModel:
@@ -381,7 +381,10 @@ def test_ghost_inspector_parent_mro_signature_exception(
     Returns:
         None.
     """
-    real_signature = inspect.signature
+    from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+        get_member_dict,
+        get_runtime_signature,
+    )
 
     def mock_signature(
         obj: InspectableTarget,
@@ -401,20 +404,18 @@ def test_ghost_inspector_parent_mro_signature_exception(
         Returns:
             Signature object.
         """
-        from ml_ecosystem_snapshots.introspection.runtime_boundary import (
-            get_member_dict,
-        )
-
         if obj == get_member_dict(MroParentClass).get("__init__"):
             raise TypeError("parent init signature failure")
-        assert isinstance(obj, (types.FunctionType, types.MethodType, type))
-        return real_signature(obj)
+        return get_runtime_signature(obj)
 
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.get_runtime_source",
         return_value=("class MroChildClass(MroParentClass):\n    def __init__(self, **kwargs: int) -> None:\n        super().__init__(**kwargs)\n"),
     )
-    mocker.patch("inspect.signature", side_effect=mock_signature)
+    mocker.patch(
+        "ml_ecosystem_snapshots.introspection.inspector.get_runtime_signature",
+        side_effect=mock_signature,
+    )
 
     ref = GhostInspector.inspect(MroChildClass, "MroChildClass")
     assert ref.api_path == "MroChildClass"

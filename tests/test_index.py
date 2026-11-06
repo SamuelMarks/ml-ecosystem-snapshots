@@ -14,6 +14,7 @@ from unittest import mock
 from unittest.mock import patch
 
 import pytest
+
 from ml_ecosystem_snapshots.index import (
     clear_index,
     compute_file_sha256,
@@ -656,7 +657,11 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Path) -> None:
             return mock.MagicMock()
 
         def __enter__(self) -> MockConn:
-            """Enter context manager."""
+            """Enter context manager.
+
+            Returns:
+                Self instance.
+            """
             return self
 
         def __exit__(self, *args: BaseException | type[BaseException] | None) -> None:

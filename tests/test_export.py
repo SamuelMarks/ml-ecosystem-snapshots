@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 import pytest
 import pytest_mock
+from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+
 from ml_ecosystem_snapshots.export import (
     _ghost_to_cdd_ir,
     export_llm_prompt_context,
@@ -18,7 +20,6 @@ from ml_ecosystem_snapshots.export import (
     to_pydantic,
 )
 from ml_ecosystem_snapshots.models import JsonValue
-from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
 
 @pytest.fixture
@@ -280,12 +281,13 @@ def test_export_branches() -> None:
 
 def test_export_branches_more() -> None:
     """Verify Pydantic, OpenAPI, and JSON Schema export with keyword-only and variadic parameters."""
+    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef
+
     from ml_ecosystem_snapshots.export import (
         to_json_schema,
         to_openapi,
         to_pydantic,
     )
-    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef
 
     r = GhostRef(
         name="X",
@@ -588,6 +590,8 @@ def test_export_scoped_prompt_context(mocker: pytest_mock.MockerFixture) -> None
 
 def test_export_extended_prompt_contexts_and_headers() -> None:
     """Test export_rdna_prompt_context, export_ptx_prompt_context, export_stablehlo_prompt_context, to_cpp_header, and to_typescript_interface."""
+    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+
     from ml_ecosystem_snapshots.export import (
         export_ptx_prompt_context,
         export_rdna_prompt_context,
@@ -595,7 +599,6 @@ def test_export_extended_prompt_contexts_and_headers() -> None:
         to_cpp_header,
         to_typescript_interface,
     )
-    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     rdna_ref = GhostRef(
         name="v_add_f32",
@@ -716,6 +719,8 @@ def test_export_extended_prompt_contexts_and_headers() -> None:
 
 def test_export_coverage_hardening() -> None:
     """Test edge cases across to_pydantic, to_protobuf, export_rdna_prompt_context, and export_ptx_prompt_context."""
+    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+
     from ml_ecosystem_snapshots.export import (
         _py_type_to_proto,
         export_ptx_prompt_context,
@@ -723,7 +728,6 @@ def test_export_coverage_hardening() -> None:
         to_protobuf,
         to_pydantic,
     )
-    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     # 1. to_pydantic with VAR_POSITIONAL, VAR_KEYWORD, defaults with description, and overloads with GhostRefs
     ov_ref = GhostRef(
@@ -846,6 +850,8 @@ def test_export_coverage_hardening() -> None:
 
 def test_export_scoped_and_constrained_prompt_context() -> None:
     """Test export_scoped_prompt_context, constrained parameter formatting, and no-docstring headers."""
+    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+
     from ml_ecosystem_snapshots.export import (
         export_llm_prompt_context,
         export_scoped_prompt_context,
@@ -853,7 +859,6 @@ def test_export_scoped_and_constrained_prompt_context() -> None:
         to_typescript_interface,
     )
     from ml_ecosystem_snapshots.models import ExtendedGhostParam
-    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     # 5. export_scoped_prompt_context with module_prefix and non-dict items
     mock_mixed_snap = {

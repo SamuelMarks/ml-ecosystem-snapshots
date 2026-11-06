@@ -11,6 +11,13 @@ from unittest.mock import patch
 
 import pytest
 import pytest_mock
+from ml_switcheroo_ir.schema.ghost import (
+    GhostParam,
+    GhostRef,
+    ParameterKind,
+    SemanticTier,
+)
+
 from ml_ecosystem_snapshots.frameworks import (
     huggingface as hf_mod,
 )
@@ -34,19 +41,13 @@ from ml_ecosystem_snapshots.frameworks import (
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
-from ml_switcheroo_ir.schema.ghost import (
-    GhostParam,
-    GhostRef,
-    ParameterKind,
-    SemanticTier,
-)
 
 
 def test_ir_collect_api_all_categories() -> None:
     """Test ir_mod.collect_api across supported and unsupported categories."""
     # Supported categories
     refs_array = ir_mod.collect_api(SemanticTier.ARRAY_API)
-    assert len(refs_array) == 47
+    assert len(refs_array) == 59
     names = {r.name for r in refs_array}
     assert "LogicalGraph" in names
     assert "LogicalNode" in names
@@ -55,10 +56,10 @@ def test_ir_collect_api_all_categories() -> None:
     assert "topological_sort" in names
 
     refs_neural = ir_mod.collect_api(SemanticTier.NEURAL, include_nonpublic=True)
-    assert len(refs_neural) == 47
+    assert len(refs_neural) == 59
 
     refs_util = ir_mod.collect_api(SemanticTier.UTIL)
-    assert len(refs_util) == 47
+    assert len(refs_util) == 59
 
     # Unsupported category triggers empty return
     refs_loss = ir_mod.collect_api(SemanticTier.LOSS)

@@ -19,9 +19,10 @@ def test_align_namespace_exact_mapping() -> None:
 
 def test_score_compliance_sig_tuple_edge_cases() -> None:
     """Test compliance scoring with signature tuple matching and sanitized defaults."""
+    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+
     from ml_ecosystem_snapshots.compliance import score_compliance
     from ml_ecosystem_snapshots.models import JsonValue
-    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     ref_snap: dict[str, JsonValue] = {
         "categories": {
@@ -93,9 +94,10 @@ def test_score_compliance_sig_tuple_edge_cases() -> None:
 
 def test_score_compliance_varargs_fallback_special_cases() -> None:
     """Test compliance scoring enforces strict parameter comparison."""
+    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+
     from ml_ecosystem_snapshots.compliance import score_compliance
     from ml_ecosystem_snapshots.models import JsonValue
-    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     ref_snap: dict[str, JsonValue] = {
         "categories": {
@@ -594,9 +596,10 @@ def test_compliance_edge_branches(tmp_path: Path) -> None:
 
 def test_score_compliance_opaque_c_extensions() -> None:
     """Test opaque C-extension signature matching and strict rejection."""
+    from ml_switcheroo_ir.schema.ghost import GhostRef
+
     from ml_ecosystem_snapshots.compliance import score_compliance
     from ml_ecosystem_snapshots.models import JsonValue
-    from ml_switcheroo_ir.schema.ghost import GhostRef
 
     ref_snap: dict[str, JsonValue] = {
         "categories": {
@@ -637,6 +640,7 @@ def test_extract_target_refs_single_root_function(tmp_path: Path, mocker: pytest
         mocker: Pytest mocker fixture.
     """
     import griffe
+
     from ml_ecosystem_snapshots.compliance import extract_target_refs_single
 
     fpath = os.path.join(str(tmp_path), "standalone.py")
@@ -644,7 +648,11 @@ def test_extract_target_refs_single_root_function(tmp_path: Path, mocker: pytest
         f.write("def standalone():\n    return 42\n")
 
     def real_fn() -> int:
-        """Standalone."""
+        """Standalone.
+
+        Returns:
+            Integer constant 42.
+        """
         return 42
 
     fn_node = griffe.Function(name="standalone", parent=None)

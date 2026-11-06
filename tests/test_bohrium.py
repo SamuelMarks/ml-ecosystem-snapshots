@@ -6,6 +6,11 @@ import sys
 import types
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import (
+    GhostPythonRef,
+    SemanticTier,
+)
+
 from ml_ecosystem_snapshots.frameworks.bohrium import (
     CANONICAL_BOHRIUM_OPS,
     _get_bohrium,
@@ -13,10 +18,6 @@ from ml_ecosystem_snapshots.frameworks.bohrium import (
 )
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
-from ml_switcheroo_ir.schema.ghost import (
-    GhostPythonRef,
-    SemanticTier,
-)
 
 
 def test_collect_api_bohrium_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -50,6 +51,9 @@ def test_collect_api_bohrium_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
             Args:
                 obj: Target object under inspection.
+
+            Returns:
+                The input target object.
             """
             return obj
 

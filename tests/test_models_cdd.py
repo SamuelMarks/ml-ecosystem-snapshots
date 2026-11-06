@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 import pytest
+
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.models import JsonValue
 

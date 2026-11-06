@@ -9,9 +9,10 @@ from unittest import mock
 
 import pytest
 import pytest_mock
+from ml_switcheroo_ir.schema.ghost import SemanticTier
+
 from ml_ecosystem_snapshots.frameworks import stablehlo as stablehlo_fw
 from ml_ecosystem_snapshots.models import GhostMlirRef
-from ml_switcheroo_ir.schema.ghost import SemanticTier
 
 
 def test_stablehlo_collect_real() -> None:
@@ -396,6 +397,7 @@ def test_cli_check_stablehlo(capsys: pytest.CaptureFixture[str], tmp_path: Path)
     import argparse
 
     import pytest
+
     from ml_ecosystem_snapshots.cli import cmd_check_stablehlo
 
     # 1. Valid op

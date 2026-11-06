@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import pytest_mock
+from ml_switcheroo_ir.schema.ghost import GhostRef
+
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostParam
-from ml_switcheroo_ir.schema.ghost import GhostRef
 
 
 def dummy_func_with_docstring(x: int) -> str:
@@ -290,8 +291,9 @@ def test_ghost_inspector_hydrate_variations() -> None:
     """Test GhostInspector.hydrate handles missing kind and pre-hydrated parameters."""
     import typing
 
-    from ml_ecosystem_snapshots.models import JsonValue
     from ml_switcheroo_ir.schema.ghost import GhostParam, ParameterKind
+
+    from ml_ecosystem_snapshots.models import JsonValue
 
     data: dict[str, JsonValue | typing.Sequence[JsonValue | GhostParam]] = {
         "name": "op_test",

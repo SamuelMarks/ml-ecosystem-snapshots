@@ -5,9 +5,10 @@ from __future__ import annotations
 import pathlib
 import sys
 
+from ml_switcheroo_ir.schema.ghost import GhostRef
+
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.static_parsers import _GRIFFE_CACHE
-from ml_switcheroo_ir.schema.ghost import GhostRef
 
 
 def test_ghost_inspector_overloads(tmp_path: pathlib.Path) -> None:

@@ -8,9 +8,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import pytest_mock
+from ml_switcheroo_ir.schema.ghost import GhostRef, ParameterKind, SemanticTier
+
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
-from ml_switcheroo_ir.schema.ghost import GhostRef, ParameterKind, SemanticTier
 
 
 def test_deepspeed_missing() -> None:
@@ -107,7 +108,11 @@ def test_onnxruntime_missing() -> None:
             return None
 
         def get_available_providers(self) -> list[str]:
-            """Mock UTIL function in onnxruntime."""
+            """Mock UTIL function in onnxruntime.
+
+            Returns:
+                Empty list of providers.
+            """
             return []
 
         class SessionWithProviders:
@@ -546,12 +551,13 @@ def _mock_hf_inspect(obj: InspectableTarget, name: str) -> GhostRef | MagicMock 
 
 def test_huggingface_missing() -> None:
     """Verify HuggingFace Transformers collector handles missing packages, generation kwargs, and PretrainedConfig."""
+    from ml_switcheroo_ir.schema.ghost import GhostRef
+
     from ml_ecosystem_snapshots.frameworks.huggingface import (
         _extract_generation_kwargs,
         _parse_pretrained_config,
         collect_transformers,
     )
-    from ml_switcheroo_ir.schema.ghost import GhostRef
 
     class M:
         """Mock generation-capable model class."""
@@ -607,6 +613,8 @@ def test_hardware_exhaustive_fallbacks() -> None:
     import os
     from unittest.mock import patch
 
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
+
     from ml_ecosystem_snapshots.frameworks import (
         amd_rdna,
         mlir,
@@ -614,7 +622,6 @@ def test_hardware_exhaustive_fallbacks() -> None:
         nvidia_sass,
         stablehlo,
     )
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     orig_exists = os.path.exists
 
@@ -654,9 +661,10 @@ def test_orbax_checkpoint_inspect_error(mocker: pytest_mock.MockerFixture) -> No
     Args:
         mocker: Pytest mocker fixture.
     """
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
+
     import ml_ecosystem_snapshots.frameworks.orbax_checkpoint as orbax_mod
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     def bad_fn() -> None:
         """Dummy function for raising inspection errors."""
@@ -698,8 +706,9 @@ def test_pax_import_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     import sys
     import types
 
-    import ml_ecosystem_snapshots.frameworks.pax as pax_mod
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    import ml_ecosystem_snapshots.frameworks.pax as pax_mod
 
     def _get_praxis() -> types.ModuleType | None:
         """Read `pax_mod.praxis` after module reload.
@@ -740,8 +749,9 @@ def test_sklearn_import_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     import importlib
     import sys
 
-    import ml_ecosystem_snapshots.frameworks.sklearn as sklearn_mod
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    import ml_ecosystem_snapshots.frameworks.sklearn as sklearn_mod
 
     monkeypatch.setitem(sys.modules, "sklearn", None)
     importlib.reload(sklearn_mod)
@@ -764,8 +774,9 @@ def test_flax_nnx_import_fallback(monkeypatch: pytest.MonkeyPatch, mocker: pytes
     import sys
     import types
 
-    import ml_ecosystem_snapshots.frameworks.flax_nnx as nnx_mod
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    import ml_ecosystem_snapshots.frameworks.flax_nnx as nnx_mod
 
     # 1. Unavailable import
     monkeypatch.setitem(sys.modules, "flax", None)
@@ -807,9 +818,10 @@ def test_deepspeed_fallback_edges(mocker: pytest_mock.MockerFixture) -> None:
     """
     import types
 
+    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, SemanticTier
+
     import ml_ecosystem_snapshots.frameworks.deepspeed as ds_mod
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, SemanticTier
 
     fake_ds = types.ModuleType("deepspeed")
     pytest.MonkeyPatch().setattr(fake_ds, "initialize", lambda: None, raising=False)
@@ -945,8 +957,9 @@ def test_tensorflow_import_reload() -> None:
     import importlib
     import types
 
-    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
 
     with patch.dict("sys.modules", {"tensorflow": None}):
         importlib.reload(tf_fw)
@@ -975,9 +988,10 @@ def test_tensorflow_collect_live_image_lookup(monkeypatch: pytest.MonkeyPatch) -
     """
     import types
 
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
+
     from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     class MockLookupTable:
         """Mock lookup table class."""

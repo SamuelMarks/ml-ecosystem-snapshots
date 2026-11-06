@@ -6,6 +6,11 @@ import sys
 import types
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import (
+    GhostPythonRef,
+    SemanticTier,
+)
+
 from ml_ecosystem_snapshots.frameworks.awkward import (
     CANONICAL_AWKWARD_OPS,
     _get_awkward,
@@ -14,10 +19,6 @@ from ml_ecosystem_snapshots.frameworks.awkward import (
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
-from ml_switcheroo_ir.schema.ghost import (
-    GhostPythonRef,
-    SemanticTier,
-)
 
 
 def test_collect_api_awkward_live(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -174,6 +175,9 @@ def test_collect_api_awkward_inspection_exception(
 
         Raises:
             RuntimeError: Always raised.
+
+        Returns:
+            Never returns.
         """
         raise RuntimeError("Inspection failure")
 

@@ -6,6 +6,7 @@ import unittest.mock as mock
 
 import griffe
 import pytest_mock
+
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.introspection.sanitize import sanitize_type_str
@@ -194,6 +195,10 @@ def test_ghost_inspector_sphinx_docstring() -> None:
         :rtype: torch.Tensor
         :raises ValueError: If dimension mismatch.
         :raises TypeError: If non-tensor passed.
+
+        Args:
+            x: Primary input vector.
+            y: Offset vector.
         """
         pass
 
@@ -226,6 +231,9 @@ def test_ghost_inspector_merge_branches(mocker: pytest_mock.MockerFixture) -> No
         :param a: An argument.
         :return: Only return description without rtype.
         :raises ValueError: If bad.
+
+        Args:
+            a: An argument.
         """
         pass
 
@@ -369,6 +377,9 @@ def test_ghost_inspector_custom_fault_and_doc_return() -> None:
         :param x: Value.
         :return: Return doc only.
         :raises CustomFault: When faulted.
+
+        Args:
+            x: Value.
         """
         pass
 
@@ -393,6 +404,9 @@ def test_ghost_inspector_griffe_return_type_fallback(
         :param x: Input.
         :return: Output.
         :rtype: torch.Tensor
+
+        Args:
+            x: Input.
         """
         pass
 

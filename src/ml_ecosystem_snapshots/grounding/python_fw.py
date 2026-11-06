@@ -28,7 +28,7 @@ class PythonCallValidationOptions(pydantic.BaseModel):
     kwarg_shapes: dict[str, typing.Sequence[int | str]] | None = None
 
 
-_PythonCallOptionValue: typing_extensions.TypeAlias = "list[str] | dict[str, str] | list[int | str] | dict[str, int | str] " "| list[typing.Sequence[int | str]] | dict[str, typing.Sequence[int | str]] | None"
+_PythonCallOptionValue: typing_extensions.TypeAlias = "list[str] | dict[str, str] | list[int | str] | dict[str, int | str] | list[typing.Sequence[int | str]] | dict[str, typing.Sequence[int | str]] | None"
 
 
 def _normalize_candidate_dict(

@@ -5,6 +5,12 @@ from __future__ import annotations
 import argparse
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import (
+    GhostOperationRef,
+    OperandDirection,
+    SemanticTier,
+)
+
 from ml_ecosystem_snapshots.cli import cmd_check_wasm
 from ml_ecosystem_snapshots.frameworks.wasm_simd import (
     CANONICAL_WASM_SIMD_OPS,
@@ -12,11 +18,6 @@ from ml_ecosystem_snapshots.frameworks.wasm_simd import (
     collect_api,
 )
 from ml_ecosystem_snapshots.mcp_server import check_wasm_instruction
-from ml_switcheroo_ir.schema.ghost import (
-    GhostOperationRef,
-    OperandDirection,
-    SemanticTier,
-)
 
 
 def test_collect_api_wasm_simd_categories() -> None:

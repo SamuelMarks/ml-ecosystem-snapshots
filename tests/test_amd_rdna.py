@@ -7,8 +7,9 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-from ml_ecosystem_snapshots.frameworks import amd_rdna
 from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, SemanticTier
+
+from ml_ecosystem_snapshots.frameworks import amd_rdna
 
 
 def test_amd_rdna_collect_api_layer() -> None:
@@ -321,6 +322,7 @@ def test_cli_check_rdna(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> N
     import argparse
 
     import pytest
+
     from ml_ecosystem_snapshots.cli import cmd_check_rdna
 
     # 1. Valid mnemonic

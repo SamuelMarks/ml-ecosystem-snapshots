@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pytest
 import pytest_mock
+
 from ml_ecosystem_snapshots.frameworks.torch import (
     _scan_array_api,
     _scan_metrics,

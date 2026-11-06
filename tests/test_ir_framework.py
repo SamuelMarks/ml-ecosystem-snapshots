@@ -6,20 +6,21 @@ import inspect
 
 import ml_switcheroo_ir as ir
 import pytest
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier, SnapshotEnvelope
+
 from ml_ecosystem_snapshots.api import (
     extract_snapshot,
     get_pkg_version,
     validate_snapshot_envelope,
 )
 from ml_ecosystem_snapshots.frameworks.ir import collect_api
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier, SnapshotEnvelope
 
 
 def test_collect_api_categories() -> None:
     """Test collect_api returns all expected IR symbols for supported semantic tiers."""
     for tier in (SemanticTier.ARRAY_API, SemanticTier.NEURAL, SemanticTier.UTIL):
         refs: list[GhostRef] = collect_api(tier)
-        assert len(refs) == 47
+        assert len(refs) == 59
 
         names = {ref.name for ref in refs}
         expected_symbols = {
@@ -34,8 +35,12 @@ def test_collect_api_categories() -> None:
             "NodeDict",
             "DType",
             "EdgeList",
+            "VersionedOutputList",
+            "AutodiffSentinelProtocol",
             "ZeroTangent",
             "NoTangent",
+            "SymNode",
+            "Polynomial",
             "SymInt",
             "SymVar",
             "SymConst",
@@ -55,6 +60,14 @@ def test_collect_api_categories() -> None:
             "SymbolicConstraintTracker",
             "ShapeTracker",
             "ParameterTranslationEngine",
+            "BaseFrontend",
+            "GraphFrontend",
+            "CompilerBackend",
+            "CyclicGraphError",
+            "ShapeMismatchError",
+            "DiagnosticSeverity",
+            "GroundingDiagnostic",
+            "GroundingReport",
             "eliminate_dead_nodes",
             "eliminate_common_subexpressions",
             "propagate_shapes_and_constants",
@@ -118,7 +131,7 @@ def test_ir_live_signature_reflection_parity() -> None:
     for ref in refs:
         assert ref.name in ir_members, f"Missing symbol {ref.name} in ml_switcheroo_ir"
         obj = ir_members[ref.name]
-        if ref.name == "DType":
+        if ref.name in {"DType", "DiagnosticSeverity", "CyclicGraphError"}:
             continue
         assert callable(obj)
         sig = inspect.signature(obj)

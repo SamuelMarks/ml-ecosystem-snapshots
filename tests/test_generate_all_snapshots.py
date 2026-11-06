@@ -9,9 +9,9 @@ import runpy
 import sys
 
 import pytest
-from ml_ecosystem_snapshots.models import JsonValue
 
 import scripts.generate_all_snapshots as generate_all_snapshots
+from ml_ecosystem_snapshots.models import JsonValue
 
 
 def _get_script_path() -> str:
@@ -127,6 +127,9 @@ def test_main_failure(
 
         Raises:
             RuntimeError: Simulated extraction failure.
+
+        Returns:
+            Never returns.
         """
         extract_calls.append(fw)
         raise RuntimeError("Mock exception")

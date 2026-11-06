@@ -12,6 +12,7 @@ import typing
 from unittest import mock
 
 import pytest
+
 from ml_ecosystem_snapshots import mcp_server
 
 
@@ -162,6 +163,8 @@ def test_offline_mcp_hallucination_missing_snapshot_diagnostic() -> None:
 
 def test_offline_mlir_decoupled_operands_and_regions() -> None:
     """Verify GhostMlirRef decoupled operands, regions, and successor block validation."""
+    from ml_switcheroo_ir.schema.ghost import ParameterKind
+
     from ml_ecosystem_snapshots.frameworks.mlir import (
         validate_mlir_region,
         validate_mlir_successors,
@@ -171,7 +174,6 @@ def test_offline_mlir_decoupled_operands_and_regions() -> None:
         GhostMlirRef,
         IRParameterRole,
     )
-    from ml_switcheroo_ir.schema.ghost import ParameterKind
 
     op_param = ExtendedGhostParam(
         name="lhs",
@@ -437,8 +439,9 @@ def test_offline_index_db_in_memory_fallback(monkeypatch: pytest.MonkeyPatch) ->
 
 def test_offline_ghost_isa_structured_modifiers() -> None:
     """Verify GhostIsaRef handles structured modifiers and VOPD profiles."""
-    from ml_ecosystem_snapshots.models import GhostIsaRef
     from ml_switcheroo_ir.schema.ghost import VopdProfileSpec
+
+    from ml_ecosystem_snapshots.models import GhostIsaRef
 
     isa_ref = GhostIsaRef(
         name="FADD",

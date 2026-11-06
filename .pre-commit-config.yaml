@@ -12,23 +12,29 @@ repos:
         args: ["--autofix", "--indent=2"]
         files: ^snapshots/.*\.json$
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.4
-    hooks:
-      # Code formatting (auto-fix)
-      - id: ruff-format
-        name: Ruff Format (Auto-Fix)
-      # Check code formatting (recheck)
-      - id: ruff-format
-        name: Ruff Format (Check)
-        args: ["--check"]
-      # Lint (auto-fix)
-      - id: ruff
-        name: Ruff Lint
-        args: ["--fix"]
-
   - repo: local
     hooks:
+      - id: ruff-format
+        name: Ruff Format (Auto-Fix)
+        entry: ruff format .
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+      - id: ruff-format-check
+        name: Ruff Format (Check)
+        entry: ruff format --check .
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+      - id: ruff
+        name: Ruff Lint
+        entry: ruff check --fix .
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
       - id: mypy
         name: mypy
         entry: python3 -m mypy --config-file pyproject.toml
@@ -39,6 +45,13 @@ repos:
       - id: lint-typing
         name: Lint Typing & Anti-Reflection
         entry: python3 scripts/lint_typing.py
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+      - id: interrogate
+        name: Docstring Coverage (Interrogate)
+        entry: interrogate -vv -f 100 -M -i -c pyproject.toml src scripts tests
         language: system
         types: [python]
         pass_filenames: false

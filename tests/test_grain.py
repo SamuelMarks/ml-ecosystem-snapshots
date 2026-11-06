@@ -7,6 +7,8 @@ import types
 from unittest.mock import patch
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
 from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli.commands.check import cmd_check_grain
 from ml_ecosystem_snapshots.frameworks import grain
@@ -18,7 +20,6 @@ from ml_ecosystem_snapshots.mcp.tools.hallucination import (
 )
 from ml_ecosystem_snapshots.mcp.tools.translation import translate_concept_arguments
 from ml_ecosystem_snapshots.utils import get_framework_docstring_parser
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 
 def test_grain_docstring_parser_and_version() -> None:

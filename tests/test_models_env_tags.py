@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sys
 
+from ml_switcheroo_ir.schema.ghost import GhostRef, ParameterKind
+
 from ml_ecosystem_snapshots.introspection.inspector import (
     FRAMEWORK_CAPABILITIES,
     GhostInspector,
@@ -18,7 +20,6 @@ from ml_ecosystem_snapshots.models import (
     IRParameterRole,
     OperandDirection,
 )
-from ml_switcheroo_ir.schema.ghost import GhostRef, ParameterKind
 
 
 def test_ghostref_env_tags() -> None:

@@ -6,6 +6,7 @@ import types
 from pathlib import Path
 
 import pytest
+
 from ml_ecosystem_snapshots.c_extension_sig import (
     _normalize_c_sig_args,
     _parse_c_extension_sig_str,
@@ -43,6 +44,9 @@ def test_get_all_members_exception() -> None:
 
             Raises:
                 RuntimeError: Simulated broken dir().
+
+            Returns:
+                Never returns.
             """
             raise RuntimeError("broken dir")
 

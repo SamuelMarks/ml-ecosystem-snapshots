@@ -26,12 +26,13 @@ def _load_dataset_or_canonical(fw_dir: str, filename: str) -> list[dict[str, Jso
             return list(raw.get("categories", {}).get("UTIL") or raw.get("instructions") or raw.get("operations") or raw.get("items") or [])
         return list(raw)
 
+    from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
     from ml_ecosystem_snapshots.frameworks.amd_rdna import collect_api as rdna_collect
     from ml_ecosystem_snapshots.frameworks.mlir import collect_api as mlir_collect
     from ml_ecosystem_snapshots.frameworks.nvidia_ptx import collect_api as ptx_collect
     from ml_ecosystem_snapshots.frameworks.nvidia_sass import collect_api as sass_collect
     from ml_ecosystem_snapshots.frameworks.stablehlo import collect_api as shlo_collect
-    from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
     refs: list[GhostRef] = []
     if filename == "stablehlo_exhaustive.json":

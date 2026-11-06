@@ -5,14 +5,15 @@ from __future__ import annotations
 import sys
 import types
 
-import ml_ecosystem_snapshots.frameworks.cupy as cupy_fw
-import ml_ecosystem_snapshots.frameworks.dask as dask_fw
 import pytest
 import pytest_mock
+from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+import ml_ecosystem_snapshots.frameworks.cupy as cupy_fw
+import ml_ecosystem_snapshots.frameworks.dask as dask_fw
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
-from ml_switcheroo_ir.schema.ghost import SemanticTier
 
 
 def create_module(name: str, attrs: dict[str, InspectableTarget]) -> types.ModuleType:
@@ -192,6 +193,9 @@ def test_dask_collect(mocker: pytest_mock.MockerFixture) -> None:
 
         Raises:
             RuntimeError: Always raised to simulate import failure.
+
+        Returns:
+            Never returns.
         """
         raise RuntimeError("Simulated dask error")
 

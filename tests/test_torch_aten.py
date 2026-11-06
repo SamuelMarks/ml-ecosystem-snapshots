@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 import pytest_mock
+from ml_switcheroo_ir.schema.ghost import ParameterKind
+
 from ml_ecosystem_snapshots.frameworks.torch import (
     extract_aten_c_extension_signature,
     get_aten_op_schema,
@@ -24,7 +26,6 @@ from ml_ecosystem_snapshots.models import (
     ExtendedGhostParam,
     GhostPythonRef,
 )
-from ml_switcheroo_ir.schema.ghost import ParameterKind
 
 
 def test_sanitize_param_default_semantic_literals() -> None:
@@ -617,8 +618,9 @@ def test_torch_collect_api_array_api_aten(mocker: pytest_mock.MockerFixture) -> 
     from torch_mock import ensure_torch
 
     torch = ensure_torch()
-    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     mocker.patch.object(
         torch_fw,

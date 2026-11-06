@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from ml_ecosystem_snapshots.api import _consolidate_aliases, get_pkg_version
-from ml_ecosystem_snapshots.frameworks.optax import collect_api
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
     GhostRef,
     ParameterKind,
     SemanticTier,
 )
+
+from ml_ecosystem_snapshots.api import _consolidate_aliases, get_pkg_version
+from ml_ecosystem_snapshots.frameworks.optax import collect_api
 
 
 def test_consolidate_aliases() -> None:

@@ -6,13 +6,14 @@ import typing
 
 import pytest
 import pytest_mock
+from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import (
     ExtendedGhostParam,
     GhostIsaRef,
 )
-from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
 
 def test_ghost_param() -> None:
@@ -118,6 +119,7 @@ def test_ghost_inspector_c_extension(mocker: pytest_mock.MockerFixture) -> None:
 def test_ghost_inspector_hydrate() -> None:
     """Verify ghost inspector hydrate behavior."""
     import pytest
+
     from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
     from ml_ecosystem_snapshots.models import JsonValue
 
@@ -166,6 +168,9 @@ def test_unrepresentable_default() -> None:
 
             Raises:
                 Exception: Exception.
+
+            Returns:
+                Never returns.
             """
             raise Exception("no")
 
@@ -243,6 +248,9 @@ def test_ghost_inspector_str_throws() -> None:
 
             Raises:
                 Exception: Exception.
+
+            Returns:
+                Never returns.
             """
             raise Exception("no")
 
@@ -717,6 +725,7 @@ def test_preload_griffe_cache() -> None:
 def test_inspect_griffe_node_direct() -> None:
     """Test inspecting a Griffe node directly without live object."""
     import griffe
+
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
     mod = griffe.load("ml_ecosystem_snapshots.introspection.inspector")
@@ -821,6 +830,9 @@ def test_ghost_inspector_griffe_class_init(mocker: pytest_mock.MockerFixture) ->
 
             Raises:
                 RuntimeError: Always raised.
+
+            Returns:
+                Never returns.
             """
             raise RuntimeError("unresolved alias parameters")
 
@@ -830,6 +842,9 @@ def test_ghost_inspector_griffe_class_init(mocker: pytest_mock.MockerFixture) ->
 
             Raises:
                 RuntimeError: Always raised.
+
+            Returns:
+                Never returns.
             """
             raise RuntimeError("unresolved alias overloads")
 
@@ -839,6 +854,9 @@ def test_ghost_inspector_griffe_class_init(mocker: pytest_mock.MockerFixture) ->
 
             Raises:
                 RuntimeError: Always raised.
+
+            Returns:
+                Never returns.
             """
             raise RuntimeError("unresolved alias returns")
 

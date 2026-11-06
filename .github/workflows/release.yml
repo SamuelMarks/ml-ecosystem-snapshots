@@ -30,6 +30,8 @@ jobs:
           - dask
           - flax_nnx
           - deepspeed
+          - chex
+          - grain
           - optax
           - orbax_checkpoint
           - huggingface
@@ -48,6 +50,27 @@ jobs:
           - nvidia_sass
           - nvidia_ptx
           - amd_rdna
+          - wgsl
+          - onnx
+          - metal
+          - numba
+          - sparse
+          - dpnp
+          - awkward
+          - pyarrow_compute
+          - bohrium
+          - wasm_simd
+          - webgl
+          - cpp_runtime
+          - ir
+          - array_api
+          - aten
+          - scipy
+          - torchvision
+          - torchaudio
+          - safetensors
+          - flash_attention
+          - nccl
     runs-on: ${{ matrix.framework == 'mlx' && 'macos-latest' || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
@@ -110,6 +133,8 @@ jobs:
             dask) PKGS="dask" ;;
             flax_nnx) PKGS="flax jax[cpu]" ;;
             deepspeed) PKGS="deepspeed torch numpy<2.0.0 --extra-index-url https://download.pytorch.org/whl/cpu" ;;
+            chex) PKGS="chex jax[cpu]" ;;
+            grain) PKGS="grain jax[cpu]" ;;
             optax) PKGS="optax jax[cpu]" ;;
             orbax_checkpoint) PKGS="orbax-checkpoint jax[cpu]" ;;
             huggingface) PKGS="transformers" ;;

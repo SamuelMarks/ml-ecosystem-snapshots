@@ -6,12 +6,13 @@ import importlib
 import types
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
 from ml_ecosystem_snapshots.frameworks.deepspeed import collect_api as ds_collect
 from ml_ecosystem_snapshots.frameworks.onnxruntime import collect_api as onnx_collect
 from ml_ecosystem_snapshots.frameworks.triton import collect_api as triton_collect
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 
 def test_triton_collect(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 
 import pytest
+
 from ml_ecosystem_snapshots.models import JsonValue
 
 
@@ -191,9 +192,10 @@ def test_dask_minimum_symbol_threshold() -> None:
     import types
     from unittest.mock import patch
 
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
+
     import ml_ecosystem_snapshots.frameworks.dask as dask_mod
     from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     fake_da = types.ModuleType("dask.array")
     fake_linalg = types.ModuleType("dask.array.linalg")

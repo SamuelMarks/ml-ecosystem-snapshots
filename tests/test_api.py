@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 import pytest_mock
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
 from ml_ecosystem_snapshots.api import (
     FRAMEWORK_COLLECTORS,
     extract_all_snapshots,
@@ -19,7 +21,6 @@ from ml_ecosystem_snapshots.api import (
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.utils import get_all_members
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 
 def test_get_all_members() -> None:
@@ -304,8 +305,9 @@ def test_get_available_frameworks_not_startswith_collect() -> None:
 
 def test_consolidate_aliases_shorter() -> None:
     """Test function."""
-    from ml_ecosystem_snapshots.api import _consolidate_aliases
     from ml_switcheroo_ir.schema.ghost import GhostRef
+
+    from ml_ecosystem_snapshots.api import _consolidate_aliases
 
     r1 = GhostRef(
         name="func",
@@ -346,8 +348,9 @@ def test_consolidate_aliases_shorter() -> None:
 
 def test_consolidate_aliases_none_aliases() -> None:
     """Test _consolidate_aliases handling None aliases and standalone ref."""
-    from ml_ecosystem_snapshots.api import _consolidate_aliases
     from ml_switcheroo_ir.schema.ghost import GhostRef
+
+    from ml_ecosystem_snapshots.api import _consolidate_aliases
 
     r0 = GhostRef(name="alone", api_path="alone.func", kind="function", aliases=None)
     res0 = _consolidate_aliases([r0])
@@ -406,8 +409,9 @@ def test_get_available_frameworks_not_collect() -> None:
 
 def test_consolidate_aliases_same_length() -> None:
     """Test function."""
-    from ml_ecosystem_snapshots.api import _consolidate_aliases
     from ml_switcheroo_ir.schema.ghost import GhostRef
+
+    from ml_ecosystem_snapshots.api import _consolidate_aliases
 
     # The else branch is hit when api_path len is not < existing.api_path len
     r1 = GhostRef(
@@ -597,6 +601,7 @@ def test_extract_snapshot_stablehlo_zero_dep() -> None:
 def test_validate_snapshot_envelope_and_extraction_metadata() -> None:
     """Test validate_snapshot_envelope function and envelope fields in extract_snapshot."""
     import pytest
+
     from ml_ecosystem_snapshots.api import extract_snapshot, validate_snapshot_envelope
 
     # Test invalid type
@@ -753,9 +758,10 @@ def test_init_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_package_version_exposed() -> None:
     """Test that ml_ecosystem_snapshots.__version__ matches hatch metadata."""
-    import ml_ecosystem_snapshots
     from hatchling.metadata.core import ProjectMetadata
     from hatchling.plugin.manager import PluginManager
+
+    import ml_ecosystem_snapshots
     from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
 
     pkg_members = get_member_dict(ml_ecosystem_snapshots)
@@ -799,8 +805,9 @@ def test_get_pkg_version_new_dialects(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_make_lazy_collector_execution() -> None:
     """Verify _make_lazy_collector forwards execution dynamically."""
-    from ml_ecosystem_snapshots.api import _make_lazy_collector
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    from ml_ecosystem_snapshots.api import _make_lazy_collector
 
     collector = _make_lazy_collector("metal", "collect_api")
     refs = collector(SemanticTier.ARRAY_API)

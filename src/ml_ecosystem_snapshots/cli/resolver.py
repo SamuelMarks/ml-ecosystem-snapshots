@@ -65,7 +65,7 @@ def _search_candidate_dirs(basename: str, candidate_dirs: list[str]) -> str | No
 
     all_matches: list[str] = []
     for d in candidate_dirs:
-        matches = glob.glob(os.path.join(d, f"{basename}*.json"))
+        matches = sorted(glob.glob(os.path.join(d, f"{basename}*.json")))
         if matches:
             all_matches.extend(matches)
 

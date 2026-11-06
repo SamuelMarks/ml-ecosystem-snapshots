@@ -56,6 +56,7 @@ disallow_any_generics = true
 disallow_subclassing_any = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
+disallow_untyped_calls = true
 check_untyped_defs = true
 disallow_untyped_decorators = true
 no_implicit_optional = true
@@ -64,7 +65,16 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unreachable = true
 strict_equality = true
-enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+extra_checks = true
+enable_error_code = [
+    "ignore-without-code",
+    "redundant-expr",
+    "truthy-bool",
+    "truthy-iterable",
+    "possibly-undefined",
+    "redundant-self",
+    "unimported-reveal",
+]
 
 [[tool.mypy.overrides]]
 module = [
@@ -98,44 +108,6 @@ module = [
     "transformers.*",
 ]
 follow_imports = "skip"
-
-[[tool.mypy.overrides]]
-module = [
-    "ml_switcheroo_ir",
-    "ml_switcheroo_ir.*",
-]
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = [
-    "test_anti_hallucination",
-    "test_api",
-    "test_build_stablehlo_snapshot",
-    "test_cli",
-    "test_cli_check",
-    "test_compliance_validation",
-    "test_cupy_dask",
-    "test_export",
-    "test_framework_fallbacks",
-    "test_framework_introspection",
-    "test_frameworks",
-    "test_lint_typing",
-    "test_matrix_runner",
-    "test_mcp_server",
-    "test_mlir_traits",
-    "test_models",
-    "test_models_ast_fallbacks",
-    "test_models_inspector",
-    "test_scrape_amd_rdna",
-    "test_scrape_mlir",
-    "test_scrape_nvidia_ptx",
-    "test_sphinx_rest",
-    "test_stablehlo",
-    "test_torch_aten",
-    "test_torch_resilience",
-    "test_update_shields",
-]
-disallow_any_unimported = false
 
 [tool.pydantic-mypy]
 init_forbid_extra = true
@@ -193,8 +165,18 @@ exclude = [
 [tool.ruff]
 target-version = "py310"
 line-length = 300
-lint.select = ["E", "F", "UP", "B", "I", "C901", "PLR09", "D"]
-lint.ignore = ["E501", "B905", "UP038"]
+lint.select = ["E", "F", "UP", "B", "I", "C901", "PLR09", "D", "ANN401", "PGH003", "TID251"]
+lint.ignore = ["E501", "B905"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"cdd._DynamicAttrType".msg = "Disguised Any smuggling via cdd._DynamicAttrType is strictly banned; use concrete types or protocols."
+"typing.Any".msg = "typing.Any is strictly banned; use concrete types, generics, or structural protocols."
+"typing.cast".msg = "typing.cast is strictly banned; use proper type narrowing or runtime validation."
+"typing_extensions.Any".msg = "typing_extensions.Any is strictly banned; use concrete types, generics, or structural protocols."
+"typing_extensions.cast".msg = "typing_extensions.cast is strictly banned; use proper type narrowing or runtime validation."
+"operator.attrgetter".msg = "operator.attrgetter is strictly banned; access attributes directly on strongly-typed objects."
+"operator.itemgetter".msg = "operator.itemgetter is strictly banned; index directly on strongly-typed mappings/sequences."
+"operator.methodcaller".msg = "operator.methodcaller is strictly banned; invoke methods directly on strongly-typed protocols."
 
 [tool.ruff.lint.pylint]
 max-args = 8
@@ -248,5 +230,3 @@ quiet = false
 whitelist-regex = []
 color = true
 omit-covered-files = false
-generate-badge = "."
-badge-format = "svg"

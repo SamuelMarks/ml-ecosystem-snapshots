@@ -12,6 +12,7 @@ import sys
 import types
 
 import pytest
+
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 
 
@@ -168,6 +169,9 @@ class MockTorchOp:
 
         Raises:
             ValueError: Always raised to match PyTorch C-extension behavior.
+
+        Returns:
+            Never returns.
         """
         raise ValueError(f"no signature found for builtin {self._op_name}")
 
@@ -567,6 +571,4 @@ def ensure_torch() -> types.ModuleType:
         _ = torch_mod.ops.aten
         return torch_mod
     except (ImportError, AttributeError, Exception):
-        pass
-
-    return install_mock_torch()
+        return install_mock_torch()

@@ -12,11 +12,12 @@ import types
 from unittest.mock import patch
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
+
 from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli import cmd_check_safetensors
 from ml_ecosystem_snapshots.frameworks import safetensors
 from ml_ecosystem_snapshots.mcp_server import check_safetensors_op
-from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
 
 if "safetensors" not in sys.modules:
     fake_st = types.ModuleType("safetensors")
@@ -68,6 +69,9 @@ def test_collect_api_live_mode() -> None:
 
         Args:
             sub: Input sub parameter.
+
+        Returns:
+            Fake submodule namespace or None.
         """
         if sub == "core":
             return fake_core
@@ -94,6 +98,9 @@ def test_collect_api_inspection_exception_handled() -> None:
 
         Args:
             sub: Input sub parameter.
+
+        Returns:
+            Fake torch namespace or None.
         """
         return fake_torch if sub == "torch" else None
 

@@ -34,28 +34,50 @@ def test_check_file_detects_all_violation_categories(tmp_path: Path) -> None:
     """
     bad_file = tmp_path / "bad_code.py"
     lines = [
-        "from typing import Any, cast",
+        "from typing import Any, cast, Protocol, TypeGuard, TYPE_CHECKING",
         "from operator import attrgetter",
-        "import typing, builtins, operator",
-        "x: Any = 1",
+        "import typing, builtins, operator, types",
+        "x: Any = 1  #" + " type: ignore[assignment]",
         "y: typing.Any = 2",
         "o: object = 3",
         "o2: builtins.object = 4",
+        "ft: types.FunctionType = None",
         "z = getattr(x, 'a')",
         "builtins.setattr(x, 'a', 1)",
         "operator.attrgetter('a')(x)",
         "d_names = dir(x)",
         "r_attr = read_runtime_attr(x, 'a')",
+        "c_cast = _as_tensor(x)",
         "d = x.__dict__",
         "m = x.__mro__",
         "n = x.__name__",
         "c = x.__call__()",
         "v = x.normal_method()",
         "s = super().__init__()",
+        "class EmptyProto(Protocol):",
+        "    '''Docstring only.'''",
+        "    pass",
+        "class NonEmptyProto(typing.Protocol):",
+        "    val: int",
+        "class NormalEmptyClass:",
+        "    pass",
+        "def _as_int(v: int) -> int:",
+        "    return v",
+        "def bad_guard(v: int) -> TypeGuard[int]:",
+        "    return True",
+        "def ok_guard(v: int) -> typing.TypeGuard[int]:",
+        "    return isinstance(v, int)",
+        "if TYPE_CHECKING:",
+        "    T = int",
+        "else:",
+        "    T = str",
+        "if typing.TYPE_CHECKING:",
+        "    U = int",
     ]
     bad_file.write_text(chr(10).join(lines), encoding="utf-8")
     violations = check_file(str(bad_file))
     joined = chr(10).join(violations)
+    assert "banned type-ignore comment" in joined
     assert "banned import of 'Any'" in joined
     assert "banned import of 'cast'" in joined
     assert "banned import of 'attrgetter'" in joined
@@ -63,16 +85,25 @@ def test_check_file_detects_all_violation_categories(tmp_path: Path) -> None:
     assert "banned '.Any' type usage" in joined
     assert "banned 'object' usage" in joined
     assert "banned '.object' type usage" in joined
+    assert "banned '.FunctionType' type usage" in joined
     assert "banned call 'getattr(...)'" in joined
     assert "banned attribute call '.setattr(...)'" in joined
     assert "banned attribute call '.attrgetter(...)'" in joined
     assert "banned call 'dir(...)'" in joined
     assert "banned call 'read_runtime_attr(...)'" in joined
+    assert "banned disguised cast call '_as_tensor(...)'" in joined
     assert "banned dunder attribute access '.__dict__'" in joined
     assert "banned dunder attribute access '.__mro__'" in joined
     assert "banned dunder attribute access '.__name__'" in joined
     assert "banned direct dunder method call '.__call__(...)'" in joined
     assert "banned direct dunder method call '.__init__(...)'" in joined
+    assert "banned empty Protocol class 'EmptyProto'" in joined
+    assert "NonEmptyProto" not in joined
+    assert "NormalEmptyClass" not in joined
+    assert "banned wrapper function definition '_as_int'" in joined
+    assert "banned tautological TypeGuard 'bad_guard' returning True" in joined
+    assert "ok_guard" not in joined
+    assert "banned 'if TYPE_CHECKING: ... else:' block" in joined
     assert "normal_method" not in joined
 
 

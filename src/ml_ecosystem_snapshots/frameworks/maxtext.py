@@ -38,7 +38,7 @@ def _parse_maxtext_classes(dir_path: str, module_prefix: str) -> list[GhostRef]:
         A list of GhostRef items.
     """
     refs = []
-    for file in glob.glob(os.path.join(dir_path, "**", "*.py"), recursive=True):
+    for file in sorted(glob.glob(os.path.join(dir_path, "**", "*.py"), recursive=True)):
         try:
             with open(file, encoding="utf-8") as f:
                 tree = ast.parse(f.read())

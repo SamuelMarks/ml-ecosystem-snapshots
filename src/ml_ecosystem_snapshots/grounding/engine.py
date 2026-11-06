@@ -97,7 +97,7 @@ class GroundingEngine:
         for d in self.search_dirs:
             if not os.path.isdir(d):
                 continue
-            for fname in os.listdir(d):
+            for fname in sorted(os.listdir(d)):
                 clean_fname = fname.lower()
                 is_json = clean_fname.endswith(".json") or clean_fname.endswith(".json.gz")
                 if not is_json:

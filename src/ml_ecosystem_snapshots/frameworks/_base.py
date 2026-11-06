@@ -41,12 +41,20 @@ class GriffeMemberProtocol(typing.Protocol):
 
     @property
     def is_class(self) -> bool:
-        """Return whether the member node represents a class."""
+        """Return whether the member node represents a class.
+
+        Returns:
+            True if the member node is a class.
+        """
         ...
 
     @property
     def is_function(self) -> bool:
-        """Return whether the member node represents a function."""
+        """Return whether the member node represents a function.
+
+        Returns:
+            True if the member node is a function.
+        """
         ...
 
 
@@ -56,7 +64,11 @@ class GriffeModuleMembersProtocol(typing.Protocol):
 
     @property
     def members(self) -> typing.Mapping[str, GriffeMemberProtocol]:
-        """Return mapping of member names to Griffe AST member nodes."""
+        """Return mapping of member names to Griffe AST member nodes.
+
+        Returns:
+            Mapping from member name to Griffe member node.
+        """
         ...
 
 
@@ -484,7 +496,7 @@ class _SsaRefOptions(pydantic.BaseModel):
     api_path_fn: typing.Callable[[CanonicalSsaOpSpec, str], str] | None = None
 
 
-_SsaRefOptionValue: typing_extensions.TypeAlias = "str | typing.Sequence[str] | typing.Callable[[CanonicalSsaOpSpec], typing.Mapping[str, JsonValue]] " "| typing.Callable[[str], str] | typing.Callable[[CanonicalSsaOpSpec, str], str] | None"
+_SsaRefOptionValue: typing_extensions.TypeAlias = "str | typing.Sequence[str] | typing.Callable[[CanonicalSsaOpSpec], typing.Mapping[str, JsonValue]] | typing.Callable[[str], str] | typing.Callable[[CanonicalSsaOpSpec, str], str] | None"
 
 
 def build_ssa_operation_refs(

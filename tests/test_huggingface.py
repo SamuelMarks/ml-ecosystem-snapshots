@@ -5,13 +5,14 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
 from ml_ecosystem_snapshots.frameworks.huggingface import (
     _parse_pretrained_config,
     collect_diffusers,
     collect_tokenizers,
     collect_transformers,
 )
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 
 def test_collect_transformers() -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 
 import pytest
+
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     DescriptorProtocol,
     InspectableCallableProtocol,
@@ -56,6 +57,9 @@ class _RaisingAttrTarget:
 
         Raises:
             RuntimeError: Always raised to test safe boundary error handling.
+
+        Returns:
+            Never returns.
         """
         raise RuntimeError("boom")
 

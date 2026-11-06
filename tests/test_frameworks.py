@@ -9,8 +9,9 @@ from unittest.mock import patch
 
 import pytest
 import pytest_mock
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 
 pytestmark = [pytest.mark.frameworks]
 
@@ -23,6 +24,7 @@ def _stub_heavy_griffe_cache(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch: Pytest monkeypatch fixture.
     """
     import griffe
+
     from ml_ecosystem_snapshots.introspection import static_parsers
 
     monkeypatch.setitem(static_parsers._GRIFFE_CACHE, "__loader__", griffe.load)
@@ -85,7 +87,7 @@ def create_module(name: str, attrs: dict[str, InspectableTarget]) -> types.Modul
     """
     mod = types.ModuleType(name)
     for k, v in attrs.items():
-        if v is _noop_callable or (isinstance(v, types.FunctionType) and "<lambda>" in repr(v)):
+        if v is _noop_callable or (callable(v) and "<lambda>" in repr(v)):
             v = _make_named_stub_fn(k)
         pytest.MonkeyPatch().setattr(mod, k, v, raising=False)
     return mod
@@ -361,10 +363,11 @@ def test_torch_collect_in_place_mutation_already_tagged(
     Args:
         mocker: Pytest mocker fixture.
     """
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
+
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
     from ml_ecosystem_snapshots.models import GhostPythonRef
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     fake_ref = GhostPythonRef(
         name="add_",
@@ -601,8 +604,9 @@ def test_tf_raw_ops_none_env_tags(mocker: pytest_mock.MockerFixture) -> None:
     """
     import types
 
-    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
     from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
+    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
 
     fake_raw = types.ModuleType("tf.raw_ops")
     pytest.MonkeyPatch().setattr(fake_raw, "op1", lambda x: x, raising=False)
@@ -634,8 +638,9 @@ def test_tf_raw_ops_inspect_exception(mocker: pytest_mock.MockerFixture) -> None
     """
     import types
 
-    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
 
     fake_raw = types.ModuleType("tf.raw_ops")
     pytest.MonkeyPatch().setattr(fake_raw, "broken_op", lambda x: x, raising=False)
@@ -660,8 +665,9 @@ def test_tf_collect_outer_exception(mocker: pytest_mock.MockerFixture) -> None:
     """
     import types
 
-    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
 
     fake_tf = types.SimpleNamespace(
         keras=types.SimpleNamespace(layers=types.SimpleNamespace()),
@@ -838,9 +844,10 @@ def test_keras_collect_static_none_env_tags(mocker: pytest_mock.MockerFixture) -
     Args:
         mocker: Pytest mocker fixture.
     """
+    from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
     from ml_ecosystem_snapshots.frameworks import keras as keras_fw
     from ml_ecosystem_snapshots.frameworks.keras import _collect_static
-    from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
     mocker.patch.object(keras_fw, "griffe", types.SimpleNamespace())
     ref = GhostRef(
@@ -1102,9 +1109,10 @@ def test_jax_static_arg_metadata_none_environment_tags(
     Args:
         mocker: Pytest mocker fixture.
     """
+    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+
     from ml_ecosystem_snapshots.frameworks import jax as jax_fw
     from ml_ecosystem_snapshots.frameworks.jax import _attach_jax_static_arg_metadata
-    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     class FakeObj:
         """Fake callable with static metadata."""
@@ -1315,8 +1323,9 @@ def test_sklearn_collect(mocker: pytest_mock.MockerFixture) -> None:
     """
     import types
 
-    from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
 
     class BaseEstimator:
         """Mock or helper class BaseEstimator for unit testing."""
@@ -1402,8 +1411,9 @@ def test_sklearn_import_error(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
-    from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
 
     mocker.patch.object(sklearn_fw, "sklearn", None)
 
@@ -1420,8 +1430,9 @@ def test_sklearn_module_import_error(mocker: pytest_mock.MockerFixture) -> None:
     import sys
     import types
 
-    from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
 
     mock_sklearn = types.ModuleType("sklearn")
     mocker.patch.object(sklearn_fw, "sklearn", mock_sklearn)
@@ -1570,9 +1581,10 @@ def test_numpy_collect(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
+
     import ml_ecosystem_snapshots.frameworks.numpy as np_shim
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     def tanh(x: float) -> float:
         """Compute hyperbolic tangent.
@@ -1674,9 +1686,10 @@ def test_orbax_collect(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
+
     import ml_ecosystem_snapshots.frameworks.orbax_checkpoint as ocp_shim
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     def checkpoint(directory: str) -> bool:
         """Save checkpoint to directory.
@@ -1773,9 +1786,10 @@ def test_pax_collect(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
+    from ml_switcheroo_ir.schema.ghost import SemanticTier
+
     import ml_ecosystem_snapshots.frameworks.pax as pax_shim
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     class Linear:
         """Praxis Linear layer."""
@@ -1864,8 +1878,9 @@ def test_triton_collect(mocker: pytest_mock.MockerFixture) -> None:
     """
     import importlib
 
-    import ml_ecosystem_snapshots.frameworks.triton as triton_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    import ml_ecosystem_snapshots.frameworks.triton as triton_shim
 
     def cdiv(x: int, div: int) -> int:
         """Ceiling division.
@@ -1929,8 +1944,9 @@ def test_deepspeed_collect(mocker: pytest_mock.MockerFixture) -> None:
     """
     import importlib
 
-    import ml_ecosystem_snapshots.frameworks.deepspeed as ds_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    import ml_ecosystem_snapshots.frameworks.deepspeed as ds_shim
 
     # Early return for unsupported category (line 26 -> 27)
     assert ds_shim.collect_api(SemanticTier.LOSS) == []
@@ -2006,8 +2022,9 @@ def test_onnxruntime_collect(mocker: pytest_mock.MockerFixture) -> None:
     """
     import importlib
 
-    import ml_ecosystem_snapshots.frameworks.onnxruntime as ort_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    import ml_ecosystem_snapshots.frameworks.onnxruntime as ort_shim
 
     # Early return for unsupported category (line 26 -> 27)
     assert ort_shim.collect_api(SemanticTier.LOSS) == []
@@ -2072,8 +2089,9 @@ def test_huggingface_collect(mocker: pytest_mock.MockerFixture) -> None:
     """
     import importlib
 
-    import ml_ecosystem_snapshots.frameworks.huggingface as hf_shim
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    import ml_ecosystem_snapshots.frameworks.huggingface as hf_shim
 
     class PreTrainedModel:
         """Base class for Hugging Face pretrained models."""
@@ -2147,8 +2165,9 @@ def test_maxtext_collect(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
-    from ml_ecosystem_snapshots.frameworks import maxtext as maxtext_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    from ml_ecosystem_snapshots.frameworks import maxtext as maxtext_fw
 
     class FakeMaxtext:
         """Fake Maxtext module for testing."""
@@ -2205,8 +2224,9 @@ def test_mlir_collect(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
-    from ml_ecosystem_snapshots.frameworks import mlir as mlir_fw
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    from ml_ecosystem_snapshots.frameworks import mlir as mlir_fw
 
     mocker.patch("os.path.exists", return_value=True)
 
@@ -2273,8 +2293,9 @@ def test_mlir_collect(mocker: pytest_mock.MockerFixture) -> None:
 
 def test_static_dsl_extractors() -> None:
     """Test static DSL extractors."""
-    from ml_ecosystem_snapshots.frameworks import html_dsl, latex_dsl, nvidia_sass, tikz
     from ml_switcheroo_ir.schema.ghost import SemanticTier
+
+    from ml_ecosystem_snapshots.frameworks import html_dsl, latex_dsl, nvidia_sass, tikz
 
     html_refs = html_dsl.collect_api(SemanticTier.UTIL)
     assert len(html_refs) > 0

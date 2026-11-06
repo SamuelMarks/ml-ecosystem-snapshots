@@ -54,6 +54,15 @@ jobs:
           - wasm_simd
           - webgl
           - cpp_runtime
+          - ir
+          - array_api
+          - aten
+          - scipy
+          - torchvision
+          - torchaudio
+          - safetensors
+          - flash_attention
+          - nccl
     steps:
     - uses: actions/checkout@v7
 

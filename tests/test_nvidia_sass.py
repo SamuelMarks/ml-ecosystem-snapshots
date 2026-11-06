@@ -7,8 +7,9 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-from ml_ecosystem_snapshots.frameworks import nvidia_sass
 from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, SemanticTier
+
+from ml_ecosystem_snapshots.frameworks import nvidia_sass
 
 
 def test_nvidia_sass_collect_api_layer() -> None:
@@ -460,6 +461,7 @@ def test_cli_check_sass(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> N
     import argparse
 
     import pytest
+
     from ml_ecosystem_snapshots.cli import cmd_check_sass
 
     # 1. Valid mnemonic

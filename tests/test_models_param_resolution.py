@@ -5,12 +5,13 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import ParameterKind
+
 from ml_ecosystem_snapshots.c_extension_sig import CExtensionSignature
 from ml_ecosystem_snapshots.introspection.inspector import (
     GhostInspector,
     to_parameter_kind,
 )
-from ml_switcheroo_ir.schema.ghost import ParameterKind
 
 
 def test_to_parameter_kind_branches() -> None:

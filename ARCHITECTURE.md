@@ -386,8 +386,23 @@ Resolves snapshot identifiers (e.g. `torch`, `torch_v2.4.0.json`, or custom path
 | `index` | Inspect, clear, or rebuild the local SQLite FTS5 search index |
 | `check-sass` | Validate NVIDIA SASS assembly instructions, modifiers, and SM architectures |
 | `check-rdna` | Validate AMD RDNA assembly instructions, encodings, and GFX generations |
+| `check-ptx` | Validate NVIDIA PTX assembly instructions, state spaces, and SM architectures |
 | `check-mlir` | Validate MLIR dialect operations and traits |
 | `check-stablehlo` | Validate StableHLO operations, dimension numbers, and block regions |
+| `check-wgsl` | Validate WGSL shader or operation against WebGPU specification |
+| `check-onnx` | Validate ONNX operator against official specification |
+| `check-metal` | Validate Apple Metal MSL compute operation and address space |
+| `check-wasm` | Validate WebAssembly 2.0 / SIMD instruction against specification |
+| `check-webgl` | Validate WebGL 2.0 / GLSL ES 3.00 operation against specification |
+| `check-cpp` | Validate C++17 / PyBind11 runtime operation against specification |
+| `check-array-api` | Validate Python Array API Standard operation against specification |
+| `check-scipy` | Validate SciPy scientific computing operation against specification |
+| `check-torchvision` | Validate TorchVision operation against specification |
+| `check-torchaudio` | Validate TorchAudio operation against specification |
+| `check-safetensors` | Validate SafeTensors serialization operation against specification |
+| `check-aten` | Validate PyTorch ATen C++ operator against specification |
+| `check-nccl` | Validate NCCL/RCCL collective communication operation against specification |
+| `check-flash-attention` | Validate FlashAttention / PagedAttention kernel operation against specification |
 | `check-chex` | Validate Chex assertions, dataclasses, fake contexts, and test variants |
 | `check-grain` | Validate Grain (`grain` / `grain.python`) datasets, samplers, and loaders |
 | `check-orbax` | Validate Orbax Checkpoint and Orbax Export managers, handlers, and args |

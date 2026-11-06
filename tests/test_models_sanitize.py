@@ -116,6 +116,9 @@ def test_sanitize_param_default_edge_cases() -> None:
 
             Raises:
                 RuntimeError: Always raised for testing.
+
+            Returns:
+                Never returns.
             """
             raise RuntimeError("broken repr")
 
@@ -173,6 +176,7 @@ def test_sanitize_param_default_pointer_scrubbing() -> None:
 def test_sanitize_framework_constants() -> None:
     """Test preservation of framework dtypes, classes, and device constants."""
     import numpy as np
+
     from ml_ecosystem_snapshots.introspection.sanitize import sanitize_param_default
 
     # 1. NumPy dtype class

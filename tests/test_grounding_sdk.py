@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 import pytest
+
 from ml_ecosystem_snapshots.grounding import (
     DiagnosticSeverity,
     GroundingDiagnostic,
@@ -124,22 +125,19 @@ def test_grounding_engine_custom_dir(tmp_path: Path) -> None:
         json.dump(single_data, f)
 
     # 5. File with mnemonics, non-dict entries, and items causing hydrate errors
-    try:
-        with open(os.path.join(custom_dir, "mixed_exhaustive.json"), "w") as f:
-            json.dump(
-                [
-                    "not_a_dict",
-                    {
-                        "mnemonic": "INST_M",
-                        "api_path": "isa.inst.INST_M",
-                        "operands": [["R1", "R2"]],
-                    },
-                    123,
-                ],
-                f,
-            )
-    except Exception:
-        pass
+    with open(os.path.join(custom_dir, "mixed_exhaustive.json"), "w") as f:
+        json.dump(
+            [
+                "not_a_dict",
+                {
+                    "mnemonic": "INST_M",
+                    "api_path": "isa.inst.INST_M",
+                    "operands": [["R1", "R2"]],
+                },
+                123,
+            ],
+            f,
+        )
 
     # 6. Non-json file
     with open(os.path.join(custom_dir, "ignored.txt"), "w") as f:
@@ -508,8 +506,9 @@ def test_validate_python_call(tmp_path: Path) -> None:
     assert any(d.field == "args" for d in res_too_many_args.diagnostics)
 
     # Overloads (dict & object) and accepted_kwargs coverage
-    from ml_ecosystem_snapshots.models import ExtendedGhostRef, GhostParam, GhostRef
     from ml_switcheroo_ir.schema.ghost import ParameterKind
+
+    from ml_ecosystem_snapshots.models import ExtendedGhostRef, GhostParam, GhostRef
 
     mock_ref = ExtendedGhostRef(
         name="fn",
@@ -738,6 +737,9 @@ def test_grounding_engine_collector_fallback(tmp_path: Path, monkeypatch: pytest
 
         Raises:
             RuntimeError: Simulated failure.
+
+        Returns:
+            Never returns.
         """
         raise RuntimeError("extraction error")
 
@@ -1242,10 +1244,11 @@ def test_unified_grounding_ir_and_keepdim_branches(tmp_path: Path) -> None:
 
 def test_grounding_models_cross_repo_identity() -> None:
     """Verify Grounding models and compute_levenshtein share identity with ml_switcheroo_ir."""
-    from ml_ecosystem_snapshots.grounding import engine as snap_engine
-    from ml_ecosystem_snapshots.grounding import models as snap_models
     from ml_switcheroo_ir.validation import core as ir_core
     from ml_switcheroo_ir.validation import grounding as ir_grounding
+
+    from ml_ecosystem_snapshots.grounding import engine as snap_engine
+    from ml_ecosystem_snapshots.grounding import models as snap_models
 
     assert snap_models.DiagnosticSeverity is ir_grounding.DiagnosticSeverity
     assert snap_models.GroundingDiagnostic is ir_grounding.GroundingDiagnostic

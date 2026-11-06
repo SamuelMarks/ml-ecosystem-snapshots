@@ -7,10 +7,13 @@ import types
 from unittest.mock import patch
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
 from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli.commands.check import cmd_check_orbax
 from ml_ecosystem_snapshots.frameworks import orbax_checkpoint
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.mcp.registry import dispatch_tool_call
 from ml_ecosystem_snapshots.mcp.tools.domain_ops import check_orbax_op
 from ml_ecosystem_snapshots.mcp.tools.hallucination import (
@@ -18,7 +21,6 @@ from ml_ecosystem_snapshots.mcp.tools.hallucination import (
     explain_anti_pattern,
 )
 from ml_ecosystem_snapshots.utils import get_framework_docstring_parser
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 
 def test_orbax_docstring_parser_and_version_fallback() -> None:
@@ -151,7 +153,7 @@ def test_scan_and_collect_orbax_api_all_branches(
     real_inspect = GhostInspector.inspect
 
     def selective_inspect(
-        obj: types.FunctionType | type | types.ModuleType,
+        obj: InspectableTarget,
         api_path: str,
         is_public: bool = True,
     ) -> GhostRef:

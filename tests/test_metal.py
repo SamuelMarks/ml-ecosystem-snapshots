@@ -5,6 +5,12 @@ from __future__ import annotations
 import argparse
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import (
+    GhostOperationRef,
+    OperandDirection,
+    SemanticTier,
+)
+
 from ml_ecosystem_snapshots.cli import cmd_check_metal
 from ml_ecosystem_snapshots.frameworks.metal import (
     CANONICAL_METAL_OPS,
@@ -12,11 +18,6 @@ from ml_ecosystem_snapshots.frameworks.metal import (
     collect_api,
 )
 from ml_ecosystem_snapshots.mcp_server import check_metal_op
-from ml_switcheroo_ir.schema.ghost import (
-    GhostOperationRef,
-    OperandDirection,
-    SemanticTier,
-)
 
 
 def test_collect_api_metal_categories() -> None:

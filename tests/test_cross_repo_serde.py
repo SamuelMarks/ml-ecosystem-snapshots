@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 
+from ml_switcheroo_ir.schema.ghost import ParameterKind
+
 from ml_ecosystem_snapshots.models import (
     ExtendedGhostParam,
     ExtendedGhostRef,
@@ -16,7 +18,6 @@ from ml_ecosystem_snapshots.models import (
     SnapshotEnvelope,
 )
 from ml_ecosystem_snapshots.serialization.hydration import hydrate_ghost_ref
-from ml_switcheroo_ir.schema.ghost import ParameterKind
 
 
 def test_ghost_protocol_v2_models_instantiation() -> None:
@@ -166,6 +167,7 @@ def test_exhaustive_snapshot_loading_serde() -> None:
 def test_cross_repo_dtype_coverage() -> None:
     """Verify all ml_switcheroo_ir DType variants are supported and roundtrip serialized."""
     import ml_switcheroo_ir as ir
+
     from ml_ecosystem_snapshots.compliance import DTYPE_BITWIDTHS, get_dtype_bitwidth
     from ml_ecosystem_snapshots.mcp_server import normalize_dtype_name
 

@@ -239,4 +239,4 @@ def test_zero_json_files_in_git() -> None:
         tracked_jsons = [f for f in tracked_files if f.lower().endswith(".json") or f.lower().endswith(".json.gz")]
         assert len(tracked_jsons) == 0, f"Found JSON files tracked in git: {tracked_jsons}"
     except (subprocess.SubprocessError, FileNotFoundError):
-        pass
+        return

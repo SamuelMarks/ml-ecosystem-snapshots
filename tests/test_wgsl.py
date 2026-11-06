@@ -7,11 +7,6 @@ import os
 import tempfile
 
 import pytest
-from ml_ecosystem_snapshots.api import extract_snapshot, validate_snapshot_envelope
-from ml_ecosystem_snapshots.cli import cmd_check_wgsl
-from ml_ecosystem_snapshots.compliance import check_wgsl_shader_compliance
-from ml_ecosystem_snapshots.frameworks.wgsl import collect_api
-from ml_ecosystem_snapshots.mcp_server import check_wgsl_op
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     IRParameterRole,
@@ -19,6 +14,12 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
     SnapshotEnvelope,
 )
+
+from ml_ecosystem_snapshots.api import extract_snapshot, validate_snapshot_envelope
+from ml_ecosystem_snapshots.cli import cmd_check_wgsl
+from ml_ecosystem_snapshots.compliance import check_wgsl_shader_compliance
+from ml_ecosystem_snapshots.frameworks.wgsl import collect_api
+from ml_ecosystem_snapshots.mcp_server import check_wgsl_op
 
 
 def test_collect_api_wgsl_categories() -> None:
@@ -258,6 +259,9 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
 
         Raises:
             RuntimeError: Always raised to simulate resource lookup failure.
+
+        Returns:
+            Never returns.
         """
         raise RuntimeError("Outer failure")
 
@@ -279,8 +283,9 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_wgsl_roundtrip_serialization() -> None:
     """Verify 100% roundtrip serialization through GhostOperationRef and Pydantic models."""
-    from ml_ecosystem_snapshots.frameworks.wgsl import collect_api
     from ml_switcheroo_ir.schema.ghost import GhostOperationRef, SemanticTier
+
+    from ml_ecosystem_snapshots.frameworks.wgsl import collect_api
 
     refs = collect_api(SemanticTier.ARRAY_API)
     assert len(refs) > 0

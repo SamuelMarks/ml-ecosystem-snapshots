@@ -7,6 +7,8 @@ import types
 from unittest.mock import patch
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+
 from ml_ecosystem_snapshots.api import (
     _extract_version_with_griffe,
     extract_snapshot,
@@ -27,7 +29,6 @@ from ml_ecosystem_snapshots.mcp.tools.hallucination import (
 )
 from ml_ecosystem_snapshots.mcp.tools.translation import translate_concept_arguments
 from ml_ecosystem_snapshots.utils import get_framework_docstring_parser
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 
 class _FakeGriffeMember:
@@ -55,14 +56,22 @@ class _FakeGriffeMember:
 
     @property
     def is_class(self) -> bool:
-        """Return whether node is a class."""
+        """Return whether node is a class.
+
+        Returns:
+            True if the member is a class.
+        """
         if self._raise_on_kind:
             raise RuntimeError("broken alias")
         return self._is_class
 
     @property
     def is_function(self) -> bool:
-        """Return whether node is a function."""
+        """Return whether node is a function.
+
+        Returns:
+            True if the member is a function.
+        """
         return self._is_function
 
 

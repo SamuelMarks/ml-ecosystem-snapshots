@@ -10,12 +10,13 @@ import argparse
 from unittest.mock import MagicMock, patch
 
 import pytest
+from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
+from torch_mock import ensure_torch
+
 from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli import cmd_check_aten
 from ml_ecosystem_snapshots.frameworks import aten
 from ml_ecosystem_snapshots.mcp_server import check_aten_op
-from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
-from torch_mock import ensure_torch
 
 
 def test_aten_version() -> None:

@@ -227,6 +227,7 @@ def test_generate_stubs_list_and_non_dict(tmp_path: Path) -> None:
         tmp_path: Pytest temporary directory fixture.
     """
     import pytest
+
     from ml_ecosystem_snapshots.stubs import validate_pyi_stub
 
     # Test snapshot_data as list

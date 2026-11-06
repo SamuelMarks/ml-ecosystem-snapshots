@@ -28,7 +28,11 @@ class NamedKindProtocol(typing.Protocol):
 
     @property
     def name(self) -> str:
-        """Return parameter kind name."""
+        """Return parameter kind name.
+
+        Returns:
+            Parameter kind name string.
+        """
         ...
 
 
@@ -38,7 +42,11 @@ class GriffeDocstringProtocol(typing.Protocol):
 
     @property
     def value(self) -> str:
-        """Return docstring text value."""
+        """Return docstring text value.
+
+        Returns:
+            Raw docstring text.
+        """
         ...
 
 
@@ -48,17 +56,29 @@ class GriffeParameterProtocol(typing.Protocol):
 
     @property
     def name(self) -> str:
-        """Return parameter name."""
+        """Return parameter name.
+
+        Returns:
+            Parameter name string.
+        """
         ...
 
     @property
     def default(self) -> ScalarValue:
-        """Return parameter default value."""
+        """Return parameter default value.
+
+        Returns:
+            Default scalar representation.
+        """
         ...
 
     @property
     def annotation(self) -> ScalarValue:
-        """Return parameter type annotation."""
+        """Return parameter type annotation.
+
+        Returns:
+            Annotation scalar representation.
+        """
         ...
 
 
@@ -68,7 +88,11 @@ class GriffeParameterWithKindProtocol(typing.Protocol):
 
     @property
     def kind(self) -> NamedKindProtocol | str | None:
-        """Return parameter kind."""
+        """Return parameter kind.
+
+        Returns:
+            Parameter kind object or string.
+        """
         ...
 
 
@@ -86,7 +110,11 @@ class GriffeMembersProtocol(typing.Protocol):
 
     @property
     def members(self) -> typing.Mapping[str, InspectableTarget]:
-        """Return members mapping."""
+        """Return members mapping.
+
+        Returns:
+            Mapping of member names to inspectable targets.
+        """
         ...
 
 
@@ -96,7 +124,11 @@ class GriffeParametersProtocol(typing.Protocol):
 
     @property
     def parameters(self) -> typing.Iterable[GriffeParameterProtocol]:
-        """Return function parameters."""
+        """Return function parameters.
+
+        Returns:
+            Iterable of Griffe parameter objects.
+        """
         ...
 
 
@@ -106,7 +138,11 @@ class GriffeOverloadsProtocol(typing.Protocol):
 
     @property
     def overloads(self) -> list[InspectableTarget]:
-        """Return function overloads list."""
+        """Return function overloads list.
+
+        Returns:
+            List of overloaded Griffe function definitions.
+        """
         ...
 
 
@@ -116,7 +152,11 @@ class GriffeReturnsProtocol(typing.Protocol):
 
     @property
     def returns(self) -> InspectableTarget:
-        """Return function return annotation."""
+        """Return function return annotation.
+
+        Returns:
+            Return annotation expression or None.
+        """
         ...
 
 
@@ -126,7 +166,11 @@ class GriffeDocstringNodeProtocol(typing.Protocol):
 
     @property
     def docstring(self) -> GriffeDocstringProtocol | str | None:
-        """Return attached docstring object."""
+        """Return attached docstring object.
+
+        Returns:
+            Attached Griffe docstring object, string, or None.
+        """
         ...
 
 
@@ -136,12 +180,20 @@ class GriffeClassProtocol(typing.Protocol):
 
     @property
     def is_class(self) -> bool:
-        """Return whether the node represents a class."""
+        """Return whether the node represents a class.
+
+        Returns:
+            True if the node is a class.
+        """
         ...
 
     @property
     def members(self) -> typing.Mapping[str, GriffeNodeProtocol]:
-        """Return class members mapping."""
+        """Return class members mapping.
+
+        Returns:
+            Mapping of member names to Griffe AST nodes.
+        """
         ...
 
 
@@ -151,12 +203,20 @@ class GriffeFunctionProtocol(typing.Protocol):
 
     @property
     def is_function(self) -> bool:
-        """Return whether the node represents a function."""
+        """Return whether the node represents a function.
+
+        Returns:
+            True if the node is a function.
+        """
         ...
 
     @property
     def parameters(self) -> typing.Iterable[GriffeParameterProtocol]:
-        """Return function parameters."""
+        """Return function parameters.
+
+        Returns:
+            Iterable of Griffe parameter objects.
+        """
         ...
 
 
@@ -173,12 +233,20 @@ class GriffeInspectableNodeProtocol(typing.Protocol):
 
     @property
     def is_class(self) -> bool:
-        """Return whether the node represents a class."""
+        """Return whether the node represents a class.
+
+        Returns:
+            True if the node is a class.
+        """
         ...
 
     @property
     def is_function(self) -> bool:
-        """Return whether the node represents a function."""
+        """Return whether the node represents a function.
+
+        Returns:
+            True if the node is a function.
+        """
         ...
 
 

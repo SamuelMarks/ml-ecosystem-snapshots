@@ -4,12 +4,15 @@ from __future__ import annotations
 
 # ruff: noqa: D205, D415, D207, D212
 import inspect
-import types
 from unittest.mock import patch
 
 import pytest
+
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    InspectableTarget,
+    get_runtime_signature,
+)
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
 
@@ -18,7 +21,7 @@ def dummy_c_ext() -> None:
     pass
 
 
-original_sig = inspect.signature
+original_sig = get_runtime_signature
 
 
 def patched_sig(target: InspectableTarget, *args: InspectableTarget, **kwargs: InspectableTarget) -> inspect.Signature:
@@ -37,7 +40,6 @@ def patched_sig(target: InspectableTarget, *args: InspectableTarget, **kwargs: I
     """
     if target is dummy_c_ext:
         raise ValueError("no signature found")
-    assert isinstance(target, (types.FunctionType, types.MethodType, type))
     return original_sig(target)
 
 
@@ -58,7 +60,7 @@ def test_c_extension_signature_fallback() -> None:
 def dummy_posonly(*args: InspectableTarget, **kwargs: InspectableTarget) -> None:  # noqa: D402
     """dummy_posonly(a: int, /, b: str = 'x') -> None
 
-    Parameters:
+    Args:
         *args: Variadic positional arguments.
         **kwargs: Variadic keyword arguments.
     """  # noqa: D402, D415

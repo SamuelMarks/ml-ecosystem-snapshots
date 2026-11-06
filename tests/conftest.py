@@ -22,10 +22,11 @@ def pytest_configure(config: pytest.Config) -> None:
         target = min(4096, hard) if hard > 0 else 4096
         if soft < target:
             resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
-    except (ImportError, OSError, ValueError):
-        pass
+    except (ImportError, OSError, ValueError) as exc:
+        _ = str(exc)
 
     import griffe
+
     from ml_ecosystem_snapshots.introspection.static_parsers import _GRIFFE_CACHE
 
     _GRIFFE_CACHE["__loader__"] = griffe.load

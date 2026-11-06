@@ -12,6 +12,7 @@ from unittest import mock
 
 import pytest
 import pytest_mock
+
 from ml_ecosystem_snapshots.index import IndexedSymbolRecord
 from ml_ecosystem_snapshots.mcp_server import (
     CONCEPT_ALIAS_MAP,

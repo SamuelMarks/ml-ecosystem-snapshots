@@ -44,31 +44,54 @@ Machine Learning frameworks frequently utilize heavy GPU-bound libraries, comple
 | Framework / Target | Link / Origin | Description |
 |:---|:---|:---|
 | **AMD RDNA** | *Built-in* | AMD RDNA1-4 / CDNA GFX assembly instruction set and VOPD dual-issue profiles |
+| **Array API** | [data-apis.org](https://data-apis.org/array-api/latest/) | Python Array API Standard (v2024.12) functions, creation, and linear algebra ops |
+| **ATen** | [pytorch.org/cppdocs](https://pytorch.org/cppdocs/) | PyTorch ATen C++ core operator schemas and dispatch signatures |
+| **Awkward Array** | [awkward-array.org](https://awkward-array.org/) | Nested, variable-sized data manipulation and ragged array operations |
+| **Bohrium** | [bh107.org](https://bh107.org/) | Automatic parallelization array runtime for Python/NumPy |
+| **C++ Runtime** | *Built-in* | Standard C++20/23 math, memory, and SIMD runtime intrinsics |
+| **Chex** | [chex.readthedocs.io](https://chex.readthedocs.io/) | JAX testing, assertion, dataclass, and PyTree validation utilities |
 | **CuPy** | [cupy.dev](https://cupy.dev/) | NumPy/SciPy-compatible array library for GPU-accelerated computing |
-| **Dask** | [dask.org](https://dask.org/) | Library for parallel computing in Python |
+| **Dask** | [dask.org](https://dask.org/) | Library for parallel and distributed array computing in Python |
 | **DeepSpeed** | [deepspeed.ai](https://www.deepspeed.ai/) | Extreme-scale deep learning optimization library |
+| **DPNP** | [intelpython.github.io/dpnp](https://intelpython.github.io/dpnp/) | Data Parallel Extension for NumPy on SYCL/oneAPI devices |
+| **FlashAttention** | [github.com/Dao-AILab/flash-attention](https://github.com/Dao-AILab/flash-attention) | Fast and memory-efficient exact attention kernels (`flash_attn`) |
 | **Flax (NNX)** | [flax.readthedocs.io](https://flax.readthedocs.io/) | Neural network library and ecosystem for JAX |
+| **Grain** | [google-grain.readthedocs.io](https://google-grain.readthedocs.io/) | Deterministic, multiprocess data loading and transformation pipeline for JAX |
 | **HTML DSL** | *Built-in* | Declarative HTML tags and attribute snapshot schema |
 | **HuggingFace** | [huggingface.co](https://huggingface.co/) | Transformers, Diffusers, and Tokenizers API signatures |
 | **JAX** | [jax.readthedocs.io](https://jax.readthedocs.io/) | Composable transformations of Python+NumPy programs |
 | **Keras** | [keras.io](https://keras.io/) | Multi-backend deep learning API |
 | **LaTeX DSL** | *Built-in* | Standard LaTeX mathematical environments and formatting macros |
 | **MaxText** | [github.com/google/maxtext](https://github.com/google/maxtext) | Performant and highly scalable JAX LLM implementation |
+| **Metal (MSL)** | *Built-in* | Apple Metal Shading Language math, atomic, SIMD-group, and matrix intrinsics |
+| **ML-Switcheroo IR** | *Built-in* | Universal `LogicalGraph`, `TensorSpec`, symbolic algebra (`SymInt`/`Polynomial`), and compiler IR APIs |
 | **MLIR** | [mlir.llvm.org](https://mlir.llvm.org/) | Core MLIR dialects (`arith`, `math`, `tensor`, `linalg`, `scf`, `gpu`, etc.) via TableGen |
 | **MLX** | [ml-explore.github.io/mlx](https://ml-explore.github.io/mlx/) | Array framework optimized for Apple Silicon |
+| **NCCL** | [developer.nvidia.com/nccl](https://developer.nvidia.com/nccl) | NVIDIA Collective Communications Library primitives (`ncclAllReduce`, `ncclAllGather`, etc.) |
+| **Numba** | [numba.pydata.org](https://numba.pydata.org/) | LLVM JIT compiler decorators, vectorize, guvectorize, and CUDA kernel APIs |
 | **NumPy** | [numpy.org](https://numpy.org/) | The fundamental package for scientific computing with Python |
 | **NVIDIA PTX** | *Built-in* | NVIDIA Parallel Thread Execution (PTX) ISA, state spaces, and type qualifiers |
 | **NVIDIA SASS** | *Built-in* | NVIDIA SASS GPU assembly instruction set and cycle-accurate control codes |
+| **ONNX Spec** | [onnx.ai](https://onnx.ai/) | Open Neural Network Exchange operator schemas, attributes, and type constraints |
 | **ONNXRuntime** | [onnxruntime.ai](https://onnxruntime.ai/) | Cross-platform, high-performance ML inferencing accelerator |
 | **Optax** | [optax.readthedocs.io](https://optax.readthedocs.io/) | Gradient processing and optimization library for JAX |
 | **Orbax** | [orbax.readthedocs.io](https://orbax.readthedocs.io/) | Checkpointing and persistence library for JAX |
 | **Pax** | [github.com/google/paxml](https://github.com/google/paxml) | JAX-based high-performance machine learning framework |
+| **PyArrow Compute** | [arrow.apache.org](https://arrow.apache.org/docs/python/compute.html) | Apache Arrow vectorized columnar compute kernels (`pyarrow.compute`) |
 | **PyTorch** | [pytorch.org](https://pytorch.org/) | Dynamic neural networks, ATen operators, and native C-extensions |
+| **Safetensors** | [huggingface.co/docs/safetensors](https://huggingface.co/docs/safetensors/) | Safe, zero-copy tensor serialization across PyTorch, NumPy, JAX, and TensorFlow |
+| **SciPy** | [scipy.org](https://scipy.org/) | Fundamental scientific computing algorithms (`scipy.special`, `scipy.linalg`, `scipy.signal`, `scipy.fft`) |
 | **Scikit-Learn** | [scikit-learn.org](https://scikit-learn.org/) | Classical machine learning algorithms in Python |
+| **Sparse** | [sparse.pydata.org](https://sparse.pydata.org/) | Multidimensional sparse arrays (`COO`, `GCXS`, `DOK`) adhering to the Array API |
 | **StableHLO** | [github.com/openxla/stablehlo](https://github.com/openxla/stablehlo) | Backward-compatible ML compiler operations, attributes, and regions |
 | **TensorFlow** | [tensorflow.org](https://www.tensorflow.org/) | End-to-end open source platform for machine learning |
 | **TikZ DSL** | *Built-in* | Declarative diagramming and vector geometry DSL schema |
+| **TorchAudio** | [pytorch.org/audio](https://pytorch.org/audio/) | Audio and signal processing transforms and functionals for PyTorch |
+| **TorchVision** | [pytorch.org/vision](https://pytorch.org/vision/) | Computer vision operators, bounding box utilities, and image transforms for PyTorch |
 | **Triton** | [triton-lang.org](https://triton-lang.org/) | Python-like programming language for high-throughput GPU kernels |
+| **WASM SIMD** | *Built-in* | WebAssembly 128-bit SIMD (`v128`) and relaxed SIMD instruction intrinsics |
+| **WebGL2 / GLSL** | *Built-in* | WebGL2 context APIs and GLSL ES 3.00 shader built-in functions |
+| **WGSL (WebGPU)** | *Built-in* | WebGPU Shading Language built-in functions,subgroup ops, and atomic primitives |
 
 ---
 

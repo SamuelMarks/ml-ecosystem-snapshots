@@ -961,17 +961,6 @@ class TorchModuleWithCProtocol(typing.Protocol):
     _C: TorchCModuleProtocol
 
 
-@typing.runtime_checkable
-class TorchModuleProtocol(
-    TorchModuleWithCProtocol,
-    TorchModuleWithNnProtocol,
-    TorchModuleWithOpsProtocol,
-    TorchModuleWithTensorProtocol,
-    typing.Protocol,
-):
-    """Composite protocol for the `torch` top-level module."""
-
-
 _JIT_SCHEMAS_CACHE: dict[str, list[TorchJitSchemaProtocol]] | None = None
 
 

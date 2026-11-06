@@ -9,6 +9,7 @@ from unittest.mock import mock_open
 
 import pytest
 import pytest_mock
+
 from ml_ecosystem_snapshots.cli import main
 
 
@@ -399,6 +400,7 @@ def test_cli_export_unknown_format(mocker: pytest_mock.MockerFixture, capsys: py
         mocker: Pytest mocker fixture.
     """
     import pytest
+
     from ml_ecosystem_snapshots.cli import cmd_export
 
     mock_args = mocker.Mock()
@@ -725,6 +727,7 @@ def test_cmd_pull_offline(capsys: pytest.CaptureFixture[str]) -> None:
     import argparse
 
     import pytest
+
     from ml_ecosystem_snapshots.cli import cmd_pull
 
     args = argparse.Namespace(target="torch", out_dir=None, offline=True)
@@ -857,6 +860,7 @@ def test_cmd_download_all(
     import argparse
 
     import pytest
+
     from ml_ecosystem_snapshots.cli import cmd_download_all, main
 
     cache_dir = str(tmp_path / "download_cache")
@@ -986,6 +990,7 @@ def test_cmd_verify_local_cache_corrupt_and_dispatch(
     import json
 
     import pytest
+
     from ml_ecosystem_snapshots.cli import cmd_verify_local_cache, main
 
     # 3. Corrupted cache file
@@ -1055,6 +1060,7 @@ def test_cli_check_ptx_and_new_export_formats(
     import json
 
     import pytest
+
     from ml_ecosystem_snapshots.cli import main
 
     # 1. check-ptx valid instruction

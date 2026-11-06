@@ -9,6 +9,7 @@ from unittest.mock import mock_open
 
 import pytest
 import pytest_mock
+
 from ml_ecosystem_snapshots.cli import cmd_check
 
 MOCK_JSON = """
@@ -199,8 +200,9 @@ def test_cmd_check_output_formatting(
     """
     import json
 
-    from ml_ecosystem_snapshots.cli import cmd_check
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+
+    from ml_ecosystem_snapshots.cli import cmd_check
 
     ref = GhostRef(
         name="func",
@@ -334,6 +336,7 @@ def test_cmd_check_non_python_auto_detect(mocker: pytest_mock.MockerFixture, cap
         capsys: Pytest stdout/stderr capture fixture.
     """
     import pytest
+
     from ml_ecosystem_snapshots.cli import cmd_check
 
     # 1. SASS file compliant

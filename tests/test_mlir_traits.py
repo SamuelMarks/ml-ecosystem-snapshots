@@ -10,10 +10,11 @@ from unittest import mock
 
 import pytest
 import pytest_mock
+from ml_switcheroo_ir.schema.ghost import SemanticTier
+
 from ml_ecosystem_snapshots.cli import cmd_check_mlir
 from ml_ecosystem_snapshots.frameworks import mlir
 from ml_ecosystem_snapshots.mcp_server import check_mlir_op
-from ml_switcheroo_ir.schema.ghost import SemanticTier
 
 
 def test_classify_mlir_type() -> None:
