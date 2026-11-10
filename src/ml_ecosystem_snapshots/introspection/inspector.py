@@ -374,8 +374,8 @@ def _populate_cdd_docstring_ir(
             for exc_dict in cdd_ir["raises"]:
                 if "typ" in exc_dict:
                     result.raises.append(exc_dict["typ"])
-    except Exception:
-        pass
+    except Exception as exc:
+        del exc
 
 
 def _merge_griffe_return_meta(
@@ -460,8 +460,8 @@ def _populate_griffe_docstring_ir(
         assert isinstance(raw_g_params, dict)
         for p_name, p_data in raw_g_params.items():
             _merge_griffe_param_record(p_name, p_data, result.cdd_params)
-    except Exception:
-        pass
+    except Exception as exc:
+        del exc
 
 
 def _extract_docstring_ir(
@@ -658,8 +658,8 @@ def _resolve_griffe_node_from_cache(
                 current = current.members[part]
         if isinstance(current, GriffeNodeProtocol):
             return current
-    except Exception:
-        pass
+    except Exception as exc:
+        del exc
     return None
 
 
@@ -701,8 +701,8 @@ def _extract_ast_and_griffe_node(
         if kind == "class":
             has_super_kwargs_call = _detect_super_kwargs_call(parsed_ast)
         cdd_ast_params = _parse_cdd_ast_params(parsed_ast, kind, cdd_params)
-    except Exception:
-        pass
+    except Exception as exc:
+        del exc
 
     griffe_mod: types.ModuleType | None
     try:
@@ -875,8 +875,8 @@ def _supplement_cdd_params_from_signature(
                 for i, (pn, _pk, pd, pa) in enumerate(extracted_params):
                     if pn == sig_param.name:
                         extracted_params[i] = (pn, str(sig_param.kind), pd, pa)
-    except Exception:
-        pass
+    except Exception as exc:
+        del exc
     return has_varargs
 
 
@@ -996,8 +996,8 @@ def _resolve_c_ext_and_aten_sig(
                 elif not c_ext_params.overloads and aten_sig.overloads:
                     c_ext_params.overloads = aten_sig.overloads
                     is_exact_aten = True
-        except Exception:
-            pass
+        except Exception as exc:
+            del exc
     return c_ext_params, is_exact_aten
 
 
@@ -1219,8 +1219,8 @@ def _merge_mro_super_kwargs(
                     anno_val = _format_annotation_obj(param.annotation) if param.annotation is not inspect.Parameter.empty else None
                     anno_val = active_sanitize_type_str(anno_val)
                     extracted_params.append((param.name, str(param.kind), default_val, anno_val))
-        except Exception:
-            pass
+        except Exception as exc:
+            del exc
 
 
 def _promote_documented_var_kwargs(
@@ -1329,8 +1329,8 @@ def _build_extended_params(
                 )
 
                 p_dtypes, p_rank = infer_torch_dtype_and_rank(name, p_name, p_anno or "")
-            except Exception:
-                pass
+            except Exception as exc:
+                del exc
 
         p_factory = None
         if p_default and "<factory_default>" in str(p_default):
@@ -1586,8 +1586,8 @@ def _resolve_visibility_and_type_hints(
             resolved_hints = typing.get_type_hints(target)
             if "return" in resolved_hints and returns_type is None:
                 returns_type = active_sanitize_type_str(str(resolved_hints["return"]))
-        except Exception:
-            pass
+        except Exception as exc:
+            del exc
 
     if griffe_node is not None and returns_type is None:
         g_ret = g_node_members.get("returns")
@@ -1802,12 +1802,5 @@ __all__ = [
     "RawParamTuple",
     "STANDARD_ARG_MAP",
     "STANDARD_ENUM_MAP",
-    "_build_extended_params",
-    "_extract_ast_and_griffe_node",
-    "_extract_docstring_ir",
-    "_extract_overloads",
-    "_extract_raw_parameters",
-    "_merge_mro_super_kwargs",
-    "_promote_documented_var_kwargs",
     "to_parameter_kind",
 ]

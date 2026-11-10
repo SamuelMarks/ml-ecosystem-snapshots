@@ -85,7 +85,17 @@ def test_collect_api_live_mode() -> None:
         side_effect=fake_get_submodule,
     ):
         refs = torchaudio.collect_api(SemanticTier.NEURAL_OPS)
-        assert len(refs) >= 10
+        assert len(refs) == len(torchaudio.CANONICAL_TORCHAUDIO_OPS)
+        by_name = {r.name: r for r in refs}
+        assert "melscale_fbanks" in by_name
+        assert [p.name for p in by_name["melscale_fbanks"].params] == [
+            "n_freqs",
+            "f_min",
+            "f_max",
+            "n_mels",
+            "sample_rate",
+        ]
+        assert "torchaudio" in (by_name["melscale_fbanks"].environment_tags or [])
 
 
 def test_collect_api_inspection_exception_handled() -> None:
@@ -114,7 +124,10 @@ def test_collect_api_inspection_exception_handled() -> None:
             side_effect=ValueError("boom"),
         ):
             refs = torchaudio.collect_api(SemanticTier.NEURAL_OPS)
-            assert len(refs) >= 10
+            assert len(refs) == len(torchaudio.CANONICAL_TORCHAUDIO_OPS)
+            mel_ref = next(r for r in refs if r.name == "melscale_fbanks")
+            assert len(mel_ref.params) == 7
+            assert mel_ref.params[0].name == "n_freqs"
 
 
 def test_extract_snapshot_torchaudio() -> None:

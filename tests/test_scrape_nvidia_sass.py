@@ -252,6 +252,9 @@ def test_scrape_sass_env_var() -> None:
         with mock.patch.dict(os.environ, {"NVIDIA_SASS_INPUT_PATH": input_path}):
             records = scrape_nvidia_sass.scrape_sass(output_path=output_path)
             assert len(records) == 1
+            assert records[0]["mnemonic"] == "FADD"
+            assert records[0]["operands"] == [["R", "R", "R"]]
+            assert os.path.isfile(output_path)
 
 
 def test_resolve_instruction_architectures_and_expanded_catalog() -> None:

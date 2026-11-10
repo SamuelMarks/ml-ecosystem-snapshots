@@ -851,7 +851,7 @@ def test_mcp_server_search_without_path(mocker: pytest_mock.MockerFixture) -> No
         return_value=mock_snap,
     )
     res = search_apis("custom", "func_without_path")
-    assert "" in res or len(res) == 1
+    assert res == ["func_without_path"]
 
 
 def test_check_hallucination_strict_and_max_args(

@@ -64,7 +64,7 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
                     inspector_fn=GhostInspector.inspect,
                 )
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            del exc
 
     return results

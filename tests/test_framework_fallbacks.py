@@ -684,16 +684,18 @@ def test_orbax_checkpoint_inspect_error(mocker: pytest_mock.MockerFixture) -> No
         "inspect",
         side_effect=Exception("inspection failed"),
     )
+    assert orbax_mod._scan_orbax_checkpoint() == []
     res = orbax_mod.collect_api(SemanticTier.ARRAY_API)
-    assert res == []
+    assert len(res) == len(orbax_mod.CANONICAL_ORBAX_OPS)
 
     # 2. Outer exception handler (lines 41-42)
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.orbax_checkpoint.get_all_members",
         side_effect=RuntimeError("member enumeration error"),
     )
+    assert orbax_mod._scan_orbax_checkpoint() == []
     res_outer = orbax_mod.collect_api(SemanticTier.ARRAY_API)
-    assert res_outer == []
+    assert len(res_outer) == len(orbax_mod.CANONICAL_ORBAX_OPS)
 
 
 def test_pax_import_fallback(monkeypatch: pytest.MonkeyPatch) -> None:

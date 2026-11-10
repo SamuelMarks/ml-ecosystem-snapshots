@@ -927,12 +927,19 @@ def test_export_scoped_and_constrained_prompt_context() -> None:
                 kind=ParameterKind.POSITIONAL_ONLY,
                 annotation="MyCustomClass",
             ),
+            GhostParam(
+                name="mlir_t",
+                kind=ParameterKind.POSITIONAL_ONLY,
+                annotation="tensor<4xf32>",
+            ),
         ],
     )
     cpp_no_doc = to_cpp_header(no_doc_ref)
     assert "struct SimpleStruct {" in cpp_no_doc
     assert "float val;" in cpp_no_doc
+    assert "std::vector<float> mlir_t;" in cpp_no_doc
     ts_no_doc = to_typescript_interface(no_doc_ref)
     assert "export interface SimpleStruct {" in ts_no_doc
     assert "val: unknown;" in ts_no_doc
     assert "custom_t: unknown;" in ts_no_doc
+    assert "mlir_t: unknown[];" in ts_no_doc

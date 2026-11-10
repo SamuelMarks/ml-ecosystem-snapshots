@@ -24,9 +24,11 @@ from ml_switcheroo_ir.schema.ghost import (
 )
 
 from ml_ecosystem_snapshots.frameworks._base import (
-    CanonicalParamSpec,
     CanonicalSubmoduleOpSpec,
+    HybridFrameworkConfig,
     build_canonical_python_ref,
+    build_canonical_submodule_ops,
+    collect_hybrid_framework_api,
     scan_griffe_module_members,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
@@ -42,8 +44,8 @@ try:
     import orbax.checkpoint as _ocp_mod
 
     ocp = _ocp_mod
-except Exception:
-    pass
+except Exception as exc:
+    del exc
 
 
 _ORBAX_OP_DEFS: list[
@@ -799,17 +801,7 @@ def _build_orbax_canonical_ops(
     Returns:
         List of validated `CanonicalSubmoduleOpSpec` models.
     """
-    return [
-        CanonicalSubmoduleOpSpec(
-            name=name,
-            api_path=api_path,
-            kind=kind,
-            submodule=submodule,
-            params=[CanonicalParamSpec(name=pn, kind=pk, default=pd) for pn, pk, pd in params],
-            docstring=doc,
-        )
-        for name, api_path, kind, submodule, params, doc in defs
-    ]
+    return build_canonical_submodule_ops(defs)
 
 
 CANONICAL_ORBAX_OPS: list[CanonicalSubmoduleOpSpec] = _build_orbax_canonical_ops(_ORBAX_OP_DEFS)
@@ -839,7 +831,7 @@ def _get_orbax_export_module() -> types.ModuleType | None:
         return None
     try:
         return importlib.import_module("orbax.export")
-    except Exception:
+    except (ImportError, ModuleNotFoundError, AttributeError, RuntimeError, TypeError, ValueError, OSError):
         return None
 
 
@@ -874,26 +866,24 @@ def _scan_orbax_checkpoint(include_nonpublic: bool = False) -> list[GhostRef]:
                     continue
                 try:
                     found.append(GhostInspector.inspect(obj, f"orbax.checkpoint.{name}"))
-                except Exception:
-                    pass
-    except Exception:
-        pass
+                except Exception as exc:
+                    del exc
+    except Exception as exc:
+        del exc
 
     return found
 
 
-def _scan_orbax_export_live(
-    include_nonpublic: bool,
-    results: list[GhostRef],
-    seen_paths: set[str],
-) -> None:
-    """Scan live `orbax.export` module members and append discovered classes and functions.
+def _scan_orbax_export_live(include_nonpublic: bool = False) -> list[GhostRef]:
+    """Scan live `orbax.export` module members and return discovered classes and functions.
 
     Args:
         include_nonpublic: Whether to include private underscore-prefixed members.
-        results: Accumulator list of discovered `GhostRef` objects.
-        seen_paths: Set of already recorded canonical API paths.
+
+    Returns:
+        List of discovered `GhostRef` objects from `orbax.export`.
     """
+    results: list[GhostRef] = []
     exp_mod = _get_orbax_export_module()
     if exp_mod is not None:
         for name, obj in get_all_members(exp_mod):
@@ -903,9 +893,9 @@ def _scan_orbax_export_live(
                 api_path = f"orbax.export.{name}"
                 try:
                     results.append(GhostInspector.inspect(obj, api_path))
-                    seen_paths.add(api_path)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    del exc
+    return results
 
 
 def collect_orbax_api(include_nonpublic: bool = False) -> list[GhostRef]:
@@ -922,16 +912,12 @@ def collect_orbax_api(include_nonpublic: bool = False) -> list[GhostRef]:
         List of `GhostRef` items covering `orbax.checkpoint` and `orbax.export`.
     """
     env_tags = ("orbax", "jax", "checkpoint")
-    results: list[GhostRef] = []
-    seen_paths: set[str] = set()
+    live_refs: list[GhostRef] = []
+    griffe_refs: list[GhostRef] = []
 
     if not is_offline_mode():
-        for ref in _scan_orbax_checkpoint(include_nonpublic=include_nonpublic):
-            if ref.api_path not in seen_paths:
-                results.append(ref)
-                seen_paths.add(ref.api_path)
-
-        _scan_orbax_export_live(include_nonpublic, results, seen_paths)
+        live_refs.extend(_scan_orbax_checkpoint(include_nonpublic=include_nonpublic))
+        live_refs.extend(_scan_orbax_export_live(include_nonpublic=include_nonpublic))
 
         griffe_mods = _get_orbax_griffe_modules()
         for key, mod_path in (
@@ -939,35 +925,31 @@ def collect_orbax_api(include_nonpublic: bool = False) -> list[GhostRef]:
             ("export", "orbax.export"),
         ):
             if griffe_mods.get(key) is not None:
-                for ref in scan_griffe_module_members(
-                    module_path=mod_path,
-                    api_prefix=mod_path,
-                    include_nonpublic=include_nonpublic,
-                    environment_tags=env_tags,
-                    framework_name="orbax",
-                    inspector_fn=GhostInspector.inspect,
-                ):
-                    if ref.api_path not in seen_paths:
-                        results.append(ref)
-                        seen_paths.add(ref.api_path)
-
-    for spec in CANONICAL_ORBAX_OPS:
-        if spec.api_path not in seen_paths:
-            results.append(
-                build_canonical_python_ref(
-                    spec,
-                    default_doc_prefix="Orbax",
-                    environment_tags=env_tags,
-                    domain_metadata={"submodule": spec.submodule or "checkpoint"},
+                griffe_refs.extend(
+                    scan_griffe_module_members(
+                        module_path=mod_path,
+                        api_prefix=mod_path,
+                        include_nonpublic=include_nonpublic,
+                        environment_tags=env_tags,
+                        framework_name="orbax",
+                        inspector_fn=GhostInspector.inspect,
+                    )
                 )
-            )
-            seen_paths.add(spec.api_path)
 
-    return results
+    return collect_hybrid_framework_api(
+        HybridFrameworkConfig(
+            canonical_ops=CANONICAL_ORBAX_OPS,
+            default_doc_prefix="Orbax",
+            default_submodule="checkpoint",
+            environment_tags=env_tags,
+            live_refs=live_refs,
+            griffe_refs=griffe_refs,
+        )
+    )
 
 
 def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
-    """Entrypoint to collect the Orbax Checkpoint API signature.
+    """Entrypoint to collect the Orbax Checkpoint and Orbax Export API signatures.
 
     Args:
         category: The category of API to collect.
@@ -977,18 +959,13 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         A list of GhostRef items discovered for the requested category.
     """
     if category == SemanticTier.ARRAY_API:
-        return _scan_orbax_checkpoint(include_nonpublic)
+        return collect_orbax_api(include_nonpublic=include_nonpublic)
 
     return []
 
 
 __all__ = [
     "CANONICAL_ORBAX_OPS",
-    "_ORBAX_OP_DEFS",
-    "_build_orbax_canonical_ops",
-    "_get_orbax_export_module",
-    "_get_orbax_griffe_modules",
-    "_scan_orbax_checkpoint",
     "collect_api",
     "collect_orbax_api",
     "ocp",

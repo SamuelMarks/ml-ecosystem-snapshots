@@ -8,8 +8,12 @@ import typing
 import pydantic
 import typing_extensions
 
+from ml_ecosystem_snapshots.mcp.models import DomainOpCheckResult
 from ml_ecosystem_snapshots.mcp.protocol import JsonRpcResponseDict, JsonRpcResultDict
-from ml_ecosystem_snapshots.mcp.tools.domain_ops import build_domain_op_tool_schemas
+from ml_ecosystem_snapshots.mcp.schemas import (
+    DomainOpToolRequest,
+    get_mcp_tools_list,
+)
 from ml_ecosystem_snapshots.models import JsonValue
 
 ToolHandlerResult: typing_extensions.TypeAlias = "pydantic.BaseModel | dict[str, JsonValue] | list[str] | None"
@@ -31,376 +35,6 @@ class McpToolSpec(pydantic.BaseModel):
         ]
         | None
     ) = None
-
-
-def get_mcp_tools_list() -> list[dict[str, JsonValue]]:
-    """Return the MCP schema definition for available tools.
-
-    Returns:
-        List of MCP tool definitions with input schemas.
-    """
-    core_tools: list[dict[str, JsonValue]] = [
-        {
-            "name": "get_api_signature",
-            "description": "Look up the exact ground-truth API signature and parameters for an ML framework function.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "framework": {
-                        "type": "string",
-                        "description": "Target framework name (e.g. torch, jax, nvidia_sass, stablehlo).",
-                    },
-                    "api_path": {
-                        "type": "string",
-                        "description": "Canonical API path or mnemonic.",
-                    },
-                    "version": {
-                        "type": "string",
-                        "description": "Optional framework version string (e.g. '2.4.0').",
-                    },
-                },
-                "required": ["framework", "api_path"],
-            },
-        },
-        {
-            "name": "search_apis",
-            "description": "Search available operations and functions in a framework snapshot by keyword.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "framework": {
-                        "type": "string",
-                        "description": "Target framework name.",
-                    },
-                    "query": {
-                        "type": "string",
-                        "description": "Search keyword or mnemonic prefix.",
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum matches to return.",
-                    },
-                    "version": {
-                        "type": "string",
-                        "description": "Optional framework version string (e.g. '2.4.0').",
-                    },
-                },
-                "required": ["framework", "query"],
-            },
-        },
-        {
-            "name": "check_hallucination",
-            "description": "Verify whether an API path, positional arguments, or keyword arguments represent LLM hallucinations.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "framework": {
-                        "type": "string",
-                        "description": "Target framework name.",
-                    },
-                    "api_path": {
-                        "type": "string",
-                        "description": "API path to check.",
-                    },
-                    "kwargs": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of keyword arguments to validate.",
-                    },
-                    "args_count": {
-                        "type": "integer",
-                        "description": "Optional count of positional arguments passed.",
-                    },
-                    "strict_kwargs": {
-                        "type": "boolean",
-                        "description": "Whether to treat unconstrained kwargs as hallucinated (default: true).",
-                    },
-                    "version": {
-                        "type": "string",
-                        "description": "Optional framework version string (e.g. '2.4.0').",
-                    },
-                },
-                "required": ["framework", "api_path"],
-            },
-        },
-        {
-            "name": "explain_anti_pattern",
-            "description": "Provide canonical migration advice and rationale for a flagged anti-pattern or hallucinated argument.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "framework": {
-                        "type": "string",
-                        "description": "Target framework name (e.g. 'torch', 'jax', 'tensorflow').",
-                    },
-                    "api_path": {
-                        "type": "string",
-                        "description": "API path to explain (e.g. 'torch.sum').",
-                    },
-                    "hallucinated_argument": {
-                        "type": "string",
-                        "description": "The flagged or hallucinated argument name (e.g. 'axis').",
-                    },
-                    "passed_value": {
-                        "description": "Optional value passed to the argument.",
-                    },
-                },
-                "required": ["framework", "api_path", "hallucinated_argument"],
-            },
-        },
-        {
-            "name": "check_sass_instruction",
-            "description": "Validate whether an NVIDIA SASS assembly instruction is valid on target SM architecture.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "mnemonic": {
-                        "type": "string",
-                        "description": "SASS mnemonic (e.g. FADD, WGMMA).",
-                    },
-                    "operands": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of operand types (e.g. ['R', 'R', 'R']).",
-                    },
-                    "modifiers": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of modifiers (e.g. ['.SAT', '.FTZ']).",
-                    },
-                    "sm_arch": {
-                        "type": "string",
-                        "description": "Target SM architecture (e.g. 'sm_80', 'sm_90').",
-                    },
-                    "control_codes": {
-                        "type": "object",
-                        "description": "Optional control code dictionary (e.g. {'stall_count': 1, 'latency_ticks': 4}).",
-                    },
-                },
-                "required": ["mnemonic"],
-            },
-        },
-        {
-            "name": "check_rdna_instruction",
-            "description": "Validate whether an AMD RDNA instruction is valid on target GFX architecture.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "mnemonic": {
-                        "type": "string",
-                        "description": "RDNA mnemonic (e.g. v_add_f32).",
-                    },
-                    "operands": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of operand types.",
-                    },
-                    "encoding": {
-                        "type": "string",
-                        "description": "Optional instruction encoding format (e.g. VOP2).",
-                    },
-                    "gfx_arch": {
-                        "type": "string",
-                        "description": "Target GFX architecture (e.g. 'GFX11/RDNA3').",
-                    },
-                    "modifiers": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of modifiers (e.g. ['-src', 'clamp', 'omod:2']).",
-                    },
-                    "wave_size": {
-                        "type": "integer",
-                        "description": "Optional wavefront execution size (32 or 64).",
-                    },
-                },
-                "required": ["mnemonic"],
-            },
-        },
-        {
-            "name": "check_ptx_instruction",
-            "description": "Validate whether an NVIDIA PTX assembly instruction is valid on target SM architecture.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "mnemonic": {
-                        "type": "string",
-                        "description": "PTX instruction mnemonic (e.g. add, ld, st, wgmma.mma_async).",
-                    },
-                    "types": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of PTX type qualifiers (e.g. ['.f32'], ['.u64']).",
-                    },
-                    "operands": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of operand registers or immediates.",
-                    },
-                    "state_space": {
-                        "type": "string",
-                        "description": "Optional memory state space qualifier (e.g. '.global', '.shared').",
-                    },
-                    "scope": {
-                        "type": "string",
-                        "description": "Optional memory scope qualifier (e.g. '.gpu', '.cta', '.sys').",
-                    },
-                    "vector_width": {
-                        "type": "string",
-                        "description": "Optional vector width qualifier (e.g. '.v2', '.v4').",
-                    },
-                    "sm_arch": {
-                        "type": "string",
-                        "description": "Target SM architecture (e.g. 'sm_80', 'sm_90').",
-                    },
-                },
-                "required": ["mnemonic"],
-            },
-        },
-        {
-            "name": "check_mlir_op",
-            "description": "Validate whether an MLIR or StableHLO operation exists with expected signature.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "op_name": {
-                        "type": "string",
-                        "description": "Qualified dialect op name (e.g. arith.addf, stablehlo.dot_general).",
-                    },
-                    "operands_count": {
-                        "type": "integer",
-                        "description": "Optional expected number of SSA operands.",
-                    },
-                    "attributes": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of attribute names to verify.",
-                    },
-                    "operand_types": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of SSA operand types to verify against ODS type constraints.",
-                    },
-                    "result_types": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of SSA result types to verify.",
-                    },
-                    "structured_attributes": {
-                        "type": "object",
-                        "description": "Optional structured attributes (e.g. DotDimensionNumbersAttr, ComparisonDirectionAttr) to validate.",
-                    },
-                    "regions": {
-                        "type": "object",
-                        "description": "Optional dictionary of regions mapping name to block_arguments and yield_types.",
-                    },
-                },
-                "required": ["op_name"],
-            },
-        },
-        {
-            "name": "check_stablehlo_op",
-            "description": "Validate whether a StableHLO operation complies with formal verification rules, dimension numbers, and region constraints.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "op_name": {
-                        "type": "string",
-                        "description": "StableHLO op name (e.g. stablehlo.dot_general, stablehlo.reduce).",
-                    },
-                    "operands_count": {
-                        "type": "integer",
-                        "description": "Optional expected number of SSA operands.",
-                    },
-                    "attributes": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of attribute names to verify.",
-                    },
-                    "operand_types": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of SSA operand types.",
-                    },
-                    "result_types": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of SSA result types.",
-                    },
-                    "structured_attributes": {
-                        "type": "object",
-                        "description": "Optional structured attributes (DotDimensionNumbersAttr, ConvDimensionNumbersAttr).",
-                    },
-                    "regions": {
-                        "type": "object",
-                        "description": "Optional dictionary of regions mapping name to block_arguments and yield_types.",
-                    },
-                },
-                "required": ["op_name"],
-            },
-        },
-        {
-            "name": "check_code_block",
-            "description": "Batch verify a code block for nonexistent APIs, invalid kwargs, and hardware constraints in a single round-trip.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "code": {
-                        "type": "string",
-                        "description": "Python snippet, SASS assembly, RDNA assembly, or MLIR text.",
-                    },
-                    "framework": {
-                        "type": "string",
-                        "description": "Optional framework hint ('torch', 'jax', 'nvidia_sass', 'amd_rdna', 'mlir').",
-                    },
-                    "version": {
-                        "type": "string",
-                        "description": "Optional framework version string.",
-                    },
-                    "sm_arch": {
-                        "type": "string",
-                        "description": "Optional NVIDIA architecture target (e.g. 'sm_80', 'sm_90').",
-                    },
-                    "gfx_arch": {
-                        "type": "string",
-                        "description": "Optional AMD RDNA architecture target (e.g. 'GFX11/RDNA3').",
-                    },
-                },
-                "required": ["code"],
-            },
-        },
-        {
-            "name": "translate_concept_arguments",
-            "description": "Translate operation arguments across frameworks using concept parameter mapping schemas.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "concept": {
-                        "type": "string",
-                        "description": "The canonical concept name (e.g. 'matmul', 'reduce_sum', 'softmax', 'convolution').",
-                    },
-                    "source_framework": {
-                        "type": "string",
-                        "description": "Source framework identifier ('torch', 'jax', 'numpy', 'tensorflow', 'stablehlo').",
-                    },
-                    "target_framework": {
-                        "type": "string",
-                        "description": "Target framework identifier ('torch', 'jax', 'numpy', 'tensorflow', 'stablehlo').",
-                    },
-                    "source_kwargs": {
-                        "type": "object",
-                        "description": "Dictionary of source keyword arguments or parameters.",
-                    },
-                },
-                "required": [
-                    "concept",
-                    "source_framework",
-                    "target_framework",
-                    "source_kwargs",
-                ],
-            },
-        },
-    ]
-    return core_tools + build_domain_op_tool_schemas()
 
 
 def _as_str_list(val: JsonValue) -> list[str] | None:
@@ -455,6 +89,61 @@ def _as_dict_or_none(val: JsonValue) -> dict[str, JsonValue] | None:
     return dict(val) if isinstance(val, dict) else None
 
 
+class _SimpleDomainVerifierProto(typing.Protocol):
+    """Protocol for a standard MCP domain operation verifier callable."""
+
+    def __call__(
+        self,
+        op_name: str,
+        inputs_count: int | None = None,
+        attributes: list[str] | None = None,
+    ) -> DomainOpCheckResult | dict[str, JsonValue]:
+        """Validate a domain operation.
+
+        Args:
+            op_name: Operation name.
+            inputs_count: Optional input count.
+            attributes: Optional attribute names.
+
+        Returns:
+            Validation result model or dictionary.
+        """
+        ...
+
+
+def _make_domain_op_handler(fn: _SimpleDomainVerifierProto) -> ToolHandlerFn:
+    """Create a Pydantic-validated MCP tool handler for a standard domain op verifier.
+
+    Args:
+        fn: Target domain operation verifier callable.
+
+    Returns:
+        Typed `ToolHandlerFn` accepting raw JSON-RPC arguments.
+    """
+
+    def _handler(a: dict[str, JsonValue]) -> ToolHandlerResult:
+        """Validate request arguments via `DomainOpToolRequest` and invoke `fn`.
+
+        Args:
+            a: Raw JSON-RPC tool arguments dictionary.
+
+        Returns:
+            Domain op check result.
+        """
+        req = DomainOpToolRequest(
+            op_name=str(a["op_name"]),
+            inputs_count=_as_int_or_none(a.get("inputs_count")),
+            attributes=_as_str_list(a.get("attributes")),
+        )
+        return fn(
+            req.op_name,
+            inputs_count=req.inputs_count,
+            attributes=req.attributes,
+        )
+
+    return _handler
+
+
 def _build_dispatch_table() -> dict[str, ToolHandlerFn]:
     """Build the dictionary mapping MCP tool names to handler callables.
 
@@ -463,7 +152,25 @@ def _build_dispatch_table() -> dict[str, ToolHandlerFn]:
     """
     import ml_ecosystem_snapshots.mcp_server as ms
 
-    return {
+    simple_domain_tools: dict[str, _SimpleDomainVerifierProto] = {
+        "check_wgsl_op": ms.check_wgsl_op,
+        "check_webgl_op": ms.check_webgl_op,
+        "check_cpp_op": ms.check_cpp_op,
+        "check_array_api_op": ms.check_array_api_op,
+        "check_scipy_op": ms.check_scipy_op,
+        "check_torchvision_op": ms.check_torchvision_op,
+        "check_torchaudio_op": ms.check_torchaudio_op,
+        "check_safetensors_op": ms.check_safetensors_op,
+        "check_aten_op": ms.check_aten_op,
+        "check_nccl_op": ms.check_nccl_op,
+        "check_flash_attention_op": ms.check_flash_attention_op,
+        "check_chex_op": ms.check_chex_op,
+        "check_grain_op": ms.check_grain_op,
+        "check_orbax_op": ms.check_orbax_op,
+        "check_optax_op": ms.check_optax_op,
+    }
+
+    table: dict[str, ToolHandlerFn] = {
         "get_api_signature": lambda a: ms.get_api_signature(
             str(a["framework"]),
             str(a["api_path"]),
@@ -552,11 +259,6 @@ def _build_dispatch_table() -> dict[str, ToolHandlerFn]:
             str(a["target_framework"]),
             _as_dict_or_none(a.get("source_kwargs")) or {},
         ),
-        "check_wgsl_op": lambda a: ms.check_wgsl_op(
-            str(a["op_name"]),
-            inputs_count=_as_int_or_none(a.get("inputs_count")),
-            attributes=_as_str_list(a.get("attributes")),
-        ),
         "check_onnx_op": lambda a: ms.check_onnx_op(
             str(a["op_name"]),
             domain=str(a.get("domain", "")),
@@ -574,77 +276,12 @@ def _build_dispatch_table() -> dict[str, ToolHandlerFn]:
             operands_count=_as_int_or_none(a.get("operands_count")),
             attributes=_as_str_list(a.get("attributes")),
         ),
-        "check_webgl_op": lambda a: ms.check_webgl_op(
-            str(a["op_name"]),
-            inputs_count=_as_int_or_none(a.get("inputs_count")),
-            attributes=_as_str_list(a.get("attributes")),
-        ),
-        "check_cpp_op": lambda a: ms.check_cpp_op(
-            str(a["op_name"]),
-            inputs_count=_as_int_or_none(a.get("inputs_count")),
-            attributes=_as_str_list(a.get("attributes")),
-        ),
-        "check_array_api_op": lambda a: ms.check_array_api_op(
-            str(a["op_name"]),
-            inputs_count=_as_int_or_none(a.get("inputs_count")),
-            attributes=_as_str_list(a.get("attributes")),
-        ),
-        "check_scipy_op": lambda a: ms.check_scipy_op(
-            str(a["op_name"]),
-            inputs_count=_as_int_or_none(a.get("inputs_count")),
-            attributes=_as_str_list(a.get("attributes")),
-        ),
-        "check_torchvision_op": lambda a: ms.check_torchvision_op(
-            str(a["op_name"]),
-            inputs_count=_as_int_or_none(a.get("inputs_count")),
-            attributes=_as_str_list(a.get("attributes")),
-        ),
-        "check_torchaudio_op": lambda a: ms.check_torchaudio_op(
-            str(a["op_name"]),
-            inputs_count=_as_int_or_none(a.get("inputs_count")),
-            attributes=_as_str_list(a.get("attributes")),
-        ),
-        "check_safetensors_op": lambda a: ms.check_safetensors_op(
-            str(a["op_name"]),
-            inputs_count=_as_int_or_none(a.get("inputs_count")),
-            attributes=_as_str_list(a.get("attributes")),
-        ),
-        "check_aten_op": lambda a: ms.check_aten_op(
-            str(a["op_name"]),
-            inputs_count=_as_int_or_none(a.get("inputs_count")),
-            attributes=_as_str_list(a.get("attributes")),
-        ),
-        "check_nccl_op": lambda a: ms.check_nccl_op(
-            str(a["op_name"]),
-            inputs_count=_as_int_or_none(a.get("inputs_count")),
-            attributes=_as_str_list(a.get("attributes")),
-        ),
-        "check_flash_attention_op": lambda a: ms.check_flash_attention_op(
-            str(a["op_name"]),
-            inputs_count=_as_int_or_none(a.get("inputs_count")),
-            attributes=_as_str_list(a.get("attributes")),
-        ),
-        "check_chex_op": lambda a: ms.check_chex_op(
-            str(a["op_name"]),
-            inputs_count=_as_int_or_none(a.get("inputs_count")),
-            attributes=_as_str_list(a.get("attributes")),
-        ),
-        "check_grain_op": lambda a: ms.check_grain_op(
-            str(a["op_name"]),
-            inputs_count=_as_int_or_none(a.get("inputs_count")),
-            attributes=_as_str_list(a.get("attributes")),
-        ),
-        "check_orbax_op": lambda a: ms.check_orbax_op(
-            str(a["op_name"]),
-            inputs_count=_as_int_or_none(a.get("inputs_count")),
-            attributes=_as_str_list(a.get("attributes")),
-        ),
-        "check_optax_op": lambda a: ms.check_optax_op(
-            str(a["op_name"]),
-            inputs_count=_as_int_or_none(a.get("inputs_count")),
-            attributes=_as_str_list(a.get("attributes")),
-        ),
     }
+
+    for tool_name, fn in simple_domain_tools.items():
+        table[tool_name] = _make_domain_op_handler(fn)
+
+    return table
 
 
 def dispatch_tool_call(

@@ -12,6 +12,15 @@ from ml_ecosystem_snapshots.grounding.models import (
     DiagnosticSeverity,
     GroundingReport,
 )
+from ml_ecosystem_snapshots.mcp.tools.hallucination import (
+    DTYPE_CANONICAL_ALIASES,
+    _validate_candidate_dtypes_and_ranks,
+    _validate_candidate_enums_and_literals,
+    _validate_candidate_kwargs,
+    _validate_candidate_positional_arity,
+    _validate_candidate_shapes,
+    normalize_dtype_name,
+)
 from ml_ecosystem_snapshots.models import ExtendedGhostRef, GhostRef, JsonValue
 
 
@@ -64,11 +73,6 @@ def _check_candidate_overload(
     Returns:
         Tuple of (invalid_kwargs, positional_error).
     """
-    from ml_ecosystem_snapshots.mcp.tools.hallucination import (
-        _validate_candidate_kwargs,
-        _validate_candidate_positional_arity,
-    )
-
     invalid, _unrecognized, _has_var_kw, _is_opaque, _warn, _names = _validate_candidate_kwargs(
         cand=cand,
         kwargs=kwargs,
@@ -200,12 +204,6 @@ def validate_python_call(
     Returns:
         GroundingReport containing validation status, diagnostics, and suggested fixes.
     """
-    from ml_ecosystem_snapshots.mcp.tools.hallucination import (
-        _validate_candidate_dtypes_and_ranks,
-        _validate_candidate_enums_and_literals,
-        _validate_candidate_shapes,
-    )
-
     opts = PythonCallValidationOptions.model_validate(options)
     eng = engine or GroundingEngine()
     clean_fw = framework.lower().strip()
@@ -296,8 +294,8 @@ def validate_python_call(
 
 
 __all__ = [
+    "DTYPE_CANONICAL_ALIASES",
     "PythonCallValidationOptions",
-    "_check_candidate_overload",
-    "_normalize_candidate_dict",
+    "normalize_dtype_name",
     "validate_python_call",
 ]

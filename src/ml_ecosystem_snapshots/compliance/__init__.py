@@ -16,12 +16,14 @@ from ml_ecosystem_snapshots.compliance.assembly_verifier import (
 )
 from ml_ecosystem_snapshots.compliance.ast_extractor import (
     DEFAULT_NAMESPACE_PREFIX_MAP,
-    _temporary_sys_path,
     align_namespace,
     extract_target_ast,
     extract_target_refs,
     extract_target_refs_single,
     get_module_info_from_path,
+)
+from ml_ecosystem_snapshots.compliance.ast_extractor import (
+    _temporary_sys_path as _temporary_sys_path,
 )
 from ml_ecosystem_snapshots.compliance.dtype_rules import (
     DTYPE_BITWIDTHS,
@@ -46,7 +48,6 @@ __all__ = [
     "DTYPE_BITWIDTHS",
     "ParamSignatureTuple",
     "SnippetComplianceReport",
-    "_temporary_sys_path",
     "align_namespace",
     "check_mlir_text_compliance",
     "check_rdna_assembly_compliance",

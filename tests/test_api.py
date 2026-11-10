@@ -866,7 +866,7 @@ def test_get_pkg_version_ir_package(monkeypatch: pytest.MonkeyPatch, mocker: pyt
     assert get_pkg_version("ir") == "0.0.9"
 
     monkeypatch.setitem(sys.modules, "ml_switcheroo_ir", None)
-    mocker.patch("importlib.metadata.version", return_value="0.0.5")
+    mocker.patch("importlib.metadata.version", return_value="0.0.6")
     assert get_pkg_version("ml_switcheroo_ir").count(".") == 2
 
 

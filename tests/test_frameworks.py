@@ -1775,9 +1775,10 @@ def test_orbax_collect(mocker: pytest_mock.MockerFixture) -> None:
     res2 = ocp_shim.collect_api(SemanticTier.LAYER)
     assert not res2
 
-    # Import error
+    # Import error: _scan_orbax_checkpoint returns [], while collect_api falls back to CANONICAL_ORBAX_OPS
     mocker.patch.object(ocp_shim, "ocp", None)
-    assert not ocp_shim.collect_api(SemanticTier.ARRAY_API)
+    assert not ocp_shim._scan_orbax_checkpoint()
+    assert len(ocp_shim.collect_api(SemanticTier.ARRAY_API)) >= len(ocp_shim.CANONICAL_ORBAX_OPS)
 
 
 def test_pax_collect(mocker: pytest_mock.MockerFixture) -> None:

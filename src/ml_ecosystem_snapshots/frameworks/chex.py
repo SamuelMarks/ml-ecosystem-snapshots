@@ -17,10 +17,11 @@ from ml_switcheroo_ir.schema.ghost import (
 )
 
 from ml_ecosystem_snapshots.frameworks._base import (
-    CanonicalParamSpec,
     CanonicalSubmoduleOpSpec,
-    build_canonical_python_ref,
+    HybridFrameworkConfig,
+    build_canonical_submodule_ops,
     collect_dir_callables,
+    collect_hybrid_framework_api,
     scan_griffe_module_members,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
@@ -843,17 +844,7 @@ def _build_chex_canonical_ops(
     Returns:
         List of validated `CanonicalSubmoduleOpSpec` models.
     """
-    return [
-        CanonicalSubmoduleOpSpec(
-            name=name,
-            api_path=api_path,
-            kind=kind,
-            submodule=submodule,
-            params=[CanonicalParamSpec(name=pn, kind=pk, default=pd) for pn, pk, pd in params],
-            docstring=doc,
-        )
-        for name, api_path, kind, submodule, params, doc in defs
-    ]
+    return build_canonical_submodule_ops(defs)
 
 
 CANONICAL_CHEX_OPS: list[CanonicalSubmoduleOpSpec] = _build_chex_canonical_ops(_CHEX_OP_DEFS)
@@ -869,7 +860,7 @@ def _get_chex_module() -> types.ModuleType | None:
         return None
     try:
         return importlib.import_module("chex")
-    except Exception:
+    except (ImportError, ModuleNotFoundError, AttributeError, RuntimeError, TypeError, ValueError, OSError):
         return None
 
 
@@ -894,48 +885,39 @@ def collect_chex_api(include_nonpublic: bool = False) -> list[GhostRef]:
         List of `GhostRef` items representing the Chex API surface.
     """
     env_tags = ("chex", "jax", "testing", "assertions")
-    results: list[GhostRef] = []
-    seen_paths: set[str] = set()
+    live_refs: list[GhostRef] = []
+    griffe_refs: list[GhostRef] = []
 
     if not is_offline_mode():
         live_mod = _get_chex_module()
         if live_mod is not None:
-            for ref in collect_dir_callables(
+            live_refs = collect_dir_callables(
                 live_mod,
                 api_prefix="chex",
                 include_nonpublic=include_nonpublic,
                 inspector_fn=GhostInspector.inspect,
-            ):
-                ref.environment_tags = list(ref.environment_tags or ()) + [t for t in env_tags if t not in (ref.environment_tags or ())]
-                results.append(ref)
-                seen_paths.add(ref.api_path)
+            )
 
         if _get_chex_griffe_module() is not None:
-            for ref in scan_griffe_module_members(
+            griffe_refs = scan_griffe_module_members(
                 module_path="chex",
                 api_prefix="chex",
                 include_nonpublic=include_nonpublic,
                 environment_tags=env_tags,
                 framework_name="chex",
                 inspector_fn=GhostInspector.inspect,
-            ):
-                if ref.api_path not in seen_paths:
-                    results.append(ref)
-                    seen_paths.add(ref.api_path)
-
-    for spec in CANONICAL_CHEX_OPS:
-        if spec.api_path not in seen_paths:
-            results.append(
-                build_canonical_python_ref(
-                    spec,
-                    default_doc_prefix="Chex",
-                    environment_tags=env_tags,
-                    domain_metadata={"submodule": spec.submodule or "asserts"},
-                )
             )
-            seen_paths.add(spec.api_path)
 
-    return results
+    return collect_hybrid_framework_api(
+        HybridFrameworkConfig(
+            canonical_ops=CANONICAL_CHEX_OPS,
+            default_doc_prefix="Chex",
+            default_submodule="asserts",
+            environment_tags=env_tags,
+            live_refs=live_refs,
+            griffe_refs=griffe_refs,
+        )
+    )
 
 
 def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
@@ -955,10 +937,6 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
 
 __all__ = [
     "CANONICAL_CHEX_OPS",
-    "_CHEX_OP_DEFS",
-    "_build_chex_canonical_ops",
-    "_get_chex_griffe_module",
-    "_get_chex_module",
     "collect_api",
     "collect_chex_api",
 ]

@@ -370,6 +370,7 @@ def test_resolve_griffe_parser_setattr_failure() -> None:
     ):
         res = resolve_griffe_parser("rest")
         assert res is not None
+        assert res.value in ("rest", "sphinx")
 
 
 def test_parse_docstring_with_griffe_import_error() -> None:

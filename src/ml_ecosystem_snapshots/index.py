@@ -507,8 +507,8 @@ def ensure_index(db_path: str | None = None) -> sqlite3.Connection:
     for sfile in snapshot_files:
         try:
             index_snapshot_file(sfile, conn)
-        except Exception:
-            pass
+        except Exception as exc:
+            del exc
     return conn
 
 
@@ -573,8 +573,8 @@ def search_index(
                 parsed: JsonValue = json.loads(r["json_data"])
                 assert isinstance(parsed, dict)
                 results.append(IndexedSymbolRecord.from_raw_dict(parsed, framework=str(r["framework"] or "")))
-            except Exception:
-                pass
+            except Exception as exc:
+                del exc
         return results
 
 

@@ -5,12 +5,15 @@ from __future__ import annotations
 import importlib.metadata
 import json
 import os
+import threading
 import typing
 
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     InspectableTarget,
     get_member_dict,
 )
+
+_VERSION_LOCK = threading.RLock()
 
 
 @typing.runtime_checkable
@@ -95,8 +98,8 @@ def _extract_version_with_griffe(module_name: str) -> str | None:
                 val = None
             if val is not None:
                 return str(val).strip("'\"")
-    except Exception:
-        pass
+    except Exception as exc:
+        del exc
     return None
 
 
@@ -119,8 +122,8 @@ _STATIC_SPEC_VERSIONS: dict[str, str] = {
 }
 
 _LIVE_MODULE_VERSION_FALLBACKS: dict[str, tuple[str, str, str | None]] = {
-    "ir": ("ml_switcheroo_ir", "0.0.5", "ml-switcheroo-ir"),
-    "ml_switcheroo_ir": ("ml_switcheroo_ir", "0.0.5", "ml-switcheroo-ir"),
+    "ir": ("ml_switcheroo_ir", "0.0.6", "ml-switcheroo-ir"),
+    "ml_switcheroo_ir": ("ml_switcheroo_ir", "0.0.6", "ml-switcheroo-ir"),
     "scipy": ("scipy", "1.13.1", "scipy"),
     "torchvision": ("torchvision", "0.23.0", "torchvision"),
     "torchaudio": ("torchaudio", "2.8.0", "torchaudio"),
@@ -196,16 +199,17 @@ def _read_exhaustive_json_version(anchor_dir: str, pkg_prefix: str, default_ver:
     Returns:
         Resolved version string.
     """
-    json_file = os.path.join(anchor_dir, "frameworks", f"{pkg_prefix}_exhaustive.json")
-    if os.path.exists(json_file):
-        try:
-            with open(json_file, encoding="utf-8") as f:
-                h = json.load(f)
-                if isinstance(h, dict) and h.get("version"):
-                    return str(h["version"])
-        except Exception:
-            pass
-    return default_ver
+    with _VERSION_LOCK:
+        json_file = os.path.join(anchor_dir, "frameworks", f"{pkg_prefix}_exhaustive.json")
+        if os.path.exists(json_file):
+            try:
+                with open(json_file, encoding="utf-8") as f:
+                    h = json.load(f)
+                    if isinstance(h, dict) and h.get("version"):
+                        return str(h["version"])
+            except (OSError, ValueError, TypeError):
+                pass
+        return default_ver
 
 
 def _resolve_tensorflow_or_cupy_version(package_name: str) -> str | None:
@@ -261,8 +265,8 @@ def _resolve_special_pkg_version(
         for mlir_pkg in ("mlir", "mlir-native"):
             try:
                 return importlib.metadata.version(mlir_pkg)
-            except Exception:
-                pass
+            except Exception as exc:
+                del exc
         return _read_exhaustive_json_version(anchor_dir, "mlir", "19.1.0")
     return None
 
@@ -305,12 +309,19 @@ def get_pkg_version(
         return "unknown"
 
 
+PKG_NAME_ALIASES = _PKG_NAME_ALIASES
+FALLBACK_PKG_VERSIONS = _FALLBACK_PKG_VERSIONS
+STATIC_SPEC_VERSIONS = _STATIC_SPEC_VERSIONS
+LIVE_MODULE_VERSION_FALLBACKS = _LIVE_MODULE_VERSION_FALLBACKS
+EXHAUSTIVE_JSON_VERSIONS = _EXHAUSTIVE_JSON_VERSIONS
+extract_version_with_griffe = _extract_version_with_griffe
+
 __all__ = [
-    "_EXHAUSTIVE_JSON_VERSIONS",
-    "_FALLBACK_PKG_VERSIONS",
-    "_LIVE_MODULE_VERSION_FALLBACKS",
-    "_PKG_NAME_ALIASES",
-    "_STATIC_SPEC_VERSIONS",
-    "_extract_version_with_griffe",
+    "EXHAUSTIVE_JSON_VERSIONS",
+    "FALLBACK_PKG_VERSIONS",
+    "LIVE_MODULE_VERSION_FALLBACKS",
+    "PKG_NAME_ALIASES",
+    "STATIC_SPEC_VERSIONS",
+    "extract_version_with_griffe",
     "get_pkg_version",
 ]

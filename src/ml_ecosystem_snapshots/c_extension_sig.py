@@ -454,7 +454,5 @@ __all__ = [
     "CExtensionSignature",
     "ParsedParamTuple",
     "RawParamTuple",
-    "_normalize_c_sig_args",
-    "_parse_c_extension_sig_str",
     "extract_c_extension_signature",
 ]

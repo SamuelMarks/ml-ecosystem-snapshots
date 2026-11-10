@@ -297,7 +297,6 @@ def extract_target_refs(
 
 __all__ = [
     "DEFAULT_NAMESPACE_PREFIX_MAP",
-    "_temporary_sys_path",
     "align_namespace",
     "extract_target_ast",
     "extract_target_refs",

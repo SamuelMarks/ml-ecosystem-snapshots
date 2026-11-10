@@ -56,6 +56,7 @@ def test_get_orbax_export_and_griffe_modules(
         "checkpoint": None,
         "export": None,
     }
+    assert len(orbax_checkpoint._scan_orbax_checkpoint()) == len(orbax_checkpoint.CANONICAL_ORBAX_OPS)
 
     monkeypatch.setenv("ML_SNAPSHOTS_OFFLINE", "0")
     dummy_exp = types.ModuleType("orbax.export")
@@ -216,6 +217,9 @@ def test_scan_and_collect_orbax_api_all_branches(
     ):
         fallback = orbax_checkpoint.collect_orbax_api(include_nonpublic=True)
         assert len(fallback) == len(orbax_checkpoint.CANONICAL_ORBAX_OPS)
+        online_tier = orbax_checkpoint.collect_api(SemanticTier.ARRAY_API, include_nonpublic=True)
+        assert len(online_tier) == len(orbax_checkpoint.CANONICAL_ORBAX_OPS)
+        assert orbax_checkpoint.collect_api(SemanticTier.OPTIMIZER) == []
 
 
 def test_check_orbax_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:

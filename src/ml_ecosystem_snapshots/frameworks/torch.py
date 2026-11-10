@@ -360,8 +360,8 @@ def _collect_torch_namespace(
         if (include_nonpublic or not name.startswith("_")) and callable(obj) and not inspect.isclass(obj):
             try:
                 collected.append(GhostInspector.inspect(obj, f"{api_prefix}.{name}"))
-            except Exception:
-                pass
+            except Exception as exc:
+                del exc
     return collected
 
 

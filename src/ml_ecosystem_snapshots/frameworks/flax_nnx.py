@@ -74,8 +74,8 @@ def _scan_nnx_layers(include_nonpublic: bool) -> list[GhostRef]:
                         found.append(GhostInspector.inspect(obj, f"flax.nnx.{name}"))
                 except TypeError:
                     pass
-    except Exception:
-        pass
+    except Exception as exc:
+        del exc
 
     return found
 

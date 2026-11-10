@@ -10,617 +10,103 @@ from __future__ import annotations
 import importlib
 import types
 
-import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     SemanticTier,
 )
 
-from ml_ecosystem_snapshots.frameworks._base import CanonicalSubmoduleOpSpec
+from ml_ecosystem_snapshots.frameworks._base import (
+    CanonicalSubmoduleOpSpec,
+    CanonicalSubmoduleOpTuple,
+    build_canonical_submodule_ops,
+    collect_from_submodules_or_canonical,
+)
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
-CANONICAL_SCIPY_OPS: list[CanonicalSubmoduleOpSpec] = pydantic.TypeAdapter(list[CanonicalSubmoduleOpSpec]).validate_python(
-    [
-        # Special functions
-        {
-            "name": "erf",
-            "api_path": "scipy.special.erf",
-            "submodule": "special",
-            "params": [
-                {"name": "z", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Returns the error function of complex argument.",
-        },
-        {
-            "name": "erfc",
-            "api_path": "scipy.special.erfc",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Complementary error function, 1 - erf(x).",
-        },
-        {
-            "name": "gamma",
-            "api_path": "scipy.special.gamma",
-            "submodule": "special",
-            "params": [
-                {"name": "z", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "gamma function.",
-        },
-        {
-            "name": "gammaln",
-            "api_path": "scipy.special.gammaln",
-            "submodule": "special",
-            "params": [
-                {"name": "z", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Logarithm of the absolute value of the gamma function.",
-        },
-        {
-            "name": "betaln",
-            "api_path": "scipy.special.betaln",
-            "submodule": "special",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "b", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Natural logarithm of absolute value of beta function.",
-        },
-        {
-            "name": "digamma",
-            "api_path": "scipy.special.digamma",
-            "submodule": "special",
-            "params": [
-                {"name": "z", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "The digamma function, logarithmic derivative of the gamma function.",
-        },
-        {
-            "name": "polygamma",
-            "api_path": "scipy.special.polygamma",
-            "submodule": "special",
-            "params": [
-                {"name": "n", "kind": "POSITIONAL_ONLY"},
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Polygamma functions n-th derivative of digamma at x.",
-        },
-        {
-            "name": "j0",
-            "api_path": "scipy.special.j0",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Bessel function of the first kind of order 0.",
-        },
-        {
-            "name": "j1",
-            "api_path": "scipy.special.j1",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Bessel function of the first kind of order 1.",
-        },
-        {
-            "name": "y0",
-            "api_path": "scipy.special.y0",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Bessel function of the second kind of order 0.",
-        },
-        {
-            "name": "y1",
-            "api_path": "scipy.special.y1",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Bessel function of the second kind of order 1.",
-        },
-        {
-            "name": "i0",
-            "api_path": "scipy.special.i0",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Modified Bessel function of order 0.",
-        },
-        {
-            "name": "i1",
-            "api_path": "scipy.special.i1",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Modified Bessel function of order 1.",
-        },
-        {
-            "name": "k0",
-            "api_path": "scipy.special.k0",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Modified Bessel function of the second kind of order 0.",
-        },
-        {
-            "name": "k1",
-            "api_path": "scipy.special.k1",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Modified Bessel function of the second kind of order 1.",
-        },
-        {
-            "name": "sinc",
-            "api_path": "scipy.special.sinc",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Return the normalized sinc function.",
-        },
-        {
-            "name": "logit",
-            "api_path": "scipy.special.logit",
-            "submodule": "special",
-            "params": [
-                {"name": "p", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Logit function: log(p / (1 - p)).",
-        },
-        {
-            "name": "expit",
-            "api_path": "scipy.special.expit",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Expit (logistic sigmoid) function: 1 / (1 + exp(-x)).",
-        },
-        {
-            "name": "softmax",
-            "api_path": "scipy.special.softmax",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-                {"name": "axis", "kind": "KEYWORD_ONLY", "default": "None"},
-            ],
-            "docstring": "Softmax function along given axis.",
-        },
-        {
-            "name": "logsumexp",
-            "api_path": "scipy.special.logsumexp",
-            "submodule": "special",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "axis", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "b", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "keepdims", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "return_sign", "kind": "KEYWORD_ONLY", "default": "False"},
-            ],
-            "docstring": "Compute the log of the sum of exponentials of input elements.",
-        },
-        # Linear algebra functions
-        {
-            "name": "inv",
-            "api_path": "scipy.linalg.inv",
-            "submodule": "linalg",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "overwrite_a", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "check_finite", "kind": "KEYWORD_ONLY", "default": "True"},
-            ],
-            "docstring": "Compute the inverse of a matrix.",
-        },
-        {
-            "name": "pinv",
-            "api_path": "scipy.linalg.pinv",
-            "submodule": "linalg",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "atol", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "rtol", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "return_rank", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "check_finite", "kind": "KEYWORD_ONLY", "default": "True"},
-            ],
-            "docstring": "Compute the Moore-Penrose pseudo-inverse of a matrix.",
-        },
-        {
-            "name": "det",
-            "api_path": "scipy.linalg.det",
-            "submodule": "linalg",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "overwrite_a", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "check_finite", "kind": "KEYWORD_ONLY", "default": "True"},
-            ],
-            "docstring": "Compute the determinant of a matrix.",
-        },
-        {
-            "name": "norm",
-            "api_path": "scipy.linalg.norm",
-            "submodule": "linalg",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "ord", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "axis", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "keepdims", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "check_finite", "kind": "KEYWORD_ONLY", "default": "True"},
-            ],
-            "docstring": "Matrix or vector norm.",
-        },
-        {
-            "name": "cholesky",
-            "api_path": "scipy.linalg.cholesky",
-            "submodule": "linalg",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "lower", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "overwrite_a", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "check_finite", "kind": "KEYWORD_ONLY", "default": "True"},
-            ],
-            "docstring": "Compute the Cholesky decomposition of a matrix.",
-        },
-        {
-            "name": "qr",
-            "api_path": "scipy.linalg.qr",
-            "submodule": "linalg",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "overwrite_a", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "mode", "kind": "KEYWORD_ONLY", "default": "'full'"},
-                {"name": "pivoting", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "check_finite", "kind": "KEYWORD_ONLY", "default": "True"},
-            ],
-            "docstring": "Compute QR decomposition of a matrix.",
-        },
-        {
-            "name": "svd",
-            "api_path": "scipy.linalg.svd",
-            "submodule": "linalg",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "full_matrices", "kind": "KEYWORD_ONLY", "default": "True"},
-                {"name": "compute_uv", "kind": "KEYWORD_ONLY", "default": "True"},
-                {"name": "overwrite_a", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "check_finite", "kind": "KEYWORD_ONLY", "default": "True"},
-                {"name": "lapack_driver", "kind": "KEYWORD_ONLY", "default": "'gesdd'"},
-            ],
-            "docstring": "Singular Value Decomposition.",
-        },
-        {
-            "name": "solve",
-            "api_path": "scipy.linalg.solve",
-            "submodule": "linalg",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "b", "kind": "POSITIONAL_ONLY"},
-                {"name": "lower", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "overwrite_a", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "overwrite_b", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "check_finite", "kind": "KEYWORD_ONLY", "default": "True"},
-                {"name": "assume_a", "kind": "KEYWORD_ONLY", "default": "'gen'"},
-            ],
-            "docstring": "Solves the linear equation set a * x = b for the unknown x.",
-        },
-        {
-            "name": "expm",
-            "api_path": "scipy.linalg.expm",
-            "submodule": "linalg",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Compute the matrix exponential using Pade approximation.",
-        },
-        {
-            "name": "beta",
-            "api_path": "scipy.special.beta",
-            "submodule": "special",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "b", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Beta function.",
-        },
-        {
-            "name": "betainc",
-            "api_path": "scipy.special.betainc",
-            "submodule": "special",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "b", "kind": "POSITIONAL_ONLY"},
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Incomplete beta integral.",
-        },
-        {
-            "name": "dawsn",
-            "api_path": "scipy.special.dawsn",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Dawson's integral.",
-        },
-        {
-            "name": "expn",
-            "api_path": "scipy.special.expn",
-            "submodule": "special",
-            "params": [
-                {"name": "n", "kind": "POSITIONAL_ONLY"},
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Generalized exponential integral.",
-        },
-        {
-            "name": "fresnel",
-            "api_path": "scipy.special.fresnel",
-            "submodule": "special",
-            "params": [
-                {"name": "z", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Fresnel integrals.",
-        },
-        {
-            "name": "gammainc",
-            "api_path": "scipy.special.gammainc",
-            "submodule": "special",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Regularized lower incomplete gamma function.",
-        },
-        {
-            "name": "gammaincc",
-            "api_path": "scipy.special.gammaincc",
-            "submodule": "special",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Regularized upper incomplete gamma function.",
-        },
-        {
-            "name": "i0e",
-            "api_path": "scipy.special.i0e",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Exponentially scaled modified Bessel function of order 0.",
-        },
-        {
-            "name": "i1e",
-            "api_path": "scipy.special.i1e",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Exponentially scaled modified Bessel function of order 1.",
-        },
-        {
-            "name": "jv",
-            "api_path": "scipy.special.jv",
-            "submodule": "special",
-            "params": [
-                {"name": "v", "kind": "POSITIONAL_ONLY"},
-                {"name": "z", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Bessel function of the first kind of real order.",
-        },
-        {
-            "name": "k0e",
-            "api_path": "scipy.special.k0e",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Exponentially scaled modified Bessel function K of order 0.",
-        },
-        {
-            "name": "k1e",
-            "api_path": "scipy.special.k1e",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Exponentially scaled modified Bessel function K of order 1.",
-        },
-        {
-            "name": "spence",
-            "api_path": "scipy.special.spence",
-            "submodule": "special",
-            "params": [
-                {"name": "z", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Spence's function, also known as the dilogarithm.",
-        },
-        {
-            "name": "zeta",
-            "api_path": "scipy.special.zeta",
-            "submodule": "special",
-            "params": [
-                {"name": "x", "kind": "POSITIONAL_ONLY"},
-                {"name": "q", "kind": "POSITIONAL_OR_KEYWORD", "default": "None"},
-            ],
-            "docstring": "Riemann zeta function of two arguments.",
-        },
-        {
-            "name": "cho_solve",
-            "api_path": "scipy.linalg.cho_solve",
-            "submodule": "linalg",
-            "params": [
-                {"name": "c_and_lower", "kind": "POSITIONAL_ONLY"},
-                {"name": "b", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Solve the linear equations Ax = b, given the Cholesky factorization of A.",
-        },
-        {
-            "name": "eigh_tridiagonal",
-            "api_path": "scipy.linalg.eigh_tridiagonal",
-            "submodule": "linalg",
-            "params": [
-                {"name": "d", "kind": "POSITIONAL_ONLY"},
-                {"name": "e", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Solve eigenvalue problem for a real symmetric tridiagonal matrix.",
-        },
-        {
-            "name": "hessenberg",
-            "api_path": "scipy.linalg.hessenberg",
-            "submodule": "linalg",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "calc_q", "kind": "KEYWORD_ONLY", "default": "False"},
-            ],
-            "docstring": "Compute Hessenberg form of a matrix.",
-        },
-        {
-            "name": "lu",
-            "api_path": "scipy.linalg.lu",
-            "submodule": "linalg",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Compute LU decomposition of a matrix.",
-        },
-        {
-            "name": "lu_factor",
-            "api_path": "scipy.linalg.lu_factor",
-            "submodule": "linalg",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Compute pivoted LU decomposition of a matrix.",
-        },
-        {
-            "name": "lu_solve",
-            "api_path": "scipy.linalg.lu_solve",
-            "submodule": "linalg",
-            "params": [
-                {"name": "lu_and_piv", "kind": "POSITIONAL_ONLY"},
-                {"name": "b", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Solve an equation system, a * x = b, given the LU factorization of a.",
-        },
-        {
-            "name": "polar",
-            "api_path": "scipy.linalg.polar",
-            "submodule": "linalg",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "side", "kind": "KEYWORD_ONLY", "default": "'right'"},
-            ],
-            "docstring": "Compute the polar decomposition.",
-        },
-        {
-            "name": "schur",
-            "api_path": "scipy.linalg.schur",
-            "submodule": "linalg",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Compute Schur decomposition of a matrix.",
-        },
-        {
-            "name": "solve_banded",
-            "api_path": "scipy.linalg.solve_banded",
-            "submodule": "linalg",
-            "params": [
-                {"name": "l_and_u", "kind": "POSITIONAL_ONLY"},
-                {"name": "ab", "kind": "POSITIONAL_ONLY"},
-                {"name": "b", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Solve the equation a x = b for x, assuming a is banded matrix.",
-        },
-        {
-            "name": "maximum_filter",
-            "api_path": "scipy.ndimage.maximum_filter",
-            "submodule": "ndimage",
-            "params": [
-                {"name": "input", "kind": "POSITIONAL_ONLY"},
-                {"name": "size", "kind": "KEYWORD_ONLY", "default": "None"},
-            ],
-            "docstring": "Calculate a multidimensional maximum filter.",
-        },
-        {
-            "name": "beta",
-            "api_path": "scipy.stats.beta",
-            "submodule": "stats",
-            "params": [
-                {"name": "a", "kind": "POSITIONAL_ONLY"},
-                {"name": "b", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "A beta continuous random variable.",
-        },
-        {
-            "name": "poisson",
-            "api_path": "scipy.stats.poisson",
-            "submodule": "stats",
-            "params": [
-                {"name": "mu", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "A Poisson discrete random variable.",
-        },
-        # Signal processing
-        {
-            "name": "convolve",
-            "api_path": "scipy.signal.convolve",
-            "submodule": "signal",
-            "params": [
-                {"name": "in1", "kind": "POSITIONAL_ONLY"},
-                {"name": "in2", "kind": "POSITIONAL_ONLY"},
-                {"name": "mode", "kind": "KEYWORD_ONLY", "default": "'full'"},
-                {"name": "method", "kind": "KEYWORD_ONLY", "default": "'auto'"},
-            ],
-            "docstring": "Convolve two N-dimensional arrays.",
-        },
-        {
-            "name": "correlate",
-            "api_path": "scipy.signal.correlate",
-            "submodule": "signal",
-            "params": [
-                {"name": "in1", "kind": "POSITIONAL_ONLY"},
-                {"name": "in2", "kind": "POSITIONAL_ONLY"},
-                {"name": "mode", "kind": "KEYWORD_ONLY", "default": "'full'"},
-                {"name": "method", "kind": "KEYWORD_ONLY", "default": "'auto'"},
-            ],
-            "docstring": "Cross-correlate two N-dimensional arrays.",
-        },
-        {
-            "name": "fftconvolve",
-            "api_path": "scipy.signal.fftconvolve",
-            "submodule": "signal",
-            "params": [
-                {"name": "in1", "kind": "POSITIONAL_ONLY"},
-                {"name": "in2", "kind": "POSITIONAL_ONLY"},
-                {"name": "mode", "kind": "KEYWORD_ONLY", "default": "'full'"},
-                {"name": "axes", "kind": "KEYWORD_ONLY", "default": "None"},
-            ],
-            "docstring": "Convolve two N-dimensional arrays using FFT.",
-        },
-        {
-            "name": "medfilt",
-            "api_path": "scipy.signal.medfilt",
-            "submodule": "signal",
-            "params": [
-                {"name": "volume", "kind": "POSITIONAL_ONLY"},
-                {"name": "kernel_size", "kind": "KEYWORD_ONLY", "default": "None"},
-            ],
-            "docstring": "Perform a median filter on an N-dimensional array.",
-        },
-    ]
-)
+_SCIPY_OP_DEFS: list[CanonicalSubmoduleOpTuple] = [
+    ("erf", "scipy.special.erf", "function", "special", [("z", "POSITIONAL_ONLY", None)], "Returns the error function of complex argument."),
+    ("erfc", "scipy.special.erfc", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Complementary error function, 1 - erf(x)."),
+    ("gamma", "scipy.special.gamma", "function", "special", [("z", "POSITIONAL_ONLY", None)], "gamma function."),
+    ("gammaln", "scipy.special.gammaln", "function", "special", [("z", "POSITIONAL_ONLY", None)], "Logarithm of the absolute value of the gamma function."),
+    ("betaln", "scipy.special.betaln", "function", "special", [("a", "POSITIONAL_ONLY", None), ("b", "POSITIONAL_ONLY", None)], "Natural logarithm of absolute value of beta function."),
+    ("digamma", "scipy.special.digamma", "function", "special", [("z", "POSITIONAL_ONLY", None)], "The digamma function, logarithmic derivative of the gamma function."),
+    ("polygamma", "scipy.special.polygamma", "function", "special", [("n", "POSITIONAL_ONLY", None), ("x", "POSITIONAL_ONLY", None)], "Polygamma functions n-th derivative of digamma at x."),
+    ("j0", "scipy.special.j0", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Bessel function of the first kind of order 0."),
+    ("j1", "scipy.special.j1", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Bessel function of the first kind of order 1."),
+    ("y0", "scipy.special.y0", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Bessel function of the second kind of order 0."),
+    ("y1", "scipy.special.y1", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Bessel function of the second kind of order 1."),
+    ("i0", "scipy.special.i0", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Modified Bessel function of order 0."),
+    ("i1", "scipy.special.i1", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Modified Bessel function of order 1."),
+    ("k0", "scipy.special.k0", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Modified Bessel function of the second kind of order 0."),
+    ("k1", "scipy.special.k1", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Modified Bessel function of the second kind of order 1."),
+    ("sinc", "scipy.special.sinc", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Return the normalized sinc function."),
+    ("logit", "scipy.special.logit", "function", "special", [("p", "POSITIONAL_ONLY", None)], "Logit function: log(p / (1 - p))."),
+    ("expit", "scipy.special.expit", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Expit (logistic sigmoid) function: 1 / (1 + exp(-x))."),
+    ("softmax", "scipy.special.softmax", "function", "special", [("x", "POSITIONAL_ONLY", None), ("axis", "KEYWORD_ONLY", "None")], "Softmax function along given axis."),
+    (
+        "logsumexp",
+        "scipy.special.logsumexp",
+        "function",
+        "special",
+        [("a", "POSITIONAL_ONLY", None), ("axis", "KEYWORD_ONLY", "None"), ("b", "KEYWORD_ONLY", "None"), ("keepdims", "KEYWORD_ONLY", "False"), ("return_sign", "KEYWORD_ONLY", "False")],
+        "Compute the log of the sum of exponentials of input elements.",
+    ),
+    ("inv", "scipy.linalg.inv", "function", "linalg", [("a", "POSITIONAL_ONLY", None), ("overwrite_a", "KEYWORD_ONLY", "False"), ("check_finite", "KEYWORD_ONLY", "True")], "Compute the inverse of a matrix."),
+    ("pinv", "scipy.linalg.pinv", "function", "linalg", [("a", "POSITIONAL_ONLY", None), ("atol", "KEYWORD_ONLY", "None"), ("rtol", "KEYWORD_ONLY", "None"), ("return_rank", "KEYWORD_ONLY", "False"), ("check_finite", "KEYWORD_ONLY", "True")], "Compute the Moore-Penrose pseudo-inverse of a matrix."),
+    ("det", "scipy.linalg.det", "function", "linalg", [("a", "POSITIONAL_ONLY", None), ("overwrite_a", "KEYWORD_ONLY", "False"), ("check_finite", "KEYWORD_ONLY", "True")], "Compute the determinant of a matrix."),
+    ("norm", "scipy.linalg.norm", "function", "linalg", [("a", "POSITIONAL_ONLY", None), ("ord", "KEYWORD_ONLY", "None"), ("axis", "KEYWORD_ONLY", "None"), ("keepdims", "KEYWORD_ONLY", "False"), ("check_finite", "KEYWORD_ONLY", "True")], "Matrix or vector norm."),
+    ("cholesky", "scipy.linalg.cholesky", "function", "linalg", [("a", "POSITIONAL_ONLY", None), ("lower", "KEYWORD_ONLY", "False"), ("overwrite_a", "KEYWORD_ONLY", "False"), ("check_finite", "KEYWORD_ONLY", "True")], "Compute the Cholesky decomposition of a matrix."),
+    ("qr", "scipy.linalg.qr", "function", "linalg", [("a", "POSITIONAL_ONLY", None), ("overwrite_a", "KEYWORD_ONLY", "False"), ("mode", "KEYWORD_ONLY", "'full'"), ("pivoting", "KEYWORD_ONLY", "False"), ("check_finite", "KEYWORD_ONLY", "True")], "Compute QR decomposition of a matrix."),
+    (
+        "svd",
+        "scipy.linalg.svd",
+        "function",
+        "linalg",
+        [("a", "POSITIONAL_ONLY", None), ("full_matrices", "KEYWORD_ONLY", "True"), ("compute_uv", "KEYWORD_ONLY", "True"), ("overwrite_a", "KEYWORD_ONLY", "False"), ("check_finite", "KEYWORD_ONLY", "True"), ("lapack_driver", "KEYWORD_ONLY", "'gesdd'")],
+        "Singular Value Decomposition.",
+    ),
+    (
+        "solve",
+        "scipy.linalg.solve",
+        "function",
+        "linalg",
+        [("a", "POSITIONAL_ONLY", None), ("b", "POSITIONAL_ONLY", None), ("lower", "KEYWORD_ONLY", "False"), ("overwrite_a", "KEYWORD_ONLY", "False"), ("overwrite_b", "KEYWORD_ONLY", "False"), ("check_finite", "KEYWORD_ONLY", "True"), ("assume_a", "KEYWORD_ONLY", "'gen'")],
+        "Solves the linear equation set a * x = b for the unknown x.",
+    ),
+    ("expm", "scipy.linalg.expm", "function", "linalg", [("a", "POSITIONAL_ONLY", None)], "Compute the matrix exponential using Pade approximation."),
+    ("beta", "scipy.special.beta", "function", "special", [("a", "POSITIONAL_ONLY", None), ("b", "POSITIONAL_ONLY", None)], "Beta function."),
+    ("betainc", "scipy.special.betainc", "function", "special", [("a", "POSITIONAL_ONLY", None), ("b", "POSITIONAL_ONLY", None), ("x", "POSITIONAL_ONLY", None)], "Incomplete beta integral."),
+    ("dawsn", "scipy.special.dawsn", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Dawson's integral."),
+    ("expn", "scipy.special.expn", "function", "special", [("n", "POSITIONAL_ONLY", None), ("x", "POSITIONAL_ONLY", None)], "Generalized exponential integral."),
+    ("fresnel", "scipy.special.fresnel", "function", "special", [("z", "POSITIONAL_ONLY", None)], "Fresnel integrals."),
+    ("gammainc", "scipy.special.gammainc", "function", "special", [("a", "POSITIONAL_ONLY", None), ("x", "POSITIONAL_ONLY", None)], "Regularized lower incomplete gamma function."),
+    ("gammaincc", "scipy.special.gammaincc", "function", "special", [("a", "POSITIONAL_ONLY", None), ("x", "POSITIONAL_ONLY", None)], "Regularized upper incomplete gamma function."),
+    ("i0e", "scipy.special.i0e", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Exponentially scaled modified Bessel function of order 0."),
+    ("i1e", "scipy.special.i1e", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Exponentially scaled modified Bessel function of order 1."),
+    ("jv", "scipy.special.jv", "function", "special", [("v", "POSITIONAL_ONLY", None), ("z", "POSITIONAL_ONLY", None)], "Bessel function of the first kind of real order."),
+    ("k0e", "scipy.special.k0e", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Exponentially scaled modified Bessel function K of order 0."),
+    ("k1e", "scipy.special.k1e", "function", "special", [("x", "POSITIONAL_ONLY", None)], "Exponentially scaled modified Bessel function K of order 1."),
+    ("spence", "scipy.special.spence", "function", "special", [("z", "POSITIONAL_ONLY", None)], "Spence's function, also known as the dilogarithm."),
+    ("zeta", "scipy.special.zeta", "function", "special", [("x", "POSITIONAL_ONLY", None), ("q", "POSITIONAL_OR_KEYWORD", "None")], "Riemann zeta function of two arguments."),
+    ("cho_solve", "scipy.linalg.cho_solve", "function", "linalg", [("c_and_lower", "POSITIONAL_ONLY", None), ("b", "POSITIONAL_ONLY", None)], "Solve the linear equations Ax = b, given the Cholesky factorization of A."),
+    ("eigh_tridiagonal", "scipy.linalg.eigh_tridiagonal", "function", "linalg", [("d", "POSITIONAL_ONLY", None), ("e", "POSITIONAL_ONLY", None)], "Solve eigenvalue problem for a real symmetric tridiagonal matrix."),
+    ("hessenberg", "scipy.linalg.hessenberg", "function", "linalg", [("a", "POSITIONAL_ONLY", None), ("calc_q", "KEYWORD_ONLY", "False")], "Compute Hessenberg form of a matrix."),
+    ("lu", "scipy.linalg.lu", "function", "linalg", [("a", "POSITIONAL_ONLY", None)], "Compute LU decomposition of a matrix."),
+    ("lu_factor", "scipy.linalg.lu_factor", "function", "linalg", [("a", "POSITIONAL_ONLY", None)], "Compute pivoted LU decomposition of a matrix."),
+    ("lu_solve", "scipy.linalg.lu_solve", "function", "linalg", [("lu_and_piv", "POSITIONAL_ONLY", None), ("b", "POSITIONAL_ONLY", None)], "Solve an equation system, a * x = b, given the LU factorization of a."),
+    ("polar", "scipy.linalg.polar", "function", "linalg", [("a", "POSITIONAL_ONLY", None), ("side", "KEYWORD_ONLY", "'right'")], "Compute the polar decomposition."),
+    ("schur", "scipy.linalg.schur", "function", "linalg", [("a", "POSITIONAL_ONLY", None)], "Compute Schur decomposition of a matrix."),
+    ("solve_banded", "scipy.linalg.solve_banded", "function", "linalg", [("l_and_u", "POSITIONAL_ONLY", None), ("ab", "POSITIONAL_ONLY", None), ("b", "POSITIONAL_ONLY", None)], "Solve the equation a x = b for x, assuming a is banded matrix."),
+    ("maximum_filter", "scipy.ndimage.maximum_filter", "function", "ndimage", [("input", "POSITIONAL_ONLY", None), ("size", "KEYWORD_ONLY", "None")], "Calculate a multidimensional maximum filter."),
+    ("beta", "scipy.stats.beta", "function", "stats", [("a", "POSITIONAL_ONLY", None), ("b", "POSITIONAL_ONLY", None)], "A beta continuous random variable."),
+    ("poisson", "scipy.stats.poisson", "function", "stats", [("mu", "POSITIONAL_ONLY", None)], "A Poisson discrete random variable."),
+    ("convolve", "scipy.signal.convolve", "function", "signal", [("in1", "POSITIONAL_ONLY", None), ("in2", "POSITIONAL_ONLY", None), ("mode", "KEYWORD_ONLY", "'full'"), ("method", "KEYWORD_ONLY", "'auto'")], "Convolve two N-dimensional arrays."),
+    ("correlate", "scipy.signal.correlate", "function", "signal", [("in1", "POSITIONAL_ONLY", None), ("in2", "POSITIONAL_ONLY", None), ("mode", "KEYWORD_ONLY", "'full'"), ("method", "KEYWORD_ONLY", "'auto'")], "Cross-correlate two N-dimensional arrays."),
+    ("fftconvolve", "scipy.signal.fftconvolve", "function", "signal", [("in1", "POSITIONAL_ONLY", None), ("in2", "POSITIONAL_ONLY", None), ("mode", "KEYWORD_ONLY", "'full'"), ("axes", "KEYWORD_ONLY", "None")], "Convolve two N-dimensional arrays using FFT."),
+    ("medfilt", "scipy.signal.medfilt", "function", "signal", [("volume", "POSITIONAL_ONLY", None), ("kernel_size", "KEYWORD_ONLY", "None")], "Perform a median filter on an N-dimensional array."),
+]
+
+CANONICAL_SCIPY_OPS: list[CanonicalSubmoduleOpSpec] = build_canonical_submodule_ops(_SCIPY_OP_DEFS)
 
 
 def _get_scipy_submodule(submod: str) -> types.ModuleType | None:
@@ -634,7 +120,7 @@ def _get_scipy_submodule(submod: str) -> types.ModuleType | None:
     """
     try:
         return importlib.import_module(f"scipy.{submod}")
-    except Exception:
+    except (ImportError, ModuleNotFoundError, AttributeError, RuntimeError, TypeError, ValueError, OSError):
         return None
 
 
@@ -660,10 +146,6 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         mod = _get_scipy_submodule(sub)
         if mod is not None:
             loaded_submods[sub] = mod
-
-    from ml_ecosystem_snapshots.frameworks._base import (
-        collect_from_submodules_or_canonical,
-    )
 
     return collect_from_submodules_or_canonical(
         loaded_submods=loaded_submods,

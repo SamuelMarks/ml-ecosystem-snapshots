@@ -7,129 +7,98 @@ cache indexing layouts, and attention attributes matching `custom_ops.json`.
 from __future__ import annotations
 
 import importlib
+import inspect
 import types
 
-import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     SemanticTier,
 )
 
-from ml_ecosystem_snapshots.frameworks._base import CanonicalPythonOpSpec
+from ml_ecosystem_snapshots.frameworks._base import (
+    CanonicalPythonOpSpec,
+    CanonicalPythonOpTuple,
+    build_canonical_python_ops,
+    build_canonical_python_ref,
+)
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 
-CANONICAL_FLASH_ATTN_OPS: list[CanonicalPythonOpSpec] = pydantic.TypeAdapter(list[CanonicalPythonOpSpec]).validate_python(
-    [
-        # FlashAttention-2 Core
-        {
-            "name": "flash_attn_func",
-            "api_path": "flash_attn.flash_attn_func",
-            "params": [
-                {"name": "q", "kind": "POSITIONAL_ONLY"},
-                {"name": "k", "kind": "POSITIONAL_ONLY"},
-                {"name": "v", "kind": "POSITIONAL_ONLY"},
-                {"name": "dropout_p", "kind": "KEYWORD_ONLY", "default": "0.0"},
-                {"name": "softmax_scale", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "causal", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "window_size", "kind": "KEYWORD_ONLY", "default": "(-1, -1)"},
-                {"name": "alibi_slopes", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "deterministic", "kind": "KEYWORD_ONLY", "default": "False"},
-            ],
-            "docstring": "Compute FlashAttention forward pass on dense tensors.",
-        },
-        # FlashAttention Varlen
-        {
-            "name": "flash_attn_varlen_func",
-            "api_path": "flash_attn.flash_attn_varlen_func",
-            "params": [
-                {"name": "q", "kind": "POSITIONAL_ONLY"},
-                {"name": "k", "kind": "POSITIONAL_ONLY"},
-                {"name": "v", "kind": "POSITIONAL_ONLY"},
-                {"name": "cu_seqlens_q", "kind": "POSITIONAL_ONLY"},
-                {"name": "cu_seqlens_k", "kind": "POSITIONAL_ONLY"},
-                {"name": "max_seqlen_q", "kind": "POSITIONAL_ONLY"},
-                {"name": "max_seqlen_k", "kind": "POSITIONAL_ONLY"},
-                {"name": "dropout_p", "kind": "KEYWORD_ONLY", "default": "0.0"},
-                {"name": "softmax_scale", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "causal", "kind": "KEYWORD_ONLY", "default": "False"},
-            ],
-            "docstring": "Compute FlashAttention forward pass on variable length sequence batches.",
-        },
-        # PagedAttention (vLLM style KV cache)
-        {
-            "name": "paged_attention_v1",
-            "api_path": "vllm.paged_attention_v1",
-            "params": [
-                {"name": "out", "kind": "POSITIONAL_ONLY"},
-                {"name": "query", "kind": "POSITIONAL_ONLY"},
-                {"name": "key_cache", "kind": "POSITIONAL_ONLY"},
-                {"name": "value_cache", "kind": "POSITIONAL_ONLY"},
-                {"name": "num_kv_heads", "kind": "POSITIONAL_ONLY"},
-                {"name": "scale", "kind": "POSITIONAL_ONLY"},
-                {"name": "block_tables", "kind": "POSITIONAL_ONLY"},
-                {"name": "context_lens", "kind": "POSITIONAL_ONLY"},
-                {"name": "block_size", "kind": "POSITIONAL_ONLY"},
-                {"name": "max_context_len", "kind": "POSITIONAL_ONLY"},
-                {"name": "alibi_slopes", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "kv_cache_dtype", "kind": "KEYWORD_ONLY", "default": "'auto'"},
-            ],
-            "docstring": "PagedAttention forward pass using block-allocated KV cache.",
-        },
-        # Ragged PagedAttention
-        {
-            "name": "ragged_paged_attention",
-            "api_path": "ml_switcheroo_compiler.ops.ragged_paged_attention",
-            "params": [
-                {"name": "query", "kind": "POSITIONAL_ONLY"},
-                {"name": "key_cache", "kind": "POSITIONAL_ONLY"},
-                {"name": "value_cache", "kind": "POSITIONAL_ONLY"},
-                {"name": "block_tables", "kind": "POSITIONAL_ONLY"},
-                {"name": "context_lens", "kind": "POSITIONAL_ONLY"},
-                {"name": "block_size", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Ragged PagedAttention kernel execution on non-rectangular tokens.",
-        },
-        # Custom Dialect Ops matching custom_ops.json
-        {
-            "name": "FlashAttention",
-            "api_path": "ml.switcheroo.custom.FlashAttention",
-            "params": [
-                {"name": "Q", "kind": "POSITIONAL_ONLY"},
-                {"name": "K", "kind": "POSITIONAL_ONLY"},
-                {"name": "V", "kind": "POSITIONAL_ONLY"},
-                {"name": "causal", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "scale", "kind": "KEYWORD_ONLY", "default": "None"},
-            ],
-            "docstring": "Custom FlashAttention specification.",
-        },
-        {
-            "name": "ScaledDotProductAttention",
-            "api_path": "ml.switcheroo.custom.ScaledDotProductAttention",
-            "params": [
-                {"name": "query", "kind": "POSITIONAL_ONLY"},
-                {"name": "key", "kind": "POSITIONAL_ONLY"},
-                {"name": "value", "kind": "POSITIONAL_ONLY"},
-                {"name": "attn_mask", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "scale", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "dropout_p", "kind": "KEYWORD_ONLY", "default": "0.0"},
-                {"name": "is_causal", "kind": "KEYWORD_ONLY", "default": "False"},
-            ],
-            "docstring": "Scaled Dot-Product Attention operator.",
-        },
-        {
-            "name": "RoPE",
-            "api_path": "ml.switcheroo.custom.RoPE",
-            "params": [
-                {"name": "X", "kind": "POSITIONAL_ONLY"},
-                {"name": "cos", "kind": "POSITIONAL_ONLY"},
-                {"name": "sin", "kind": "POSITIONAL_ONLY"},
-                {"name": "dim", "kind": "KEYWORD_ONLY", "default": "-1"},
-            ],
-            "docstring": "Rotary Positional Embedding (RoPE) operator.",
-        },
-    ]
-)
+_FLASH_ATTN_OP_DEFS: list[CanonicalPythonOpTuple] = [
+    (
+        "flash_attn_func",
+        "flash_attn.flash_attn_func",
+        "function",
+        [
+            ("q", "POSITIONAL_ONLY", None),
+            ("k", "POSITIONAL_ONLY", None),
+            ("v", "POSITIONAL_ONLY", None),
+            ("dropout_p", "KEYWORD_ONLY", "0.0"),
+            ("softmax_scale", "KEYWORD_ONLY", "None"),
+            ("causal", "KEYWORD_ONLY", "False"),
+            ("window_size", "KEYWORD_ONLY", "(-1, -1)"),
+            ("alibi_slopes", "KEYWORD_ONLY", "None"),
+            ("deterministic", "KEYWORD_ONLY", "False"),
+        ],
+        "Compute FlashAttention forward pass on dense tensors.",
+    ),
+    (
+        "flash_attn_varlen_func",
+        "flash_attn.flash_attn_varlen_func",
+        "function",
+        [
+            ("q", "POSITIONAL_ONLY", None),
+            ("k", "POSITIONAL_ONLY", None),
+            ("v", "POSITIONAL_ONLY", None),
+            ("cu_seqlens_q", "POSITIONAL_ONLY", None),
+            ("cu_seqlens_k", "POSITIONAL_ONLY", None),
+            ("max_seqlen_q", "POSITIONAL_ONLY", None),
+            ("max_seqlen_k", "POSITIONAL_ONLY", None),
+            ("dropout_p", "KEYWORD_ONLY", "0.0"),
+            ("softmax_scale", "KEYWORD_ONLY", "None"),
+            ("causal", "KEYWORD_ONLY", "False"),
+        ],
+        "Compute FlashAttention forward pass on variable length sequence batches.",
+    ),
+    (
+        "paged_attention_v1",
+        "vllm.paged_attention_v1",
+        "function",
+        [
+            ("out", "POSITIONAL_ONLY", None),
+            ("query", "POSITIONAL_ONLY", None),
+            ("key_cache", "POSITIONAL_ONLY", None),
+            ("value_cache", "POSITIONAL_ONLY", None),
+            ("num_kv_heads", "POSITIONAL_ONLY", None),
+            ("scale", "POSITIONAL_ONLY", None),
+            ("block_tables", "POSITIONAL_ONLY", None),
+            ("context_lens", "POSITIONAL_ONLY", None),
+            ("block_size", "POSITIONAL_ONLY", None),
+            ("max_context_len", "POSITIONAL_ONLY", None),
+            ("alibi_slopes", "KEYWORD_ONLY", "None"),
+            ("kv_cache_dtype", "KEYWORD_ONLY", "'auto'"),
+        ],
+        "PagedAttention forward pass using block-allocated KV cache.",
+    ),
+    (
+        "ragged_paged_attention",
+        "ml_switcheroo_compiler.ops.ragged_paged_attention",
+        "function",
+        [("query", "POSITIONAL_ONLY", None), ("key_cache", "POSITIONAL_ONLY", None), ("value_cache", "POSITIONAL_ONLY", None), ("block_tables", "POSITIONAL_ONLY", None), ("context_lens", "POSITIONAL_ONLY", None), ("block_size", "POSITIONAL_ONLY", None)],
+        "Ragged PagedAttention kernel execution on non-rectangular tokens.",
+    ),
+    ("FlashAttention", "ml.switcheroo.custom.FlashAttention", "function", [("Q", "POSITIONAL_ONLY", None), ("K", "POSITIONAL_ONLY", None), ("V", "POSITIONAL_ONLY", None), ("causal", "KEYWORD_ONLY", "False"), ("scale", "KEYWORD_ONLY", "None")], "Custom FlashAttention specification."),
+    (
+        "ScaledDotProductAttention",
+        "ml.switcheroo.custom.ScaledDotProductAttention",
+        "function",
+        [("query", "POSITIONAL_ONLY", None), ("key", "POSITIONAL_ONLY", None), ("value", "POSITIONAL_ONLY", None), ("attn_mask", "KEYWORD_ONLY", "None"), ("scale", "KEYWORD_ONLY", "None"), ("dropout_p", "KEYWORD_ONLY", "0.0"), ("is_causal", "KEYWORD_ONLY", "False")],
+        "Scaled Dot-Product Attention operator.",
+    ),
+    ("RoPE", "ml.switcheroo.custom.RoPE", "function", [("X", "POSITIONAL_ONLY", None), ("cos", "POSITIONAL_ONLY", None), ("sin", "POSITIONAL_ONLY", None), ("dim", "KEYWORD_ONLY", "-1")], "Rotary Positional Embedding (RoPE) operator."),
+]
+
+CANONICAL_FLASH_ATTN_OPS: list[CanonicalPythonOpSpec] = build_canonical_python_ops(_FLASH_ATTN_OP_DEFS)
 
 
 def _discover_flash_attn_module() -> types.ModuleType | None:
@@ -141,8 +110,8 @@ def _discover_flash_attn_module() -> types.ModuleType | None:
     for mod_name in ("flash_attn", "vllm"):
         try:
             return importlib.import_module(mod_name)
-        except Exception:
-            pass
+        except Exception as exc:
+            del exc
     return None
 
 
@@ -164,8 +133,6 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
     ):
         return []
 
-    from ml_ecosystem_snapshots.frameworks._base import build_canonical_python_ref
-
     mod = _discover_flash_attn_module()
     if mod is None:
         return [
@@ -177,8 +144,6 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
             )
             for op in CANONICAL_FLASH_ATTN_OPS
         ]
-
-    import inspect
 
     results: list[GhostRef] = []
     seen: set[str] = set()
@@ -196,8 +161,8 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
                 ]
                 results.append(ref)
                 seen.add(op.api_path)
-            except Exception:
-                pass
+            except Exception as exc:
+                del exc
 
     for op in CANONICAL_FLASH_ATTN_OPS:
         if op.api_path not in seen:

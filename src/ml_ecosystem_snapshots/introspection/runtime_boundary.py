@@ -316,8 +316,7 @@ class WrappedTargetProtocol(typing.Protocol):
 
 
 InspectableTarget: typing_extensions.TypeAlias = (
-    "types.FunctionType"
-    " | types.BuiltinFunctionType"
+    "types.BuiltinFunctionType"
     " | types.MethodType"
     " | types.ModuleType"
     " | types.EllipsisType"
@@ -358,7 +357,7 @@ InspectableTarget: typing_extensions.TypeAlias = (
 
 DefaultValueInput: typing_extensions.TypeAlias = InspectableTarget
 
-_SourceInspectableType: typing_extensions.TypeAlias = "types.ModuleType | type | types.MethodType | types.FunctionType | types.TracebackType | types.FrameType | types.CodeType"
+_SourceInspectableType: typing_extensions.TypeAlias = "types.ModuleType | type | types.MethodType | types.TracebackType | types.FrameType | types.CodeType"
 
 
 def _is_source_inspectable(
@@ -370,9 +369,19 @@ def _is_source_inspectable(
         target: Runtime symbol to inspect.
 
     Returns:
-        True if `target` is non-None.
+        True if `target` is a module, class, method, traceback, frame, code object, or callable.
     """
-    return target is not None
+    return callable(target) or isinstance(
+        target,
+        (
+            types.ModuleType,
+            type,
+            types.MethodType,
+            types.TracebackType,
+            types.FrameType,
+            types.CodeType,
+        ),
+    )
 
 
 def _is_signature_inspectable(
@@ -384,9 +393,9 @@ def _is_signature_inspectable(
         target: Runtime symbol to inspect.
 
     Returns:
-        True if `target` is non-None.
+        True if `target` is callable.
     """
-    return target is not None
+    return callable(target)
 
 
 def get_member_dict(target: InspectableTarget) -> dict[str, InspectableTarget]:

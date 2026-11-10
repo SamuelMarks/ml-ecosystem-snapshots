@@ -14,6 +14,7 @@ from ml_ecosystem_snapshots.introspection import (
     sanitize_type_str,
     unwrap_decorated_target,
 )
+from ml_ecosystem_snapshots.introspection.static_parsers import GriffeModuleCache
 from ml_ecosystem_snapshots.mcp import (
     JsonRpcError,
     JsonRpcRequest,
@@ -23,6 +24,7 @@ from ml_ecosystem_snapshots.mcp import (
     dispatch_tool_call,
     run_stdio_loop,
 )
+from ml_ecosystem_snapshots.mcp.cache import clear_snapshot_cache, get_cached_snapshot
 from ml_ecosystem_snapshots.mcp.tools import (
     CONCEPT_ALIAS_MAP,
     check_code_block,
@@ -150,3 +152,15 @@ def test_introspection_and_serialization_subpackages() -> None:
     hydrated = hydrate_ghost_ref(raw)
     assert hydrated.api_path == "pkg.op"
     assert hydrated.schema_version == "2.0.0"
+
+    g_cache = GriffeModuleCache()
+    assert g_cache.contains("mod_a") is False
+    assert g_cache.get("mod_a") is None
+    g_cache.put("mod_a", None)
+    assert g_cache.contains("mod_a") is True
+    assert g_cache.store == {"mod_a": None}
+    g_cache.clear()
+    assert g_cache.contains("mod_a") is False
+
+    clear_snapshot_cache()
+    assert get_cached_snapshot("nonexistent_key_xyz") is None

@@ -104,8 +104,8 @@ def _scan_jax_activations(include_nonpublic: bool) -> list[GhostRef]:
                 continue
             if inspect.isfunction(obj):
                 found.append(GhostInspector.inspect(obj, f"jax.nn.{name}"))
-    except Exception:
-        pass
+    except Exception as exc:
+        del exc
     return found
 
 
@@ -130,8 +130,8 @@ def _scan_jax_initializers(include_nonpublic: bool) -> list[GhostRef]:
                 continue
             if inspect.isfunction(obj):
                 found.append(GhostInspector.inspect(obj, f"jax.nn.initializers.{name}"))
-    except Exception:
-        pass
+    except Exception as exc:
+        del exc
     return found
 
 
@@ -197,8 +197,8 @@ def _collect_jax_namespace(
                 if attach_static_args:
                     ref = _attach_jax_static_arg_metadata(ref, obj)
                 collected.append(ref)
-            except Exception:
-                pass
+            except Exception as exc:
+                del exc
     return collected
 
 

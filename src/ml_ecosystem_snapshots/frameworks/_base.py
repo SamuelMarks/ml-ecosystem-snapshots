@@ -33,6 +33,7 @@ from ml_ecosystem_snapshots.introspection.static_parsers import (
     load_griffe_module_safely,
 )
 from ml_ecosystem_snapshots.models import JsonValue, ScalarValue
+from ml_ecosystem_snapshots.network_env import is_offline_mode
 
 
 @typing.runtime_checkable
@@ -137,6 +138,58 @@ class CanonicalSubmoduleOpSpec(CanonicalPythonOpSpec):
     """Pydantic specification for a submodule-backed canonical Python operation entry."""
 
     submodule: str = ""
+
+
+CanonicalParamTuple: typing_extensions.TypeAlias = "tuple[str, str, str | None]"
+CanonicalPythonOpTuple: typing_extensions.TypeAlias = "tuple[str, str, str, list[CanonicalParamTuple], str]"
+CanonicalSubmoduleOpTuple: typing_extensions.TypeAlias = "tuple[str, str, str, str, list[CanonicalParamTuple], str]"
+
+
+def build_canonical_python_ops(
+    defs: typing.Sequence[CanonicalPythonOpTuple],
+) -> list[CanonicalPythonOpSpec]:
+    """Convert compact `(name, api_path, kind, params, docstring)` tuples into `CanonicalPythonOpSpec` models.
+
+    Args:
+        defs: Sequence of `(name, api_path, kind, params, docstring)` tuples.
+
+    Returns:
+        List of validated `CanonicalPythonOpSpec` models.
+    """
+    return [
+        CanonicalPythonOpSpec(
+            name=name,
+            api_path=api_path,
+            kind=kind,
+            params=[CanonicalParamSpec(name=pn, kind=pk, default=pd) for pn, pk, pd in params],
+            docstring=doc,
+        )
+        for name, api_path, kind, params, doc in defs
+    ]
+
+
+def build_canonical_submodule_ops(
+    defs: typing.Sequence[CanonicalSubmoduleOpTuple],
+) -> list[CanonicalSubmoduleOpSpec]:
+    """Convert compact `(name, api_path, kind, submodule, params, docstring)` tuples into `CanonicalSubmoduleOpSpec` models.
+
+    Args:
+        defs: Sequence of `(name, api_path, kind, submodule, params, docstring)` tuples.
+
+    Returns:
+        List of validated `CanonicalSubmoduleOpSpec` models.
+    """
+    return [
+        CanonicalSubmoduleOpSpec(
+            name=name,
+            api_path=api_path,
+            kind=kind,
+            submodule=submodule,
+            params=[CanonicalParamSpec(name=pn, kind=pk, default=pd) for pn, pk, pd in params],
+            docstring=doc,
+        )
+        for name, api_path, kind, submodule, params, doc in defs
+    ]
 
 
 class CanonicalSsaAttrSpec(pydantic.BaseModel):
@@ -402,8 +455,8 @@ def collect_from_canonical_or_live(
                 ref = inspect_callable(obj, f"{module_prefix}.{name}", is_public=True)
                 ref.environment_tags = list(ref.environment_tags or ()) + list(environment_tags)
                 results.append(ref)
-            except Exception:
-                pass
+            except Exception as exc:
+                del exc
     return results
 
 
@@ -462,8 +515,8 @@ def collect_from_submodules_or_canonical(
                     ]
                     results.append(ref)
                     seen.add(spec.api_path)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    del exc
 
     for spec in specs:
         if spec.api_path not in seen:
@@ -620,8 +673,8 @@ def collect_dir_callables(
             try:
                 res = inspect_callable(obj, f"{api_prefix}.{name}", is_public=not name.startswith("_"))
                 results.append(res)
-            except Exception:
-                pass
+            except Exception as exc:
+                del exc
     return results
 
 
@@ -676,7 +729,69 @@ def scan_griffe_module_members(
                 )
                 ref.environment_tags = list(ref.environment_tags or ()) + [t for t in environment_tags if t not in (ref.environment_tags or ())]
                 results.append(ref)
-            except Exception:
-                pass
+            except Exception as exc:
+                del exc
+
+    return results
+
+
+class HybridFrameworkConfig(pydantic.BaseModel):
+    """Configuration for the 3-tier (`Live -> Griffe Static AST -> Canonical Fallback`) collector pipeline."""
+
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    canonical_ops: list[CanonicalSubmoduleOpSpec]
+    default_doc_prefix: str
+    default_submodule: str
+    environment_tags: tuple[str, ...]
+    live_refs: list[GhostRef] = pydantic.Field(default_factory=list)
+    griffe_refs: list[GhostRef] = pydantic.Field(default_factory=list)
+    postprocess_fn: typing.Callable[[GhostRef], None] | None = None
+
+
+def collect_hybrid_framework_api(config: HybridFrameworkConfig) -> list[GhostRef]:
+    """Execute the standardized 3-tier (`Live -> Griffe Static AST -> Canonical Fallback`) discovery pipeline.
+
+    Args:
+        config: Validated `HybridFrameworkConfig` specifying live refs, Griffe refs, and canonical fallbacks.
+
+    Returns:
+        Deduplicated list of `GhostRef` items across all three discovery tiers.
+    """
+    results: list[GhostRef] = []
+    seen_paths: set[str] = set()
+    env_tags = config.environment_tags
+
+    def _record(ref: GhostRef, merge_env: bool) -> None:
+        """Append `ref` if unseen, merging environment tags and applying postprocess hook.
+
+        Args:
+            ref: Candidate `GhostRef` to record.
+            merge_env: Whether to merge `env_tags` onto `ref.environment_tags`.
+        """
+        if ref.api_path in seen_paths:
+            return
+        if merge_env:
+            ref.environment_tags = list(ref.environment_tags or ()) + [t for t in env_tags if t not in (ref.environment_tags or ())]
+        if config.postprocess_fn is not None:
+            config.postprocess_fn(ref)
+        results.append(ref)
+        seen_paths.add(ref.api_path)
+
+    if not is_offline_mode():
+        for live_ref in config.live_refs:
+            _record(live_ref, merge_env=True)
+        for griffe_ref in config.griffe_refs:
+            _record(griffe_ref, merge_env=False)
+
+    for spec in config.canonical_ops:
+        if spec.api_path not in seen_paths:
+            fallback_ref = build_canonical_python_ref(
+                spec,
+                default_doc_prefix=config.default_doc_prefix,
+                environment_tags=env_tags,
+                domain_metadata={"submodule": spec.submodule or config.default_submodule},
+            )
+            _record(fallback_ref, merge_env=False)
 
     return results

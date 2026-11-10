@@ -1399,12 +1399,6 @@ def check_code_block(
 __all__ = [
     "DTYPE_CANONICAL_ALIASES",
     "KNOWN_ENUM_VALUES",
-    "_matches_rank_constraint",
-    "_validate_candidate_dtypes_and_ranks",
-    "_validate_candidate_enums_and_literals",
-    "_validate_candidate_kwargs",
-    "_validate_candidate_positional_arity",
-    "_validate_candidate_shapes",
     "check_code_block",
     "check_hallucination",
     "explain_anti_pattern",

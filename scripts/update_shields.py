@@ -29,8 +29,8 @@ def get_test_coverage() -> str:
             match = re.search(r"TOTAL\s+.*\s+(\d+)%", result.stdout)
             if match:
                 return match.group(1)
-        except Exception:
-            pass
+        except Exception as exc:
+            del exc
 
     result = subprocess.run(
         [

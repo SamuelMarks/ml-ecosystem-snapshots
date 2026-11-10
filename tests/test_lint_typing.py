@@ -65,6 +65,8 @@ def test_check_file_detects_all_violation_categories(tmp_path: Path) -> None:
         "    return v",
         "def bad_guard(v: int) -> TypeGuard[int]:",
         "    return True",
+        "def bad_none_guard(v: int | None) -> TypeGuard[int]:",
+        "    return v is not None",
         "def ok_guard(v: int) -> typing.TypeGuard[int]:",
         "    return isinstance(v, int)",
         "if TYPE_CHECKING:",
@@ -73,6 +75,14 @@ def test_check_file_detects_all_violation_categories(tmp_path: Path) -> None:
         "    T = str",
         "if typing.TYPE_CHECKING:",
         "    U = int",
+        "try:",
+        "    pass",
+        "except Exception:",
+        "    pass",
+        "try:",
+        "    pass",
+        "except ValueError:",
+        "    pass",
     ]
     bad_file.write_text(chr(10).join(lines), encoding="utf-8")
     violations = check_file(str(bad_file))
@@ -102,8 +112,10 @@ def test_check_file_detects_all_violation_categories(tmp_path: Path) -> None:
     assert "NormalEmptyClass" not in joined
     assert "banned wrapper function definition '_as_int'" in joined
     assert "banned tautological TypeGuard 'bad_guard' returning True" in joined
+    assert "banned tautological TypeGuard 'bad_none_guard' returning 'is not None'" in joined
     assert "ok_guard" not in joined
     assert "banned 'if TYPE_CHECKING: ... else:' block" in joined
+    assert "banned silent 'except Exception: pass' block" in joined
     assert "normal_method" not in joined
 
 

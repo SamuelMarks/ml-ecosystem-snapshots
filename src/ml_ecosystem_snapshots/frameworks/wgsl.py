@@ -125,8 +125,8 @@ def _load_wgsl_ops() -> list[CanonicalSsaOpSpec]:
             data: JsonValue = json.load(f)
             if isinstance(data, dict) and isinstance(data.get("ops"), list) and data["ops"]:
                 return pydantic.TypeAdapter(list[CanonicalSsaOpSpec]).validate_python(data["ops"])
-    except Exception:
-        pass
+    except Exception as exc:
+        del exc
     return CANONICAL_WGSL_OPS
 
 

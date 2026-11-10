@@ -18,7 +18,25 @@ from ml_ecosystem_snapshots.grounding.models import (
     GroundingReport,
 )
 from ml_ecosystem_snapshots.mcp.models import DomainOpCheckResult
+from ml_ecosystem_snapshots.mcp.tools.domain_ops import (
+    check_metal_op,
+    check_onnx_op,
+    check_wasm_instruction,
+    check_webgl_op,
+    check_wgsl_op,
+)
+from ml_ecosystem_snapshots.mcp.tools.ir import (
+    _extract_mlir_operands_and_attrs,
+    _extract_tensor_rank,
+    _infer_implicit_mlir_traits,
+    _validate_mlir_structured_attributes,
+)
 from ml_ecosystem_snapshots.models import JsonValue
+
+extract_mlir_operands_and_attrs = _extract_mlir_operands_and_attrs
+extract_tensor_rank = _extract_tensor_rank
+infer_implicit_mlir_traits = _infer_implicit_mlir_traits
+validate_mlir_structured_attributes = _validate_mlir_structured_attributes
 
 
 def _extract_ref_expected_operands(
@@ -171,10 +189,6 @@ def validate_stablehlo_op(
         GroundingReport containing diagnostic results and grounding status.
     """
     from ml_ecosystem_snapshots.frameworks.mlir import validate_mlir_traits
-    from ml_ecosystem_snapshots.mcp.tools.ir import (
-        _infer_implicit_mlir_traits,
-        _validate_mlir_structured_attributes,
-    )
 
     eng = engine or GroundingEngine()
     full_op_name = op_name if op_name.startswith("stablehlo.") else f"stablehlo.{op_name}"
@@ -268,10 +282,6 @@ def validate_mlir_op(
     from ml_ecosystem_snapshots.frameworks.mlir import (
         validate_mlir_traits,
         validate_mlir_type,
-    )
-    from ml_ecosystem_snapshots.mcp.tools.ir import (
-        _infer_implicit_mlir_traits,
-        _validate_mlir_structured_attributes,
     )
 
     eng = engine or GroundingEngine()
@@ -419,8 +429,6 @@ def validate_wgsl_op(
     Returns:
         GroundingReport containing diagnostic results.
     """
-    from ml_ecosystem_snapshots.mcp_server import check_wgsl_op
-
     res = check_wgsl_op(
         op_name=op_name,
         inputs_count=operands_count,
@@ -452,8 +460,6 @@ def validate_onnx_op(
     Returns:
         GroundingReport containing diagnostic results.
     """
-    from ml_ecosystem_snapshots.mcp_server import check_onnx_op
-
     res = check_onnx_op(
         op_name=op_name,
         inputs_count=inputs_count,
@@ -487,8 +493,6 @@ def validate_metal_op(
     Returns:
         GroundingReport containing diagnostic results.
     """
-    from ml_ecosystem_snapshots.mcp_server import check_metal_op
-
     res = check_metal_op(
         op_name=op_name,
         address_space=address_space,
@@ -521,8 +525,6 @@ def validate_wasm_op(
     Returns:
         GroundingReport containing diagnostic results.
     """
-    from ml_ecosystem_snapshots.mcp_server import check_wasm_instruction
-
     res = check_wasm_instruction(
         mnemonic=mnemonic,
         operands_count=operands_count,
@@ -556,8 +558,6 @@ def validate_webgl_op(
     Returns:
         GroundingReport containing diagnostic results.
     """
-    from ml_ecosystem_snapshots.mcp_server import check_webgl_op
-
     res = check_webgl_op(
         op_name=op_name,
         inputs_count=inputs_count,
@@ -573,9 +573,12 @@ def validate_webgl_op(
 
 
 __all__ = [
-    "_validate_ssa_domain_op",
+    "extract_mlir_operands_and_attrs",
+    "extract_tensor_rank",
+    "infer_implicit_mlir_traits",
     "validate_metal_op",
     "validate_mlir_op",
+    "validate_mlir_structured_attributes",
     "validate_onnx_op",
     "validate_stablehlo_op",
     "validate_wasm_op",

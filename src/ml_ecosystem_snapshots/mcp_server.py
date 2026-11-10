@@ -10,9 +10,13 @@ from __future__ import annotations
 import typing
 
 from ml_ecosystem_snapshots.mcp.cache import (
-    _SNAPSHOT_CACHE,
+    _SNAPSHOT_CACHE as _SNAPSHOT_CACHE,
+)
+from ml_ecosystem_snapshots.mcp.cache import (
     ExtractSnapshotFn,
     SnapshotRepository,
+    clear_snapshot_cache,
+    get_cached_snapshot,
     get_framework_snapshot,
     resolve_snapshot,
 )
@@ -81,11 +85,13 @@ from ml_ecosystem_snapshots.mcp.tools.domain_ops import (
 )
 from ml_ecosystem_snapshots.mcp.tools.hallucination import (
     DTYPE_CANONICAL_ALIASES,
-    _matches_rank_constraint,
     check_code_block,
     check_hallucination,
     explain_anti_pattern,
     normalize_dtype_name,
+)
+from ml_ecosystem_snapshots.mcp.tools.hallucination import (
+    _matches_rank_constraint as _matches_rank_constraint,
 )
 from ml_ecosystem_snapshots.mcp.tools.ir import check_mlir_op, check_stablehlo_op
 from ml_ecosystem_snapshots.mcp.tools.isa import (
@@ -140,8 +146,6 @@ __all__ = [
     "JsonRpcResponse",
     "McpToolSpec",
     "SnapshotRepository",
-    "_SNAPSHOT_CACHE",
-    "_matches_rank_constraint",
     "build_domain_op_tool_schemas",
     "check_array_api_op",
     "check_aten_op",
@@ -169,10 +173,12 @@ __all__ = [
     "check_wasm_instruction",
     "check_webgl_op",
     "check_wgsl_op",
+    "clear_snapshot_cache",
     "dispatch_tool_call",
     "explain_anti_pattern",
     "extract_snapshot",
     "get_api_signature",
+    "get_cached_snapshot",
     "get_custom_snapshots_paths",
     "get_framework_snapshot",
     "get_mcp_tools_list",

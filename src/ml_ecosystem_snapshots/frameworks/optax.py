@@ -21,8 +21,8 @@ from ml_switcheroo_ir.schema.ghost import (
 )
 
 from ml_ecosystem_snapshots.frameworks._base import (
-    CanonicalParamSpec,
     CanonicalPythonOpSpec,
+    build_canonical_python_ops,
     build_canonical_python_ref,
     scan_griffe_module_members,
 )
@@ -39,8 +39,8 @@ try:
     import optax as _optax_mod
 
     optax = _optax_mod
-except Exception:
-    pass
+except Exception as exc:
+    del exc
 
 
 _OPTAX_OPTIMIZER_DEFS: list[
@@ -1613,16 +1613,7 @@ def _build_optax_canonical_ops(
     Returns:
         List of validated `CanonicalPythonOpSpec` models.
     """
-    return [
-        CanonicalPythonOpSpec(
-            name=name,
-            api_path=api_path,
-            kind=kind,
-            params=[CanonicalParamSpec(name=pn, kind=pk, default=pd) for pn, pk, pd in params],
-            docstring=doc,
-        )
-        for name, api_path, kind, params, doc in defs
-    ]
+    return build_canonical_python_ops(defs)
 
 
 CANONICAL_OPTAX_OPTIMIZERS: list[CanonicalPythonOpSpec] = _build_optax_canonical_ops(_OPTAX_OPTIMIZER_DEFS)
@@ -1719,8 +1710,8 @@ class OptaxScanner:
                     try:
                         ref = GhostInspector.inspect(obj, f"optax.{name}")
                         results.append(ref)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        del exc
 
         return results
 
@@ -1751,8 +1742,8 @@ class OptaxScanner:
                     try:
                         ref = GhostInspector.inspect(obj, f"optax.losses.{name}")
                         results.append(ref)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        del exc
 
         return results
 
@@ -1781,8 +1772,8 @@ class OptaxScanner:
                 try:
                     ref = GhostInspector.inspect(obj, f"optax.schedules.{name}")
                     results.append(ref)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    del exc
 
         return results
 
@@ -1820,8 +1811,8 @@ class OptaxScanner:
                             ref = GhostInspector.inspect(obj, api_path)
                             results.append(ref)
                             seen_paths.add(api_path)
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            del exc
 
     @staticmethod
     def _scan_live_array_root(
@@ -1846,8 +1837,8 @@ class OptaxScanner:
                     ref = GhostInspector.inspect(obj, f"optax.{name}")
                     results.append(ref)
                     seen_paths.add(ref.api_path)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    del exc
         OptaxScanner._scan_live_array_submodules(optax_mod, include_nonpublic, results, seen_paths)
 
     @staticmethod
@@ -1927,13 +1918,6 @@ __all__ = [
     "KNOWN_OPTAX_LOSSES",
     "KNOWN_OPTAX_OPTIMIZERS",
     "OptaxScanner",
-    "_OPTAX_ARRAY_API_DEFS",
-    "_OPTAX_LOSS_DEFS",
-    "_OPTAX_OPTIMIZER_DEFS",
-    "_OPTAX_SCHEDULER_DEFS",
-    "_build_optax_canonical_ops",
-    "_get_optax_griffe_module",
-    "_hydrate_canonical_optax_tier",
     "collect_api",
     "optax",
 ]

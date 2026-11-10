@@ -9,281 +9,128 @@ from __future__ import annotations
 import importlib
 import types
 
-import pydantic
 from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     SemanticTier,
 )
 
-from ml_ecosystem_snapshots.frameworks._base import CanonicalSubmoduleOpSpec
+from ml_ecosystem_snapshots.frameworks._base import (
+    CanonicalSubmoduleOpSpec,
+    CanonicalSubmoduleOpTuple,
+    build_canonical_submodule_ops,
+    collect_from_submodules_or_canonical,
+)
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
-CANONICAL_TORCHVISION_OPS: list[CanonicalSubmoduleOpSpec] = pydantic.TypeAdapter(list[CanonicalSubmoduleOpSpec]).validate_python(
-    [
-        # Detection & Bounding Box ops (torchvision.ops)
-        {
-            "name": "nms",
-            "api_path": "torchvision.ops.nms",
-            "submodule": "ops",
-            "params": [
-                {"name": "boxes", "kind": "POSITIONAL_ONLY"},
-                {"name": "scores", "kind": "POSITIONAL_ONLY"},
-                {"name": "iou_threshold", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Performs non-maximum suppression (NMS) on boxes according to intersection-over-union.",
-        },
-        {
-            "name": "box_iou",
-            "api_path": "torchvision.ops.box_iou",
-            "submodule": "ops",
-            "params": [
-                {"name": "boxes1", "kind": "POSITIONAL_ONLY"},
-                {"name": "boxes2", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Return intersection-over-union (Jaccard index) between two sets of boxes.",
-        },
-        {
-            "name": "roi_align",
-            "api_path": "torchvision.ops.roi_align",
-            "submodule": "ops",
-            "params": [
-                {"name": "input", "kind": "POSITIONAL_ONLY"},
-                {"name": "boxes", "kind": "POSITIONAL_ONLY"},
-                {"name": "output_size", "kind": "POSITIONAL_ONLY"},
-                {"name": "spatial_scale", "kind": "KEYWORD_ONLY", "default": "1.0"},
-                {"name": "sampling_ratio", "kind": "KEYWORD_ONLY", "default": "-1"},
-                {"name": "aligned", "kind": "KEYWORD_ONLY", "default": "False"},
-            ],
-            "docstring": "Performs Region of Interest (RoI) Align operator described in Mask R-CNN.",
-        },
-        {
-            "name": "ps_roi_pool",
-            "api_path": "torchvision.ops.ps_roi_pool",
-            "submodule": "ops",
-            "params": [
-                {"name": "input", "kind": "POSITIONAL_ONLY"},
-                {"name": "boxes", "kind": "POSITIONAL_ONLY"},
-                {"name": "output_size", "kind": "POSITIONAL_ONLY"},
-                {"name": "spatial_scale", "kind": "KEYWORD_ONLY", "default": "1.0"},
-            ],
-            "docstring": "Performs Position-Sensitive Region of Interest (RoI) Pool operator.",
-        },
-        {
-            "name": "masks_to_boxes",
-            "api_path": "torchvision.ops.masks_to_boxes",
-            "submodule": "ops",
-            "params": [
-                {"name": "masks", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Compute bounding boxes surrounding the masks.",
-        },
-        {
-            "name": "box_convert",
-            "api_path": "torchvision.ops.box_convert",
-            "submodule": "ops",
-            "params": [
-                {"name": "boxes", "kind": "POSITIONAL_ONLY"},
-                {"name": "in_fmt", "kind": "POSITIONAL_ONLY"},
-                {"name": "out_fmt", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Converts boxes from given in_fmt to out_fmt.",
-        },
-        {
-            "name": "clip_boxes_to_image",
-            "api_path": "torchvision.ops.clip_boxes_to_image",
-            "submodule": "ops",
-            "params": [
-                {"name": "boxes", "kind": "POSITIONAL_ONLY"},
-                {"name": "size", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Clip boxes so that they lie inside an image of given size.",
-        },
-        # Functional transforms (torchvision.transforms.functional)
-        {
-            "name": "elastic_transform",
-            "api_path": "torchvision.transforms.functional.elastic_transform",
-            "submodule": "transforms.functional",
-            "params": [
-                {"name": "img", "kind": "POSITIONAL_ONLY"},
-                {"name": "displacement", "kind": "POSITIONAL_ONLY"},
-                {
-                    "name": "interpolation",
-                    "kind": "KEYWORD_ONLY",
-                    "default": "InterpolationMode.BILINEAR",
-                },
-                {"name": "fill", "kind": "KEYWORD_ONLY", "default": "None"},
-            ],
-            "docstring": "Transform image using elastic distortion displacement field.",
-        },
-        {
-            "name": "gaussian_blur",
-            "api_path": "torchvision.transforms.functional.gaussian_blur",
-            "submodule": "transforms.functional",
-            "params": [
-                {"name": "img", "kind": "POSITIONAL_ONLY"},
-                {"name": "kernel_size", "kind": "POSITIONAL_ONLY"},
-                {"name": "sigma", "kind": "KEYWORD_ONLY", "default": "None"},
-            ],
-            "docstring": "Performs Gaussian blurring on the image by given kernel.",
-        },
-        {
-            "name": "perspective",
-            "api_path": "torchvision.transforms.functional.perspective",
-            "submodule": "transforms.functional",
-            "params": [
-                {"name": "img", "kind": "POSITIONAL_ONLY"},
-                {"name": "startpoints", "kind": "POSITIONAL_ONLY"},
-                {"name": "endpoints", "kind": "POSITIONAL_ONLY"},
-                {
-                    "name": "interpolation",
-                    "kind": "KEYWORD_ONLY",
-                    "default": "InterpolationMode.BILINEAR",
-                },
-                {"name": "fill", "kind": "KEYWORD_ONLY", "default": "None"},
-            ],
-            "docstring": "Perform perspective transform of the given image.",
-        },
-        {
-            "name": "resize",
-            "api_path": "torchvision.transforms.functional.resize",
-            "submodule": "transforms.functional",
-            "params": [
-                {"name": "img", "kind": "POSITIONAL_ONLY"},
-                {"name": "size", "kind": "POSITIONAL_ONLY"},
-                {
-                    "name": "interpolation",
-                    "kind": "KEYWORD_ONLY",
-                    "default": "InterpolationMode.BILINEAR",
-                },
-                {"name": "max_size", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "antialias", "kind": "KEYWORD_ONLY", "default": "True"},
-            ],
-            "docstring": "Resize the input image to the given size.",
-        },
-        {
-            "name": "crop",
-            "api_path": "torchvision.transforms.functional.crop",
-            "submodule": "transforms.functional",
-            "params": [
-                {"name": "img", "kind": "POSITIONAL_ONLY"},
-                {"name": "top", "kind": "POSITIONAL_ONLY"},
-                {"name": "left", "kind": "POSITIONAL_ONLY"},
-                {"name": "height", "kind": "POSITIONAL_ONLY"},
-                {"name": "width", "kind": "POSITIONAL_ONLY"},
-            ],
-            "docstring": "Crop the given image at specified location and output size.",
-        },
-        {
-            "name": "pad",
-            "api_path": "torchvision.transforms.functional.pad",
-            "submodule": "transforms.functional",
-            "params": [
-                {"name": "img", "kind": "POSITIONAL_ONLY"},
-                {"name": "padding", "kind": "POSITIONAL_ONLY"},
-                {"name": "fill", "kind": "KEYWORD_ONLY", "default": "0"},
-                {
-                    "name": "padding_mode",
-                    "kind": "KEYWORD_ONLY",
-                    "default": "'constant'",
-                },
-            ],
-            "docstring": "Pad the given image on all sides with specified padding.",
-        },
-        {
-            "name": "rotate",
-            "api_path": "torchvision.transforms.functional.rotate",
-            "submodule": "transforms.functional",
-            "params": [
-                {"name": "img", "kind": "POSITIONAL_ONLY"},
-                {"name": "angle", "kind": "POSITIONAL_ONLY"},
-                {
-                    "name": "interpolation",
-                    "kind": "KEYWORD_ONLY",
-                    "default": "InterpolationMode.NEAREST",
-                },
-                {"name": "expand", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "center", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "fill", "kind": "KEYWORD_ONLY", "default": "None"},
-            ],
-            "docstring": "Rotate the image by angle.",
-        },
-        {
-            "name": "affine",
-            "api_path": "torchvision.transforms.functional.affine",
-            "submodule": "transforms.functional",
-            "params": [
-                {"name": "img", "kind": "POSITIONAL_ONLY"},
-                {"name": "angle", "kind": "POSITIONAL_ONLY"},
-                {"name": "translate", "kind": "POSITIONAL_ONLY"},
-                {"name": "scale", "kind": "POSITIONAL_ONLY"},
-                {"name": "shear", "kind": "POSITIONAL_ONLY"},
-                {
-                    "name": "interpolation",
-                    "kind": "KEYWORD_ONLY",
-                    "default": "InterpolationMode.NEAREST",
-                },
-                {"name": "fill", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "center", "kind": "KEYWORD_ONLY", "default": "None"},
-            ],
-            "docstring": "Apply affine transformation on the image keeping image center invariant.",
-        },
-        {
-            "name": "normalize",
-            "api_path": "torchvision.transforms.functional.normalize",
-            "submodule": "transforms.functional",
-            "params": [
-                {"name": "tensor", "kind": "POSITIONAL_ONLY"},
-                {"name": "mean", "kind": "POSITIONAL_ONLY"},
-                {"name": "std", "kind": "POSITIONAL_ONLY"},
-                {"name": "inplace", "kind": "KEYWORD_ONLY", "default": "False"},
-            ],
-            "docstring": "Normalize a tensor image with mean and standard deviation.",
-        },
-        # Utilities (torchvision.utils)
-        {
-            "name": "draw_bounding_boxes",
-            "api_path": "torchvision.utils.draw_bounding_boxes",
-            "submodule": "utils",
-            "params": [
-                {"name": "image", "kind": "POSITIONAL_ONLY"},
-                {"name": "boxes", "kind": "POSITIONAL_ONLY"},
-                {"name": "labels", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "colors", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "fill", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "width", "kind": "KEYWORD_ONLY", "default": "1"},
-                {"name": "font", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "font_size", "kind": "KEYWORD_ONLY", "default": "None"},
-            ],
-            "docstring": "Draws bounding boxes on given image.",
-        },
-        {
-            "name": "make_grid",
-            "api_path": "torchvision.utils.make_grid",
-            "submodule": "utils",
-            "params": [
-                {"name": "tensor", "kind": "POSITIONAL_ONLY"},
-                {"name": "nrow", "kind": "KEYWORD_ONLY", "default": "8"},
-                {"name": "padding", "kind": "KEYWORD_ONLY", "default": "2"},
-                {"name": "normalize", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "value_range", "kind": "KEYWORD_ONLY", "default": "None"},
-                {"name": "scale_each", "kind": "KEYWORD_ONLY", "default": "False"},
-                {"name": "pad_value", "kind": "KEYWORD_ONLY", "default": "0"},
-            ],
-            "docstring": "Make a grid of images.",
-        },
-        {
-            "name": "save_image",
-            "api_path": "torchvision.utils.save_image",
-            "submodule": "utils",
-            "params": [
-                {"name": "tensors", "kind": "POSITIONAL_ONLY"},
-                {"name": "fp", "kind": "POSITIONAL_ONLY"},
-                {"name": "format", "kind": "KEYWORD_ONLY", "default": "None"},
-            ],
-            "docstring": "Save a given Tensor into an image file.",
-        },
-    ]
-)
+_TORCHVISION_OP_DEFS: list[CanonicalSubmoduleOpTuple] = [
+    ("nms", "torchvision.ops.nms", "function", "ops", [("boxes", "POSITIONAL_ONLY", None), ("scores", "POSITIONAL_ONLY", None), ("iou_threshold", "POSITIONAL_ONLY", None)], "Performs non-maximum suppression (NMS) on boxes according to intersection-over-union."),
+    ("box_iou", "torchvision.ops.box_iou", "function", "ops", [("boxes1", "POSITIONAL_ONLY", None), ("boxes2", "POSITIONAL_ONLY", None)], "Return intersection-over-union (Jaccard index) between two sets of boxes."),
+    (
+        "roi_align",
+        "torchvision.ops.roi_align",
+        "function",
+        "ops",
+        [("input", "POSITIONAL_ONLY", None), ("boxes", "POSITIONAL_ONLY", None), ("output_size", "POSITIONAL_ONLY", None), ("spatial_scale", "KEYWORD_ONLY", "1.0"), ("sampling_ratio", "KEYWORD_ONLY", "-1"), ("aligned", "KEYWORD_ONLY", "False")],
+        "Performs Region of Interest (RoI) Align operator described in Mask R-CNN.",
+    ),
+    ("ps_roi_pool", "torchvision.ops.ps_roi_pool", "function", "ops", [("input", "POSITIONAL_ONLY", None), ("boxes", "POSITIONAL_ONLY", None), ("output_size", "POSITIONAL_ONLY", None), ("spatial_scale", "KEYWORD_ONLY", "1.0")], "Performs Position-Sensitive Region of Interest (RoI) Pool operator."),
+    ("masks_to_boxes", "torchvision.ops.masks_to_boxes", "function", "ops", [("masks", "POSITIONAL_ONLY", None)], "Compute bounding boxes surrounding the masks."),
+    ("box_convert", "torchvision.ops.box_convert", "function", "ops", [("boxes", "POSITIONAL_ONLY", None), ("in_fmt", "POSITIONAL_ONLY", None), ("out_fmt", "POSITIONAL_ONLY", None)], "Converts boxes from given in_fmt to out_fmt."),
+    ("clip_boxes_to_image", "torchvision.ops.clip_boxes_to_image", "function", "ops", [("boxes", "POSITIONAL_ONLY", None), ("size", "POSITIONAL_ONLY", None)], "Clip boxes so that they lie inside an image of given size."),
+    (
+        "elastic_transform",
+        "torchvision.transforms.functional.elastic_transform",
+        "function",
+        "transforms.functional",
+        [("img", "POSITIONAL_ONLY", None), ("displacement", "POSITIONAL_ONLY", None), ("interpolation", "KEYWORD_ONLY", "InterpolationMode.BILINEAR"), ("fill", "KEYWORD_ONLY", "None")],
+        "Transform image using elastic distortion displacement field.",
+    ),
+    ("gaussian_blur", "torchvision.transforms.functional.gaussian_blur", "function", "transforms.functional", [("img", "POSITIONAL_ONLY", None), ("kernel_size", "POSITIONAL_ONLY", None), ("sigma", "KEYWORD_ONLY", "None")], "Performs Gaussian blurring on the image by given kernel."),
+    (
+        "perspective",
+        "torchvision.transforms.functional.perspective",
+        "function",
+        "transforms.functional",
+        [("img", "POSITIONAL_ONLY", None), ("startpoints", "POSITIONAL_ONLY", None), ("endpoints", "POSITIONAL_ONLY", None), ("interpolation", "KEYWORD_ONLY", "InterpolationMode.BILINEAR"), ("fill", "KEYWORD_ONLY", "None")],
+        "Perform perspective transform of the given image.",
+    ),
+    (
+        "resize",
+        "torchvision.transforms.functional.resize",
+        "function",
+        "transforms.functional",
+        [("img", "POSITIONAL_ONLY", None), ("size", "POSITIONAL_ONLY", None), ("interpolation", "KEYWORD_ONLY", "InterpolationMode.BILINEAR"), ("max_size", "KEYWORD_ONLY", "None"), ("antialias", "KEYWORD_ONLY", "True")],
+        "Resize the input image to the given size.",
+    ),
+    (
+        "crop",
+        "torchvision.transforms.functional.crop",
+        "function",
+        "transforms.functional",
+        [("img", "POSITIONAL_ONLY", None), ("top", "POSITIONAL_ONLY", None), ("left", "POSITIONAL_ONLY", None), ("height", "POSITIONAL_ONLY", None), ("width", "POSITIONAL_ONLY", None)],
+        "Crop the given image at specified location and output size.",
+    ),
+    (
+        "pad",
+        "torchvision.transforms.functional.pad",
+        "function",
+        "transforms.functional",
+        [("img", "POSITIONAL_ONLY", None), ("padding", "POSITIONAL_ONLY", None), ("fill", "KEYWORD_ONLY", "0"), ("padding_mode", "KEYWORD_ONLY", "'constant'")],
+        "Pad the given image on all sides with specified padding.",
+    ),
+    (
+        "rotate",
+        "torchvision.transforms.functional.rotate",
+        "function",
+        "transforms.functional",
+        [("img", "POSITIONAL_ONLY", None), ("angle", "POSITIONAL_ONLY", None), ("interpolation", "KEYWORD_ONLY", "InterpolationMode.NEAREST"), ("expand", "KEYWORD_ONLY", "False"), ("center", "KEYWORD_ONLY", "None"), ("fill", "KEYWORD_ONLY", "None")],
+        "Rotate the image by angle.",
+    ),
+    (
+        "affine",
+        "torchvision.transforms.functional.affine",
+        "function",
+        "transforms.functional",
+        [
+            ("img", "POSITIONAL_ONLY", None),
+            ("angle", "POSITIONAL_ONLY", None),
+            ("translate", "POSITIONAL_ONLY", None),
+            ("scale", "POSITIONAL_ONLY", None),
+            ("shear", "POSITIONAL_ONLY", None),
+            ("interpolation", "KEYWORD_ONLY", "InterpolationMode.NEAREST"),
+            ("fill", "KEYWORD_ONLY", "None"),
+            ("center", "KEYWORD_ONLY", "None"),
+        ],
+        "Apply affine transformation on the image keeping image center invariant.",
+    ),
+    (
+        "normalize",
+        "torchvision.transforms.functional.normalize",
+        "function",
+        "transforms.functional",
+        [("tensor", "POSITIONAL_ONLY", None), ("mean", "POSITIONAL_ONLY", None), ("std", "POSITIONAL_ONLY", None), ("inplace", "KEYWORD_ONLY", "False")],
+        "Normalize a tensor image with mean and standard deviation.",
+    ),
+    (
+        "draw_bounding_boxes",
+        "torchvision.utils.draw_bounding_boxes",
+        "function",
+        "utils",
+        [("image", "POSITIONAL_ONLY", None), ("boxes", "POSITIONAL_ONLY", None), ("labels", "KEYWORD_ONLY", "None"), ("colors", "KEYWORD_ONLY", "None"), ("fill", "KEYWORD_ONLY", "False"), ("width", "KEYWORD_ONLY", "1"), ("font", "KEYWORD_ONLY", "None"), ("font_size", "KEYWORD_ONLY", "None")],
+        "Draws bounding boxes on given image.",
+    ),
+    (
+        "make_grid",
+        "torchvision.utils.make_grid",
+        "function",
+        "utils",
+        [("tensor", "POSITIONAL_ONLY", None), ("nrow", "KEYWORD_ONLY", "8"), ("padding", "KEYWORD_ONLY", "2"), ("normalize", "KEYWORD_ONLY", "False"), ("value_range", "KEYWORD_ONLY", "None"), ("scale_each", "KEYWORD_ONLY", "False"), ("pad_value", "KEYWORD_ONLY", "0")],
+        "Make a grid of images.",
+    ),
+    ("save_image", "torchvision.utils.save_image", "function", "utils", [("tensors", "POSITIONAL_ONLY", None), ("fp", "POSITIONAL_ONLY", None), ("format", "KEYWORD_ONLY", "None")], "Save a given Tensor into an image file."),
+]
+
+CANONICAL_TORCHVISION_OPS: list[CanonicalSubmoduleOpSpec] = build_canonical_submodule_ops(_TORCHVISION_OP_DEFS)
 
 
 def _get_torchvision_submodule(submod: str) -> types.ModuleType | None:
@@ -297,7 +144,7 @@ def _get_torchvision_submodule(submod: str) -> types.ModuleType | None:
     """
     try:
         return importlib.import_module(f"torchvision.{submod}")
-    except Exception:
+    except (ImportError, ModuleNotFoundError, AttributeError, RuntimeError, TypeError, ValueError, OSError):
         return None
 
 
@@ -324,10 +171,6 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         mod = _get_torchvision_submodule(sub)
         if mod is not None:
             loaded_submods[sub] = mod
-
-    from ml_ecosystem_snapshots.frameworks._base import (
-        collect_from_submodules_or_canonical,
-    )
 
     return collect_from_submodules_or_canonical(
         loaded_submods=loaded_submods,

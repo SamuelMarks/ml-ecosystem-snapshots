@@ -72,11 +72,17 @@ def test_collect_api_live_mode() -> None:
         return_value=fake_ops,
     ):
         with patch(
-            "ml_ecosystem_snapshots.frameworks.torch.get_aten_op_schema",
+            "ml_ecosystem_snapshots.frameworks.aten.get_aten_op_schema",
             return_value=fake_schema,
         ):
             refs = aten.collect_api(SemanticTier.NEURAL_OPS)
-            assert len(refs) >= 20
+            assert len(refs) == len(aten.CANONICAL_ATEN_OPS)
+            by_path = {r.api_path: r for r in refs}
+            assert "aten.add" in by_path
+            assert "aten.mm" in by_path
+            assert "aten.convolution" in by_path
+            assert [p.name for p in by_path["aten.add"].params] == ["self", "other"]
+            assert by_path["aten.add"].docstring == "ATen add C++ dispatch kernel."
 
 
 def test_collect_api_schema_missing_fallback() -> None:
@@ -89,11 +95,14 @@ def test_collect_api_schema_missing_fallback() -> None:
         return_value=fake_ops,
     ):
         with patch(
-            "ml_ecosystem_snapshots.frameworks.torch.get_aten_op_schema",
+            "ml_ecosystem_snapshots.frameworks.aten.get_aten_op_schema",
             return_value=None,
         ):
             refs = aten.collect_api(SemanticTier.NEURAL_OPS)
-            assert len(refs) >= 20
+            assert len(refs) == len(aten.CANONICAL_ATEN_OPS)
+            add_ref = next(r for r in refs if r.api_path == "aten.add")
+            assert [p.name for p in add_ref.params] == ["self", "other", "alpha"]
+            assert "aten" in (add_ref.environment_tags or [])
 
 
 def test_extract_snapshot_aten() -> None:

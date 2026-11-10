@@ -122,6 +122,11 @@ def test_scrape_ptx_with_empty_fetch(tmp_path: os.PathLike[str]) -> None:
     ):
         catalog = scrape_nvidia_ptx.scrape_ptx(output_path=out_file)
         assert len(catalog) > 0
+        by_mnem = {str(op.get("mnemonic")): op for op in catalog}
+        assert "add" in by_mnem
+        assert "mma.sync" in by_mnem
+        assert by_mnem["add"].get("category") is not None
+        assert os.path.isfile(out_file)
 
 
 def test_main_invocation() -> None:

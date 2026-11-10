@@ -76,8 +76,8 @@ def _collect_tf_submodules(
                 if (callable(obj) or (allow_classes and inspect.isclass(obj))) and (include_nonpublic or not name.startswith("_")):
                     try:
                         collected.append(GhostInspector.inspect(obj, f"tf.{sub_name}.{name}"))
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        del exc
     return collected
 
 
@@ -185,8 +185,8 @@ def _collect_tf_type_methods(tf_mod: types.ModuleType, type_name: str, include_n
         if (include_nonpublic or not name.startswith("_")) and callable(obj) and not inspect.isclass(obj):
             try:
                 results.append(GhostInspector.inspect(obj, f"tf.{type_name}.{name}", kind="method"))
-            except Exception:
-                pass
+            except Exception as exc:
+                del exc
     return results
 
 
@@ -214,8 +214,8 @@ def _collect_tf_raw_ops(tf_mod: types.ModuleType, include_nonpublic: bool, add_t
                         ref.environment_tags = []
                     ref.environment_tags.append("tf.raw_op")
                 results.append(ref)
-            except Exception:
-                pass
+            except Exception as exc:
+                del exc
     return results
 
 
@@ -270,15 +270,15 @@ def _collect_tf_array_api(tf_mod: types.ModuleType, include_nonpublic: bool) -> 
         if name in tf_top_members and callable(tf_top_members[name]):
             try:
                 results.append(GhostInspector.inspect(tf_top_members[name], f"tf.{name}"))
-            except Exception:
-                pass
+            except Exception as exc:
+                del exc
 
     for name, obj in get_all_members(tf_mod):
         if (not name.startswith("_") or include_nonpublic) and name not in seen_ops and callable(obj) and not inspect.isclass(obj):
             try:
                 results.append(GhostInspector.inspect(obj, f"tf.{name}"))
-            except Exception:
-                pass
+            except Exception as exc:
+                del exc
 
     results.extend(_collect_tf_raw_ops(tf_mod, include_nonpublic, add_tag=False))
     results.extend(_collect_tf_type_methods(tf_mod, "Tensor", include_nonpublic))
@@ -320,8 +320,8 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
             results = _collect_tf_array_api(tf_mod, include_nonpublic)
         elif category == SemanticTier.UTIL:
             results = _collect_tf_raw_ops(tf_mod, include_nonpublic, add_tag=True)
-    except Exception:
-        pass
+    except Exception as exc:
+        del exc
 
     return results
 

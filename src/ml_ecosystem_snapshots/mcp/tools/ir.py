@@ -571,10 +571,6 @@ def check_stablehlo_op(
 
 
 __all__ = [
-    "_extract_mlir_operands_and_attrs",
-    "_extract_tensor_rank",
-    "_infer_implicit_mlir_traits",
-    "_validate_mlir_structured_attributes",
     "check_mlir_op",
     "check_stablehlo_op",
 ]

@@ -222,6 +222,18 @@ def _is_typeguard_return(returns: ast.expr | None) -> bool:
     return (isinstance(val, ast.Name) and val.id in {"TypeGuard", "TypeIs"}) or (isinstance(val, ast.Attribute) and val.attr in {"TypeGuard", "TypeIs"})
 
 
+def _is_trivial_non_none_compare(expr: ast.expr) -> bool:
+    """Return whether `expr` is a trivial `x is not None` comparison.
+
+    Args:
+        expr: Return expression AST node.
+
+    Returns:
+        True if `expr` is `<name> is not None`.
+    """
+    return isinstance(expr, ast.Compare) and len(expr.ops) == 1 and isinstance(expr.ops[0], ast.IsNot) and len(expr.comparators) == 1 and isinstance(expr.comparators[0], ast.Constant) and expr.comparators[0].value is None
+
+
 def _check_function_node(node: ast.FunctionDef | ast.AsyncFunctionDef, filepath: str) -> list[str]:
     """Inspect a function definition for disguised `as_*` casts or tautological `TypeGuard` bodies.
 
@@ -237,8 +249,11 @@ def _check_function_node(node: ast.FunctionDef | ast.AsyncFunctionDef, filepath:
         errors.append(f"{filepath}:{node.lineno}:{node.col_offset}: banned wrapper function definition '{node.name}'")
     if _is_typeguard_return(node.returns):
         for stmt in node.body:
-            if isinstance(stmt, ast.Return) and isinstance(stmt.value, ast.Constant) and stmt.value.value is True:
-                errors.append(f"{filepath}:{node.lineno}:{node.col_offset}: banned tautological TypeGuard '{node.name}' returning True")
+            if isinstance(stmt, ast.Return) and stmt.value is not None:
+                if isinstance(stmt.value, ast.Constant) and stmt.value.value is True:
+                    errors.append(f"{filepath}:{node.lineno}:{node.col_offset}: banned tautological TypeGuard '{node.name}' returning True")
+                elif _is_trivial_non_none_compare(stmt.value):
+                    errors.append(f"{filepath}:{node.lineno}:{node.col_offset}: banned tautological TypeGuard '{node.name}' returning 'is not None'")
     return errors
 
 
@@ -255,6 +270,22 @@ def _check_if_node(node: ast.If, filepath: str) -> list[str]:
     is_tc = (isinstance(node.test, ast.Name) and node.test.id == "TYPE_CHECKING") or (isinstance(node.test, ast.Attribute) and node.test.attr == "TYPE_CHECKING")
     if is_tc and node.orelse:
         return [f"{filepath}:{node.lineno}:{node.col_offset}: banned 'if TYPE_CHECKING: ... else:' block"]
+    return []
+
+
+def _check_except_handler_node(node: ast.ExceptHandler, filepath: str) -> list[str]:
+    """Inspect an `ast.ExceptHandler` node for bare `except Exception: pass` silent swallowing.
+
+    Args:
+        node: AST ExceptHandler node.
+        filepath: Source file path for error reporting.
+
+    Returns:
+        List of formatted violation messages.
+    """
+    is_broad_exc = node.type is None or (isinstance(node.type, ast.Name) and node.type.id in {"Exception", "BaseException"})
+    if is_broad_exc and len(node.body) == 1 and isinstance(node.body[0], ast.Pass):
+        return [f"{filepath}:{node.lineno}:{node.col_offset}: banned silent 'except Exception: pass' block"]
     return []
 
 
@@ -306,6 +337,8 @@ def check_file(filepath: str) -> list[str]:
             violations.extend(_check_function_node(node, filepath))
         elif isinstance(node, ast.If):
             violations.extend(_check_if_node(node, filepath))
+        elif isinstance(node, ast.ExceptHandler):
+            violations.extend(_check_except_handler_node(node, filepath))
 
     return violations
 

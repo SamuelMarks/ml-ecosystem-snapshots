@@ -32,8 +32,8 @@ def get_api_signature(
                 return dict(cached_sym.data)
             assert isinstance(cached_sym, dict)
             return dict(cached_sym)
-    except Exception:
-        pass
+    except Exception as exc:
+        del exc
 
     snap = resolve_snapshot(framework, version=version, repository=repository)
     raw_cats = snap.get("categories") or {}

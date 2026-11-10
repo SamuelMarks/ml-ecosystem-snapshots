@@ -61,7 +61,14 @@ def test_collect_api_live_mode() -> None:
         return_value=fake_mod,
     ):
         refs = array_api.collect_api(SemanticTier.ARRAY_API)
-        assert len(refs) >= 80
+        assert len(refs) == len(array_api.CANONICAL_ARRAY_API_OPS)
+        by_path = {r.api_path: r for r in refs}
+        assert "array_api.add" in by_path
+        assert "array_api.matmul" in by_path
+        assert "array_api.tensordot" in by_path
+        assert "array_api.sum" in by_path
+        assert [p.name for p in by_path["array_api.add"].params] == ["x1", "x2"]
+        assert "array_api" in (by_path["array_api.add"].environment_tags or [])
 
 
 def test_collect_api_inspection_exception_handled() -> None:
@@ -79,7 +86,10 @@ def test_collect_api_inspection_exception_handled() -> None:
             side_effect=ValueError("boom"),
         ):
             refs = array_api.collect_api(SemanticTier.ARRAY_API)
-            assert len(refs) >= 80
+            assert len(refs) == len(array_api.CANONICAL_ARRAY_API_OPS)
+            add_ref = next(r for r in refs if r.api_path == "array_api.add")
+            assert [p.name for p in add_ref.params] == ["x1", "x2"]
+            assert add_ref.params[0].kind == ParameterKind.POSITIONAL_ONLY
 
 
 def test_extract_snapshot_array_api() -> None:

@@ -59,8 +59,8 @@ def _append_fts5_matches(
                     matches.append(str(path))
                     if len(matches) >= limit:
                         return True
-    except Exception:
-        pass
+    except Exception as exc:
+        del exc
     return False
 
 

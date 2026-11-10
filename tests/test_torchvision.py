@@ -88,7 +88,12 @@ def test_collect_api_live_mode() -> None:
         side_effect=fake_get_submodule,
     ):
         refs = torchvision.collect_api(SemanticTier.NEURAL_OPS)
-        assert len(refs) >= 15
+        assert len(refs) == len(torchvision.CANONICAL_TORCHVISION_OPS)
+        by_name = {r.name: r for r in refs}
+        assert [p.name for p in by_name["nms"].params] == ["b", "s", "t"]
+        assert [p.name for p in by_name["gaussian_blur"].params] == ["img"]
+        assert [p.name for p in by_name["draw_bounding_boxes"].params] == ["img", "boxes"]
+        assert "torchvision" in (by_name["nms"].environment_tags or [])
 
 
 def test_collect_api_inspection_exception_handled() -> None:
@@ -117,7 +122,9 @@ def test_collect_api_inspection_exception_handled() -> None:
             side_effect=ValueError("boom"),
         ):
             refs = torchvision.collect_api(SemanticTier.NEURAL_OPS)
-            assert len(refs) >= 15
+            assert len(refs) == len(torchvision.CANONICAL_TORCHVISION_OPS)
+            nms_ref = next(r for r in refs if r.name == "nms")
+            assert [p.name for p in nms_ref.params] == ["boxes", "scores", "iou_threshold"]
 
 
 def test_extract_snapshot_torchvision() -> None:

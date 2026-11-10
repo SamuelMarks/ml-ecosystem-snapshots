@@ -45,7 +45,27 @@ class ExtractSnapshotFn(typing.Protocol):
 
 extract_snapshot: ExtractSnapshotFn | None = _imported_extract_snapshot
 
+_CACHE_LOCK = threading.RLock()
 _SNAPSHOT_CACHE: dict[str, dict[str, JsonValue]] = {}
+
+
+def clear_snapshot_cache() -> None:
+    """Thread-safely clear all entries in the default snapshot cache."""
+    with _CACHE_LOCK:
+        _SNAPSHOT_CACHE.clear()
+
+
+def get_cached_snapshot(cache_key: str) -> dict[str, JsonValue] | None:
+    """Thread-safely retrieve a cached snapshot dictionary by key.
+
+    Args:
+        cache_key: Cache key (e.g. `'torch'` or `'torch@2.4.0'`).
+
+    Returns:
+        Cached snapshot dictionary or `None` if not present.
+    """
+    with _CACHE_LOCK:
+        return _SNAPSHOT_CACHE.get(cache_key)
 
 
 def _matches_snapshot_filename(
@@ -325,8 +345,9 @@ __all__ = [
     "ExtractSnapshotFn",
     "FRAMEWORK_COLLECTORS",
     "SnapshotRepository",
-    "_SNAPSHOT_CACHE",
+    "clear_snapshot_cache",
     "extract_snapshot",
+    "get_cached_snapshot",
     "get_framework_snapshot",
     "resolve_snapshot",
 ]

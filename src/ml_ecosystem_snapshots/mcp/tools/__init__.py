@@ -28,11 +28,13 @@ from ml_ecosystem_snapshots.mcp.tools.domain_ops import (
 )
 from ml_ecosystem_snapshots.mcp.tools.hallucination import (
     DTYPE_CANONICAL_ALIASES,
-    _matches_rank_constraint,
     check_code_block,
     check_hallucination,
     explain_anti_pattern,
     normalize_dtype_name,
+)
+from ml_ecosystem_snapshots.mcp.tools.hallucination import (
+    _matches_rank_constraint as _matches_rank_constraint,
 )
 from ml_ecosystem_snapshots.mcp.tools.ir import check_mlir_op, check_stablehlo_op
 from ml_ecosystem_snapshots.mcp.tools.isa import (
@@ -55,7 +57,6 @@ __all__ = [
     "DOMAIN_OP_CONFIGS",
     "DTYPE_CANONICAL_ALIASES",
     "DomainOpCheckConfig",
-    "_matches_rank_constraint",
     "build_domain_op_tool_schemas",
     "check_array_api_op",
     "check_aten_op",

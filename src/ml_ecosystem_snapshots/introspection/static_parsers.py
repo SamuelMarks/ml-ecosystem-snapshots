@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import typing
 
 import typing_extensions
@@ -18,6 +19,8 @@ from ml_ecosystem_snapshots.utils import (
 
 if typing.TYPE_CHECKING:
     import griffe
+
+logger = logging.getLogger("ml_ecosystem_snapshots.introspection.static_parsers")
 
 
 class GriffeLoaderProto(typing.Protocol):
@@ -44,7 +47,70 @@ class GriffeLoaderProto(typing.Protocol):
 
 GriffeCacheEntry: typing_extensions.TypeAlias = "griffe.Module | griffe.Object | griffe.Alias | GriffeNodeProtocol | GriffeLoaderProto | None"
 
-_GRIFFE_CACHE: dict[str, GriffeCacheEntry] = {}
+
+class GriffeModuleCache:
+    """Thread-safe cache for statically loaded Griffe AST modules and objects."""
+
+    def __init__(self, backing_store: dict[str, GriffeCacheEntry] | None = None) -> None:
+        """Initialize the thread-safe Griffe module cache.
+
+        Args:
+            backing_store: Optional dictionary backing store.
+        """
+        self._lock = threading.RLock()
+        self._store: dict[str, GriffeCacheEntry] = backing_store if backing_store is not None else {}
+
+    @property
+    def store(self) -> dict[str, GriffeCacheEntry]:
+        """Return the underlying cache dictionary.
+
+        Returns:
+            Dictionary mapping module keys to `GriffeCacheEntry` values.
+        """
+        return self._store
+
+    def get(self, key: str) -> GriffeCacheEntry:
+        """Retrieve a cached Griffe entry by key.
+
+        Args:
+            key: Module path or cache key.
+
+        Returns:
+            Cached `GriffeCacheEntry` or `None` if absent.
+        """
+        with self._lock:
+            return self._store.get(key)
+
+    def contains(self, key: str) -> bool:
+        """Return whether `key` is present in the cache.
+
+        Args:
+            key: Module path or cache key.
+
+        Returns:
+            True if `key` is stored in the cache.
+        """
+        with self._lock:
+            return key in self._store
+
+    def put(self, key: str, value: GriffeCacheEntry) -> None:
+        """Store a `GriffeCacheEntry` under `key`.
+
+        Args:
+            key: Module path or cache key.
+            value: Griffe AST node or loader callable to cache.
+        """
+        with self._lock:
+            self._store[key] = value
+
+    def clear(self) -> None:
+        """Clear all entries from the Griffe module cache."""
+        with self._lock:
+            self._store.clear()
+
+
+_DEFAULT_GRIFFE_CACHE = GriffeModuleCache()
+_GRIFFE_CACHE: dict[str, GriffeCacheEntry] = _DEFAULT_GRIFFE_CACHE.store
 
 logging.getLogger("griffe").setLevel(logging.CRITICAL)
 
@@ -73,7 +139,8 @@ def load_griffe_module_safely(module_path: str, framework_name: str | None = Non
         assert isinstance(loaded, (_griffe_mod.Module, _griffe_mod.Object, _griffe_mod.Alias))
         _GRIFFE_CACHE[module_path] = loaded
         return loaded
-    except Exception:
+    except (ImportError, OSError, SyntaxError, ValueError, KeyError, RuntimeError, TypeError, AssertionError) as exc:
+        logger.debug("Failed to statically load Griffe module '%s': %s", module_path, exc)
         return None
 
 
@@ -109,14 +176,15 @@ def preload_griffe_cache(frameworks: list[str] | None = None) -> None:
                 loaded = _griffe_mod.load(target, docstring_parser=parser)
                 assert isinstance(loaded, (_griffe_mod.Module, _griffe_mod.Object, _griffe_mod.Alias))
                 _GRIFFE_CACHE[target] = loaded
-            except Exception:
-                pass
+            except (ImportError, OSError, SyntaxError, ValueError, KeyError, RuntimeError, TypeError, AssertionError) as exc:
+                logger.debug("Failed to preload Griffe cache for '%s': %s", target, exc)
 
 
 __all__ = [
     "GriffeCacheEntry",
+    "GriffeLoaderProto",
+    "GriffeModuleCache",
     "GriffeNodeProtocol",
-    "_GRIFFE_CACHE",
     "load_griffe_module_safely",
     "preload_griffe_cache",
 ]

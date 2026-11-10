@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+import ml_ecosystem_snapshots.mcp_server as _mcp_server
 from ml_ecosystem_snapshots.compliance.models import SnippetComplianceReport
 
 
@@ -16,8 +17,6 @@ def check_mlir_text_compliance(mlir_text: str) -> SnippetComplianceReport:
     Returns:
         `SnippetComplianceReport` with `is_compliant`, `total_ops`, `verified_ops`, and `errors`.
     """
-    from ml_ecosystem_snapshots.mcp_server import check_mlir_op
-
     errors: list[str] = []
     total_ops = 0
     verified_ops = 0
@@ -39,7 +38,7 @@ def check_mlir_text_compliance(mlir_text: str) -> SnippetComplianceReport:
             args_str = match.group(2)
             operands_count = len([a for a in args_str.split(",") if a.strip()]) if args_str is not None else None
 
-            res = check_mlir_op(op_name, operands_count=operands_count)
+            res = _mcp_server.check_mlir_op(op_name, operands_count=operands_count)
             if not res.get("op_exists"):
                 errors.append(f"Invalid MLIR operation '{op_name}' on line: '{cleaned}'")
             elif not res.get("is_valid"):
@@ -66,8 +65,6 @@ def check_wgsl_shader_compliance(shader_text: str) -> SnippetComplianceReport:
     Returns:
         `SnippetComplianceReport` with `is_compliant`, `total_ops`, `verified_ops`, and `errors`.
     """
-    from ml_ecosystem_snapshots.mcp_server import check_wgsl_op
-
     errors: list[str] = []
     total_ops = 0
     verified_ops = 0
@@ -105,7 +102,7 @@ def check_wgsl_shader_compliance(shader_text: str) -> SnippetComplianceReport:
             if op_name in ignored_keywords:
                 continue
 
-            res = check_wgsl_op(op_name)
+            res = _mcp_server.check_wgsl_op(op_name)
             if res.get("op_exists"):
                 total_ops += 1
                 if res.get("is_valid"):
@@ -131,8 +128,6 @@ def check_sass_assembly_compliance(assembly_text: str, sm_arch: str | None = Non
     Returns:
         `SnippetComplianceReport` with `is_compliant`, `total_instructions`, and `errors`.
     """
-    from ml_ecosystem_snapshots.mcp_server import check_sass_instruction
-
     errors: list[str] = []
     total_insts = 0
     verified_insts = 0
@@ -154,7 +149,7 @@ def check_sass_assembly_compliance(assembly_text: str, sm_arch: str | None = Non
             operands = [op.strip() for op in operands_raw.split(",") if op.strip()] if operands_raw else None
 
             total_insts += 1
-            res = check_sass_instruction(
+            res = _mcp_server.check_sass_instruction(
                 base_mnemonic,
                 operands=operands,
                 modifiers=modifiers,
@@ -185,8 +180,6 @@ def check_rdna_assembly_compliance(assembly_text: str, gfx_arch: str | None = No
     Returns:
         `SnippetComplianceReport` with `is_compliant`, `total_instructions`, and `errors`.
     """
-    from ml_ecosystem_snapshots.mcp_server import check_rdna_instruction
-
     errors: list[str] = []
     total_insts = 0
     verified_insts = 0
@@ -205,7 +198,7 @@ def check_rdna_assembly_compliance(assembly_text: str, gfx_arch: str | None = No
             operands = [op.strip() for op in operands_raw.split(",") if op.strip()] if operands_raw else None
 
             total_insts += 1
-            res = check_rdna_instruction(mnemonic, operands=operands, gfx_arch=gfx_arch)
+            res = _mcp_server.check_rdna_instruction(mnemonic, operands=operands, gfx_arch=gfx_arch)
             if not res.get("is_valid"):
                 raw_errs = res.get("errors", [])
                 assert isinstance(raw_errs, list)

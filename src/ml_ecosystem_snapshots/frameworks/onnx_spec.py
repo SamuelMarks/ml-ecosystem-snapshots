@@ -317,8 +317,8 @@ def _load_onnx_ops() -> list[CanonicalSsaOpSpec]:
             )
         if ops:
             return ops
-    except Exception:
-        pass
+    except Exception as exc:
+        del exc
 
     return CANONICAL_ONNX_OPS
 

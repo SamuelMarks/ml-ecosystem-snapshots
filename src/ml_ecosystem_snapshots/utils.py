@@ -216,7 +216,7 @@ def get_all_members(
     try:
         raw_members: list[tuple[str, InspectableTarget]] = inspect.getmembers(module)
         return raw_members
-    except Exception as exc:
+    except (OSError, TypeError, ValueError, KeyError, AttributeError, RuntimeError, ImportError) as exc:
         _LOGGER.debug("Skipping inaccessible module members: %s", exc)
         return []
 
@@ -295,7 +295,8 @@ def resolve_griffe_parser(parser_name: str) -> griffe.Parser | None:
             return sphinx_val
         parsed_val: griffe.Parser = _griffe_mod.Parser(parser_name)
         return parsed_val
-    except Exception:
+    except (ImportError, ValueError, KeyError, AttributeError, TypeError, RuntimeError) as exc:
+        _LOGGER.debug("Failed to resolve Griffe parser '%s': %s", parser_name, exc)
         return None
 
 
@@ -334,7 +335,7 @@ def parse_docstring_with_griffe(docstring: str, parser_name: str | None = None) 
                 return sections
             if not best_sections and sections:
                 best_sections = sections
-        except Exception as exc:
+        except (ValueError, KeyError, AttributeError, TypeError, RuntimeError, SyntaxError) as exc:
             _LOGGER.debug("Griffe docstring parse fallback for %s: %s", candidate, exc)
 
     return best_sections
