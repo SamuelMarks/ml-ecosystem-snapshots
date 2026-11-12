@@ -11,6 +11,12 @@ import pytest
 import pytest_mock
 
 from ml_ecosystem_snapshots.cli import cmd_check
+from ml_ecosystem_snapshots.compliance.models import (
+    ComplianceMismatchEntry,
+    ComplianceScoreReport,
+    SnippetComplianceReport,
+)
+from ml_ecosystem_snapshots.mcp.models import IsaCheckResult
 
 MOCK_JSON = """
 {
@@ -73,20 +79,40 @@ def test_cmd_check(
     )
     mock_score = mocker.patch(
         "ml_ecosystem_snapshots.compliance.score_compliance",
-        return_value={
-            "score_percentage": 75.5,
-            "matched": ["mod.func1", "mod.func2", "other.func3"],
-            "missing": ["mod.func4"],
-            "mismatched": [{"api_path": "other.func5", "expected": [], "actual": []}],
-        },
+        return_value=ComplianceScoreReport(
+            score_percentage=75.5,
+            matched=["mod.func1", "mod.func2", "other.func3"],
+            missing=["mod.func4"],
+            mismatched=[ComplianceMismatchEntry(api_path="other.func5", expected=[], actual=[])],
+        ),
     )
 
     import json
 
+    from ml_ecosystem_snapshots.cli.commands.verify_compliance import (
+        CLI_ALIGNMENT_PRESETS,
+        ZERO_ECOSYSTEM_ALIGNMENT_RULE,
+    )
+
     cmd_check(args)
 
-    mock_extract.assert_called_once_with("dummy_target", "t_pref", "r_pref")
+    mock_extract.assert_called_once_with(
+        "dummy_target",
+        "t_pref",
+        "r_pref",
+        alignment_rule=CLI_ALIGNMENT_PRESETS["default"],
+    )
     mock_score.assert_called_once_with(json.loads(MOCK_JSON), ["mock_ref"])
+
+    args_zero = argparse.Namespace(
+        snapshot_json=str(snap_file),
+        target_path="dummy_target",
+        target_prefix="t_pref",
+        reference_prefix="r_pref",
+        alignment_preset="zero",
+    )
+    cmd_check(args_zero)
+    assert mock_extract.call_args.kwargs["alignment_rule"] == ZERO_ECOSYSTEM_ALIGNMENT_RULE
 
     captured = capsys.readouterr()
     assert "Extracting target APIs from dummy_target" in captured.out
@@ -127,16 +153,16 @@ def test_cmd_check_pagination(
 
     # Generate > 20 missing and mismatched
     missing = [f"mod.func{i}" for i in range(25)]
-    mismatched = [{"api_path": f"mod.func{i}", "expected": [], "actual": []} for i in range(30, 55)]
+    mismatched = [ComplianceMismatchEntry(api_path=f"mod.func{i}", expected=[], actual=[]) for i in range(30, 55)]
 
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.score_compliance",
-        return_value={
-            "score_percentage": 0.0,
-            "matched": [],
-            "missing": missing,
-            "mismatched": mismatched,
-        },
+        return_value=ComplianceScoreReport(
+            score_percentage=0.0,
+            matched=[],
+            missing=missing,
+            mismatched=mismatched,
+        ),
     )
 
     cmd_check(args)
@@ -172,12 +198,12 @@ def test_cmd_check_no_missing_mismatched(
     )
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.score_compliance",
-        return_value={
-            "score_percentage": 100.0,
-            "matched": ["mod.func1"],
-            "missing": [],
-            "mismatched": [],
-        },
+        return_value=ComplianceScoreReport(
+            score_percentage=100.0,
+            matched=["mod.func1"],
+            missing=[],
+            mismatched=[],
+        ),
     )
 
     cmd_check(args)
@@ -243,10 +269,10 @@ def test_cmd_check_output_formatting(
     mocker.patch("ml_ecosystem_snapshots.compliance.extract_target_refs", return_value=[])
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.score_compliance",
-        return_value={
-            "score_percentage": 0.0,
-            "missing": ["torch.nn.func", "torch.nn.mod", "torch.func"],
-        },
+        return_value=ComplianceScoreReport(
+            score_percentage=0.0,
+            missing=["torch.nn.func", "torch.nn.mod", "torch.func"],
+        ),
     )
 
     import argparse
@@ -276,12 +302,12 @@ def test_cmd_check_sass_no_modifiers(mocker: pytest_mock.MockerFixture, capsys: 
     from ml_ecosystem_snapshots.cli import cmd_check_sass
 
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.check_sass_instruction",
-        return_value={
-            "is_valid": True,
-            "supported_architectures": ["sm_80"],
-            "valid_modifiers": [],
-        },
+        "ml_ecosystem_snapshots.cli.commands.verify_isa.verify_sass_instruction",
+        return_value=IsaCheckResult(
+            is_valid=True,
+            supported_architectures=["sm_80"],
+            valid_modifiers=[],
+        ),
     )
     args = argparse.Namespace(
         mnemonic="NOP",
@@ -306,12 +332,12 @@ def test_cmd_check_rdna_no_encoding(mocker: pytest_mock.MockerFixture, capsys: p
     from ml_ecosystem_snapshots.cli import cmd_check_rdna
 
     mocker.patch(
-        "ml_ecosystem_snapshots.mcp_server.check_rdna_instruction",
-        return_value={
-            "is_valid": True,
-            "supported_architectures": ["gfx1100"],
-            "encoding": None,
-        },
+        "ml_ecosystem_snapshots.cli.commands.verify_isa.verify_rdna_instruction",
+        return_value=IsaCheckResult(
+            is_valid=True,
+            supported_architectures=["gfx1100"],
+            encoding=None,
+        ),
     )
     args = argparse.Namespace(
         mnemonic="s_nop",
@@ -328,7 +354,9 @@ def test_cmd_check_rdna_no_encoding(mocker: pytest_mock.MockerFixture, capsys: p
     assert "Encoding:" not in out
 
 
-def test_cmd_check_non_python_auto_detect(mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cmd_check_non_python_auto_detect(
+    mocker: pytest_mock.MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Test cmd_check auto-detecting .sass, .s, and .mlir file extensions.
 
     Args:
@@ -342,12 +370,12 @@ def test_cmd_check_non_python_auto_detect(mocker: pytest_mock.MockerFixture, cap
     # 1. SASS file compliant
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.check_sass_assembly_compliance",
-        return_value={
-            "is_compliant": True,
-            "total_instructions": 2,
-            "verified_instructions": 2,
-            "errors": [],
-        },
+        return_value=SnippetComplianceReport(
+            is_compliant=True,
+            total_instructions=2,
+            verified_instructions=2,
+            errors=[],
+        ),
     )
     mocker.patch(
         "builtins.open",
@@ -366,12 +394,12 @@ def test_cmd_check_non_python_auto_detect(mocker: pytest_mock.MockerFixture, cap
     # 2. SASS file non-compliant (exits 1)
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.check_sass_assembly_compliance",
-        return_value={
-            "is_compliant": False,
-            "total_instructions": 2,
-            "verified_instructions": 1,
-            "errors": ["Bad opcode"],
-        },
+        return_value=SnippetComplianceReport(
+            is_compliant=False,
+            total_instructions=2,
+            verified_instructions=1,
+            errors=["Bad opcode"],
+        ),
     )
     with pytest.raises(SystemExit):
         cmd_check(args_sass)
@@ -379,12 +407,12 @@ def test_cmd_check_non_python_auto_detect(mocker: pytest_mock.MockerFixture, cap
     # 3. RDNA .s file compliant
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.check_rdna_assembly_compliance",
-        return_value={
-            "is_compliant": True,
-            "total_instructions": 3,
-            "verified_instructions": 3,
-            "errors": [],
-        },
+        return_value=SnippetComplianceReport(
+            is_compliant=True,
+            total_instructions=3,
+            verified_instructions=3,
+            errors=[],
+        ),
     )
     mocker.patch(
         "builtins.open",
@@ -403,12 +431,12 @@ def test_cmd_check_non_python_auto_detect(mocker: pytest_mock.MockerFixture, cap
     # 4. RDNA .s file non-compliant (exits 1)
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.check_rdna_assembly_compliance",
-        return_value={
-            "is_compliant": False,
-            "total_instructions": 3,
-            "verified_instructions": 2,
-            "errors": ["Bad reg"],
-        },
+        return_value=SnippetComplianceReport(
+            is_compliant=False,
+            total_instructions=3,
+            verified_instructions=2,
+            errors=["Bad reg"],
+        ),
     )
     with pytest.raises(SystemExit):
         cmd_check(args_rdna)
@@ -416,12 +444,12 @@ def test_cmd_check_non_python_auto_detect(mocker: pytest_mock.MockerFixture, cap
     # 5. MLIR file compliant
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.check_mlir_text_compliance",
-        return_value={
-            "is_compliant": True,
-            "total_ops": 4,
-            "verified_ops": 4,
-            "errors": [],
-        },
+        return_value=SnippetComplianceReport(
+            is_compliant=True,
+            total_ops=4,
+            verified_ops=4,
+            errors=[],
+        ),
     )
     mocker.patch(
         "builtins.open",
@@ -440,12 +468,12 @@ def test_cmd_check_non_python_auto_detect(mocker: pytest_mock.MockerFixture, cap
     # 6. MLIR file non-compliant (exits 1)
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.check_mlir_text_compliance",
-        return_value={
-            "is_compliant": False,
-            "total_ops": 4,
-            "verified_ops": 2,
-            "errors": ["Unknown dialect op"],
-        },
+        return_value=SnippetComplianceReport(
+            is_compliant=False,
+            total_ops=4,
+            verified_ops=2,
+            errors=["Unknown dialect op"],
+        ),
     )
     with pytest.raises(SystemExit):
         cmd_check(args_mlir)

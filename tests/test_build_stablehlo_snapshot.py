@@ -97,26 +97,26 @@ Dot general op.
     assert len(ghost_refs) == 3
 
     # Check abs
-    abs_op = next(r for r in ghost_refs if r["name"] == "abs")
-    assert abs_op["api_path"] == "stablehlo.abs"
-    assert len(abs_op["params"]) == 1
-    assert abs_op["params"][0]["name"] == "operand"
-    assert "tensor of signed integer" in abs_op["params"][0]["annotation"]
-    assert abs_op["returns_type"] == "tensor of signed integer or floating-point type or per-tensor quantized tensor"
-    assert abs_op["docstring"] == "Performs element-wise abs operation."
+    abs_op = next(r for r in ghost_refs if r.name == "abs")
+    assert abs_op.api_path == "stablehlo.abs"
+    assert len(abs_op.params) == 1
+    assert abs_op.params[0]["name"] == "operand"
+    assert "tensor of signed integer" in str(abs_op.params[0]["annotation"])
+    assert abs_op.returns_type == "tensor of signed integer or floating-point type or per-tensor quantized tensor"
+    assert abs_op.docstring == "Performs element-wise abs operation."
 
     # Check add
-    add_op = next(r for r in ghost_refs if r["name"] == "add")
-    assert len(add_op["params"]) == 2
-    assert add_op["params"][0]["name"] == "lhs"
-    assert add_op["params"][1]["name"] == "rhs"
-    assert add_op["returns_type"] == "tensor"
+    add_op = next(r for r in ghost_refs if r.name == "add")
+    assert len(add_op.params) == 2
+    assert add_op.params[0]["name"] == "lhs"
+    assert add_op.params[1]["name"] == "rhs"
+    assert add_op.returns_type == "tensor"
 
     # Check dot_general (attribute extraction)
-    dot_op = next(r for r in ghost_refs if r["name"] == "dot_general")
-    assert len(dot_op["params"]) == 3
-    assert dot_op["params"][2]["name"] == "precision_config"
-    assert dot_op["params"][2]["kind"] == "KEYWORD_ONLY"
+    dot_op = next(r for r in ghost_refs if r.name == "dot_general")
+    assert len(dot_op.params) == 3
+    assert dot_op.params[2]["name"] == "precision_config"
+    assert dot_op.params[2]["kind"] == "KEYWORD_ONLY"
 
 
 def test_main(mocker: pytest_mock.MockerFixture) -> None:
@@ -125,10 +125,12 @@ def test_main(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
+    from ml_ecosystem_snapshots.models import TableGenRecordModel
+
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
     mock_extract = mocker.patch(
         "ml_ecosystem_snapshots.tools.build_stablehlo_snapshot.extract_ops",
-        return_value=[{"name": "fake_op"}],
+        return_value=[TableGenRecordModel(name="fake_op", api_path="stablehlo.fake_op")],
     )
     build_stablehlo_snapshot.main()
     mock_extract.assert_called_once()
@@ -183,7 +185,7 @@ def test_extract_ops_missing_semantics(monkeypatch: pytest.MonkeyPatch) -> None:
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
-    assert ghost_refs[0]["docstring"] is None
+    assert ghost_refs[0].docstring is None
 
 
 def test_extract_ops_multi_output(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -214,7 +216,7 @@ def test_extract_ops_multi_output(monkeypatch: pytest.MonkeyPatch) -> None:
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
-    assert ghost_refs[0]["returns_type"] == "tuple[tensor, tensor]"
+    assert ghost_refs[0].returns_type == "tuple[tensor, tensor]"
 
 
 def test_extract_ops_ignore_unnamed_columns(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -244,7 +246,7 @@ def test_extract_ops_ignore_unnamed_columns(monkeypatch: pytest.MonkeyPatch) -> 
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
-    assert ghost_refs[0]["returns_type"] in ["tensor", "", "`res`", None]
+    assert ghost_refs[0].returns_type in ["tensor", "", "`res`", None]
 
 
 def test_extract_ops_missing_type_column_outputs(
@@ -275,7 +277,7 @@ def test_extract_ops_missing_type_column_outputs(
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
-    assert ghost_refs[0]["returns_type"] in ["tensor", "", "`res`", None]
+    assert ghost_refs[0].returns_type in ["tensor", "", "`res`", None]
 
 
 def test_extract_ops_unmatched_lines(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -310,7 +312,7 @@ Some extra text
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
-    assert ghost_refs[0]["name"] == "test_op"
+    assert ghost_refs[0].name == "test_op"
 
 
 def test_parse_stablehlo_tablegen() -> None:
@@ -360,24 +362,24 @@ def StableHLO_WhileOp : StableHLO_Op<"while", []> {
     refs = build_stablehlo_snapshot.parse_stablehlo_tablegen(sample_tablegen)
     assert len(refs) == 3
 
-    add_op = next(r for r in refs if r["name"] == "add")
-    assert add_op["class_name"] == "AddOp"
-    assert "Commutative" in add_op["traits"]
-    assert len(add_op["params"]) == 2
-    assert add_op["params"][0]["name"] == "lhs"
-    assert add_op["params"][0]["kind"] == "POSITIONAL_OR_KEYWORD"
-    assert add_op["returns_type"] == "HLO_Tensor"
+    add_op = next(r for r in refs if r.name == "add")
+    assert add_op.class_name == "AddOp"
+    assert "Commutative" in add_op.traits
+    assert len(add_op.params) == 2
+    assert add_op.params[0]["name"] == "lhs"
+    assert add_op.params[0]["kind"] == "POSITIONAL_OR_KEYWORD"
+    assert add_op.returns_type == "HLO_Tensor"
 
-    reduce_op = next(r for r in refs if r["name"] == "reduce")
-    assert reduce_op["class_name"] == "ReduceOp"
-    dim_attr = next(p for p in reduce_op["params"] if p["name"] == "dimensions")
+    reduce_op = next(r for r in refs if r.name == "reduce")
+    assert reduce_op.class_name == "ReduceOp"
+    dim_attr = next(p for p in reduce_op.params if p["name"] == "dimensions")
     assert dim_attr["kind"] == "KEYWORD_ONLY"
-    assert "body" in reduce_op["regions"]
+    assert "body" in reduce_op.regions
 
-    while_op = next(r for r in refs if r["name"] == "while")
-    assert "cond" in while_op["regions"]
-    assert "body" in while_op["regions"]
-    assert while_op["returns_type"] == "tuple[Variadic<HLO_TensorOrToken>, Variadic<HLO_TensorOrToken>]"
+    while_op = next(r for r in refs if r.name == "while")
+    assert "cond" in while_op.regions
+    assert "body" in while_op.regions
+    assert while_op.returns_type == "tuple[Variadic<HLO_TensorOrToken>, Variadic<HLO_TensorOrToken>]"
 
     # Test TableGen edge cases: colon without dollar, single unnamed region, empty results/args, trailing commas
     edge_tablegen = """
@@ -393,12 +395,12 @@ def StableHLO_NoArgsOp : StableHLO_Op<"no_args"> {
 """
     edge_refs = build_stablehlo_snapshot.parse_stablehlo_tablegen(edge_tablegen)
     assert len(edge_refs) == 2
-    assert edge_refs[0]["name"] == "edge"
-    assert len(edge_refs[0]["params"]) == 3  # 2 args + 1 region
-    assert edge_refs[0]["returns_type"] is None
-    assert edge_refs[1]["name"] == "no_args"
-    assert len(edge_refs[1]["params"]) == 0
-    assert edge_refs[1]["returns_type"] is None
+    assert edge_refs[0].name == "edge"
+    assert len(edge_refs[0].params) == 3  # 2 args + 1 region
+    assert edge_refs[0].returns_type is None
+    assert edge_refs[1].name == "no_args"
+    assert len(edge_refs[1].params) == 0
+    assert edge_refs[1].returns_type is None
 
     # Test extract_ops with direct TableGen string
     tablegen_refs = build_stablehlo_snapshot.extract_ops(edge_tablegen)
@@ -464,43 +466,43 @@ def test_parse_stablehlo_tablegen_edge_cases() -> None:
     assert len(refs) == 7
 
     # 1. InheritedOp
-    inherited = next(r for r in refs if r["name"] == "inherited")
-    assert len(inherited["params"]) == 1
-    assert inherited["params"][0]["name"] == "in"
-    assert inherited["returns_type"] == "HLO_Tensor"
+    inherited = next(r for r in refs if r.name == "inherited")
+    assert len(inherited.params) == 1
+    assert inherited.params[0]["name"] == "in"
+    assert inherited.returns_type == "HLO_Tensor"
 
     # 2. ComplexOp (explicit mnemonic, body traits, empty token comma skips, multi-result tuple)
-    complex_op = next(r for r in refs if r["name"] == "complex_op")
-    assert "Commutative" in complex_op["traits"]
-    assert "Pure" in complex_op["traits"]
-    assert len(complex_op["params"]) == 2
-    assert complex_op["returns_type"] == "tuple[HLO_Tensor, HLO_Tensor]"
+    complex_op = next(r for r in refs if r.name == "complex_op")
+    assert "Commutative" in complex_op.traits
+    assert "Pure" in complex_op.traits
+    assert len(complex_op.params) == 2
+    assert complex_op.returns_type == "tuple[HLO_Tensor, HLO_Tensor]"
 
     # 3. UnquotedTargsOp (camel case converted to unquoted_targs)
-    unquoted = next(r for r in refs if r["name"] == "unquoted_targs")
-    assert unquoted["class_name"] == "UnquotedTargsOp"
+    unquoted = next(r for r in refs if r.name == "unquoted_targs")
+    assert unquoted.class_name == "UnquotedTargsOp"
 
     # 4. SemicolonDefOp (camel case converted to semicolon_def)
-    semi = next(r for r in refs if r["name"] == "semicolon_def")
-    assert semi["class_name"] == "SemicolonDefOp"
+    semi = next(r for r in refs if r.name == "semicolon_def")
+    assert semi.class_name == "SemicolonDefOp"
 
     # 5. Binary fallback
-    bin_op = next(r for r in refs if r["name"] == "binary_fallback")
-    assert len(bin_op["params"]) == 2
-    assert bin_op["params"][0]["name"] == "lhs"
-    assert bin_op["returns_type"] == "HLO_Tensor"
+    bin_op = next(r for r in refs if r.name == "binary_fallback")
+    assert len(bin_op.params) == 2
+    assert bin_op.params[0]["name"] == "lhs"
+    assert bin_op.returns_type == "HLO_Tensor"
 
     # 6. Unary fallback
-    un_op = next(r for r in refs if r["name"] == "unary_fallback")
-    assert len(un_op["params"]) == 1
-    assert un_op["params"][0]["name"] == "operand"
-    assert un_op["returns_type"] == "HLO_Tensor"
+    un_op = next(r for r in refs if r.name == "unary_fallback")
+    assert len(un_op.params) == 1
+    assert un_op.params[0]["name"] == "operand"
+    assert un_op.returns_type == "HLO_Tensor"
 
     # 7. Cast fallback
-    cast_op = next(r for r in refs if r["name"] == "cast_fallback")
-    assert len(cast_op["params"]) == 1
-    assert cast_op["params"][0]["name"] == "operand"
-    assert cast_op["returns_type"] == "HLO_Tensor"
+    cast_op = next(r for r in refs if r.name == "cast_fallback")
+    assert len(cast_op.params) == 1
+    assert cast_op.params[0]["name"] == "operand"
+    assert cast_op.returns_type == "HLO_Tensor"
 
 
 def test_parse_stablehlo_tablegen_supers_loop_and_empty_results() -> None:
@@ -518,8 +520,8 @@ def test_parse_stablehlo_tablegen_supers_loop_and_empty_results() -> None:
 
     refs = build_stablehlo_snapshot.parse_stablehlo_tablegen(tablegen_source)
     assert len(refs) == 2
-    assert refs[0]["name"] == "no_fields"
-    assert refs[0]["returns_type"] is None
+    assert refs[0].name == "no_fields"
+    assert refs[0].returns_type is None
 
 
 def test_parse_stablehlo_tablegen_verification_rules() -> None:
@@ -538,14 +540,14 @@ def test_parse_stablehlo_tablegen_verification_rules() -> None:
     """
 
     refs = build_stablehlo_snapshot.parse_stablehlo_tablegen(tablegen_source)
-    ref_map = {r["name"]: r for r in refs}
+    ref_map = {r.name: r for r in refs}
 
-    assert ref_map["dot_general"]["verification_rules"]["dimension_numbers"] == "DotDimensionNumbersAttr"
-    assert ref_map["convolution"]["verification_rules"]["dimension_numbers"] == "ConvDimensionNumbersAttr"
-    assert ref_map["scatter"]["verification_rules"]["dimension_numbers"] == "ScatterDimensionNumbersAttr"
-    assert ref_map["gather"]["verification_rules"]["dimension_numbers"] == "GatherDimensionNumbersAttr"
-    assert ref_map["broadcast_in_dim"]["verification_rules"]["broadcast"] == "broadcast_dimensions"
-    assert "comparator" in ref_map["sort"]["region_signatures"]
+    assert ref_map["dot_general"].verification_rules["dimension_numbers"] == "DotDimensionNumbersAttr"
+    assert ref_map["convolution"].verification_rules["dimension_numbers"] == "ConvDimensionNumbersAttr"
+    assert ref_map["scatter"].verification_rules["dimension_numbers"] == "ScatterDimensionNumbersAttr"
+    assert ref_map["gather"].verification_rules["dimension_numbers"] == "GatherDimensionNumbersAttr"
+    assert ref_map["broadcast_in_dim"].verification_rules["broadcast"] == "broadcast_dimensions"
+    assert "comparator" in ref_map["sort"].region_signatures
 
 
 def test_parse_stablehlo_llvm_tblgen_json() -> None:
@@ -609,25 +611,25 @@ def test_parse_stablehlo_llvm_tblgen_json() -> None:
     refs = build_stablehlo_snapshot.parse_stablehlo_llvm_tblgen_json(mock_json)
     assert len(refs) == 3
 
-    dot = next(r for r in refs if r["name"] == "dot_general")
-    assert dot["api_path"] == "stablehlo.dot_general"
-    assert len(dot["operands"]) == 2
-    assert len(dot["attributes"]) == 1
-    assert dot["verification_rules"]["dimension_numbers"] == "DotDimensionNumbersAttr"
-    assert dot["returns_type"] == "tuple[HLO_Tensor, HLO_Tensor]"
-    assert "Commutative" in dot["traits"]
+    dot = next(r for r in refs if r.name == "dot_general")
+    assert dot.api_path == "stablehlo.dot_general"
+    assert len(dot.operands) == 2
+    assert len(dot.attributes) == 1
+    assert dot.verification_rules["dimension_numbers"] == "DotDimensionNumbersAttr"
+    assert dot.returns_type == "tuple[HLO_Tensor, HLO_Tensor]"
+    assert "Commutative" in dot.traits
 
-    reduce_op = next(r for r in refs if r["name"] == "reduce")
-    assert reduce_op["api_path"] == "stablehlo.reduce"
-    assert len(reduce_op["operands"]) == 1
-    assert len(reduce_op["attributes"]) == 1
-    assert reduce_op["returns_type"] == "HLO_Tensor"
-    assert "body" in reduce_op["region_signatures"]
-    assert "Elementwise" in reduce_op["traits"]
+    reduce_op = next(r for r in refs if r.name == "reduce")
+    assert reduce_op.api_path == "stablehlo.reduce"
+    assert len(reduce_op.operands) == 1
+    assert len(reduce_op.attributes) == 1
+    assert reduce_op.returns_type == "HLO_Tensor"
+    assert "body" in reduce_op.region_signatures
+    assert "Elementwise" in reduce_op.traits
 
-    while_op = next(r for r in refs if r["name"] == "while")
-    assert "cond" in while_op["region_signatures"]
-    assert "body" in while_op["region_signatures"]
+    while_op = next(r for r in refs if r.name == "while")
+    assert "cond" in while_op.region_signatures
+    assert "body" in while_op.region_signatures
 
     # String input
     import json
@@ -644,7 +646,9 @@ def test_parse_stablehlo_llvm_tblgen_json_all_rules() -> None:
     """Test parse_stablehlo_llvm_tblgen_json with all verification rules, list args/results, and nameless records."""
     from ml_ecosystem_snapshots.models import JsonValue
 
-    assert build_stablehlo_snapshot.strip_tablegen_comments("/* block */ int x = 1; // comment\n").strip() == "int x = 1;"
+    assert (
+        build_stablehlo_snapshot.strip_tablegen_comments("/* block */ int x = 1; // comment\n").strip() == "int x = 1;"
+    )
 
     mock_json: dict[str, JsonValue] = {
         "!meta": "some_metadata",
@@ -704,13 +708,13 @@ def test_parse_stablehlo_llvm_tblgen_json_all_rules() -> None:
     refs = build_stablehlo_snapshot.parse_stablehlo_llvm_tblgen_json(mock_json)
     assert len(refs) == 6
 
-    ref_map = {r["name"]: r for r in refs}
-    assert ref_map["convolution"]["verification_rules"]["dimension_numbers"] == "ConvDimensionNumbersAttr"
-    assert ref_map["scatter"]["verification_rules"]["dimension_numbers"] == "ScatterDimensionNumbersAttr"
-    assert ref_map["gather"]["verification_rules"]["dimension_numbers"] == "GatherDimensionNumbersAttr"
-    assert ref_map["broadcast_in_dim"]["verification_rules"]["broadcast"] == "broadcast_dimensions"
-    assert "comparator" in ref_map["sort"]["region_signatures"]
-    assert ref_map["custom_bare"]["class_name"] == "CustomBareOp"
+    ref_map = {r.name: r for r in refs}
+    assert ref_map["convolution"].verification_rules["dimension_numbers"] == "ConvDimensionNumbersAttr"
+    assert ref_map["scatter"].verification_rules["dimension_numbers"] == "ScatterDimensionNumbersAttr"
+    assert ref_map["gather"].verification_rules["dimension_numbers"] == "GatherDimensionNumbersAttr"
+    assert ref_map["broadcast_in_dim"].verification_rules["broadcast"] == "broadcast_dimensions"
+    assert "comparator" in ref_map["sort"].region_signatures
+    assert ref_map["custom_bare"].class_name == "CustomBareOp"
 
 
 def test_parse_stablehlo_llvm_tblgen_json_edge_branches() -> None:
@@ -761,13 +765,13 @@ def test_parse_stablehlo_llvm_tblgen_json_edge_branches() -> None:
 
     refs = build_stablehlo_snapshot.parse_stablehlo_llvm_tblgen_json(mock_json)
     assert len(refs) == 2
-    malformed = next(r for r in refs if r["name"] == "malformed")
-    assert len(malformed["operands"]) == 0
-    assert len(malformed["results"]) == 0
-    assert len(malformed["traits"]) == 0
-    none_op = next(r for r in refs if r["name"] == "none_op")
-    assert len(none_op["operands"]) == 0
-    assert len(none_op["results"]) == 0
+    malformed = next(r for r in refs if r.name == "malformed")
+    assert len(malformed.operands) == 0
+    assert len(malformed.results) == 0
+    assert len(malformed.traits) == 0
+    none_op = next(r for r in refs if r.name == "none_op")
+    assert len(none_op.operands) == 0
+    assert len(none_op.results) == 0
 
 
 def test_parse_stablehlo_llvm_tblgen_json_subtract() -> None:
@@ -794,9 +798,9 @@ def test_parse_stablehlo_llvm_tblgen_json_subtract() -> None:
     }
     refs = build_stablehlo_snapshot.parse_stablehlo_llvm_tblgen_json(raw_json)
     assert len(refs) == 1
-    assert refs[0]["name"] == "subtract"
-    assert refs[0]["api_path"] == "stablehlo.subtract"
-    assert len(refs[0]["operands"]) == 2
+    assert refs[0].name == "subtract"
+    assert refs[0].api_path == "stablehlo.subtract"
+    assert len(refs[0].operands) == 2
 
 
 def test_build_stablehlo_snapshot_sys_path_insert() -> None:
@@ -831,7 +835,9 @@ def test_extract_ops_tablegen_failure_fallback(
         "ml_ecosystem_snapshots.network_env.fetch_url",
         side_effect=[
             None,
-            ("# StableHLO Spec\n### abs\n#### Semantics\nAbs op.\n#### Inputs\n| (I1) | `x` | tensor | (C1) |\n#### Outputs\n| `res` | tensor | (C1) |\n"),
+            (
+                "# StableHLO Spec\n### abs\n#### Semantics\nAbs op.\n#### Inputs\n| (I1) | `x` | tensor | (C1) |\n#### Outputs\n| `res` | tensor | (C1) |\n"
+            ),
         ],
     )
     ops = build_stablehlo_snapshot.extract_ops()
@@ -855,3 +861,14 @@ def test_main_entrypoint(mocker: pytest_mock.MockerFixture) -> None:
     )
     assert "main" in res
     assert mock_open.called
+
+
+def test_build_stablehlo_snapshot_fetch_fail(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify `extract_ops` raises `RuntimeError` when all remote StableHLO specification URLs fail.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    monkeypatch.setattr("ml_ecosystem_snapshots.network_env.fetch_url", lambda _url, timeout=10: None)
+    with pytest.raises(RuntimeError, match="StableHLO"):
+        build_stablehlo_snapshot.extract_ops(source_content=None)

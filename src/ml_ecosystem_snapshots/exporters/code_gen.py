@@ -25,7 +25,11 @@ def _extract_ast_type_identifiers(annotation: str | None) -> list[str]:
     cleaned = str(annotation).strip()
     try:
         tree = ast.parse(cleaned, mode="eval")
-        tokens = [node.id.lower() if isinstance(node, ast.Name) else node.attr.lower() for node in ast.walk(tree) if isinstance(node, (ast.Name, ast.Attribute))]
+        tokens = [
+            node.id.lower() if isinstance(node, ast.Name) else node.attr.lower()
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Name, ast.Attribute))
+        ]
         return tokens if tokens else [cleaned.lower()]
     except SyntaxError:
         return [cleaned.lower()]
@@ -40,8 +44,8 @@ def _render_pydantic_param_field(param: GhostParam) -> str:
     Returns:
         Formatted 4-space indented field declaration line.
     """
-    raw_typ = param.annotation if param.annotation else "object"
-    typ = "object" if raw_typ == "Any" else raw_typ
+    raw_typ = param.annotation if param.annotation else "JsonValue"
+    typ = "JsonValue" if raw_typ == "Any" else raw_typ
     desc = param.description.replace('"', "'") if param.description else ""
     default_val = param.default
 
@@ -51,7 +55,11 @@ def _render_pydantic_param_field(param: GhostParam) -> str:
         return f"    {param.name}: {typ} = {field_def}"
     if param.kind == "VAR_KEYWORD":
         typ = f"dict[str, {typ}]"
-        field_def = f'pydantic.Field(default_factory=dict, description="{desc}")' if desc else "pydantic.Field(default_factory=dict)"
+        field_def = (
+            f'pydantic.Field(default_factory=dict, description="{desc}")'
+            if desc
+            else "pydantic.Field(default_factory=dict)"
+        )
         return f"    {param.name}: {typ} = {field_def}"
     if default_val is None:
         field_def = f'pydantic.Field(..., description="{desc}")' if desc else "pydantic.Field(...)"
@@ -130,6 +138,9 @@ def to_pydantic(ref: GhostRef, validate_varargs: bool = False) -> str:
     else:
         all_models.extend(_render_single_pydantic_model(ref.name, ref.docstring, ref.params, validate_varargs))
 
+    if any("JsonValue" in line for line in all_models):
+        header_lines.insert(2, "from ml_ecosystem_snapshots.models import JsonValue")
+
     return "\n".join(header_lines + all_models) + "\n"
 
 
@@ -203,7 +214,7 @@ _PROTO_SUBSTRING_TYPES: tuple[tuple[str, str], ...] = (
 )
 
 
-def _py_type_to_proto(typ: str | None, param_name: str = "") -> str:
+def py_type_to_proto(typ: str | None, param_name: str = "") -> str:
     """Map Python type to Protobuf type using AST token extraction and enum mapping.
 
     Args:
@@ -388,6 +399,7 @@ def to_typescript_interface(ref: GhostRef) -> str:
     return "\n".join(lines)
 
 
+_py_type_to_proto = py_type_to_proto
 to_pydantic_code = to_pydantic
 to_typescript = to_typescript_interface
 
@@ -396,6 +408,7 @@ __all__ = [
     "PROTO_DEFINITIONS_BY_TYPE",
     "PROTO_ENUM_DEFINITIONS",
     "PROTO_TENSOR_DEFINITION",
+    "py_type_to_proto",
     "to_cpp_header",
     "to_protobuf",
     "to_pydantic",

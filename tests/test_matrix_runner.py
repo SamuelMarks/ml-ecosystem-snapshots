@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import pytest_mock
 
 from ml_ecosystem_snapshots.tools.matrix_runner import (
@@ -73,17 +74,24 @@ def test_build_and_run_error_cleanup(mocker: pytest_mock.MockerFixture, tmp_path
     assert calls[1] == ["docker", "rmi", "snapshot-runner-torch-2.0.1"]
 
 
-def test_upload_to_s3_success(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
+def test_upload_to_s3_success(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: pytest_mock.MockerFixture,
+    tmp_path: Path,
+) -> None:
     """Test upload_to_s3 function with boto3.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
         tmp_path: Temporary directory path fixture.
     """
+    import sys
+
     mock_boto3 = mocker.MagicMock()
     mock_s3 = mocker.MagicMock()
     mock_boto3.client.return_value = mock_s3
-    mocker.patch.dict("sys.modules", {"boto3": mock_boto3})
+    monkeypatch.setitem(sys.modules, "boto3", mock_boto3)
 
     # Create dummy files
     f1 = tmp_path / "test1.json"
@@ -103,17 +111,24 @@ def test_upload_to_s3_success(mocker: pytest_mock.MockerFixture, tmp_path: Path)
     mock_s3.upload_file.assert_any_call(str(f2), "my-bucket", "snapshots/sub/test2.json")
 
 
-def test_upload_to_s3_empty_dir(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
+def test_upload_to_s3_empty_dir(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: pytest_mock.MockerFixture,
+    tmp_path: Path,
+) -> None:
     """Test upload_to_s3 with empty directory.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
         tmp_path: Temporary directory path fixture.
     """
+    import sys
+
     mock_boto3 = mocker.MagicMock()
     mock_s3 = mocker.MagicMock()
     mock_boto3.client.return_value = mock_s3
-    mocker.patch.dict("sys.modules", {"boto3": mock_boto3})
+    monkeypatch.setitem(sys.modules, "boto3", mock_boto3)
 
     empty_dir = tmp_path / "empty"
     empty_dir.mkdir()
@@ -122,30 +137,44 @@ def test_upload_to_s3_empty_dir(mocker: pytest_mock.MockerFixture, tmp_path: Pat
     assert mock_s3.upload_file.call_count == 0
 
 
-def test_upload_to_s3_import_error(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
+def test_upload_to_s3_import_error(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: pytest_mock.MockerFixture,
+    tmp_path: Path,
+) -> None:
     """Test upload_to_s3 function without boto3.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
         tmp_path: Temporary directory path fixture.
     """
-    mocker.patch.dict("sys.modules", {"boto3": None})
+    import sys
+
+    monkeypatch.setitem(sys.modules, "boto3", None)
     mock_print = mocker.patch("builtins.print")
 
     upload_to_s3(tmp_path, "my-bucket")
     mock_print.assert_called_with("boto3 not installed. Skipping S3 upload.")
 
 
-def test_upload_to_s3_other_error(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
+def test_upload_to_s3_other_error(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: pytest_mock.MockerFixture,
+    tmp_path: Path,
+) -> None:
     """Test upload_to_s3 function handling generic exceptions.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
         tmp_path: Temporary directory path fixture.
     """
+    import sys
+
     mock_boto3 = mocker.MagicMock()
-    mock_boto3.client.side_effect = Exception("Test error")
-    mocker.patch.dict("sys.modules", {"boto3": mock_boto3})
+    mock_boto3.client.side_effect = RuntimeError("Test error")
+    monkeypatch.setitem(sys.modules, "boto3", mock_boto3)
 
     mock_print = mocker.patch("builtins.print")
 

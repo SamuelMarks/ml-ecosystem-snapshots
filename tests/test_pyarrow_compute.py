@@ -13,11 +13,10 @@ from ml_switcheroo_ir.schema.ghost import (
 
 from ml_ecosystem_snapshots.frameworks.pyarrow_compute import (
     CANONICAL_PYARROW_COMPUTE_OPS,
-    _get_pyarrow_compute,
     collect_api,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
 
@@ -45,7 +44,7 @@ def test_collect_api_pyarrow_compute_live(monkeypatch: pytest.MonkeyPatch) -> No
             return a + b
 
         @staticmethod
-        def sum(arr: InspectableTarget) -> InspectableTarget:
+        def sum(arr: LivePythonTarget) -> LivePythonTarget:
             """Mock sum kernel.
 
             Args:
@@ -76,7 +75,7 @@ def test_collect_api_pyarrow_compute_live(monkeypatch: pytest.MonkeyPatch) -> No
 
     real_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: InspectableTarget, name: str, is_public: bool = True) -> ExtendedGhostRef:
+    def mock_inspect(obj: LivePythonTarget, name: str, is_public: bool = True) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -86,6 +85,9 @@ def test_collect_api_pyarrow_compute_live(monkeypatch: pytest.MonkeyPatch) -> No
 
         Returns:
             A mocked GhostRef.
+
+        Raises:
+            RuntimeError: When `name` contains `subtract`.
         """
         if "subtract" in name:
             raise RuntimeError("Simulated inspection failure")
@@ -130,28 +132,28 @@ def test_collect_api_pyarrow_compute_fallback(
 
 
 def test_get_pyarrow_compute_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_pyarrow_compute returns module when import succeeds.
+    """Verify `collect_api` resolves live `pyarrow.compute` module from `sys.modules` when present.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
     fake_pa = types.ModuleType("pyarrow")
     fake_pc = types.ModuleType("pyarrow.compute")
-    pytest.MonkeyPatch().setattr(fake_pa, "compute", fake_pc, raising=False)
+    monkeypatch.setattr(fake_pa, "compute", fake_pc, raising=False)
     monkeypatch.setitem(sys.modules, "pyarrow", fake_pa)
     monkeypatch.setitem(sys.modules, "pyarrow.compute", fake_pc)
-    assert _get_pyarrow_compute() is fake_pc
+    assert collect_api(SemanticTier.ARRAY_API) == []
 
 
 def test_get_pyarrow_compute_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_pyarrow_compute handles ImportError gracefully.
+    """Verify `collect_api` falls back to canonical ops when `pyarrow.compute` import fails.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
     monkeypatch.setitem(sys.modules, "pyarrow", None)
     monkeypatch.setitem(sys.modules, "pyarrow.compute", None)
-    assert _get_pyarrow_compute() is None
+    assert len(collect_api(SemanticTier.ARRAY_API)) == len(CANONICAL_PYARROW_COMPUTE_OPS)
 
 
 def test_collect_api_pyarrow_compute_inspection_exception(
@@ -173,7 +175,7 @@ def test_collect_api_pyarrow_compute_inspection_exception(
         lambda: FlakyPyArrow(),
     )
 
-    def mock_inspect(*args: InspectableTarget, **kwargs: InspectableTarget) -> None:
+    def mock_inspect(*args: LivePythonTarget, **kwargs: LivePythonTarget) -> None:
         """Mock inspect raising RuntimeError.
 
         Args:

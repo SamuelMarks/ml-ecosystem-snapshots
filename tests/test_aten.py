@@ -7,11 +7,12 @@ and live/fallback introspection with 100% coverage.
 from __future__ import annotations
 
 import argparse
+import sys
+import types
 from unittest.mock import MagicMock, patch
 
 import pytest
 from ml_switcheroo_ir.schema.ghost import ParameterKind, SemanticTier
-from torch_mock import ensure_torch
 
 from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli import cmd_check_aten
@@ -19,9 +20,13 @@ from ml_ecosystem_snapshots.frameworks import aten
 from ml_ecosystem_snapshots.mcp_server import check_aten_op
 
 
-def test_aten_version() -> None:
-    """Verify that get_pkg_version returns installed or valid torch version for aten."""
-    ensure_torch()
+def test_aten_version(mock_torch_module: types.ModuleType) -> None:
+    """Verify that get_pkg_version returns installed or valid torch version for aten.
+
+    Args:
+        mock_torch_module: Scoped `torch` module fixture.
+    """
+    assert mock_torch_module is not None
     ver = get_pkg_version("aten")
     assert ver != "unknown"
     assert len(ver) > 0
@@ -105,9 +110,13 @@ def test_collect_api_schema_missing_fallback() -> None:
             assert "aten" in (add_ref.environment_tags or [])
 
 
-def test_extract_snapshot_aten() -> None:
-    """Verify full snapshot extraction for aten target."""
-    ensure_torch()
+def test_extract_snapshot_aten(mock_torch_module: types.ModuleType) -> None:
+    """Verify full snapshot extraction for aten target.
+
+    Args:
+        mock_torch_module: Scoped `torch` module fixture.
+    """
+    assert mock_torch_module is not None
     snap = extract_snapshot("aten")
     assert snap.get("target") == "aten"
     cats = snap.get("categories", {})
@@ -119,32 +128,32 @@ def test_check_aten_op_mcp() -> None:
     """Verify MCP validator check_aten_op behavior across valid and invalid inputs."""
     # Valid call
     valid_res = check_aten_op("add", inputs_count=2)
-    assert valid_res["is_valid"] is True
-    assert valid_res["op_exists"] is True
+    assert valid_res.is_valid is True
+    assert valid_res.op_exists is True
 
     # Valid with prefix
     prefix_res = check_aten_op("aten.matmul", inputs_count=2)
-    assert prefix_res["is_valid"] is True
+    assert prefix_res.is_valid is True
 
     # Unknown operation
     unknown_res = check_aten_op("non_existent_op")
-    assert unknown_res["is_valid"] is False
-    assert unknown_res["op_exists"] is False
-    assert len(unknown_res["errors"]) > 0
+    assert unknown_res.is_valid is False
+    assert unknown_res.op_exists is False
+    assert len(unknown_res.errors) > 0
 
     # Wrong inputs count
     wrong_inputs = check_aten_op("add", inputs_count=5)
-    assert wrong_inputs["is_valid"] is False
-    assert "expects 2 positional inputs" in wrong_inputs["errors"][0]
+    assert wrong_inputs.is_valid is False
+    assert "expects 2 positional inputs" in wrong_inputs.errors[0]
 
     # Valid keyword arguments
     valid_kw = check_aten_op("add", attributes=["alpha"])
-    assert valid_kw["is_valid"] is True
+    assert valid_kw.is_valid is True
 
     # Invalid keyword arguments
     invalid_kw = check_aten_op("add", attributes=["invalid_kwarg"])
-    assert invalid_kw["is_valid"] is False
-    assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw["errors"][0]
+    assert invalid_kw.is_valid is False
+    assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw.errors[0]
 
 
 def test_cmd_check_aten_cli_valid(capsys: pytest.CaptureFixture[str]) -> None:
@@ -182,9 +191,17 @@ def test_cmd_check_aten_cli_invalid_exits(capsys: pytest.CaptureFixture[str]) ->
     assert "ATen Operation 'invalid_op' is invalid:" in captured.out
 
 
-def test_get_torch_ops_aten_branches() -> None:
-    """Verify module lookup branches for _get_torch_ops_aten."""
-    ensure_torch()
+def test_get_torch_ops_aten_branches(
+    mock_torch_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify module lookup branches for _get_torch_ops_aten.
+
+    Args:
+        mock_torch_module: Scoped `torch` module fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    assert mock_torch_module is not None
     # Case where torch is found
     ops = aten._get_torch_ops_aten()
     assert ops is not None
@@ -211,6 +228,5 @@ def test_get_torch_ops_aten_branches() -> None:
     assert res is not None
 
     # Test _resolve_torch exception branch
-    with patch.dict("sys.modules", {"torch": None}):
-        with patch("builtins.__import__", side_effect=ImportError("missing")):
-            assert aten._resolve_torch() is None
+    monkeypatch.setitem(sys.modules, "torch", None)
+    assert aten._resolve_torch() is None

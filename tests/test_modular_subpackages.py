@@ -100,13 +100,21 @@ def test_mcp_cache_snapshot_repository() -> None:
 
 def test_mcp_registry_and_tools_reexports() -> None:
     """Verify dispatch_tool_call and mcp.tools re-exports operate deterministically."""
+    import io
+
+    from ml_ecosystem_snapshots.mcp.protocol import JsonRpcError, run_stdio_loop
+
     unknown_resp = dispatch_tool_call(99, "nonexistent_tool", {})
-    err_obj = unknown_resp["error"]
-    assert isinstance(err_obj, dict)
-    assert err_obj["code"] == -32601
+    err_obj = unknown_resp.error
+    assert isinstance(err_obj, JsonRpcError)
+    assert err_obj.code == -32601
+
+    out_buf = io.StringIO()
+    run_stdio_loop(lambda _req: {"jsonrpc": "2.0", "id": 1, "result": {}}, io.StringIO('{"id": 1}\n'), out_buf)
+    assert '"id": 1' in out_buf.getvalue()
 
     valid_resp = dispatch_tool_call(100, "check_sass_instruction", {"mnemonic": "FFMA"})
-    assert "result" in valid_resp
+    assert valid_resp.result is not None
 
     assert isinstance(CONCEPT_ALIAS_MAP, dict)
     assert callable(check_code_block)

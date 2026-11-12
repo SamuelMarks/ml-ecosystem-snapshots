@@ -8,10 +8,10 @@ from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
 
 class BaseLayer:
-    """Mock or helper class BaseLayer for unit testing."""
+    """Base neural layer with default hyperparameters for delegation tests."""
 
     def __init__(self, hidden_dim: int = 256, dropout: int = 0) -> None:
-        """Execute helper init  .
+        """Initialize the base layer hyperparameters.
 
         Args:
             hidden_dim: Hidden layer dimension size.
@@ -21,10 +21,10 @@ class BaseLayer:
 
 
 class SubLayer(BaseLayer):
-    """Mock or helper class SubLayer for unit testing."""
+    """Subclass layer forwarding keyword arguments to `BaseLayer`."""
 
     def __init__(self, name: str, **kwargs: int) -> None:
-        """Execute helper init  .
+        """Initialize the sub-layer and delegate remaining kwargs.
 
         Args:
             name: Submodule layer identifier.
@@ -41,7 +41,9 @@ def test_delegation_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.setattr(
         "ml_ecosystem_snapshots.introspection.inspector.get_runtime_source",
-        lambda _obj: "class SubLayer(BaseLayer):\n    def __init__(self, name: str, **kwargs: int) -> None:\n        super().__init__(**kwargs)\n",
+        lambda _obj: (
+            "class SubLayer(BaseLayer):\n    def __init__(self, name: str, **kwargs: int) -> None:\n        super().__init__(**kwargs)\n"
+        ),
     )
     ref = GhostInspector.inspect(SubLayer, "SubLayer")
 

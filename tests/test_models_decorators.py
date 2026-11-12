@@ -6,34 +6,32 @@ import pytest
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
-    InspectableTarget,
+    LivePythonTarget,
 )
 from ml_ecosystem_snapshots.models import JsonValue
 
 
 def dummy_decorator(
-    func: InspectableTarget,
-) -> InspectableTarget:
-    """Execute helper dummy decorator.
+    func: LivePythonTarget,
+) -> LivePythonTarget:
+    """Wrap `func` in a `functools.wraps`-style wrapper exposing `__wrapped__`.
 
     Args:
         func: Wrapped callable function.
 
-
     Returns:
-        Computed result.
+        Decorated wrapper callable pointing back to `func`.
     """
 
     def wrapper(*args: JsonValue, **kwargs: JsonValue) -> JsonValue:
-        """Execute helper wrapper.
+        """Discard arguments and return `None` as a decorated call stub.
 
         Args:
             args: Variadic positional arguments.
             kwargs: Variadic keyword arguments.
 
-
         Returns:
-            Computed result.
+            Always `None`.
         """
         return None
 
@@ -41,22 +39,21 @@ def dummy_decorator(
     return wrapper
 
 
-def tf_function_mock(func: InspectableTarget) -> InspectableTarget:
-    """Execute helper tf function mock.
+def tf_function_mock(func: LivePythonTarget) -> LivePythonTarget:
+    """Wrap `func` in a simulated `tf.function` wrapper exposing `_python_function`.
 
     Args:
         func: Wrapped callable function.
 
-
     Returns:
-        Computed result.
+        Simulated `TFFunction` wrapper object.
     """
 
     class TFFunction:
-        """Mock or helper class TFFunction for unit testing."""
+        """Simulated TensorFlow `@tf.function` wrapper storing `_python_function`."""
 
-        def __init__(self, f: InspectableTarget) -> None:
-            """Execute helper init  .
+        def __init__(self, f: LivePythonTarget) -> None:
+            """Store the underlying Python function on `_python_function`.
 
             Args:
                 f: Target callable to decorate.
@@ -90,7 +87,7 @@ def test_unwrap_tf_decorator() -> None:
 
     @tf_function_mock
     def my_tf_func(tensor: JsonValue, training: bool = False) -> None:
-        """Execute helper my tf func.
+        """Run a simulated TensorFlow graph-decorated step.
 
         Args:
             tensor: Input activation tensor.
@@ -106,19 +103,18 @@ def test_unwrap_tf_decorator() -> None:
 def test_unwrap_generic_decorator() -> None:
     """Verify unwrap generic decorator behavior."""
 
-    def generic_dec(func: InspectableTarget) -> InspectableTarget:
-        """Execute helper generic dec.
+    def generic_dec(func: LivePythonTarget) -> LivePythonTarget:
+        """Wrap `func` in an object exposing `__original_fn`.
 
         Args:
             func: Wrapped callable function.
 
-
         Returns:
-            Computed result.
+            Wrapper instance carrying `__original_fn`.
         """
 
         class Wrapper:
-            """Mock or helper class Wrapper for unit testing."""
+            """Decorator wrapper storing `__original_fn`."""
 
             pass
 
@@ -128,7 +124,7 @@ def test_unwrap_generic_decorator() -> None:
 
     @generic_dec
     def fn1(a: JsonValue) -> None:
-        """Execute helper fn1.
+        """Accept a single positional argument under `@generic_dec`.
 
         Args:
             a: First positional operand.
@@ -142,19 +138,18 @@ def test_unwrap_generic_decorator() -> None:
 def test_unwrap_variant_decorator() -> None:
     """Verify unwrap variant decorator behavior."""
 
-    def variant_dec(func: InspectableTarget) -> InspectableTarget:
-        """Execute helper variant dec.
+    def variant_dec(func: LivePythonTarget) -> LivePythonTarget:
+        """Wrap `func` in an object exposing `_original_fn`.
 
         Args:
             func: Wrapped callable function.
 
-
         Returns:
-            Computed result.
+            Wrapper instance carrying `_original_fn`.
         """
 
         class Wrapper:
-            """Mock or helper class Wrapper for unit testing."""
+            """Decorator wrapper storing `_original_fn`."""
 
             pass
 
@@ -164,7 +159,7 @@ def test_unwrap_variant_decorator() -> None:
 
     @variant_dec
     def fn2(b: JsonValue) -> None:
-        """Execute helper fn2.
+        """Accept a single positional argument under `@variant_dec`.
 
         Args:
             b: Second positional operand.

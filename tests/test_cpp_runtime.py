@@ -14,8 +14,8 @@ from ml_switcheroo_ir.schema.ghost import (
 from ml_ecosystem_snapshots.cli import cmd_check_cpp
 from ml_ecosystem_snapshots.frameworks.cpp_runtime import (
     CANONICAL_CPP_RUNTIME_OPS,
-    _load_cpp_runtime_ops,
     collect_api,
+    load_cpp_runtime_ops,
 )
 from ml_ecosystem_snapshots.mcp_server import check_cpp_op
 from ml_ecosystem_snapshots.models import ExtendedGhostParam
@@ -60,33 +60,33 @@ def test_check_cpp_op_validation() -> None:
     """Test check_cpp_op validating existence, operands count, and attributes."""
     # 1. Valid operation
     res_valid = check_cpp_op("clamp", inputs_count=3)
-    assert res_valid["is_valid"] is True
-    assert res_valid["op_exists"] is True
-    assert len(res_valid["errors"]) == 0
+    assert res_valid.is_valid is True
+    assert res_valid.op_exists is True
+    assert len(res_valid.errors) == 0
 
     # 2. Prefix stripping (cpp.clamp)
     res_prefix = check_cpp_op("cpp.clamp", inputs_count=3)
-    assert res_prefix["is_valid"] is True
+    assert res_prefix.is_valid is True
 
     # 3. Operands count mismatch
     res_count_err = check_cpp_op("clamp", inputs_count=1)
-    assert res_count_err["is_valid"] is False
-    assert any("expects 3 inputs, but got 1" in e for e in res_count_err["errors"])
+    assert res_count_err.is_valid is False
+    assert any("expects 3 inputs, but got 1" in e for e in res_count_err.errors)
 
     # 4. Valid attributes
     res_attr = check_cpp_op("data_ptr", attributes=["dtype"])
-    assert res_attr["is_valid"] is True
+    assert res_attr.is_valid is True
 
     # 5. Invalid attribute
     res_bad_attr = check_cpp_op("data_ptr", attributes=["invalid_attr"])
-    assert res_bad_attr["is_valid"] is False
-    assert any("Attribute 'invalid_attr' is not valid" in e for e in res_bad_attr["errors"])
+    assert res_bad_attr.is_valid is False
+    assert any("Attribute 'invalid_attr' is not valid" in e for e in res_bad_attr.errors)
 
     # 6. Non-existent operator
     res_nonexistent = check_cpp_op("nonexistent_cpp_op")
-    assert res_nonexistent["is_valid"] is False
-    assert res_nonexistent["op_exists"] is False
-    assert any("Unknown C++ operation" in e for e in res_nonexistent["errors"])
+    assert res_nonexistent.is_valid is False
+    assert res_nonexistent.op_exists is False
+    assert any("Unknown C++ operation" in e for e in res_nonexistent.errors)
 
 
 def test_cmd_check_cpp_cli(capsys: pytest.CaptureFixture[str]) -> None:
@@ -144,5 +144,5 @@ def test_cpp_runtime_roundtrip_serialization() -> None:
 
 def test_load_cpp_runtime_ops_catalog() -> None:
     """Verify _load_cpp_runtime_ops catalog returns standard canonical definitions."""
-    ops = _load_cpp_runtime_ops()
+    ops = load_cpp_runtime_ops()
     assert ops == CANONICAL_CPP_RUNTIME_OPS

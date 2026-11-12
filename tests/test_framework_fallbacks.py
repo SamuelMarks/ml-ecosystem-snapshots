@@ -1,853 +1,107 @@
-"""Tests for missing framework dependencies."""
+"""Tests for missing framework dependencies and live/static collector fallbacks."""
 
 from __future__ import annotations
 
-import sys
-import types
-from unittest.mock import MagicMock, patch
+import importlib
+import os
+from pathlib import Path
 
 import pytest
-import pytest_mock
-from ml_switcheroo_ir.schema.ghost import GhostRef, ParameterKind, SemanticTier
+from conftest import FakePackageBuilder
+from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind, SemanticTier
 
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.frameworks import (
+    amd_rdna,
+    deepspeed,
+    flax_nnx,
+    huggingface,
+    mlir,
+    nvidia_ptx,
+    nvidia_sass,
+    onnxruntime,
+    orbax_checkpoint,
+    stablehlo,
+    triton,
+)
+from ml_ecosystem_snapshots.frameworks import jax as jax_fw
+from ml_ecosystem_snapshots.frameworks import optax as optax_fw
+from ml_ecosystem_snapshots.frameworks import pax as pax_mod
+from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_mod
+from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
+from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget, get_member_dict
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
 
-def test_deepspeed_missing() -> None:
-    """Verify DeepSpeed collector fallback and parameter extraction when DeepSpeed is absent or mocked."""
-    from ml_ecosystem_snapshots.frameworks.deepspeed import collect_api
-
-    with patch(
-        "ml_ecosystem_snapshots.frameworks.deepspeed.importlib.import_module",
-        side_effect=ImportError,
-    ):
-        assert collect_api(SemanticTier.MODEL) == []
-    assert collect_api(SemanticTier.LOSS) == []
-
-    class DeepspeedMock:
-        """Mock DeepSpeed module exposing initialize and _hidden attributes."""
-
-        def __dir__(self) -> list[str]:
-            """Return mock directory listing.
-
-            Returns:
-                List of mock member names.
-            """
-            return ["_hidden", "initialize", "nothing"]
-
-        def _hidden(self, x: int = 1) -> int:
-            """Mock private helper.
-
-            Args:
-                x: Integer parameter.
-
-            Returns:
-                Unchanged integer.
-            """
-            return x
-
-        def initialize(self, model: InspectableTarget = None) -> None:
-            """Mock initialize method without config_params so collector injects it.
-
-            Args:
-                model: Model object.
-            """
-            pass
-
-        nothing = None
-
-    with patch(
-        "ml_ecosystem_snapshots.frameworks.deepspeed.importlib.import_module",
-        return_value=DeepspeedMock(),
-    ):
-        res_pub = collect_api(SemanticTier.MODEL)
-        assert len(res_pub) == 1
-        assert res_pub[0].api_path == "deepspeed.initialize"
-        assert any(p.name == "model" for p in res_pub[0].params)
-        assert any(p.name == "config_params" for p in res_pub[0].params)
-        res_nonpub = collect_api(SemanticTier.MODEL, include_nonpublic=True)
-        assert len(res_nonpub) == 1
-
-
-def test_onnxruntime_missing() -> None:
-    """Verify ONNX Runtime collector fallback and InferenceSession extraction when mocked."""
-    from ml_ecosystem_snapshots.frameworks.onnxruntime import collect_api
-    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-
-    with patch(
-        "ml_ecosystem_snapshots.frameworks.onnxruntime.importlib.import_module",
-        side_effect=ImportError,
-    ):
-        assert collect_api(SemanticTier.MODEL) == []
-    assert collect_api(SemanticTier.LOSS) == []
-
-    class OnnxMock:
-        """Mock ONNX Runtime module exposing InferenceSession."""
-
-        def __dir__(self) -> list[str]:
-            """Return mock directory listing.
-
-            Returns:
-                List of mock member names.
-            """
-            return [
-                "_hidden",
-                "InferenceSession",
-                "SessionWithProviders",
-                "get_available_providers",
-                "nothing",
-            ]
-
-        def InferenceSession(self, path_or_bytes: str) -> None:
-            """Mock InferenceSession factory without providers parameter.
-
-            Args:
-                path_or_bytes: Path or bytes to ONNX model.
-            """
-            return None
-
-        def get_available_providers(self) -> list[str]:
-            """Mock UTIL function in onnxruntime.
-
-            Returns:
-                Empty list of providers.
-            """
-            return []
-
-        class SessionWithProviders:
-            """Mock Session class already containing providers parameter."""
-
-            def __init__(self, path_or_bytes: str, providers: list[str] | None = None) -> None:
-                """Initialize session with providers parameter.
-
-                Args:
-                    path_or_bytes: Path or bytes to ONNX model.
-                    providers: Execution providers sequence.
-                """
-                self.path = path_or_bytes
-                self.providers = providers
-
-        nothing = None
-
-    with (
-        patch(
-            "griffe.load",
-            side_effect=ImportError("no griffe"),
-        ),
-        patch(
-            "ml_ecosystem_snapshots.frameworks.onnxruntime.importlib.import_module",
-            return_value=OnnxMock(),
-        ),
-    ):
-        res_pub = collect_api(SemanticTier.MODEL)
-        assert len(res_pub) == 2
-        inf_ref = next(r for r in res_pub if r.name == "InferenceSession")
-        assert any(p.name == "path_or_bytes" for p in inf_ref.params)
-        assert any(p.name == "providers" for p in inf_ref.params)
-        res_nonpub = collect_api(SemanticTier.MODEL, include_nonpublic=True)
-        assert len(res_nonpub) == 2
-        res_util = collect_api(SemanticTier.UTIL)
-        assert len(res_util) >= 1
-
-    # Cover branch where InferenceSession already defines providers and when inspect returns None or raises
-    class OnnxAlreadyHasProviders:
-        """Mock ONNX Runtime module where InferenceSession already defines providers."""
-
-        def __dir__(self) -> list[str]:
-            """Return mock directory listing.
-
-            Returns:
-                List of mock member names.
-            """
-            return ["InferenceSession", "BadSession"]
-
-        class InferenceSession:
-            """Mock InferenceSession class with providers parameter."""
-
-            def __init__(self, path_or_bytes: str, providers: list[str] | None = None) -> None:
-                """Initialize session with providers parameter.
-
-                Args:
-                    path_or_bytes: Model path.
-                    providers: Execution providers.
-                """
-                self.path = path_or_bytes
-                self.providers = providers
-
-        def BadSession(self) -> None:
-            """Mock session raising TypeError during inspection."""
-            pass
-
-    orig_inspect = GhostInspector.inspect
-
-    def selective_inspect(obj: InspectableTarget, name: str) -> ExtendedGhostRef:
-        """Delegate to GhostInspector.inspect except for BadSession.
-
-        Args:
-            obj: Object to inspect.
-            name: API path string.
-
-        Returns:
-            Extracted GhostRef.
-
-        Raises:
-            TypeError: When inspecting BadSession.
-        """
-        if "BadSession" in name:
-            raise TypeError("broken session")
-        return orig_inspect(obj, name)
-
-    with patch.object(GhostInspector, "inspect", side_effect=selective_inspect):
-        with patch(
-            "ml_ecosystem_snapshots.frameworks.onnxruntime.importlib.import_module",
-            return_value=OnnxAlreadyHasProviders(),
-        ):
-            res_prov = collect_api(SemanticTier.MODEL)
-            assert len(res_prov) == 1
-            assert sum(1 for p in res_prov[0].params if p.name == "providers") == 1
-
-    with patch.object(GhostInspector, "inspect", return_value=None):
-        with patch(
-            "ml_ecosystem_snapshots.frameworks.onnxruntime.importlib.import_module",
-            return_value=OnnxAlreadyHasProviders(),
-        ):
-            assert collect_api(SemanticTier.MODEL) == []
-
-
-def test_triton_missing() -> None:
-    """Verify Triton collector fallback and constexpr kernel annotation extraction."""
-    from ml_ecosystem_snapshots.frameworks.triton import (
-        _extract_triton_kernel,
-        collect_api,
-    )
-    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-
-    with patch(
-        "ml_ecosystem_snapshots.frameworks.triton.importlib.import_module",
-        side_effect=ImportError,
-    ):
-        assert collect_api(SemanticTier.UTIL) == []
-    assert collect_api(SemanticTier.LOSS) == []
-
-    fake_tl = types.ModuleType("triton.language")
-    fake_tl_math = types.ModuleType("triton.language.math")
-
-    def fake_fn(a: InspectableTarget, b: InspectableTarget, c: InspectableTarget) -> None:
-        """Mock Triton JIT function with constexpr annotation.
-
-        Args:
-            a: First operand with constexpr annotation.
-            b: Second float operand.
-            c: Unannotated third operand.
-        """
-        pass
-
-    pytest.MonkeyPatch().setattr(fake_fn, "__annotations__", {"a": "int constexpr", "b": "float"})
-
-    class Wrap:
-        """Callable wrapper class holding a Triton JIT function."""
-
-        fn = staticmethod(fake_fn)
-
-        def __call__(self, *args: InspectableTarget, **kwargs: InspectableTarget) -> None:
-            """Invoke wrapped kernel function.
-
-            Args:
-                args: Positional arguments.
-                kwargs: Keyword arguments.
-
-            Returns:
-                Result of `fake_fn`.
-            """
-            return fake_fn(*args, **kwargs)
-
-    pytest.MonkeyPatch().setattr(fake_tl, "kernel_op", Wrap(), raising=False)
-    pytest.MonkeyPatch().setattr(fake_tl, "_private_op", fake_fn, raising=False)
-    pytest.MonkeyPatch().setattr(fake_tl, "non_callable", 123, raising=False)
-    pytest.MonkeyPatch().setattr(fake_tl_math, "sin", fake_fn, raising=False)
-    pytest.MonkeyPatch().setattr(fake_tl_math, "_priv_math", fake_fn, raising=False)
-    pytest.MonkeyPatch().setattr(fake_tl_math, "non_callable", 456, raising=False)
-    pytest.MonkeyPatch().setattr(fake_tl, "math", fake_tl_math, raising=False)
-
-    with patch(
-        "ml_ecosystem_snapshots.frameworks.triton.importlib.import_module",
-        return_value=fake_tl,
-    ):
-        res_triton = collect_api(SemanticTier.UTIL)
-        assert len(res_triton) == 2
-        kernel_ref = next(r for r in res_triton if r.api_path == "triton.language.kernel_op")
-        param_a = next(p for p in kernel_ref.params if p.name == "a")
-        assert param_a.annotation == "tl.constexpr"
-
-        res_nonpub = collect_api(SemanticTier.UTIL, include_nonpublic=True)
-        assert len(res_nonpub) >= 4
-
-    # Cover branch where tl.math is not a module
-    fake_tl_no_math = types.ModuleType("triton.language")
-    pytest.MonkeyPatch().setattr(fake_tl_no_math, "kernel_op", Wrap(), raising=False)
-    with patch(
-        "ml_ecosystem_snapshots.frameworks.triton.importlib.import_module",
-        return_value=fake_tl_no_math,
-    ):
-        assert len(collect_api(SemanticTier.UTIL)) == 1
-
-    # Cover branches where _extract_triton_kernel returns None or triton.language raises ImportError
-    def import_triton_only(name: str) -> types.ModuleType:
-        """Return fake_tl for triton and raise ImportError for triton.language.
-
-        Args:
-            name: Module name.
-
-        Returns:
-            Fake triton module.
-
-        Raises:
-            ImportError: When importing triton.language.
-        """
-        if name == "triton":
-            return fake_tl
-        raise ImportError("no triton.language")
-
-    with patch(
-        "ml_ecosystem_snapshots.frameworks.triton.importlib.import_module",
-        side_effect=import_triton_only,
-    ):
-        assert collect_api(SemanticTier.UTIL) == []
-
-    class NoAnno:
-        """Kernel callable without annotations."""
-
-        def __call__(self, x: InspectableTarget) -> InspectableTarget:
-            """Execute kernel callable.
-
-            Args:
-                x: Input kernel argument.
-
-            Returns:
-                The unchanged input argument.
-            """
-            return x
-
-    no_anno = NoAnno()
-    pytest.MonkeyPatch().setattr(no_anno, "__annotations__", None, raising=False)
-    ref_no_anno = _extract_triton_kernel(no_anno, "no_anno", "mod", GhostInspector())
-    assert ref_no_anno is not None
-    assert ref_no_anno.name == "no_anno"
-
-
-def test_sklearn_missing() -> None:
-    """Verify scikit-learn collector returns empty list when member discovery raises an exception."""
-    from ml_ecosystem_snapshots.frameworks.sklearn import collect_api
-
-    with patch(
-        "ml_ecosystem_snapshots.frameworks.sklearn.get_all_members",
-        side_effect=Exception,
-    ):
-        res = collect_api(SemanticTier.LAYER)
-        assert res == []
-
-
-class _FakeTransformersMod:
-    """Fake transformers module exposing config and AutoModel members."""
-
-    def __dir__(self) -> list[str]:
-        """Return list of fake module attributes.
-
-        Returns:
-            List of attribute names.
-        """
-        return [
-            "_hidden",
-            "DummyConfig",
-            "AutoModelA",
-            "AutoModelB",
-            "Other",
-            "bad",
-            "ThrowConfig",
-            "ReturnNone",
-            "GenModel",
-            "RefNone",
-            "EmptyConfig",
-            "EmptyConfigB",
-        ]
-
-    @property
-    def bad(self) -> None:
-        """Raise AttributeError on attribute access.
-
-        Raises:
-            AttributeError: Simulated broken property.
-        """
-        raise AttributeError()
-
-    @property
-    def DummyConfig(self) -> InspectableTarget:
-        """Return a dummy config instance with empty annotations.
-
-        Returns:
-            DummyConfig instance.
-        """
-
-        class _DummyCfg:
-            """Dummy config class."""
-
-            __annotations__: dict[str, type] = {}
-
-        return _DummyCfg()
-
-    @property
-    def EmptyConfig(self) -> InspectableTarget:
-        """Return an EmptyConfig instance with 'a' annotation.
-
-        Returns:
-            EmptyConfig instance.
-        """
-
-        class _EmptyCfg:
-            """Empty config class."""
-
-            a: int
-
-        return _EmptyCfg()
-
-    @property
-    def EmptyConfigB(self) -> InspectableTarget:
-        """Return an EmptyConfigB instance with 'b' annotation.
-
-        Returns:
-            EmptyConfigB instance.
-        """
-
-        class _EmptyCfgB:
-            """Empty config B class."""
-
-            b: int
-
-        return _EmptyCfgB()
-
-    @property
-    def AutoModelA(self) -> MagicMock:
-        """Return a mock AutoModelA object.
-
-        Returns:
-            MagicMock instance.
-        """
-        return MagicMock()
-
-    @property
-    def AutoModelB(self) -> MagicMock:
-        """Return a mock AutoModelB object.
-
-        Returns:
-            MagicMock instance.
-        """
-        return MagicMock()
-
-    @property
-    def Other(self) -> MagicMock:
-        """Return a mock Other object.
-
-        Returns:
-            MagicMock instance.
-        """
-        return MagicMock()
-
-    @property
-    def ThrowConfig(self) -> MagicMock:
-        """Return a mock ThrowConfig object.
-
-        Returns:
-            MagicMock instance.
-        """
-        return MagicMock()
-
-    @property
-    def ReturnNone(self) -> None:
-        """Return None for attribute lookup.
-
-        Returns:
-            None.
-        """
-        return None
-
-    @property
-    def GenModel(self) -> InspectableTarget:
-        """Return a model instance with a generate method.
-
-        Returns:
-            Mock model instance.
-        """
-
-        class M:
-            """Mock inner model class with generate method."""
-
-            def generate(
-                self,
-                input: InspectableTarget,
-                *args: InspectableTarget,
-                **kwargs: InspectableTarget,
-            ) -> None:
-                """Mock generate method.
-
-                Args:
-                    input: Input tensor.
-                    args: Variadic positional arguments.
-                    kwargs: Variadic keyword arguments.
-                """
-                pass
-
-        return M()
-
-    @property
-    def RefNone(self) -> MagicMock:
-        """Return a mock RefNone object.
-
-        Returns:
-            MagicMock instance.
-        """
-        return MagicMock()
-
-
-def _mock_hf_inspect(obj: InspectableTarget, name: str) -> GhostRef | MagicMock | None:
-    """Return a mocked GhostRef or raise for ThrowConfig during HuggingFace collection.
-
-    Args:
-        obj: The target object being inspected.
-        name: The API path name.
-
-    Raises:
-        RuntimeError: When inspecting ThrowConfig.
-
-    Returns:
-        A mocked GhostRef or None.
-    """
-    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef
-
-    if "ThrowConfig" in name:
-        raise RuntimeError("test")
-    if "RefNone" in name:
-        return None
-    if "AutoModelA" in name:
-        return MagicMock(params=[])
-    if "GenModel" in name:
-        return GhostRef(
-            name="GenModel",
-            api_path="GenModel",
-            kind="class",
-            params=[
-                GhostParam(
-                    name="input",
-                    kind=ParameterKind.POSITIONAL_OR_KEYWORD,
-                    default=None,
-                    annotation="Any",
-                )
-            ],
-        )
-    if "EmptyConfig" in name:
-        return MagicMock(params=[MagicMock(**{"name": "a"})])
-    return MagicMock(params=[MagicMock(**{"name": "config"})])
-
-
-def test_huggingface_missing() -> None:
-    """Verify HuggingFace Transformers collector handles missing packages, generation kwargs, and PretrainedConfig."""
-    from ml_switcheroo_ir.schema.ghost import GhostRef
-
-    from ml_ecosystem_snapshots.frameworks.huggingface import (
-        _extract_generation_kwargs,
-        _parse_pretrained_config,
-        collect_transformers,
-    )
-
-    class M:
-        """Mock generation-capable model class."""
-
-        def generate(
-            self,
-            input: InspectableTarget,
-            *args: InspectableTarget,
-            **kwargs: InspectableTarget,
-        ) -> None:
-            """Mock generate method.
-
-            Args:
-                input: Input token ids.
-                args: Variadic positional arguments.
-                kwargs: Variadic keyword arguments.
-            """
-            pass
-
-    r = GhostRef(name="A", api_path="A", kind="class", params=[])
-    _extract_generation_kwargs(M(), r)
-    assert any(p.name == "input" for p in r.params)
-
-    class M2:
-        """Mock PretrainedConfig class with type annotations."""
-
-        __annotations__ = {"a": int, "b": "str"}
-
-    r2 = GhostRef(name="A", api_path="A", kind="class", params=[])
-    _parse_pretrained_config(M2(), r2)
-    assert len(r2.params) == 2
-
-    with patch("importlib.import_module", side_effect=ImportError):
-        assert collect_transformers(SemanticTier.MODEL) == []
-
-    assert collect_transformers(SemanticTier.LOSS) == []
-
-    with (
-        patch(
-            "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",
-            side_effect=_mock_hf_inspect,
-        ),
-        patch("importlib.import_module", return_value=_FakeTransformersMod()),
-    ):
-        models_res = collect_transformers(SemanticTier.MODEL)
-        assert len(models_res) >= 1
-        utils_res = collect_transformers(SemanticTier.UTIL)
-        assert len(utils_res) >= 1
-
-
-def test_hardware_exhaustive_fallbacks() -> None:
-    """Test offline canonical fallbacks for all hardware/compiler targets when exhaustive files are missing."""
-    import os
-    from unittest.mock import patch
-
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
-
-    from ml_ecosystem_snapshots.frameworks import (
-        amd_rdna,
-        mlir,
-        nvidia_ptx,
-        nvidia_sass,
-        stablehlo,
-    )
-
-    orig_exists = os.path.exists
-
-    def fake_exists(p: str) -> bool:
-        """Simulate missing exhaustive JSON dataset files.
-
-        Args:
-            p: Path to check.
-
-        Returns:
-            False if target is an exhaustive JSON file, otherwise delegates to real os.path.exists.
-        """
-        if any(p.endswith(s) for s in ["_exhaustive.json", "_exhaustive.json.gz"]):
-            return False
-        return orig_exists(p)
-
-    with patch("os.path.exists", side_effect=fake_exists):
-        rdna_refs = amd_rdna.collect_api(SemanticTier.UTIL)
-        assert len(rdna_refs) > 0
-
-        mlir_refs = mlir.collect_api(SemanticTier.UTIL)
-        assert len(mlir_refs) > 0
-
-        ptx_refs = nvidia_ptx.collect_api(SemanticTier.UTIL)
-        assert len(ptx_refs) > 0
-
-        shlo_refs = stablehlo.collect_api(SemanticTier.UTIL)
-        assert len(shlo_refs) > 0
-
-        sass_refs = nvidia_sass.collect_api(SemanticTier.UTIL)
-        assert len(sass_refs) > 0
-
-
-def test_orbax_checkpoint_inspect_error(mocker: pytest_mock.MockerFixture) -> None:
-    """Test orbax checkpoint exception handling during member inspection and member retrieval.
-
-    Args:
-        mocker: Pytest mocker fixture.
-    """
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
-
-    import ml_ecosystem_snapshots.frameworks.orbax_checkpoint as orbax_mod
-    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-
-    def bad_fn() -> None:
-        """Dummy function for raising inspection errors."""
-        pass
-
-    mock_ocp = mocker.MagicMock()
-    mock_ocp.bad_fn = bad_fn
-    mocker.patch.object(orbax_mod, "ocp", mock_ocp)
-
-    # 1. Inner exception handler (lines 39-40)
-    mocker.patch(
-        "ml_ecosystem_snapshots.frameworks.orbax_checkpoint.get_all_members",
-        return_value=[("bad_fn", bad_fn)],
-    )
-    mocker.patch.object(
-        GhostInspector,
-        "inspect",
-        side_effect=Exception("inspection failed"),
-    )
-    assert orbax_mod._scan_orbax_checkpoint() == []
-    res = orbax_mod.collect_api(SemanticTier.ARRAY_API)
-    assert len(res) == len(orbax_mod.CANONICAL_ORBAX_OPS)
-
-    # 2. Outer exception handler (lines 41-42)
-    mocker.patch(
-        "ml_ecosystem_snapshots.frameworks.orbax_checkpoint.get_all_members",
-        side_effect=RuntimeError("member enumeration error"),
-    )
-    assert orbax_mod._scan_orbax_checkpoint() == []
-    res_outer = orbax_mod.collect_api(SemanticTier.ARRAY_API)
-    assert len(res_outer) == len(orbax_mod.CANONICAL_ORBAX_OPS)
-
-
-def test_pax_import_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test pax import logic when praxis is available and unavailable.
+def test_deepspeed_missing_and_fallback_edges(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_package_builder: FakePackageBuilder,
+) -> None:
+    """Verify DeepSpeed collector handles missing package, parameter injection, and inspect errors.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
+        fake_package_builder: Typed fake-package builder fixture.
     """
-    import importlib
-    import sys
-    import types
+    fake_package_builder.block_imports("deepspeed")
+    assert deepspeed.collect_api(SemanticTier.MODEL) == []
+    assert deepspeed.collect_api(SemanticTier.LOSS) == []
 
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
-
-    import ml_ecosystem_snapshots.frameworks.pax as pax_mod
-
-    def _get_praxis() -> types.ModuleType | None:
-        """Read `pax_mod.praxis` after module reload.
-
-        Returns:
-            Current `pax_mod.praxis` reference.
-        """
-        return pax_mod.praxis
-
-    # Available
-    fake_paxml = types.ModuleType("paxml")
-    fake_praxis = types.ModuleType("praxis")
-    fake_layers = types.ModuleType("praxis.layers")
-    pytest.MonkeyPatch().setattr(fake_praxis, "layers", fake_layers, raising=False)
-    monkeypatch.setitem(sys.modules, "paxml", fake_paxml)
-    monkeypatch.setitem(sys.modules, "praxis", fake_praxis)
-    monkeypatch.setitem(sys.modules, "praxis.layers", fake_layers)
-    importlib.reload(pax_mod)
-    assert _get_praxis() is fake_praxis
-
-    # Unavailable
-    monkeypatch.setitem(sys.modules, "paxml", None)
-    importlib.reload(pax_mod)
-    assert _get_praxis() is None
-    assert pax_mod.collect_api(SemanticTier.MODEL) == []
-
-    # Restore
-    monkeypatch.undo()
-    importlib.reload(pax_mod)
-
-
-def test_sklearn_import_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test sklearn import logic when sklearn is unavailable.
-
-    Args:
-        monkeypatch: Pytest monkeypatch fixture.
-    """
-    import importlib
-    import sys
-
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
-
-    import ml_ecosystem_snapshots.frameworks.sklearn as sklearn_mod
-
-    monkeypatch.setitem(sys.modules, "sklearn", None)
-    importlib.reload(sklearn_mod)
-    assert sklearn_mod.sklearn is None
-    assert sklearn_mod.collect_api(SemanticTier.MODEL) == []
-
-    # Restore
-    monkeypatch.undo()
-    importlib.reload(sklearn_mod)
-
-
-def test_flax_nnx_import_fallback(monkeypatch: pytest.MonkeyPatch, mocker: pytest_mock.MockerFixture) -> None:
-    """Test flax.nnx import fallback and inspection exception handling.
-
-    Args:
-        monkeypatch: Pytest monkeypatch fixture.
-        mocker: Pytest mocker fixture.
-    """
-    import importlib
-    import sys
-    import types
-
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
-
-    import ml_ecosystem_snapshots.frameworks.flax_nnx as nnx_mod
-
-    # 1. Unavailable import
-    monkeypatch.setitem(sys.modules, "flax", None)
-    monkeypatch.setitem(sys.modules, "flax.nnx", None)
-    importlib.reload(nnx_mod)
-    assert nnx_mod.nnx is None
-    assert nnx_mod.collect_api(SemanticTier.LAYER) == []
-
-    # 2. Available with issubclass TypeError
-    fake_nnx = types.ModuleType("flax.nnx")
-
-    class BadClass:
-        """Dummy uninheritable class to trigger TypeError in issubclass."""
-
-        pass
-
-    pytest.MonkeyPatch().setattr(fake_nnx, "BadClass", BadClass, raising=False)
-    pytest.MonkeyPatch().setattr(fake_nnx, "Module", 123, raising=False)
-    monkeypatch.setitem(sys.modules, "flax", types.ModuleType("flax"))
-    monkeypatch.setitem(sys.modules, "flax.nnx", fake_nnx)
-    importlib.reload(nnx_mod)
-    mocker.patch(
-        "ml_ecosystem_snapshots.frameworks.flax_nnx.get_all_members",
-        return_value=[("BadClass", BadClass)],
-    )
-    res = nnx_mod.collect_api(SemanticTier.LAYER)
-    assert res == []
-
-    # Restore
-    monkeypatch.undo()
-    importlib.reload(nnx_mod)
-
-
-def test_deepspeed_fallback_edges(mocker: pytest_mock.MockerFixture) -> None:
-    """Test deepspeed inspect exception handling and existing config_params.
-
-    Args:
-        mocker: Pytest mocker fixture.
-    """
-    import types
-
-    from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, SemanticTier
-
-    import ml_ecosystem_snapshots.frameworks.deepspeed as ds_mod
-    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-
-    fake_ds = types.ModuleType("deepspeed")
-    pytest.MonkeyPatch().setattr(fake_ds, "initialize", lambda: None, raising=False)
-    pytest.MonkeyPatch().setattr(fake_ds, "none_ref", lambda: None, raising=False)
-    pytest.MonkeyPatch().setattr(fake_ds, "error_op", lambda: None, raising=False)
-    pytest.MonkeyPatch().setattr(fake_ds, "z_extra_util", lambda: None, raising=False)
-    mocker.patch(
-        "ml_ecosystem_snapshots.frameworks.deepspeed.importlib.import_module",
-        return_value=fake_ds,
-    )
-
-    def mock_inspect(obj: InspectableTarget, name: str) -> GhostRef | None:
-        """Mock inspect function raising ValueError for error_op.
+    def _initialize(model: LivePythonTarget = None) -> None:
+        """Simulate `deepspeed.initialize` without `config_params`.
 
         Args:
-            obj: Target object being inspected.
-            name: Fully qualified API name.
+            model: Model instance.
+        """
+        _ = model
+
+    def _hidden(x: int = 1) -> int:
+        """Simulate private helper function.
+
+        Args:
+            x: Integer input.
 
         Returns:
-            A mocked GhostRef.
+            Unchanged integer.
+        """
+        return x
+
+    fake_package_builder.build_module(
+        "deepspeed",
+        members={"initialize": _initialize, "_hidden": _hidden, "nothing": None},
+    )
+    res_pub = deepspeed.collect_api(SemanticTier.MODEL)
+    assert len(res_pub) == 1
+    assert res_pub[0].api_path == "deepspeed.initialize"
+    assert {p.name for p in res_pub[0].params} >= {"model", "config_params"}
+    assert len(deepspeed.collect_api(SemanticTier.MODEL, include_nonpublic=True)) == 1
+
+    # Cover existing config_params, inspect -> None, and inspect raising ValueError
+    fake_package_builder.build_module(
+        "deepspeed",
+        members={
+            "initialize": lambda: None,
+            "none_ref": lambda: None,
+            "error_op": lambda: None,
+            "z_extra_util": lambda: None,
+        },
+    )
+
+    def _mock_ds_inspect(self_insp: GhostInspector, _obj: LivePythonTarget, name: str) -> GhostRef | None:
+        """Simulate `GhostInspector.inspect` edge cases for DeepSpeed members.
+
+        Args:
+            self_insp: Active `GhostInspector` instance.
+            _obj: Target object.
+            name: Fully qualified API path.
+
+        Returns:
+            Simulated `GhostRef` or `None`.
 
         Raises:
-            ValueError: When inspecting `error_op`.
+            ValueError: When `error_op` is inspected.
         """
+        _ = self_insp
         if "error_op" in name:
             raise ValueError("simulated error")
         if "none_ref" in name:
@@ -859,247 +113,574 @@ def test_deepspeed_fallback_edges(mocker: pytest_mock.MockerFixture) -> None:
                 kind="function",
                 params=[GhostParam(name="config_params", kind=ParameterKind.KEYWORD_ONLY)],
             )
-        return GhostRef(
-            name="z_extra_util",
-            api_path="deepspeed.z_extra_util",
-            kind="function",
-            params=[],
-        )
+        return GhostRef(name="z_extra_util", api_path="deepspeed.z_extra_util", kind="function", params=[])
 
-    mocker.patch.object(
-        GhostInspector,
-        "inspect",
-        side_effect=mock_inspect,
-    )
-    # MODEL category checks initialize with config_params and non-matching UTIL attrs
-    res_model = ds_mod.collect_api(SemanticTier.MODEL)
-    assert len(res_model) == 1
-
-    # UTIL category triggers none_ref (branch 53 -> 36), inspect exception on error_op, and appends z_extra_util
-    res_util = ds_mod.collect_api(SemanticTier.UTIL)
-    assert len(res_util) == 1
-    assert res_util[0].name == "z_extra_util"
+    monkeypatch.setattr(GhostInspector, "inspect", _mock_ds_inspect)
+    assert len(deepspeed.collect_api(SemanticTier.MODEL)) == 1
+    res_util = deepspeed.collect_api(SemanticTier.UTIL)
+    assert [r.name for r in res_util] == ["z_extra_util"]
 
 
-def test_optax_import_reload() -> None:
-    """Test optax module reload handling when optax is missing and present.
-
-    Returns:
-        None.
-    """
-    import importlib
-    import types
-
-    from ml_ecosystem_snapshots.frameworks import optax as optax_fw
-
-    def _get_optax() -> types.ModuleType | None:
-        """Read `optax_fw.optax` after module reload.
-
-        Returns:
-            Current `optax_fw.optax` reference.
-        """
-        return optax_fw.optax
-
-    with patch.dict("sys.modules", {"optax": None}):
-        importlib.reload(optax_fw)
-        assert _get_optax() is None
-
-    mock_optax = types.ModuleType("optax")
-    with patch.dict("sys.modules", {"optax": mock_optax}):
-        importlib.reload(optax_fw)
-        assert _get_optax() is mock_optax
-
-    # Restore clean reload
-    importlib.reload(optax_fw)
-    import ml_ecosystem_snapshots.frameworks.jax as jax_fw
-
-    importlib.reload(jax_fw)
-
-
-def test_orbax_checkpoint_import_reload() -> None:
-    """Test orbax_checkpoint module reload handling when orbax.checkpoint is missing and present.
-
-    Returns:
-        None.
-    """
-    import importlib
-    import types
-
-    from ml_ecosystem_snapshots.frameworks import orbax_checkpoint
-
-    def _get_ocp() -> types.ModuleType | None:
-        """Read `orbax_checkpoint.ocp` after module reload.
-
-        Returns:
-            Current `orbax_checkpoint.ocp` reference.
-        """
-        return orbax_checkpoint.ocp
-
-    with patch.dict("sys.modules", {"orbax.checkpoint": None, "orbax": None}):
-        importlib.reload(orbax_checkpoint)
-        assert _get_ocp() is None
-
-    mock_orbax = types.ModuleType("orbax")
-    mock_ocp = types.ModuleType("orbax.checkpoint")
-    pytest.MonkeyPatch().setattr(mock_orbax, "checkpoint", mock_ocp, raising=False)
-    with patch.dict("sys.modules", {"orbax": mock_orbax, "orbax.checkpoint": mock_ocp}):
-        importlib.reload(orbax_checkpoint)
-        assert _get_ocp() is mock_ocp
-
-    # Restore clean reload
-    importlib.reload(orbax_checkpoint)
-
-
-def test_tensorflow_import_reload() -> None:
-    """Test tensorflow module reload handling when tensorflow is missing and present.
-
-    Returns:
-        None.
-    """
-    import importlib
-    import types
-
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
-
-    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
-
-    with patch.dict("sys.modules", {"tensorflow": None}):
-        importlib.reload(tf_fw)
-        assert tf_fw.tf is None
-
-    # Test _get_tf exception handler
-    tf_fw.tf = None
-    with patch.dict(sys.modules, {"tensorflow": None}):
-        assert tf_fw._get_tf() is None
-        assert tf_fw.collect_api(SemanticTier.ACTIVATION) == []
-
-    # Test tf without nn attribute
-    fake_tf_no_nn = types.ModuleType("tensorflow")
-    with patch.object(tf_fw, "tf", fake_tf_no_nn):
-        assert tf_fw._collect_live(SemanticTier.ACTIVATION, include_nonpublic=False) == []
-
-    # Restore clean reload
-    importlib.reload(tf_fw)
-
-
-def test_tensorflow_collect_live_image_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _collect_live inspects tf.image and tf.lookup members.
+def test_onnxruntime_missing_and_providers_injection(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_package_builder: FakePackageBuilder,
+) -> None:
+    """Verify ONNX Runtime collector fallback and `InferenceSession` `providers` parameter handling.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
+        fake_package_builder: Typed fake-package builder fixture.
     """
-    import types
+    fake_package_builder.block_imports("onnxruntime")
+    assert onnxruntime.collect_api(SemanticTier.MODEL) == []
+    assert onnxruntime.collect_api(SemanticTier.LOSS) == []
 
-    from ml_switcheroo_ir.schema.ghost import SemanticTier
+    def InferenceSession(path_or_bytes: str) -> None:
+        """Simulate `InferenceSession` factory without `providers` parameter.
 
-    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
-    from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+        Args:
+            path_or_bytes: Path or bytes to ONNX model.
+        """
+        _ = path_or_bytes
 
-    class MockLookupTable:
-        """Mock lookup table class."""
+    def get_available_providers() -> list[str]:
+        """Simulate `onnxruntime.get_available_providers`.
+
+        Returns:
+            Empty list of providers.
+        """
+        return []
+
+    class SessionWithProviders:
+        """Simulated session class already defining `providers`."""
+
+        def __init__(self, path_or_bytes: str, providers: list[str] | None = None) -> None:
+            """Initialize session with `providers`.
+
+            Args:
+                path_or_bytes: Model path.
+                providers: Optional execution providers.
+            """
+            self.path = path_or_bytes
+            self.providers = providers
+
+    fake_package_builder.build_module(
+        "onnxruntime",
+        members={
+            "_hidden": lambda: None,
+            "InferenceSession": InferenceSession,
+            "SessionWithProviders": SessionWithProviders,
+            "get_available_providers": get_available_providers,
+            "nothing": None,
+        },
+    )
+    res_pub = onnxruntime.collect_api(SemanticTier.MODEL)
+    assert len(res_pub) == 2
+    inf_ref = next(r for r in res_pub if r.name == "InferenceSession")
+    assert {p.name for p in inf_ref.params} >= {"path_or_bytes", "providers"}
+    assert len(onnxruntime.collect_api(SemanticTier.MODEL, include_nonpublic=True)) == 2
+    assert len(onnxruntime.collect_api(SemanticTier.UTIL)) >= 1
+
+    # Cover InferenceSession already defining `providers`, inspect raising TypeError, and inspect returning None
+    fake_package_builder.build_module(
+        "onnxruntime",
+        members={"InferenceSession": SessionWithProviders, "BadSession": lambda: None},
+    )
+    orig_inspect = GhostInspector.inspect
+
+    def _selective_inspect(self_insp: GhostInspector, obj: LivePythonTarget, name: str) -> ExtendedGhostRef:
+        """Raise `TypeError` on `BadSession` while delegating valid classes to `GhostInspector.inspect`.
+
+        Args:
+            self_insp: Active `GhostInspector` instance.
+            obj: Target object.
+            name: API path string.
+
+        Returns:
+            Inspected `ExtendedGhostRef`.
+
+        Raises:
+            TypeError: When `BadSession` is inspected.
+        """
+        _ = self_insp
+        if "BadSession" in name:
+            raise TypeError("broken session")
+        return orig_inspect(obj, name)
+
+    with monkeypatch.context() as mp:
+        mp.setattr(GhostInspector, "inspect", _selective_inspect)
+        res_prov = onnxruntime.collect_api(SemanticTier.MODEL)
+        assert len(res_prov) == 1
+        assert sum(1 for p in res_prov[0].params if p.name == "providers") == 1
+
+    with monkeypatch.context() as mp:
+        mp.setattr(GhostInspector, "inspect", lambda _self, _obj, _name: None)
+        assert onnxruntime.collect_api(SemanticTier.MODEL) == []
+
+
+def test_triton_missing_and_constexpr_kernels(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_package_builder: FakePackageBuilder,
+) -> None:
+    """Verify Triton collector fallback and `tl.constexpr` kernel annotation normalization.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        fake_package_builder: Typed fake-package builder fixture.
+    """
+    fake_package_builder.block_imports("triton", "triton.language")
+    assert triton.collect_api(SemanticTier.UTIL) == []
+    assert triton.collect_api(SemanticTier.LOSS) == []
+
+    def _fake_fn(a: LivePythonTarget, b: LivePythonTarget, c: LivePythonTarget) -> None:
+        """Simulate Triton JIT kernel with constexpr parameter annotation.
+
+        Args:
+            a: Constexpr operand.
+            b: Float operand.
+            c: Unannotated operand.
+        """
+        _ = (a, b, c)
+
+    monkeypatch.setattr(_fake_fn, "__annotations__", {"a": "int constexpr", "b": "float"})
+
+    class KernelWrapper:
+        """Callable wrapper holding `.fn` like `triton.runtime.JITFunction`."""
+
+        fn = staticmethod(_fake_fn)
+
+        def __call__(self, *args: LivePythonTarget, **kwargs: LivePythonTarget) -> None:
+            """Forward invocation to `_fake_fn`.
+
+            Args:
+                *args: Positional kernel arguments.
+                **kwargs: Keyword kernel arguments.
+            """
+            _fake_fn(*args, **kwargs)
+
+    class NoAnnoKernel:
+        """Callable kernel whose `__annotations__` attribute is `None`."""
+
+        def __call__(self, x: LivePythonTarget) -> LivePythonTarget:
+            """Return `x` unchanged.
+
+            Args:
+                x: Input value.
+
+            Returns:
+                Unchanged input value.
+            """
+            return x
+
+    no_anno = NoAnnoKernel()
+    monkeypatch.setattr(no_anno, "__annotations__", None, raising=False)
+
+    tl_math = fake_package_builder.build_module(
+        "triton.language.math",
+        members={"sin": _fake_fn, "_priv_math": _fake_fn, "non_callable": 456},
+    )
+    tl_mod = fake_package_builder.build_module(
+        "triton.language",
+        members={
+            "kernel_op": KernelWrapper(),
+            "no_anno_op": no_anno,
+            "_private_op": _fake_fn,
+            "non_callable": 123,
+        },
+        submodules={"math": tl_math},
+    )
+    fake_package_builder.build_module("triton", submodules={"language": tl_mod})
+
+    res_triton = triton.collect_api(SemanticTier.UTIL)
+    kernel_ref = next(r for r in res_triton if r.api_path == "triton.language.kernel_op")
+    assert next(p for p in kernel_ref.params if p.name == "a").annotation == "tl.constexpr"
+    assert any(r.name == "no_anno_op" for r in res_triton)
+    assert len(triton.collect_api(SemanticTier.UTIL, include_nonpublic=True)) >= 5
+
+    # `triton.language` without `math` submodule
+    tl_no_math = fake_package_builder.build_module(
+        "triton.language",
+        members={"kernel_op": KernelWrapper()},
+    )
+    fake_package_builder.build_module("triton", submodules={"language": tl_no_math})
+    assert len(triton.collect_api(SemanticTier.UTIL)) == 1
+
+    # `triton` present while `triton.language` blocked
+    fake_package_builder.build_module("triton")
+    fake_package_builder.block_imports("triton.language")
+    assert triton.collect_api(SemanticTier.UTIL) == []
+
+
+def test_huggingface_transformers_missing_and_augmentation(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_package_builder: FakePackageBuilder,
+) -> None:
+    """Verify HuggingFace `collect_transformers` handles missing package, `PretrainedConfig`, `AutoModel`, and `generate`.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        fake_package_builder: Typed fake-package builder fixture.
+    """
+    fake_package_builder.block_imports("transformers")
+    assert huggingface.collect_transformers(SemanticTier.MODEL) == []
+    assert huggingface.collect_transformers(SemanticTier.LOSS) == []
+
+    class SampleConfig:
+        """Simulated `PreTrainedConfig` subclass with typed class annotations."""
+
+        vocab_size: int
+        model_type: str
+
+        def __init__(self, vocab_size: int = 32000) -> None:
+            """Initialize sample configuration.
+
+            Args:
+                vocab_size: Vocabulary size.
+            """
+            self.vocab_size = vocab_size
+
+    class NoDictAnnotationsConfig:
+        """Simulated config class with non-dict `__annotations__`."""
 
         pass
 
-    def mock_resize(x: InspectableTarget) -> InspectableTarget:
-        """Mock resize function.
+    monkeypatch.setattr(NoDictAnnotationsConfig, "__annotations__", None, raising=False)
+
+    class AutoModelSample:
+        """Simulated `AutoModel` factory class without explicit `config` parameter."""
+
+        def __init__(self) -> None:
+            """Initialize `AutoModelSample`."""
+
+    class CausalGenModel:
+        """Simulated causal LM model exposing `generate`."""
+
+        def __init__(self, hidden_size: int = 768) -> None:
+            """Initialize `CausalGenModel`.
+
+            Args:
+                hidden_size: Hidden dimension.
+            """
+            self.hidden_size = hidden_size
+
+        def generate(
+            self,
+            input_ids: LivePythonTarget,
+            max_new_tokens: int = 32,
+            *args: LivePythonTarget,
+            **kwargs: LivePythonTarget,
+        ) -> None:
+            """Generate token sequence.
+
+            Args:
+                input_ids: Prompt token IDs.
+                max_new_tokens: Maximum tokens to generate.
+                *args: Variadic positional arguments.
+                **kwargs: Variadic keyword arguments.
+            """
+            _ = (input_ids, max_new_tokens, args, kwargs)
+
+    class BrokenGenModel:
+        """Model class whose `generate` attribute is not inspectable."""
+
+        generate = 123
+
+    def helper_util(x: int) -> int:
+        """Utility function classified under `SemanticTier.UTIL`.
 
         Args:
-            x: Input parameter.
+            x: Integer input.
 
         Returns:
-            Input value.
+            Unchanged integer.
         """
         return x
 
-    def mock_private(x: InspectableTarget) -> InspectableTarget:
-        """Mock private function.
+    fake_package_builder.build_module(
+        "transformers",
+        members={
+            "_hidden": helper_util,
+            "NoneAttr": None,
+            "SampleConfig": SampleConfig,
+            "NoDictAnnotationsConfig": NoDictAnnotationsConfig,
+            "AutoModelSample": AutoModelSample,
+            "CausalGenModel": CausalGenModel,
+            "BrokenGenModel": BrokenGenModel,
+            "ThrowModel": lambda: None,
+            "NoneRefModel": lambda: None,
+            "helper_util": helper_util,
+        },
+    )
+
+    orig_inspect = GhostInspector.inspect
+
+    def _hf_inspect(self_insp: GhostInspector, obj: LivePythonTarget, name: str) -> GhostRef | None:
+        """Simulate `ThrowModel` exception and `NoneRefModel` returning `None` while inspecting real classes.
 
         Args:
-            x: Input parameter.
+            self_insp: Active `GhostInspector` instance.
+            obj: Target object.
+            name: Qualified API path.
 
         Returns:
-            Input value.
-        """
-        return x
-
-    fake_image = types.SimpleNamespace(
-        resize=mock_resize,
-        _private=mock_private,
-        not_callable=42,
-    )
-    fake_lookup = types.SimpleNamespace(
-        StaticHashTable=MockLookupTable,
-        _private_table=MockLookupTable,
-        not_callable=99,
-    )
-    fake_nn = types.SimpleNamespace(
-        relu=mock_resize,
-    )
-    fake_tf = types.SimpleNamespace(
-        nn=fake_nn,
-        image=fake_image,
-        lookup=fake_lookup,
-        math=types.SimpleNamespace(),
-        linalg=types.SimpleNamespace(),
-    )
-
-    monkeypatch.setattr(tf_fw, "tf", fake_tf)
-
-    # 1. include_nonpublic=False
-    refs_public = tf_fw._collect_live(SemanticTier.ARRAY_API, include_nonpublic=False)
-    assert any("tf.image.resize" in r.api_path for r in refs_public)
-    assert any("tf.lookup.StaticHashTable" in r.api_path for r in refs_public)
-    assert any("tf.nn.relu" in r.api_path for r in refs_public)
-    assert not any("tf.image._private" in r.api_path for r in refs_public)
-    assert not any("tf.lookup._private_table" in r.api_path for r in refs_public)
-
-    # 2. include_nonpublic=True
-    refs_nonpublic = tf_fw._collect_live(SemanticTier.ARRAY_API, include_nonpublic=True)
-    assert any("tf.image._private" in r.api_path for r in refs_nonpublic)
-    assert any("tf.lookup._private_table" in r.api_path for r in refs_nonpublic)
-
-    # 3. Exception in inspect
-    def mock_broken_inspect(obj: InspectableTarget, name: str, **kwargs: InspectableTarget) -> ExtendedGhostRef:
-        """Mock broken inspect raising on image, lookup, and nn.
-
-        Args:
-            obj: Inspected object.
-            name: Fully qualified target name.
-            **kwargs: Extra inspect kwargs.
-
-        Returns:
-            GhostRef object.
+            Inspected `GhostRef` or `None`.
 
         Raises:
-            RuntimeError: If target belongs to image, lookup, or nn.
+            RuntimeError: When inspecting `ThrowModel`.
         """
-        if "image" in name or "lookup" in name or "nn" in name:
-            raise RuntimeError("Inspect failure")
-        return GhostInspector.inspect(obj, name)
+        _ = self_insp
+        if "ThrowModel" in name:
+            raise RuntimeError("simulated hf error")
+        if "NoneRefModel" in name:
+            return None
+        return orig_inspect(obj, name)
 
-    monkeypatch.setattr(
-        "ml_ecosystem_snapshots.frameworks.tensorflow.GhostInspector.inspect",
-        mock_broken_inspect,
-    )
-    refs_err = tf_fw._collect_live(SemanticTier.ARRAY_API, include_nonpublic=False)
-    assert not any("tf.image.resize" in r.api_path for r in refs_err)
-    assert not any("tf.nn.relu" in r.api_path for r in refs_err)
+    monkeypatch.setattr(GhostInspector, "inspect", _hf_inspect)
+    models_res = huggingface.collect_transformers(SemanticTier.MODEL)
+    by_name = {r.name: r for r in models_res}
+    assert {"SampleConfig", "AutoModelSample", "CausalGenModel"} <= set(by_name)
+    assert "model_type" in {p.name for p in by_name["SampleConfig"].params}
+    assert "config" in {p.name for p in by_name["AutoModelSample"].params}
+    assert "max_new_tokens" in {p.name for p in by_name["CausalGenModel"].params}
+    assert any(r.name == "helper_util" for r in huggingface.collect_transformers(SemanticTier.UTIL))
 
 
-def test_tensorflow_get_tf_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_tf returns None when importing tensorflow raises Exception.
+def test_hardware_exhaustive_fallbacks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify canonical fallbacks for all hardware/compiler targets when exhaustive JSON files are absent.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    orig_exists = os.path.exists
+    _ = tmp_path
+
+    def _hide_exhaustive(path_str: str) -> bool:
+        """Simulate missing `*_exhaustive.json` files while delegating other paths.
+
+        Args:
+            path_str: Path to check.
+
+        Returns:
+            False for exhaustive JSON paths, otherwise `os.path.exists(path_str)`.
+        """
+        if path_str.endswith(("_exhaustive.json", "_exhaustive.json.gz")):
+            return False
+        return orig_exists(path_str)
+
+    monkeypatch.setattr("os.path.exists", _hide_exhaustive)
+    for mod in (amd_rdna, mlir, nvidia_ptx, nvidia_sass, stablehlo):
+        assert len(mod.collect_api(SemanticTier.UTIL)) > 0
+
+
+def test_sklearn_pax_and_flax_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify `sklearn`, `pax`, and `flax_nnx` reload and member-enumeration fallbacks.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    from ml_ecosystem_snapshots.frameworks import tensorflow as tf_fw
+    with monkeypatch.context() as mp:
+        mp.setattr(
+            "ml_ecosystem_snapshots.frameworks.sklearn.get_all_members",
+            lambda _m: (_ for _ in ()).throw(RuntimeError("err")),
+        )
+        assert sklearn_mod.collect_api(SemanticTier.LAYER) == []
 
-    monkeypatch.setattr(tf_fw, "tf", None)
-    monkeypatch.setitem(sys.modules, "tensorflow", None)
-    assert tf_fw._get_tf() is None
+    with monkeypatch.context() as mp:
+        mp.setitem(os.environ, "ML_SNAPSHOTS_OFFLINE", "0")
+        fb = FakePackageBuilder(mp)
+        fb.block_imports("sklearn")
+        importlib.reload(sklearn_mod)
+        assert sklearn_mod.sklearn is None
+        assert sklearn_mod.collect_api(SemanticTier.MODEL) == []
+    importlib.reload(sklearn_mod)
 
-    # Test _get_tf when import succeeds
-    monkeypatch.setattr(tf_fw, "tf", None)
-    fake_tf_success = types.ModuleType("tensorflow")
-    monkeypatch.setitem(sys.modules, "tensorflow", fake_tf_success)
-    assert tf_fw._get_tf() is fake_tf_success
+    with monkeypatch.context() as mp:
+        fb = FakePackageBuilder(mp)
+        fake_layers = fb.build_module("praxis.layers")
+        fake_praxis = fb.build_module("praxis", submodules={"layers": fake_layers})
+        fb.build_module("paxml")
+        importlib.reload(pax_mod)
+        assert get_member_dict(pax_mod).get("praxis") is fake_praxis
+
+        fb.block_imports("paxml")
+        importlib.reload(pax_mod)
+        assert get_member_dict(pax_mod).get("praxis") is None
+        assert pax_mod.collect_api(SemanticTier.MODEL) == []
+    importlib.reload(pax_mod)
+
+    with monkeypatch.context() as mp:
+        fb = FakePackageBuilder(mp)
+        fb.block_imports("flax", "flax.nnx")
+        importlib.reload(flax_nnx)
+        assert flax_nnx.nnx is None
+        assert flax_nnx.collect_api(SemanticTier.LAYER) == []
+
+        class BadClass:
+            """Candidate class tested against invalid `nnx.Module = 123`."""
+
+        fake_nnx = fb.build_module("flax.nnx", members={"BadClass": BadClass, "Module": 123})
+        fb.build_module("flax", submodules={"nnx": fake_nnx})
+        importlib.reload(flax_nnx)
+        mp.setattr("ml_ecosystem_snapshots.frameworks.flax_nnx.get_all_members", lambda _m: [("BadClass", BadClass)])
+        assert flax_nnx.collect_api(SemanticTier.LAYER) == []
+    importlib.reload(flax_nnx)
+
+
+def test_orbax_and_optax_fallbacks(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_package_builder: FakePackageBuilder,
+) -> None:
+    """Verify `orbax_checkpoint` and `optax` reload and member-inspection fallbacks.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        fake_package_builder: Typed fake-package builder fixture.
+    """
+    fake_ocp = fake_package_builder.build_module("orbax.checkpoint", members={"bad_fn": lambda: None})
+    fake_package_builder.build_module("orbax", submodules={"checkpoint": fake_ocp})
+    with monkeypatch.context() as mp:
+        mp.setattr(orbax_checkpoint, "ocp", fake_ocp)
+        mp.setattr(
+            "ml_ecosystem_snapshots.frameworks.orbax_checkpoint.get_all_members",
+            lambda _m: [("bad_fn", lambda: None)],
+        )
+        mp.setattr(
+            "ml_ecosystem_snapshots.frameworks.orbax_checkpoint.GhostInspector.inspect",
+            lambda *_a, **_kw: (_ for _ in ()).throw(RuntimeError("inspection failed")),
+        )
+        assert len(orbax_checkpoint.collect_api(SemanticTier.ARRAY_API)) == len(orbax_checkpoint.CANONICAL_ORBAX_OPS)
+
+        mp.setattr(
+            "ml_ecosystem_snapshots.frameworks.orbax_checkpoint.get_all_members",
+            lambda _m: (_ for _ in ()).throw(RuntimeError("member enumeration error")),
+        )
+        assert len(orbax_checkpoint.collect_api(SemanticTier.ARRAY_API)) == len(orbax_checkpoint.CANONICAL_ORBAX_OPS)
+
+    with monkeypatch.context() as mp:
+        fb = FakePackageBuilder(mp)
+        fb.block_imports("orbax", "orbax.checkpoint")
+        importlib.reload(orbax_checkpoint)
+        assert get_member_dict(orbax_checkpoint).get("ocp") is None
+
+        reloaded_ocp = fb.build_module("orbax.checkpoint")
+        fb.build_module("orbax", submodules={"checkpoint": reloaded_ocp})
+        importlib.reload(orbax_checkpoint)
+        assert get_member_dict(orbax_checkpoint).get("ocp") is reloaded_ocp
+    importlib.reload(orbax_checkpoint)
+
+    with monkeypatch.context() as mp:
+        fb = FakePackageBuilder(mp)
+        fb.block_imports("optax")
+        importlib.reload(optax_fw)
+        assert get_member_dict(optax_fw).get("optax") is None
+
+        mock_optax = fb.build_module("optax")
+        importlib.reload(optax_fw)
+        assert get_member_dict(optax_fw).get("optax") is mock_optax
+    importlib.reload(optax_fw)
+    importlib.reload(jax_fw)
+
+
+def test_tensorflow_live_and_import_fallbacks(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_package_builder: FakePackageBuilder,
+) -> None:
+    """Verify TensorFlow collector handles missing module, missing submodules, `image`/`lookup` tiers, and errors.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        fake_package_builder: Typed fake-package builder fixture.
+    """
+    with monkeypatch.context() as mp:
+        fb = FakePackageBuilder(mp)
+        fb.block_imports("tensorflow")
+        importlib.reload(tf_fw)
+        assert get_member_dict(tf_fw).get("tf") is None
+        assert tf_fw.collect_api(SemanticTier.ACTIVATION) == []
+    importlib.reload(tf_fw)
+
+    # Lazy import success via public `collect_api` when `tf_fw.tf` starts as None
+    empty_tf = fake_package_builder.build_module("tensorflow")
+    with monkeypatch.context() as mp:
+        mp.setattr(tf_fw, "tf", None)
+        assert tf_fw.collect_api(SemanticTier.ACTIVATION) == []
+        assert get_member_dict(tf_fw).get("tf") is empty_tf
+
+    class MockLookupTable:
+        """Simulated `tf.lookup.StaticHashTable` class."""
+
+    def _mock_op(x: LivePythonTarget) -> LivePythonTarget:
+        """Simulated public TensorFlow callable.
+
+        Args:
+            x: Input tensor.
+
+        Returns:
+            Unchanged input tensor.
+        """
+        return x
+
+    def _mock_private(x: LivePythonTarget) -> LivePythonTarget:
+        """Simulated private TensorFlow callable.
+
+        Args:
+            x: Input tensor.
+
+        Returns:
+            Unchanged input tensor.
+        """
+        return x
+
+    tf_image = fake_package_builder.build_module(
+        "tensorflow.image",
+        members={"resize": _mock_op, "_private": _mock_private, "not_callable": 42},
+    )
+    tf_lookup = fake_package_builder.build_module(
+        "tensorflow.lookup",
+        members={"StaticHashTable": MockLookupTable, "_private_table": MockLookupTable, "not_callable": 99},
+    )
+    tf_nn = fake_package_builder.build_module("tensorflow.nn", members={"relu": _mock_op})
+    tf_math = fake_package_builder.build_module("tensorflow.math")
+    tf_linalg = fake_package_builder.build_module("tensorflow.linalg")
+    full_tf = fake_package_builder.build_module(
+        "tensorflow",
+        submodules={"nn": tf_nn, "image": tf_image, "lookup": tf_lookup, "math": tf_math, "linalg": tf_linalg},
+    )
+    monkeypatch.setattr(tf_fw, "tf", full_tf)
+
+    refs_pub = tf_fw.collect_api(SemanticTier.ARRAY_API, include_nonpublic=False)
+    pub_paths = {r.api_path for r in refs_pub}
+    assert {"tf.image.resize", "tf.lookup.StaticHashTable", "tf.nn.relu"} <= pub_paths
+    assert "tf.image._private" not in pub_paths
+    assert "tf.lookup._private_table" not in pub_paths
+
+    refs_nonpub = tf_fw.collect_api(SemanticTier.ARRAY_API, include_nonpublic=True)
+    nonpub_paths = {r.api_path for r in refs_nonpub}
+    assert {"tf.image._private", "tf.lookup._private_table"} <= nonpub_paths
+
+    orig_inspect = GhostInspector.inspect
+
+    def _broken_tf_inspect(obj: LivePythonTarget, name: str, **kwargs: LivePythonTarget) -> ExtendedGhostRef:
+        """Raise `RuntimeError` when inspecting `image`, `lookup`, or `nn` members.
+
+        Args:
+            obj: Target object.
+            name: Qualified API path.
+            **kwargs: Additional inspect keyword arguments.
+
+        Returns:
+            Inspected `ExtendedGhostRef`.
+
+        Raises:
+            RuntimeError: For `image`, `lookup`, or `nn` targets.
+        """
+        _ = kwargs
+        if any(seg in name for seg in ("image", "lookup", "nn")):
+            raise RuntimeError("Inspect failure")
+        return orig_inspect(obj, name)
+
+    monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.tensorflow.GhostInspector.inspect", _broken_tf_inspect)
+    refs_err = tf_fw.collect_api(SemanticTier.ARRAY_API, include_nonpublic=False)
+    assert not any("tf.image.resize" in r.api_path for r in refs_err)
+    assert not any("tf.nn.relu" in r.api_path for r in refs_err)

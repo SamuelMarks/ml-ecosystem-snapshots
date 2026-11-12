@@ -49,6 +49,13 @@ repos:
         types: [python]
         pass_filenames: false
         always_run: true
+      - id: lint-docstrings
+        name: Lint Docstrings & Args/Returns/Raises
+        entry: python3 scripts/lint_docstrings.py
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
       - id: interrogate
         name: Docstring Coverage (Interrogate)
         entry: interrogate -vv -f 100 -M -i -c pyproject.toml src scripts tests
@@ -76,7 +83,7 @@ repos:
         always_run: true
       - id: pytest
         name: Test (Pytest)
-        entry: bash -c 'ulimit -n 4096 2>/dev/null || true; exec python3 -m pytest -n auto --cov=src/ml_ecosystem_snapshots --cov-branch --cov-fail-under=100'
+        entry: bash -c 'ulimit -n 4096 2>/dev/null || true; python3 -m pytest -n 8 --cov=src/ml_ecosystem_snapshots --cov=scripts --cov-branch --cov-fail-under=100 && python3 scripts/check_function_coverage.py'
         language: system
         types: [python]
         pass_filenames: false

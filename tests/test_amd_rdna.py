@@ -75,7 +75,7 @@ def test_amd_rdna_collect_api_util(monkeypatch: pytest.MonkeyPatch) -> None:
     # Check structure of the refs
     for ref in refs:
         assert isinstance(ref, GhostRef)
-        assert ref.kind == "function"
+        assert ref.kind == "instruction"
         assert ref.api_path.startswith("amd_rdna.inst.")
         assert ref.name in ref.api_path
 
@@ -83,11 +83,13 @@ def test_amd_rdna_collect_api_util(monkeypatch: pytest.MonkeyPatch) -> None:
         assert isinstance(ref.docstring, str)
         assert len(ref.docstring) > 0
 
-        # Params should be structural positional_only
+        # Params should be structural positional_only with semantic operand role names
         for param in ref.params:
             assert isinstance(param, GhostParam)
             assert param.kind == "POSITIONAL_ONLY"
-            assert param.name.startswith("op")
+            assert param.name in ("dst", "condition", "exec_mask") or param.name.startswith(
+                ("src", "condition_", "exec_mask_")
+            )
             assert param.annotation is not None
 
     nop = next(r for r in refs if r.name == "v_nop")
@@ -289,7 +291,7 @@ def test_check_rdna_instruction_extended() -> None:
         gfx_arch="GFX11/RDNA3",
         wave_size=32,
     )
-    assert res_valid["is_valid"] is True
+    assert res_valid.is_valid is True
 
     # 2. Constant bus error on CDNA
     res_cbus = check_rdna_instruction(
@@ -298,8 +300,8 @@ def test_check_rdna_instruction_extended() -> None:
         encoding="VOP2",
         gfx_arch="GFX9/CDNA",
     )
-    assert res_cbus["is_valid"] is False
-    assert any("Constant bus limitation violation" in e for e in res_cbus["errors"])
+    assert res_cbus.is_valid is False
+    assert any("Constant bus limitation violation" in e for e in res_cbus.errors)
 
     # 3. Modifier error on VOP2
     res_mod = check_rdna_instruction(
@@ -308,8 +310,8 @@ def test_check_rdna_instruction_extended() -> None:
         encoding="VOP2",
         gfx_arch="GFX11/RDNA3",
     )
-    assert res_mod["is_valid"] is False
-    assert any("Output modifier 'omod:2' is only valid on VOP3" in e for e in res_mod["errors"])
+    assert res_mod.is_valid is False
+    assert any("Output modifier 'omod:2' is only valid on VOP3" in e for e in res_mod.errors)
 
 
 def test_cli_check_rdna(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
@@ -439,7 +441,9 @@ def test_validate_vopd_pairing() -> None:
     assert any("only supported on GFX11/RDNA3" in e for e in err_arch)
 
     # Invalid opcodes
-    err_op = amd_rdna.validate_vopd_pairing({"mnemonic": "v_add_f32"}, {"mnemonic": "v_mul_f32"}, gfx_arch="GFX11/RDNA3")
+    err_op = amd_rdna.validate_vopd_pairing(
+        {"mnemonic": "v_add_f32"}, {"mnemonic": "v_mul_f32"}, gfx_arch="GFX11/RDNA3"
+    )
     assert any("not a valid VOPD OpX opcode" in e for e in err_op)
     assert any("not a valid VOPD OpY opcode" in e for e in err_op)
 
@@ -507,8 +511,8 @@ def test_tokenize_rdna_line_and_code_block() -> None:
 
     # Direct check_rdna_instruction with suffix
     res_direct = check_rdna_instruction("v_add_f32_e32", operands=["v0", "v1", "v2"])
-    assert res_direct["is_valid"] is True
-    assert res_direct["mnemonic_exists"] is True
+    assert res_direct.is_valid is True
+    assert res_direct.mnemonic_exists is True
 
     # check_code_block with RDNA
     rdna_code = """
@@ -517,12 +521,12 @@ def test_tokenize_rdna_line_and_code_block() -> None:
     v_fma_f32 v0, v1, v2, v3 clamp
     """
     block_res = check_code_block(rdna_code, framework="amd_rdna")
-    assert block_res["is_valid"] is True
-    assert block_res["hallucinations_detected"] == 0
-    assert block_res["total_analyzed"] == 2
+    assert block_res.is_valid is True
+    assert block_res.hallucinations_detected == 0
+    assert block_res.total_analyzed == 2
 
     # Hallucinated instruction in code block
     bad_code = "v_fake_rdna_instruction_e32 v0, v1"
     bad_res = check_code_block(bad_code, framework="amd_rdna")
-    assert bad_res["is_valid"] is False
-    assert bad_res["hallucinations_detected"] == 1
+    assert bad_res.is_valid is False
+    assert bad_res.hallucinations_detected == 1

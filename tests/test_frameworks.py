@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import types
 import typing
-from unittest import mock
 from unittest.mock import patch
 
 import pytest
 import pytest_mock
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 
 pytestmark = [pytest.mark.frameworks]
 
@@ -50,7 +49,7 @@ def _stub_heavy_griffe_cache(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setitem(static_parsers._GRIFFE_CACHE, pkg, None)
 
 
-def _make_named_stub_fn(fn_name: str) -> typing.Callable[[InspectableTarget], InspectableTarget]:
+def _make_named_stub_fn(fn_name: str) -> typing.Callable[[LivePythonTarget], LivePythonTarget]:
     """Construct a synthetic callable function stub with `__name__` set to `fn_name`.
 
     Args:
@@ -60,7 +59,7 @@ def _make_named_stub_fn(fn_name: str) -> typing.Callable[[InspectableTarget], In
         Fresh Python function with `__name__ == fn_name`.
     """
 
-    def _stub(x: InspectableTarget = None) -> InspectableTarget:
+    def _stub(x: LivePythonTarget = None) -> LivePythonTarget:
         """Accept an optional synthetic argument and return it unchanged.
 
         Args:
@@ -75,7 +74,7 @@ def _make_named_stub_fn(fn_name: str) -> typing.Callable[[InspectableTarget], In
     return _stub
 
 
-def create_module(name: str, attrs: dict[str, InspectableTarget]) -> types.ModuleType:
+def create_module(name: str, attrs: dict[str, LivePythonTarget]) -> types.ModuleType:
     """Construct a synthetic `types.ModuleType` populated with `attrs`.
 
     Args:
@@ -155,12 +154,18 @@ def _build_fake_torch_submodules() -> tuple[types.ModuleType, types.ModuleType, 
     return fake_nn, fake_optim, fake_data, relu_cls
 
 
-def _patch_fake_torch_env(mocker: pytest_mock.MockerFixture) -> None:
+def _patch_fake_torch_env(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Patch `torch` framework submodules and `sys.modules` with synthetic stubs.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture used to register `sys.modules`.
         mocker: Pytest mocker fixture used to apply module patches.
     """
+    import sys
+
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     fake_nn, fake_optim, fake_data, relu_cls = _build_fake_torch_submodules()
@@ -168,18 +173,21 @@ def _patch_fake_torch_env(mocker: pytest_mock.MockerFixture) -> None:
     mocker.patch.object(torch_fw, "optim", fake_optim)
     mocker.patch.object(torch_fw, "data", fake_data)
 
-    mocker.patch.dict(
-        "sys.modules",
-        {
-            "torchmetrics": create_module(
+    for mod_name, mod_obj in (
+        (
+            "torchmetrics",
+            create_module(
                 "torchmetrics",
                 {
                     "Accuracy": type("Accuracy", (), {}),
                     "_HiddenMetric": type("_HiddenMetric", (), {}),
                 },
             ),
-            "torch.nn.modules.activation": create_module("torch.nn.modules.activation", {"ReLU": relu_cls}),
-            "torch": create_module(
+        ),
+        ("torch.nn.modules.activation", create_module("torch.nn.modules.activation", {"ReLU": relu_cls})),
+        (
+            "torch",
+            create_module(
                 "torch",
                 {
                     "abs": lambda: None,
@@ -245,19 +253,24 @@ def _patch_fake_torch_env(mocker: pytest_mock.MockerFixture) -> None:
                     ),
                 },
             ),
-        },
-    )
+        ),
+    ):
+        monkeypatch.setitem(sys.modules, mod_name, mod_obj)
 
 
-def test_torch_collect(mocker: pytest_mock.MockerFixture) -> None:
+def test_torch_collect(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Validate public symbol collection across PyTorch semantic tiers.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
-    _patch_fake_torch_env(mocker)
+    _patch_fake_torch_env(monkeypatch, mocker)
 
     losses = torch_fw.collect_api(SemanticTier.LOSS)
     lnames = [x.name for x in losses]
@@ -303,15 +316,19 @@ def test_torch_collect(mocker: pytest_mock.MockerFixture) -> None:
     assert "_PrivateLoader" not in dnames
 
 
-def test_torch_collect_nonpublic_and_array(mocker: pytest_mock.MockerFixture) -> None:
+def test_torch_collect_nonpublic_and_array(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Validate non-public and array API symbol collection across PyTorch semantic tiers.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
-    _patch_fake_torch_env(mocker)
+    _patch_fake_torch_env(monkeypatch, mocker)
 
     priv_mets = torch_fw.collect_api(SemanticTier.METRIC, include_nonpublic=True)
     assert len(priv_mets) == 2
@@ -345,24 +362,25 @@ def test_torch_collect_nonpublic_and_array(mocker: pytest_mock.MockerFixture) ->
 
     assert torch_fw.collect_api(SemanticTier.UTIL) == []
 
-    mocker.patch.dict(
-        "sys.modules",
-        {
-            "torch": create_module("torch", {"abs": lambda: None}),
-        },
-    )
+    import sys
+
+    monkeypatch.setitem(sys.modules, "torch", create_module("torch", {"abs": lambda: None}))
     minimal_arrays = torch_fw.collect_api(SemanticTier.ARRAY_API)
     assert any("abs" in x.api_path for x in minimal_arrays)
 
 
 def test_torch_collect_in_place_mutation_already_tagged(
+    monkeypatch: pytest.MonkeyPatch,
     mocker: pytest_mock.MockerFixture,
 ) -> None:
     """Test torch collect_api when in_place_mutation tag is already present on Tensor method.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
     """
+    import sys
+
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
@@ -379,7 +397,7 @@ def test_torch_collect_in_place_mutation_already_tagged(
     fake_tensor = type("Tensor", (), {"add_": lambda self: None})
     fake_torch = create_module("torch", {"Tensor": fake_tensor})
 
-    mocker.patch.dict("sys.modules", {"torch": fake_torch})
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
     mocker.patch.object(GhostInspector, "inspect", return_value=fake_ref)
 
     refs = torch_fw.collect_api(SemanticTier.ARRAY_API)
@@ -387,12 +405,18 @@ def test_torch_collect_in_place_mutation_already_tagged(
     assert refs[0].environment_tags == ["in_place_mutation"]
 
 
-def test_torch_import_error(mocker: pytest_mock.MockerFixture) -> None:
+def test_torch_import_error(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Verify torch import error behavior.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
     """
+    import sys
+
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     mocker.patch.object(torch_fw, "nn", None)
@@ -406,12 +430,13 @@ def test_torch_import_error(mocker: pytest_mock.MockerFixture) -> None:
     assert torch_fw.collect_api(SemanticTier.SCHEDULER) == []
     assert torch_fw.collect_api(SemanticTier.INITIALIZER) == []
     assert torch_fw.collect_api(SemanticTier.DATALOADER) == []
-    import unittest.mock as mock
 
-    with mock.patch.dict("sys.modules", {"torchmetrics": None}):
+    with monkeypatch.context() as mp:
+        mp.setitem(sys.modules, "torchmetrics", None)
         assert torch_fw.collect_api(SemanticTier.METRIC) == []
 
-    with mock.patch.dict("sys.modules", {"torch": None}):
+    with monkeypatch.context() as mp:
+        mp.setitem(sys.modules, "torch", None)
         res = torch_fw.collect_api(SemanticTier.ARRAY_API)
         assert len(res) == 0
 
@@ -425,7 +450,7 @@ def test_torch_typeerror(mocker: pytest_mock.MockerFixture) -> None:
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 
     class BadLoss:
-        """Mock or helper class BadLoss for unit testing."""
+        """Stub loss class tested against a broken `nn.Module` base."""
 
         pass
 
@@ -679,7 +704,7 @@ def test_tf_collect_outer_exception(mocker: pytest_mock.MockerFixture) -> None:
     # Exception branch coverage
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.tensorflow.get_all_members",
-        side_effect=Exception,
+        side_effect=RuntimeError("boom"),
     )
     assert tf_fw.collect_api(SemanticTier.LAYER) == []
 
@@ -830,7 +855,7 @@ def test_keras_collect_blocklist_and_error_branches(
     acts2 = keras_fw.collect_api(SemanticTier.ACTIVATION)
     assert "relu" in [x.name for x in acts2]
 
-    mocker.patch.object(keras_fw.griffe, "load", side_effect=Exception)
+    mocker.patch.object(keras_fw.griffe, "load", side_effect=RuntimeError)
     assert keras_fw.collect_api(SemanticTier.LAYER) == []
 
     mocker.patch.object(keras_fw, "griffe", None)
@@ -847,7 +872,6 @@ def test_keras_collect_static_none_env_tags(mocker: pytest_mock.MockerFixture) -
     from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
     from ml_ecosystem_snapshots.frameworks import keras as keras_fw
-    from ml_ecosystem_snapshots.frameworks.keras import _collect_static
 
     mocker.patch.object(keras_fw, "griffe", types.SimpleNamespace())
     ref = GhostRef(
@@ -860,7 +884,7 @@ def test_keras_collect_static_none_env_tags(mocker: pytest_mock.MockerFixture) -
         "ml_ecosystem_snapshots.frameworks.keras._scan_griffe_module",
         return_value=[ref],
     )
-    res = _collect_static(SemanticTier.ARRAY_API, False)
+    res = keras_fw.collect_api(SemanticTier.ARRAY_API, False)
     assert res[0].environment_tags is not None
     assert "backend:jax" in res[0].environment_tags
 
@@ -874,20 +898,20 @@ def test_mlx_collect(mocker: pytest_mock.MockerFixture) -> None:
     from ml_ecosystem_snapshots.frameworks import mlx as mlx_fw
 
     class Dense:
-        """Mock or helper class Dense for unit testing."""
+        """Stub MLX `Dense` layer class."""
 
         pass
 
     def relu() -> None:
-        """Execute helper relu."""
+        """Apply stub ReLU activation."""
         pass
 
     def mse_loss() -> None:
-        """Execute helper mse loss."""
+        """Compute stub mean squared error loss."""
         pass
 
     class Adam:
-        """Mock or helper class Adam for unit testing."""
+        """Stub MLX `Adam` optimizer class."""
 
         pass
 
@@ -950,17 +974,23 @@ def test_mlx_collect(mocker: pytest_mock.MockerFixture) -> None:
     # Exception branch coverage
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.tensorflow.get_all_members",
-        side_effect=Exception,
+        side_effect=RuntimeError("boom"),
     )
     assert mlx_fw.collect_api(SemanticTier.LAYER) == []
 
 
-def _patch_fake_jax_env(mocker: pytest_mock.MockerFixture) -> None:
+def _patch_fake_jax_env(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Configure synthetic `jax` and `OptaxScanner` mocks for JAX collector tests.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
     """
+    import sys
+
     from ml_ecosystem_snapshots.frameworks import jax as jax_fw
     from ml_ecosystem_snapshots.frameworks.optax import OptaxScanner
 
@@ -978,7 +1008,7 @@ def _patch_fake_jax_env(mocker: pytest_mock.MockerFixture) -> None:
     fake_pallas = create_module("jax.experimental.pallas", {})
     fake_experimental = create_module("jax.experimental", {"pallas": fake_pallas})
 
-    def static_func(axis: int, data: InspectableTarget) -> None:
+    def static_func(axis: int, data: LivePythonTarget) -> None:
         """Accept static axis and dynamic data payload for JAX static arg inspection.
 
         Args:
@@ -1020,20 +1050,18 @@ def _patch_fake_jax_env(mocker: pytest_mock.MockerFixture) -> None:
             ),
         },
     )
-    mocker.patch.dict(
-        "sys.modules",
-        {
-            "jax": fake_jax,
-            "jax.nn": fake_jax_nn,
-            "jax.nn.initializers": fake_jax_init,
-            "jax.lax": fake_lax,
-            "jax.random": fake_random,
-            "jax.experimental": fake_experimental,
-            "jax.experimental.pallas": fake_pallas,
-            "jax.numpy": fake_jnp,
-            "numpy": create_module("numpy", {"float32": 1}),
-        },
-    )
+    for mod_key, mod_obj in (
+        ("jax", fake_jax),
+        ("jax.nn", fake_jax_nn),
+        ("jax.nn.initializers", fake_jax_init),
+        ("jax.lax", fake_lax),
+        ("jax.random", fake_random),
+        ("jax.experimental", fake_experimental),
+        ("jax.experimental.pallas", fake_pallas),
+        ("jax.numpy", fake_jnp),
+        ("numpy", create_module("numpy", {"float32": 1})),
+    ):
+        monkeypatch.setitem(sys.modules, mod_key, mod_obj)
 
     mocker.patch.object(
         OptaxScanner,
@@ -1052,17 +1080,21 @@ def _patch_fake_jax_env(mocker: pytest_mock.MockerFixture) -> None:
     )
 
 
-def test_jax_collect(mocker: pytest_mock.MockerFixture) -> None:
+def test_jax_collect(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Validate JAX symbol collection across neural, array, and delegated tiers.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
     """
     import sys
 
     from ml_ecosystem_snapshots.frameworks import jax as jax_fw
 
-    _patch_fake_jax_env(mocker)
+    _patch_fake_jax_env(monkeypatch, mocker)
 
     assert len(jax_fw.collect_api(SemanticTier.LOSS)) == 1
     assert len(jax_fw.collect_api(SemanticTier.OPTIMIZER)) == 1
@@ -1085,7 +1117,9 @@ def test_jax_collect(mocker: pytest_mock.MockerFixture) -> None:
     priv_arrays = jax_fw.collect_api(SemanticTier.ARRAY_API, include_nonpublic=True)
     assert any(x.name == "_priv_method" for x in priv_arrays)
 
-    del sys.modules["jax.numpy"].transpose
+    jnp_mod = sys.modules.get("jax.numpy")
+    assert jnp_mod is not None
+    monkeypatch.delattr(jnp_mod, "transpose", raising=False)
     arrays2 = jax_fw.collect_api(SemanticTier.ARRAY_API)
     assert not any("transpose" in x.api_path for x in arrays2)
 
@@ -1094,7 +1128,7 @@ def test_jax_collect(mocker: pytest_mock.MockerFixture) -> None:
         "ml_ecosystem_snapshots.frameworks.jax.get_all_members",
         return_value=[],
     )
-    mocker.patch.dict("sys.modules", {"jax.numpy": fake_jnp_extra})
+    monkeypatch.setitem(sys.modules, "jax.numpy", fake_jnp_extra)
     arrays3 = jax_fw.collect_api(SemanticTier.ARRAY_API)
     assert any(x.name == "transpose" for x in arrays3)
 
@@ -1102,17 +1136,21 @@ def test_jax_collect(mocker: pytest_mock.MockerFixture) -> None:
 
 
 def test_jax_static_arg_metadata_none_environment_tags(
+    monkeypatch: pytest.MonkeyPatch,
     mocker: pytest_mock.MockerFixture,
 ) -> None:
-    """Test _attach_jax_static_arg_metadata when environment_tags is None.
+    """Test JAX static arg metadata attachment when environment_tags is None.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
     """
+    import sys
+
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     from ml_ecosystem_snapshots.frameworks import jax as jax_fw
-    from ml_ecosystem_snapshots.frameworks.jax import _attach_jax_static_arg_metadata
+    from ml_ecosystem_snapshots.frameworks.jax import attach_jax_static_arg_metadata
 
     class FakeObj:
         """Fake callable with static metadata."""
@@ -1127,7 +1165,7 @@ def test_jax_static_arg_metadata_none_environment_tags(
         params=[GhostParam(name="axis", kind=ParameterKind.POSITIONAL_OR_KEYWORD)],
         environment_tags=None,
     )
-    res = _attach_jax_static_arg_metadata(ref, FakeObj())
+    res = attach_jax_static_arg_metadata(ref, FakeObj())
     assert res.environment_tags is not None
     assert any("static_argnames:axis" in t for t in res.environment_tags)
 
@@ -1144,14 +1182,14 @@ def test_jax_static_arg_metadata_none_environment_tags(
         params=[GhostParam(name="axis", kind=ParameterKind.POSITIONAL_OR_KEYWORD)],
         environment_tags=None,
     )
-    res2 = _attach_jax_static_arg_metadata(ref2, FakeObj2())
+    res2 = attach_jax_static_arg_metadata(ref2, FakeObj2())
     assert any("static_argnums:0" in t for t in res2.environment_tags or [])
 
     # Exception branch coverage with jax not None
     mocker.patch.object(jax_fw, "jax", True)
     with patch(
         "ml_ecosystem_snapshots.frameworks.jax.get_all_members",
-        side_effect=Exception,
+        side_effect=RuntimeError("boom"),
     ):
         assert jax_fw.collect_api(SemanticTier.ACTIVATION) == []
         assert jax_fw.collect_api(SemanticTier.INITIALIZER) == []
@@ -1160,22 +1198,22 @@ def test_jax_static_arg_metadata_none_environment_tags(
     assert jax_fw.collect_api(SemanticTier.ACTIVATION) == []
     assert jax_fw.collect_api(SemanticTier.INITIALIZER) == []
 
-    with patch.dict("sys.modules", {"jax.numpy": None}):
+    with monkeypatch.context() as mp:
+        mp.setitem(sys.modules, "jax.numpy", None)
         res_empty = jax_fw.collect_api(SemanticTier.ARRAY_API)
         assert len(res_empty) == 0
 
     mocker.patch.object(jax_fw, "jax", True)
     fake_pallas = create_module("jax.experimental.pallas", {})
     fake_experimental = create_module("jax.experimental", {"pallas": fake_pallas})
-    with mock.patch.dict(
-        "sys.modules",
-        {
-            "jax": create_module("jax", {}),
-            "jax.numpy": create_module("jax.numpy", {"abs": lambda: None}),
-            "jax.experimental": fake_experimental,
-            "jax.experimental.pallas": fake_pallas,
-        },
-    ):
+    with monkeypatch.context() as mp:
+        for mod_key, mod_obj in (
+            ("jax", create_module("jax", {})),
+            ("jax.numpy", create_module("jax.numpy", {"abs": lambda: None})),
+            ("jax.experimental", fake_experimental),
+            ("jax.experimental.pallas", fake_pallas),
+        ):
+            mp.setitem(sys.modules, mod_key, mod_obj)
         assert len(jax_fw.collect_api(SemanticTier.ARRAY_API)) > 0
 
 
@@ -1188,22 +1226,22 @@ def test_flax_nnx_collect(mocker: pytest_mock.MockerFixture) -> None:
     from ml_ecosystem_snapshots.frameworks import flax_nnx as flax_fw
 
     class Module:
-        """Mock or helper class Module for unit testing."""
+        """Stub Flax NNX base `Module` class."""
 
         pass
 
     class Dense(Module):
-        """Mock or helper class Dense for unit testing."""
+        """Stub Flax NNX `Dense` layer subclass."""
 
         pass
 
     class _Priv(Module):
-        """Mock or helper class _Priv for unit testing."""
+        """Stub private Flax NNX module subclass."""
 
         pass
 
     class NotAModule:
-        """Mock or helper class NotAModule for unit testing."""
+        """Unrelated class not inheriting from Flax NNX `Module`."""
 
         pass
 
@@ -1235,7 +1273,7 @@ def test_flax_nnx_collect(mocker: pytest_mock.MockerFixture) -> None:
     # Exception branch coverage
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.flax_nnx.get_all_members",
-        side_effect=Exception,
+        side_effect=RuntimeError("boom"),
     )
     assert flax_fw.collect_api(SemanticTier.LAYER) == []
 
@@ -1303,7 +1341,7 @@ def test_optax_collect(mocker: pytest_mock.MockerFixture) -> None:
 
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",
-        side_effect=Exception,
+        side_effect=RuntimeError("boom"),
     )
     assert o_shim.OptaxScanner.scan_optimizers() == []
     assert o_shim.OptaxScanner.scan_losses() == []
@@ -1315,12 +1353,17 @@ def test_optax_collect(mocker: pytest_mock.MockerFixture) -> None:
     assert o_shim.OptaxScanner.scan_schedulers() == []
 
 
-def test_sklearn_collect(mocker: pytest_mock.MockerFixture) -> None:
+def test_sklearn_collect(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Verify sklearn collect behavior.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
     """
+    import sys
     import types
 
     from ml_switcheroo_ir.schema.ghost import SemanticTier
@@ -1328,15 +1371,15 @@ def test_sklearn_collect(mocker: pytest_mock.MockerFixture) -> None:
     from ml_ecosystem_snapshots.frameworks import sklearn as sklearn_fw
 
     class BaseEstimator:
-        """Mock or helper class BaseEstimator for unit testing."""
+        """Stub scikit-learn `BaseEstimator` root class."""
 
         pass
 
     class RandomForestClassifier(BaseEstimator):
-        """Mock or helper class RandomForestClassifier for unit testing."""
+        """Stub scikit-learn `RandomForestClassifier` estimator."""
 
         def __init__(self, n_estimators: int = 100) -> None:
-            """Execute helper init  .
+            """Initialize the stub random forest classifier.
 
             Args:
                 n_estimators: Number of boosting or forest estimators.
@@ -1344,12 +1387,12 @@ def test_sklearn_collect(mocker: pytest_mock.MockerFixture) -> None:
             pass
 
     class NotAnEstimator:
-        """Mock or helper class NotAnEstimator for unit testing."""
+        """Unrelated class not inheriting from `BaseEstimator`."""
 
         pass
 
-    def accuracy_score(y_true: InspectableTarget, y_pred: InspectableTarget) -> None:
-        """Execute helper accuracy score.
+    def accuracy_score(y_true: LivePythonTarget, y_pred: LivePythonTarget) -> None:
+        """Compute stub classification accuracy score.
 
         Args:
             y_true: Ground-truth target labels.
@@ -1389,7 +1432,8 @@ def test_sklearn_collect(mocker: pytest_mock.MockerFixture) -> None:
     ]:
         sys_modules[f"sklearn.{name}"] = types.ModuleType(f"sklearn.{name}")
 
-    mocker.patch.dict("sys.modules", sys_modules)
+    for mod_key, mod_val in sys_modules.items():
+        monkeypatch.setitem(sys.modules, mod_key, mod_val)
     mocker.patch.object(sklearn_fw, "sklearn", mock_sklearn)
     mocker.patch.object(sklearn_fw, "BaseEstimator", BaseEstimator)
 
@@ -1421,10 +1465,14 @@ def test_sklearn_import_error(mocker: pytest_mock.MockerFixture) -> None:
     assert layers == []
 
 
-def test_sklearn_module_import_error(mocker: pytest_mock.MockerFixture) -> None:
+def test_sklearn_module_import_error(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Verify sklearn module import error behavior.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
     """
     import sys
@@ -1436,22 +1484,20 @@ def test_sklearn_module_import_error(mocker: pytest_mock.MockerFixture) -> None:
 
     mock_sklearn = types.ModuleType("sklearn")
     mocker.patch.object(sklearn_fw, "sklearn", mock_sklearn)
-    mocker.patch.dict(
-        sys.modules,
-        {
-            "sklearn": mock_sklearn,
-            "sklearn.linear_model": None,
-            "sklearn.ensemble": None,
-            "sklearn.svm": None,
-            "sklearn.naive_bayes": None,
-            "sklearn.tree": None,
-            "sklearn.neighbors": None,
-            "sklearn.cluster": None,
-            "sklearn.decomposition": None,
-            "sklearn.preprocessing": None,
-            "sklearn.metrics": None,
-        },
-    )
+    monkeypatch.setitem(sys.modules, "sklearn", mock_sklearn)
+    for blocked_sub in (
+        "sklearn.linear_model",
+        "sklearn.ensemble",
+        "sklearn.svm",
+        "sklearn.naive_bayes",
+        "sklearn.tree",
+        "sklearn.neighbors",
+        "sklearn.cluster",
+        "sklearn.decomposition",
+        "sklearn.preprocessing",
+        "sklearn.metrics",
+    ):
+        monkeypatch.setitem(sys.modules, blocked_sub, None)
 
     layers = sklearn_fw.collect_api(SemanticTier.LAYER)
     assert layers == []
@@ -1468,39 +1514,39 @@ def test_sklearn_scan_module_edge_cases(mocker: pytest_mock.MockerFixture) -> No
     """
     import types
 
-    from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
+    from ml_ecosystem_snapshots.frameworks.sklearn import scan_sklearn_module
 
     # 43: not module
-    assert _scan_module(None, "prefix") == []
+    assert scan_sklearn_module(None, "prefix") == []
 
     # 50-51: Exception during getmembers
     mock_mod = types.ModuleType("mock_mod")
 
     # To cause getmembers to fail, we can make an attribute raise Exception
     class BadObj:
-        """Mock or helper class BadObj for unit testing."""
+        """Object with a broken property triggering member inspection failure."""
 
         @property
         def bad(self) -> None:
-            """Execute helper bad.
+            """Raise `RuntimeError` when accessed during attribute discovery.
 
             Raises:
-                RuntimeError: Exception.
+                RuntimeError: Always raised to simulate broken descriptor access.
             """
             raise RuntimeError("Bad")
 
     pytest.MonkeyPatch().setattr(mock_mod, "bad_obj", BadObj(), raising=False)
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.sklearn.get_all_members",
-        side_effect=Exception("mocked"),
+        side_effect=RuntimeError("mocked"),
     )
-    assert _scan_module(mock_mod, "prefix") == []
+    assert scan_sklearn_module(mock_mod, "prefix") == []
 
     # 55: private or block_list
     mock_mod2 = types.ModuleType("mock_mod2")
 
     class ValidObj:
-        """Mock or helper class ValidObj for unit testing."""
+        """Stub valid class used to verify block-list and private filtering."""
 
         pass
 
@@ -1512,7 +1558,7 @@ def test_sklearn_scan_module_edge_cases(mocker: pytest_mock.MockerFixture) -> No
         return_value=[("_private", ValidObj), ("blocked", ValidObj)],
     )
     mocker.patch("inspect.isclass", return_value=True)
-    assert _scan_module(mock_mod2, "prefix", block_list={"blocked"}) == []
+    assert scan_sklearn_module(mock_mod2, "prefix", block_list={"blocked"}) == []
 
 
 def test_sklearn_scan_module_branches(mocker: pytest_mock.MockerFixture) -> None:
@@ -1523,17 +1569,17 @@ def test_sklearn_scan_module_branches(mocker: pytest_mock.MockerFixture) -> None
     """
     import types
 
-    from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
+    from ml_ecosystem_snapshots.frameworks.sklearn import scan_sklearn_module
 
     mock_mod = types.ModuleType("mock_mod")
 
     class ValidObj:
-        """Mock or helper class ValidObj for unit testing."""
+        """Stub class exported from a scanned scikit-learn submodule."""
 
         pass
 
     def valid_func() -> None:
-        """Execute helper valid func."""
+        """Stub function exported from a scanned scikit-learn submodule."""
         pass
 
     # 1. kind="class", is_estimator=False
@@ -1549,10 +1595,10 @@ def test_sklearn_scan_module_branches(mocker: pytest_mock.MockerFixture) -> None
         ],
     )
 
-    res = _scan_module(mock_mod, "prefix", kind="class", is_estimator=False)
+    res = scan_sklearn_module(mock_mod, "prefix", kind="class", is_estimator=False)
     assert len(res) == 1
 
-    res = _scan_module(mock_mod, "prefix", kind="function")
+    res = scan_sklearn_module(mock_mod, "prefix", kind="function")
     assert len(res) == 1
 
 
@@ -1564,14 +1610,14 @@ def test_sklearn_scan_module_exception(mocker: pytest_mock.MockerFixture) -> Non
     """
     import types
 
-    from ml_ecosystem_snapshots.frameworks.sklearn import _scan_module
+    from ml_ecosystem_snapshots.frameworks.sklearn import scan_sklearn_module
 
     mock_mod = types.ModuleType("mock_mod")
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.sklearn.get_all_members",
-        side_effect=Exception("Mocked failure in get_all_members"),
+        side_effect=RuntimeError("Mocked failure in get_all_members"),
     )
-    res = _scan_module(mock_mod, "prefix")
+    res = scan_sklearn_module(mock_mod, "prefix")
     assert res == []
 
 
@@ -1631,7 +1677,7 @@ def test_numpy_collect(mocker: pytest_mock.MockerFixture) -> None:
 
     original_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: InspectableTarget, api_path: str, is_public: bool | None = None) -> GhostRef:
+    def mock_inspect(obj: LivePythonTarget, api_path: str, is_public: bool | None = None) -> GhostRef:
         """Mock inspect function delegating to real GhostInspector.inspect except on minimum.
 
         Args:
@@ -1641,6 +1687,9 @@ def test_numpy_collect(mocker: pytest_mock.MockerFixture) -> None:
 
         Returns:
             A populated `GhostRef`.
+
+        Raises:
+            ValueError: When `api_path` contains `minimum`.
         """
         if "minimum" in api_path:
             raise ValueError("mock error")
@@ -1709,7 +1758,7 @@ def test_orbax_collect(mocker: pytest_mock.MockerFixture) -> None:
     class Checkpointer:
         """Checkpoint manager class."""
 
-        def __init__(self, handler: InspectableTarget) -> None:
+        def __init__(self, handler: LivePythonTarget) -> None:
             """Initialize Checkpointer.
 
             Args:
@@ -1735,7 +1784,7 @@ def test_orbax_collect(mocker: pytest_mock.MockerFixture) -> None:
 
     original_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: InspectableTarget, api_path: str, is_public: bool | None = None) -> GhostRef:
+    def mock_inspect(obj: LivePythonTarget, api_path: str, is_public: bool | None = None) -> GhostRef:
         """Mock inspect function delegating to real GhostInspector.inspect except on error_func.
 
         Args:
@@ -1745,6 +1794,9 @@ def test_orbax_collect(mocker: pytest_mock.MockerFixture) -> None:
 
         Returns:
             A populated `GhostRef`.
+
+        Raises:
+            ValueError: When `api_path` contains `error_func`.
         """
         if "error_func" in api_path:
             raise ValueError("mock error")
@@ -1833,7 +1885,7 @@ def test_pax_collect(mocker: pytest_mock.MockerFixture) -> None:
 
     original_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: InspectableTarget, api_path: str, is_public: bool | None = None) -> GhostRef:
+    def mock_inspect(obj: LivePythonTarget, api_path: str, is_public: bool | None = None) -> GhostRef:
         """Mock inspect function delegating to real GhostInspector.inspect except on ErrorClass.
 
         Args:
@@ -1843,6 +1895,9 @@ def test_pax_collect(mocker: pytest_mock.MockerFixture) -> None:
 
         Returns:
             A populated `GhostRef`.
+
+        Raises:
+            ValueError: When `api_path` contains `ErrorClass`.
         """
         if "ErrorClass" in api_path:
             raise ValueError("mock error")
@@ -1952,7 +2007,7 @@ def test_deepspeed_collect(mocker: pytest_mock.MockerFixture) -> None:
     # Early return for unsupported category (line 26 -> 27)
     assert ds_shim.collect_api(SemanticTier.LOSS) == []
 
-    def initialize(model: InspectableTarget, config_params: str = "ds_config.json") -> tuple[InspectableTarget, str]:
+    def initialize(model: LivePythonTarget, config_params: str = "ds_config.json") -> tuple[LivePythonTarget, str]:
         """Initialize DeepSpeed engine.
 
         Args:
@@ -2097,7 +2152,7 @@ def test_huggingface_collect(mocker: pytest_mock.MockerFixture) -> None:
     class PreTrainedModel:
         """Base class for Hugging Face pretrained models."""
 
-        def __init__(self, config: InspectableTarget = None) -> None:
+        def __init__(self, config: LivePythonTarget = None) -> None:
             """Initialize PreTrainedModel.
 
             Args:
@@ -2110,8 +2165,8 @@ def test_huggingface_collect(mocker: pytest_mock.MockerFixture) -> None:
 
         def __init__(
             self,
-            model: InspectableTarget = None,
-            args: InspectableTarget = None,
+            model: LivePythonTarget = None,
+            args: LivePythonTarget = None,
         ) -> None:
             """Initialize Trainer.
 
@@ -2380,7 +2435,7 @@ class _FallbackTorchTensor:
         """
         return self
 
-    def to(self, *args: InspectableTarget, **kwargs: InspectableTarget) -> _FallbackTorchTensor:
+    def to(self, *args: LivePythonTarget, **kwargs: LivePythonTarget) -> _FallbackTorchTensor:
         """Convert tensor dtype or device placement.
 
         Args:
@@ -2404,7 +2459,7 @@ class _FallbackTorchTensor:
 class _FallbackJaxArray:
     """Fallback JAX `Array` stub when `jax` is unavailable."""
 
-    def reshape(self, *args: InspectableTarget, **kwargs: InspectableTarget) -> _FallbackJaxArray:
+    def reshape(self, *args: LivePythonTarget, **kwargs: LivePythonTarget) -> _FallbackJaxArray:
         """Reshape the array without changing its data.
 
         Args:
@@ -2416,7 +2471,7 @@ class _FallbackJaxArray:
         """
         return self
 
-    def transpose(self, *args: InspectableTarget, **kwargs: InspectableTarget) -> _FallbackJaxArray:
+    def transpose(self, *args: LivePythonTarget, **kwargs: LivePythonTarget) -> _FallbackJaxArray:
         """Permute array dimensions.
 
         Args:
@@ -2463,7 +2518,7 @@ class _FallbackTFTensor:
 class _FallbackTFVariable:
     """Fallback TensorFlow `Variable` stub when `tensorflow` is unavailable."""
 
-    def assign(self, value: InspectableTarget) -> InspectableTarget:
+    def assign(self, value: LivePythonTarget) -> LivePythonTarget:
         """Assign a new value to the variable.
 
         Args:
@@ -2474,7 +2529,7 @@ class _FallbackTFVariable:
         """
         return value
 
-    def assign_add(self, delta: InspectableTarget) -> InspectableTarget:
+    def assign_add(self, delta: LivePythonTarget) -> LivePythonTarget:
         """Add a delta to the variable in place.
 
         Args:
@@ -2536,15 +2591,14 @@ def _resolve_tf_tensor_and_var_cls() -> tuple[type, type]:
 
 def test_tensor_instance_methods_extraction() -> None:
     """Validate extraction of core tensor instance methods across Torch, JAX, and TensorFlow."""
-    import inspect
-
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+    from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
 
     torch_tensor_cls = _resolve_torch_tensor_cls()
     jax_array_cls = _resolve_jax_array_cls()
     tf_tensor_cls, tf_var_cls = _resolve_tf_tensor_and_var_cls()
 
-    torch_members = dict(inspect.getmembers(torch_tensor_cls))
+    torch_members = get_member_dict(torch_tensor_cls)
     for m in ("view", "reshape", "permute", "transpose", "repeat", "to"):
         obj = torch_members[m]
         ref = GhostInspector.inspect(obj, f"torch.Tensor.{m}", kind="method")
@@ -2558,7 +2612,7 @@ def test_tensor_instance_methods_extraction() -> None:
     assert detach_ref.api_path == "torch.Tensor.detach"
     assert len(detach_ref.params) == 0
 
-    jax_members = dict(inspect.getmembers(jax_array_cls))
+    jax_members = get_member_dict(jax_array_cls)
     for m in ("reshape", "transpose", "flatten"):
         obj = jax_members[m]
         ref = GhostInspector.inspect(obj, f"jax.Array.{m}", kind="method")
@@ -2566,14 +2620,14 @@ def test_tensor_instance_methods_extraction() -> None:
         assert ref.api_path == f"jax.Array.{m}"
         assert len(ref.params) > 0
 
-    tf_tensor_members = dict(inspect.getmembers(tf_tensor_cls))
+    tf_tensor_members = get_member_dict(tf_tensor_cls)
     for m in ("get_shape", "set_shape"):
         obj = tf_tensor_members[m]
         ref = GhostInspector.inspect(obj, f"tf.Tensor.{m}", kind="method")
         assert ref.kind == "method"
         assert ref.api_path == f"tf.Tensor.{m}"
 
-    tf_var_members = dict(inspect.getmembers(tf_var_cls))
+    tf_var_members = get_member_dict(tf_var_cls)
     for m in ("assign", "assign_add"):
         obj = tf_var_members[m]
         ref = GhostInspector.inspect(obj, f"tf.Variable.{m}", kind="method")

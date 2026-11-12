@@ -12,6 +12,12 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
 )
 
+from ml_ecosystem_snapshots.frameworks._base import (
+    CollectorDomain,
+    DomainCollectorAdapter,
+    SymbolKind,
+)
+
 _TIKZ_COMMANDS = [
     "draw",
     "fill",
@@ -43,20 +49,17 @@ _TIKZ_SHAPES = [
 ]
 
 
-def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
-    """Entrypoint to collect the TikZ DSL API signature.
+def collect_domain(include_nonpublic: bool = False) -> list[GhostRef]:
+    """Collect TikZ DSL command and shape node signatures without `SemanticTier` shoehorning.
 
     Args:
-        category: The category of API to collect.
-        include_nonpublic: Whether to include non-public APIs.
+        include_nonpublic: Whether to include non-public symbols.
 
     Returns:
-        A list of GhostRef items discovered.
+        List of `GhostRef` items representing TikZ commands and shape nodes.
     """
-    if category != SemanticTier.UTIL:
-        return []
-
-    refs = []
+    del include_nonpublic
+    refs: list[GhostRef] = []
 
     for cmd in _TIKZ_COMMANDS:
         params = [
@@ -67,7 +70,7 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
             GhostRef(
                 name=cmd,
                 api_path=f"tikz.{cmd}",
-                kind="function",
+                kind=SymbolKind.FUNCTION.value,
                 params=params,
                 docstring=f"TikZ \\{cmd} command.",
             )
@@ -84,10 +87,28 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
             GhostRef(
                 name=clean_name,
                 api_path=f"tikz.shape.{clean_name}",
-                kind="CLASS",
+                kind=SymbolKind.ELEMENT.value,
                 params=params,
                 docstring=f"TikZ {shape} shape node.",
             )
         )
 
     return refs
+
+
+DOMAIN_COLLECTOR = DomainCollectorAdapter(CollectorDomain.DOCUMENT_DSL, "elements", collect_domain)
+
+
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
+    """Entrypoint to collect the TikZ DSL API signature.
+
+    Args:
+        category: The category of API to collect.
+        include_nonpublic: Whether to include non-public APIs.
+
+    Returns:
+        A list of GhostRef items discovered.
+    """
+    if category != SemanticTier.UTIL:
+        return []
+    return collect_domain(include_nonpublic)

@@ -24,7 +24,7 @@ from ml_ecosystem_snapshots.mcp_server import (
     handle_mcp_message,
     search_apis,
 )
-from ml_ecosystem_snapshots.models import JsonValue
+from ml_ecosystem_snapshots.models import JsonValue, ensure_present
 
 
 def test_version_aware_mcp_queries(mocker: pytest_mock.MockerFixture) -> None:
@@ -102,10 +102,10 @@ def test_version_aware_mcp_queries(mocker: pytest_mock.MockerFixture) -> None:
 
     # 3. check_hallucination with version
     res_v24 = check_hallucination("torch", "torch.op_v24", version="2.4.0")
-    assert res_v24["is_hallucinated"] is False
+    assert res_v24.is_hallucinated is False
 
     res_v23_fail = check_hallucination("torch", "torch.op_v24", version="2.3.0")
-    assert res_v23_fail["is_hallucinated"] is True
+    assert res_v23_fail.is_hallucinated is True
 
 
 def test_sqlite_fts5_index_integration_in_mcp(
@@ -116,7 +116,9 @@ def test_sqlite_fts5_index_integration_in_mcp(
     Args:
         mocker: Pytest mocker fixture.
     """
-    mock_symbol = {
+    from ml_ecosystem_snapshots.index import IndexedSymbolRecord
+
+    mock_symbol: dict[str, JsonValue] = {
         "name": "fast_op",
         "api_path": "torch.fast_op",
         "kind": "function",
@@ -128,7 +130,7 @@ def test_sqlite_fts5_index_integration_in_mcp(
     )
     mocker.patch(
         "ml_ecosystem_snapshots.index.search_index",
-        return_value=[mock_symbol],
+        return_value=[IndexedSymbolRecord.from_raw_dict(mock_symbol, framework="torch")],
     )
 
     # get_api_signature returns fast SQLite result without loading snapshot
@@ -307,11 +309,11 @@ def my_func(x):
     return w
 """
     res = check_code_block(code_snippet, framework="torch")
-    assert res["total_analyzed"] == 3
-    assert res["hallucinations_detected"] == 2
-    assert res["is_valid"] is False
+    assert res.total_analyzed == 3
+    assert res.hallucinations_detected == 2
+    assert res.is_valid is False
 
-    targets = [f["target"] for f in res["findings"]]
+    targets = [f.target for f in res.findings]
     assert "torch.sum" in targets
     assert "torch.non_existent_fake_op" in targets
 
@@ -323,8 +325,8 @@ y = torch.add(x, 2)
 z = torch.sum(y, dim=0)
 """
     res_valid = check_code_block(valid_code, framework="torch")
-    assert res_valid["is_valid"] is True
-    assert res_valid["hallucinations_detected"] == 0
+    assert res_valid.is_valid is True
+    assert res_valid.hallucinations_detected == 0
 
 
 def test_check_code_block_assembly_and_ir() -> None:
@@ -336,9 +338,9 @@ def test_check_code_block_assembly_and_ir() -> None:
 %1 = completely.non_existent_op %0
 """
     res_mlir = check_code_block(mlir_code, framework="mlir")
-    assert res_mlir["total_analyzed"] == 2
-    assert res_mlir["hallucinations_detected"] == 1
-    assert res_mlir["findings"][0]["target"] == "completely.non_existent_op"
+    assert res_mlir.total_analyzed == 2
+    assert res_mlir.hallucinations_detected == 1
+    assert res_mlir.findings[0].target == "completely.non_existent_op"
 
     # 2. NVIDIA SASS block
     sass_code = """
@@ -347,9 +349,9 @@ FFMA R0, R1, R2, R3;
 NON_EXISTENT_SASS_OP R0, R1;
 """
     res_sass = check_code_block(sass_code, framework="nvidia_sass")
-    assert res_sass["total_analyzed"] == 2
-    assert res_sass["hallucinations_detected"] == 1
-    assert res_sass["findings"][0]["target"] == "NON_EXISTENT_SASS_OP"
+    assert res_sass.total_analyzed == 2
+    assert res_sass.hallucinations_detected == 1
+    assert res_sass.findings[0].target == "NON_EXISTENT_SASS_OP"
 
     # 3. AMD RDNA block
     rdna_code = """
@@ -358,9 +360,9 @@ v_fma_f32 v0, v1, v2, v3
 v_non_existent_rdna_op v0, v1
 """
     res_rdna = check_code_block(rdna_code, framework="amd_rdna")
-    assert res_rdna["total_analyzed"] == 2
-    assert res_rdna["hallucinations_detected"] == 1
-    assert res_rdna["findings"][0]["target"] == "v_non_existent_rdna_op"
+    assert res_rdna.total_analyzed == 2
+    assert res_rdna.hallucinations_detected == 1
+    assert res_rdna.findings[0].target == "v_non_existent_rdna_op"
 
 
 def test_handle_mcp_message_check_code_block() -> None:
@@ -378,9 +380,9 @@ def test_handle_mcp_message_check_code_block() -> None:
         },
     }
     resp = handle_mcp_message(msg)
-    assert "result" in resp
-    assert '"hallucinations_detected": 1' in resp["result"]["content"][0]["text"]
-    assert '"is_valid": false' in resp["result"]["content"][0]["text"]
+    assert resp.result is not None
+    assert '"hallucinations_detected": 1' in ensure_present(ensure_present(resp.result).content)[0].text
+    assert '"is_valid": false' in ensure_present(ensure_present(resp.result).content)[0].text
 
 
 def test_mcp_server_disk_and_index_fallbacks(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
@@ -401,16 +403,16 @@ def test_mcp_server_disk_and_index_fallbacks(mocker: pytest_mock.MockerFixture, 
         return_value=str(tmp_path),
     )
     # Clear cache for custom_fw
-    from ml_ecosystem_snapshots.mcp_server import _SNAPSHOT_CACHE
+    from ml_ecosystem_snapshots.mcp_server import DEFAULT_SNAPSHOT_REPOSITORY
 
-    _SNAPSHOT_CACHE.pop("custom_fw", None)
-    _SNAPSHOT_CACHE.pop("custom_fw_none", None)
+    DEFAULT_SNAPSHOT_REPOSITORY.pop("custom_fw", None)
+    DEFAULT_SNAPSHOT_REPOSITORY.pop("custom_fw_none", None)
     snap = get_framework_snapshot("custom_fw", version=None)
     assert snap == {"categories": {}}
 
     # When version IS provided but file in dir does not match (branch 58->68)
-    _SNAPSHOT_CACHE.pop("custom_fw@99.0.0", None)
-    _SNAPSHOT_CACHE.pop("custom_fw_99.0.0", None)
+    DEFAULT_SNAPSHOT_REPOSITORY.pop("custom_fw@99.0.0", None)
+    DEFAULT_SNAPSHOT_REPOSITORY.pop("custom_fw_99.0.0", None)
     snap_v = get_framework_snapshot("custom_fw", version="99.0.0")
     assert snap_v == {"categories": {}}
 
@@ -472,12 +474,32 @@ def test_search_apis_edge_cases(mocker: pytest_mock.MockerFixture) -> None:
     assert "torch.some_query_op" in res
 
     # 3. search_index returns results with empty path, valid item (< limit), and duplicate (branches 60->58, 62->58)
+    from ml_ecosystem_snapshots.index import IndexedSymbolRecord
+
     mocker.patch(
         "ml_ecosystem_snapshots.index.search_index",
         return_value=[
-            {"api_path": None, "name": None, "mnemonic": None},
-            {"api_path": "torch.indexed_query_op", "name": "indexed_query_op"},
-            {"api_path": "torch.indexed_query_op", "name": "indexed_query_op"},
+            IndexedSymbolRecord(
+                api_path="",
+                framework="torch",
+                kind="function",
+                category="all",
+                data={"api_path": None, "name": None, "mnemonic": None},
+            ),
+            IndexedSymbolRecord(
+                api_path="torch.indexed_query_op",
+                framework="torch",
+                kind="function",
+                category="all",
+                data={"api_path": "torch.indexed_query_op", "name": "indexed_query_op"},
+            ),
+            IndexedSymbolRecord(
+                api_path="torch.indexed_query_op",
+                framework="torch",
+                kind="function",
+                category="all",
+                data={"api_path": "torch.indexed_query_op", "name": "indexed_query_op"},
+            ),
         ],
     )
     res2 = search_apis("torch", "some_query", limit=10)
@@ -547,7 +569,7 @@ def test_check_hallucination_dtypes_and_ranks_edge_cases(
         arg_ranks=[2, 3, 1, 99, 100],
         kwarg_values={"dtype": "float32", "unpassed_kw": "float32"},
     )
-    assert not res_valid.get("is_hallucinated")
+    assert not res_valid.is_hallucinated
 
     # Test check_rdna_instruction with modifiers (lines 979-980)
     from ml_ecosystem_snapshots.mcp_server import check_rdna_instruction
@@ -563,7 +585,7 @@ def test_check_hallucination_dtypes_and_ranks_edge_cases(
         arg_dtypes={"x": "float32", "y": "float32"},
         arg_ranks={"x": 2, "y": 2},
     )
-    assert not res_dict_args.get("is_hallucinated")
+    assert not res_dict_args.is_hallucinated
 
     # 3. is_float_complex_api fallback allowed dtypes (line 672) when parameter 'a' is validated
     res_inv_valid = check_hallucination(
@@ -572,7 +594,7 @@ def test_check_hallucination_dtypes_and_ranks_edge_cases(
         kwargs=["a"],
         kwarg_dtypes={"a": "float32"},
     )
-    assert not res_inv_valid.get("is_hallucinated")
+    assert not res_inv_valid.is_hallucinated
 
     # 4. is_float_complex_api with unexpected int dtype passed (line 697)
     res_inv_int = check_hallucination(
@@ -581,8 +603,8 @@ def test_check_hallucination_dtypes_and_ranks_edge_cases(
         kwargs=["a"],
         kwarg_dtypes={"other": "int64"},
     )
-    assert res_inv_int.get("is_hallucinated")
-    assert "Floating-point or complex dtype required" in res_inv_int.get("reason", "")
+    assert res_inv_int.is_hallucinated
+    assert "Floating-point or complex dtype required" in (res_inv_int.reason or "")
 
 
 def test_check_mlir_op_and_stablehlo_additional_branches(
@@ -657,7 +679,7 @@ def test_check_mlir_op_and_stablehlo_additional_branches(
         operand_types=["i32", "i32"],
         result_types=["i32"],
     )
-    assert res_existing_traits["is_valid"]
+    assert res_existing_traits.is_valid
 
     # 2. stablehlo.add sets traits (lines 1137-1140)
     res_shlo_add = check_mlir_op(
@@ -666,7 +688,7 @@ def test_check_mlir_op_and_stablehlo_additional_branches(
         operand_types=["tensor<4xf32>", "tensor<4xf32>"],
         result_types=["tensor<4xf32>"],
     )
-    assert res_shlo_add["is_valid"]
+    assert res_shlo_add.is_valid
 
     # stablehlo.subtract already has traits (branches 1137->1139, 1139->1143)
     res_shlo_sub = check_mlir_op(
@@ -675,7 +697,7 @@ def test_check_mlir_op_and_stablehlo_additional_branches(
         operand_types=["tensor<4xf32>", "tensor<4xf32>"],
         result_types=["tensor<4xf32>"],
     )
-    assert res_shlo_sub["is_valid"]
+    assert res_shlo_sub.is_valid
 
     # 3. broadcast_dimensions validation (lines 1294-1298) and non-list / missing shape fallbacks (1294->1200, 1297->1200)
     res_bcast = check_mlir_op(
@@ -686,21 +708,21 @@ def test_check_mlir_op_and_stablehlo_additional_branches(
             "result_shape": [4, 8],
         },
     )
-    assert res_bcast["is_valid"]
+    assert res_bcast.is_valid
 
     # Non-list broadcast_dimensions (branch 1294->1200)
     res_bcast_str = check_mlir_op(
         op_name="stablehlo.broadcast_in_dim",
         structured_attributes={"broadcast_dimensions": "not_a_list"},
     )
-    assert res_bcast_str["is_valid"]
+    assert res_bcast_str.is_valid
 
     # Missing operand_shape (branch 1297->1200)
     res_bcast_noshape = check_mlir_op(
         op_name="stablehlo.broadcast_in_dim",
         structured_attributes={"broadcast_dimensions": [0], "operand_shape": None},
     )
-    assert res_bcast_noshape["is_valid"]
+    assert res_bcast_noshape.is_valid
 
     # 4. region validation (lines 1304-1312) and non-dict region spec fallback (branch 1305->1304)
     res_region = check_mlir_op(
@@ -713,7 +735,7 @@ def test_check_mlir_op_and_stablehlo_additional_branches(
             "invalid_spec": "not_a_dict",  # branch 1305->1304
         },
     )
-    assert res_region["is_valid"]
+    assert res_region.is_valid
 
 
 def test_validate_source_code_and_jsonrpc_additional_branches(
@@ -724,25 +746,31 @@ def test_validate_source_code_and_jsonrpc_additional_branches(
     Args:
         mocker: Pytest mocker fixture.
     """
+    from ml_ecosystem_snapshots.mcp.models import (
+        HallucinationCheckResult,
+        IrCheckResult,
+        IsaCheckResult,
+    )
+
     mocker.patch(
         "ml_ecosystem_snapshots.mcp.tools.hallucination.check_hallucination",
-        return_value={"is_hallucinated": False},
+        return_value=HallucinationCheckResult(is_hallucinated=False),
     )
     mocker.patch(
         "ml_ecosystem_snapshots.mcp.tools.hallucination.check_mlir_op",
-        return_value={"is_valid": True},
+        return_value=IrCheckResult(is_valid=True),
     )
     mocker.patch(
         "ml_ecosystem_snapshots.mcp.tools.hallucination.check_sass_instruction",
-        return_value={"is_valid": True},
+        return_value=IsaCheckResult(is_valid=True),
     )
     mocker.patch(
         "ml_ecosystem_snapshots.mcp.tools.hallucination.check_rdna_instruction",
-        return_value={"is_valid": True},
+        return_value=IsaCheckResult(is_valid=True),
     )
     mocker.patch(
         "ml_ecosystem_snapshots.mcp_server.check_stablehlo_op",
-        return_value={"is_valid": True},
+        return_value=IrCheckResult(is_valid=True),
     )
 
     # 1. Framework auto-inference in check_code_block (lines 1424-1438)
@@ -763,19 +791,19 @@ custom_unknown_module.some_fn(x)
 (lambda: None)()
 """
     res_py = check_code_block(py_code, framework=None)
-    assert res_py["total_analyzed"] >= 6
+    assert res_py.total_analyzed >= 6
 
     # Explicit framework (branch 1423->1440)
     res_explicit_fw = check_code_block("torch.abs(x)", framework="torch")
-    assert res_explicit_fw["total_analyzed"] == 1
+    assert res_explicit_fw.total_analyzed == 1
 
     # Unrecognized library call alone (line 1438)
     res_unrec = check_code_block("unrecognized_lib.call()", framework=None)
-    assert res_unrec["total_analyzed"] == 0
+    assert res_unrec.total_analyzed == 0
 
     # 2. Code block with no function calls (branch 1419->1463)
     res_no_calls = check_code_block("x = 10\ny = 20\n", framework=None)
-    assert res_no_calls["total_analyzed"] == 0
+    assert res_no_calls.total_analyzed == 0
 
     # 3. Line-by-line validation covering valid branches and non-matching lines:
     # 1497->1506 (valid MLIR op), 1522->1531 (valid SASS), 1535->1465 (skipped line/label), 1541->1550 (valid RDNA)
@@ -787,8 +815,8 @@ FADD R0, R1, R2;
 v_add_f32 v0, v1, v2
 """
     res_mixed = check_code_block(mixed_code, framework="mixed")
-    assert res_mixed["total_analyzed"] >= 3
-    assert res_mixed["is_valid"]
+    assert res_mixed.total_analyzed >= 3
+    assert res_mixed.is_valid
 
     # 4. JSON-RPC check_stablehlo_op dispatch (lines 1964-1973)
     req: dict[str, JsonValue] = {
@@ -806,8 +834,8 @@ v_add_f32 v0, v1, v2
         },
     }
     resp = handle_mcp_message(req)
-    assert resp["id"] == 42
-    assert '"is_valid": true' in resp["result"]["content"][0]["text"]
+    assert resp.id == 42
+    assert '"is_valid": true' in ensure_present(ensure_present(resp.result).content)[0].text
 
 
 def test_shape_and_dtype_grounding(mocker: pytest_mock.MockerFixture) -> None:
@@ -909,33 +937,33 @@ def test_shape_and_dtype_grounding(mocker: pytest_mock.MockerFixture) -> None:
 
     # 1. Elementwise broadcasting
     res_add_valid = check_hallucination("torch", "torch.add", arg_shapes=[[2, 3], [1, 3]])
-    assert res_add_valid["is_hallucinated"] is False
+    assert res_add_valid.is_hallucinated is False
 
     res_add_invalid = check_hallucination("torch", "torch.add", arg_shapes=[[2, 3], [3, 2]])
-    assert res_add_invalid["is_hallucinated"] is True
-    assert "Broadcasting error" in res_add_invalid["reason"]
+    assert res_add_invalid.is_hallucinated is True
+    assert "Broadcasting error" in res_add_invalid.reason
 
     # 2. Matmul strict 2D and dimension mismatch
     res_mm_valid = check_hallucination("torch", "torch.mm", arg_shapes=[[2, 3], [3, 4]])
-    assert res_mm_valid["is_hallucinated"] is False
+    assert res_mm_valid.is_hallucinated is False
 
     res_mm_3d = check_hallucination("torch", "torch.mm", arg_shapes=[[2, 3, 4], [2, 4, 5]])
-    assert res_mm_3d["is_hallucinated"] is True
-    assert "Strict 2D" in res_mm_3d["reason"]
+    assert res_mm_3d.is_hallucinated is True
+    assert "Strict 2D" in res_mm_3d.reason
 
     res_matmul_k_err = check_hallucination("torch", "torch.matmul", arg_shapes=[[2, 3], [4, 5]])
-    assert res_matmul_k_err["is_hallucinated"] is True
-    assert "contracting dimension mismatch" in res_matmul_k_err["reason"]
+    assert res_matmul_k_err.is_hallucinated is True
+    assert "contracting dimension mismatch" in res_matmul_k_err.reason
 
     # 3. Logical/bitwise float dtype rejection
     res_bitwise = check_hallucination("torch", "torch.bitwise_and", arg_dtypes=["float32", "float32"])
-    assert res_bitwise["is_hallucinated"] is True
-    assert "require integer or boolean" in res_bitwise["reason"]
+    assert res_bitwise.is_hallucinated is True
+    assert "require integer or boolean" in res_bitwise.reason
 
     # 4. Quantization low-precision constraint
     res_quant = check_hallucination("torch", "torch.quantize_per_tensor", kwarg_values={"dtype": "float32"})
-    assert res_quant["is_hallucinated"] is True
-    assert "not a valid quantization dtype" in res_quant["reason"]
+    assert res_quant.is_hallucinated is True
+    assert "not a valid quantization dtype" in res_quant.reason
 
 
 def test_stablehlo_rank_and_conv_validation() -> None:
@@ -954,8 +982,8 @@ def test_stablehlo_rank_and_conv_validation() -> None:
         operand_types=["tensor<2x3xf32>", "tensor<3x4xf32>"],
         structured_attributes=dot_attrs,
     )
-    assert res_dot["is_valid"] is False
-    assert any("is out of bounds for rank 2" in err for err in res_dot["errors"])
+    assert res_dot.is_valid is False
+    assert any("is out of bounds for rank 2" in err for err in res_dot.errors)
 
     # ConvDimensionNumbersAttr with spatial dimension mismatch
     conv_attrs: dict[str, JsonValue] = {
@@ -976,8 +1004,8 @@ def test_stablehlo_rank_and_conv_validation() -> None:
         operand_types=["tensor<1x3x224x224xf32>", "tensor<64x3x7x7x7xf32>"],
         structured_attributes=conv_attrs,
     )
-    assert res_conv["is_valid"] is False
-    assert any("Spatial dimensions count mismatch" in err for err in res_conv["errors"])
+    assert res_conv.is_valid is False
+    assert any("Spatial dimensions count mismatch" in err for err in res_conv.errors)
 
 
 def test_explain_anti_pattern_tool(mocker: pytest_mock.MockerFixture) -> None:
@@ -995,44 +1023,44 @@ def test_explain_anti_pattern_tool(mocker: pytest_mock.MockerFixture) -> None:
 
     # 1. PyTorch axis -> dim
     res_axis = explain_anti_pattern("torch", "torch.sum", "axis")
-    assert res_axis["is_known_anti_pattern"] is True
-    assert res_axis["canonical_argument"] == "dim"
-    assert "dim" in res_axis["explanation"]
+    assert res_axis.is_known_anti_pattern is True
+    assert res_axis.canonical_argument == "dim"
+    assert "dim" in res_axis.explanation
 
     # 2. PyTorch keepdims -> keepdim
     res_keepdims = explain_anti_pattern("torch", "torch.sum", "keepdims")
-    assert res_keepdims["is_known_anti_pattern"] is True
-    assert res_keepdims["canonical_argument"] == "keepdim"
+    assert res_keepdims.is_known_anti_pattern is True
+    assert res_keepdims.canonical_argument == "keepdim"
 
     # 3. JAX dim -> axis
     res_jax = explain_anti_pattern("jax", "jax.numpy.sum", "dim")
-    assert res_jax["is_known_anti_pattern"] is True
-    assert res_jax["canonical_argument"] == "axis"
+    assert res_jax.is_known_anti_pattern is True
+    assert res_jax.canonical_argument == "axis"
 
     # 4. TensorFlow keepdim -> keepdims
     res_tf = explain_anti_pattern("tensorflow", "tf.reduce_sum", "keepdim")
-    assert res_tf["is_known_anti_pattern"] is True
-    assert res_tf["canonical_argument"] == "keepdims"
+    assert res_tf.is_known_anti_pattern is True
+    assert res_tf.canonical_argument == "keepdims"
 
     # PyTorch inplace migration
     res_inp = explain_anti_pattern("torch", "torch.relu", "inplace")
-    assert res_inp["is_known_anti_pattern"] is True
-    assert "underscore" in res_inp["explanation"]
+    assert res_inp.is_known_anti_pattern is True
+    assert "underscore" in res_inp.explanation
 
     # JAX PRNG key and rng migration
     res_key = explain_anti_pattern("jax", "jax.random.normal", "key")
-    assert res_key["is_known_anti_pattern"] is True
-    assert "PRNGKey" in res_key["explanation"]
+    assert res_key.is_known_anti_pattern is True
+    assert "PRNGKey" in res_key.explanation
 
     res_rng = explain_anti_pattern("jax", "jax.random.normal", "rng")
-    assert res_rng["is_known_anti_pattern"] is True
-    assert res_rng["canonical_argument"] == "key"
+    assert res_rng.is_known_anti_pattern is True
+    assert res_rng.canonical_argument == "key"
 
     # 5. Unknown argument fallback
     res_unknown = explain_anti_pattern("torch", "torch.sum", "unrecognized_kwarg")
-    assert res_unknown["is_known_anti_pattern"] is False
-    assert res_unknown["canonical_argument"] is None
-    assert "not recognized" in res_unknown["explanation"]
+    assert res_unknown.is_known_anti_pattern is False
+    assert res_unknown.canonical_argument is None
+    assert "not recognized" in res_unknown.explanation
 
     # 6. MCP message dispatch
     msg: dict[str, JsonValue] = {
@@ -1049,9 +1077,9 @@ def test_explain_anti_pattern_tool(mocker: pytest_mock.MockerFixture) -> None:
         },
     }
     resp = handle_mcp_message(msg)
-    assert resp["id"] == 101
-    assert "result" in resp
-    assert '"canonical_argument": "dim"' in resp["result"]["content"][0]["text"]
+    assert resp.id == 101
+    assert resp.result is not None
+    assert '"canonical_argument": "dim"' in ensure_present(ensure_present(resp.result).content)[0].text
 
 
 def test_mcp_edge_error_handling(mocker: pytest_mock.MockerFixture) -> None:
@@ -1138,8 +1166,8 @@ def test_mcp_edge_error_handling(mocker: pytest_mock.MockerFixture) -> None:
 
     # 1. explain_anti_pattern with unknown framework and API (sig is None)
     res_none_sig = explain_anti_pattern("nonexistent_fw", "nonexistent.op", "bad_arg")
-    assert res_none_sig["is_known_anti_pattern"] is False
-    assert res_none_sig["canonical_params"] == []
+    assert res_none_sig.is_known_anti_pattern is False
+    assert res_none_sig.canonical_params == []
 
     # 2. check_hallucination: logical/bitwise op with non-float dtype followed by float dtype (714->713)
     res_dup_dtype = check_hallucination(
@@ -1147,8 +1175,8 @@ def test_mcp_edge_error_handling(mocker: pytest_mock.MockerFixture) -> None:
         api_path="torch.bitwise_and",
         kwarg_dtypes={"input": "int32", "other": "float32"},
     )
-    assert res_dup_dtype["is_hallucinated"] is True
-    assert "Dtype 'float32' is not supported" in res_dup_dtype["reason"]
+    assert res_dup_dtype.is_hallucinated is True
+    assert "Dtype 'float32' is not supported" in res_dup_dtype.reason
 
     # 3. check_hallucination: quantization op without "dtype" and with valid "dtype" (735->741)
     res_quant_no_dt = check_hallucination(
@@ -1156,13 +1184,13 @@ def test_mcp_edge_error_handling(mocker: pytest_mock.MockerFixture) -> None:
         api_path="torch.quantize_per_tensor",
         kwarg_dtypes={"scale": "float32"},
     )
-    assert res_quant_no_dt["api_exists"] is True
+    assert res_quant_no_dt.api_exists is True
     res_quant_valid_dt = check_hallucination(
         framework="torch",
         api_path="torch.quantize_per_tensor",
         kwarg_dtypes={"dtype": "torch.qint8"},
     )
-    assert res_quant_valid_dt["is_hallucinated"] is False
+    assert res_quant_valid_dt.is_hallucinated is False
 
     # 4. check_hallucination: kwarg_shapes and extra arg_shapes
     res_shapes = check_hallucination(
@@ -1171,7 +1199,7 @@ def test_mcp_edge_error_handling(mocker: pytest_mock.MockerFixture) -> None:
         kwarg_shapes={"input": [2, 2]},
         arg_shapes=[[2, 2], [2, 2], [2, 2], [2, 2], [2, 2]],
     )
-    assert res_shapes["is_hallucinated"] is False
+    assert res_shapes.is_hallucinated is False
 
     # 5. check_mlir_op: dot with non-tensor operand types
     res_dot_nontensor = check_mlir_op(
@@ -1186,7 +1214,7 @@ def test_mcp_edge_error_handling(mocker: pytest_mock.MockerFixture) -> None:
         },
         operand_types=["i32", "i32"],
     )
-    assert res_dot_nontensor["is_valid"] is True
+    assert res_dot_nontensor.is_valid is True
 
     # 6. check_mlir_op: conv with non-tensor operand types and valid result_types
     conv_attr: dict[str, JsonValue] = {
@@ -1206,7 +1234,7 @@ def test_mcp_edge_error_handling(mocker: pytest_mock.MockerFixture) -> None:
         operand_types=["i32", "i32"],
         result_types=["tensor<1x16x32x32xf32>"],
     )
-    assert res_conv_tensor_res["is_valid"] is True
+    assert res_conv_tensor_res.is_valid is True
 
     # 7. check_mlir_op: conv with non-tensor result_types
     res_conv_nontensor_res = check_mlir_op(
@@ -1215,7 +1243,7 @@ def test_mcp_edge_error_handling(mocker: pytest_mock.MockerFixture) -> None:
         operand_types=["tensor<1x16x32x32xf32>", "tensor<16x16x3x3xf32>"],
         result_types=["i32"],
     )
-    assert res_conv_nontensor_res["is_valid"] is True
+    assert res_conv_nontensor_res.is_valid is True
 
 
 def test_get_framework_snapshot_extraction_exception(
@@ -1227,11 +1255,11 @@ def test_get_framework_snapshot_extraction_exception(
         mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.mcp_server import (
-        _SNAPSHOT_CACHE,
+        DEFAULT_SNAPSHOT_REPOSITORY,
         get_framework_snapshot,
     )
 
-    _SNAPSHOT_CACHE.clear()
+    DEFAULT_SNAPSHOT_REPOSITORY.clear()
     mock_extract = mocker.MagicMock(side_effect=RuntimeError("extraction failure"))
     mocker.patch("ml_ecosystem_snapshots.mcp.cache.extract_snapshot", mock_extract)
     mocker.patch("ml_ecosystem_snapshots.mcp.cache.is_offline_mode", return_value=False)
@@ -1246,12 +1274,12 @@ def test_check_sass_fp4_microscopic_scaling_architecture_gating() -> None:
 
     # sm_90 target architecture should fail for FP4 instruction
     res_sm90 = check_sass_instruction("MMA_SCALE_FP4", sm_arch="sm_90")
-    assert res_sm90["is_valid"] is False
-    assert any("Microscopic scaling and FP4/FP6 instructions" in err for err in res_sm90["errors"])
+    assert res_sm90.is_valid is False
+    assert any("Microscopic scaling and FP4/FP6 instructions" in err for err in res_sm90.errors)
 
     # sm_100 target architecture should succeed
     res_sm100 = check_sass_instruction("MMA_SCALE_FP4", sm_arch="sm_100")
-    assert res_sm100["is_valid"] is True
+    assert res_sm100.is_valid is True
 
 
 def test_translate_concept_arguments_direct_schema_key() -> None:
@@ -1259,14 +1287,14 @@ def test_translate_concept_arguments_direct_schema_key() -> None:
     from ml_ecosystem_snapshots.mcp_server import translate_concept_arguments
 
     res = translate_concept_arguments("matmul", "torch", "numpy", {"dim": 0})
-    assert res["concept"] == "matmul"
-    assert res["source_framework"] == "torch"
-    assert res["target_framework"] == "numpy"
+    assert res.concept == "matmul"
+    assert res.source_framework == "torch"
+    assert res.target_framework == "numpy"
 
     res_dot = translate_concept_arguments("dot", "torch", "numpy", {"dim": 0})
-    assert res_dot["concept"] == "dot"
-    assert res_dot["source_framework"] == "torch"
-    assert res_dot["target_framework"] == "numpy"
+    assert res_dot.concept == "dot"
+    assert res_dot.source_framework == "torch"
+    assert res_dot.target_framework == "numpy"
 
 
 def test_check_code_block_import_tracking(mocker: pytest_mock.MockerFixture) -> None:
@@ -1329,10 +1357,10 @@ res4 = F.cross_entropy(logits, targets, axis=1)
 res5 = th.add(x, y, invalid_kw=123)
 """
     rep = check_code_block(code)
-    assert rep["total_analyzed"] == 5
-    assert rep["hallucinations_detected"] == 3
-    assert rep["is_valid"] is False
-    hallucinated_lines = [f["line"] for f in rep["findings"]]
+    assert rep.total_analyzed == 5
+    assert rep.hallucinations_detected == 3
+    assert rep.is_valid is False
+    hallucinated_lines = [f.line for f in rep.findings]
     assert len(hallucinated_lines) == 3
 
 
@@ -1367,8 +1395,8 @@ def test_check_hallucination_known_enums_without_allowed_values(
         "custom.custom_op",
         kwarg_values={"reduction": "invalid_reduction_mode"},
     )
-    assert res["is_hallucinated"] is True
-    assert "Invalid enum value 'invalid_reduction_mode' for parameter 'reduction'" in res["reason"]
+    assert res.is_hallucinated is True
+    assert "Invalid enum value 'invalid_reduction_mode' for parameter 'reduction'" in res.reason
 
 
 def test_run_mcp_server_parse_error() -> None:
@@ -1390,27 +1418,37 @@ def test_run_mcp_server_parse_error() -> None:
     assert "Parse error" in resp["error"]["message"]
 
 
-def test_get_framework_snapshot_corrupt_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test get_framework_snapshot exception handling when reading corrupt snapshot file.
+def test_get_framework_snapshot_corrupt_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test get_framework_snapshot logs a diagnostic and returns clean empty categories on corrupt JSON.
 
     Args:
         tmp_path: Pytest temporary directory fixture.
         monkeypatch: Pytest monkeypatch fixture.
+        caplog: Pytest log capture fixture.
     """
+    import logging
+
     from ml_ecosystem_snapshots.mcp_server import (
-        _SNAPSHOT_CACHE,
+        DEFAULT_SNAPSHOT_REPOSITORY,
         get_framework_snapshot,
     )
 
-    _SNAPSHOT_CACHE.clear()
+    DEFAULT_SNAPSHOT_REPOSITORY.clear()
     custom_dir = tmp_path / "custom_snaps"
     custom_dir.mkdir()
     corrupt_file = custom_dir / "corruptfw_v1.0.json"
-    corrupt_file.write_text("{corrupted json content")
+    corrupt_file.write_text("{corrupted json content", encoding="utf-8")
 
     monkeypatch.setenv("ML_SNAPSHOTS_PATH", str(custom_dir))
-    snap = get_framework_snapshot("corruptfw", version="1.0")
-    assert snap is not None
+    with caplog.at_level(logging.DEBUG, logger="ml_ecosystem_snapshots.mcp.cache"):
+        snap = get_framework_snapshot("corruptfw", version="1.0")
+    assert snap == {"categories": {}}
+    assert snap.get("_snapshot_source") != "custom_path"
+    assert any("corruptfw_v1.0.json" in rec.message for rec in caplog.records)
 
 
 def test_get_framework_snapshot_list_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1423,11 +1461,11 @@ def test_get_framework_snapshot_list_file(tmp_path: Path, monkeypatch: pytest.Mo
     import json
 
     from ml_ecosystem_snapshots.mcp_server import (
-        _SNAPSHOT_CACHE,
+        DEFAULT_SNAPSHOT_REPOSITORY,
         get_framework_snapshot,
     )
 
-    _SNAPSHOT_CACHE.clear()
+    DEFAULT_SNAPSHOT_REPOSITORY.clear()
     custom_dir = tmp_path / "list_snaps"
     custom_dir.mkdir()
     list_file = custom_dir / "customlist_v1.0.json"
@@ -1446,7 +1484,7 @@ def test_get_framework_snapshot_list_file(tmp_path: Path, monkeypatch: pytest.Mo
     assert isinstance(first_item, dict)
     assert first_item["name"] == "list_op"
 
-    _SNAPSHOT_CACHE.clear()
+    DEFAULT_SNAPSHOT_REPOSITORY.clear()
     ops_file = custom_dir / "customops_v1.0.json"
     with open(ops_file, "w", encoding="utf-8") as f:
         json.dump({"operations": [{"name": "op1", "api_path": "customops.op1"}]}, f)
@@ -1541,26 +1579,26 @@ def test_extended_dtypes_normalization() -> None:
     assert err_b is None
 
 
-def test_matches_rank_constraint_variants() -> None:
-    """Test _matches_rank_constraint for int, ==, >=, D suffix, digits, and unknown strings."""
-    from ml_ecosystem_snapshots.mcp_server import _matches_rank_constraint
+def testmatches_rank_constraint_variants() -> None:
+    """Test matches_rank_constraint for int, ==, >=, D suffix, digits, and unknown strings."""
+    from ml_ecosystem_snapshots.mcp_server import matches_rank_constraint
 
-    assert _matches_rank_constraint(2, 2) is True
-    assert _matches_rank_constraint(3, 2) is False
+    assert matches_rank_constraint(2, 2) is True
+    assert matches_rank_constraint(3, 2) is False
 
-    assert _matches_rank_constraint(2, "==2") is True
-    assert _matches_rank_constraint(3, "==2") is False
+    assert matches_rank_constraint(2, "==2") is True
+    assert matches_rank_constraint(3, "==2") is False
 
-    assert _matches_rank_constraint(3, ">=2") is True
-    assert _matches_rank_constraint(1, ">=2") is False
+    assert matches_rank_constraint(3, ">=2") is True
+    assert matches_rank_constraint(1, ">=2") is False
 
-    assert _matches_rank_constraint(2, "2D") is True
-    assert _matches_rank_constraint(1, "2D") is False
+    assert matches_rank_constraint(2, "2D") is True
+    assert matches_rank_constraint(1, "2D") is False
 
-    assert _matches_rank_constraint(2, "2") is True
-    assert _matches_rank_constraint(1, "2") is False
+    assert matches_rank_constraint(2, "2") is True
+    assert matches_rank_constraint(1, "2") is False
 
-    assert _matches_rank_constraint(2, "unknown_constraint") is True
+    assert matches_rank_constraint(2, "unknown_constraint") is True
 
 
 def test_check_hallucination_non_int_rank() -> None:
@@ -1584,8 +1622,8 @@ def test_check_hallucination_non_int_rank() -> None:
         return_value=mock_snap,
     ):
         res = check_hallucination("torch", "torch.mm", kwarg_ranks={"input": "non_int_val"})
-        assert res["api_exists"] is True
-        assert res["is_hallucinated"] is False
+        assert res.api_exists is True
+        assert res.is_hallucinated is False
 
 
 def test_all_14_mcp_tools_dispatch() -> None:
@@ -1600,7 +1638,7 @@ def test_all_14_mcp_tools_dispatch() -> None:
         "params": {},
     }
     resp_list = handle_mcp_message(tools_list_msg)
-    tool_names = {t["name"] for t in resp_list["result"]["tools"]}
+    tool_names = {t["name"] for t in ensure_present(ensure_present(resp_list.result).tools)}
     assert len(tool_names) == 29
 
     # Test tools/call dispatch for all domain check tools
@@ -1636,11 +1674,11 @@ def test_all_14_mcp_tools_dispatch() -> None:
             },
         }
         resp = handle_mcp_message(msg)
-        assert resp.get("jsonrpc") == "2.0"
-        assert "result" in resp, f"Failed on tool: {tool_name}"
-        content = resp["result"]["content"]
+        assert resp.jsonrpc == "2.0"
+        assert resp.result is not None and resp.result.content is not None, f"Failed on tool: {tool_name}"
+        content = resp.result.content
         assert len(content) > 0
-        parsed_res = json.loads(content[0]["text"])
+        parsed_res = json.loads(content[0].text)
         assert "is_valid" in parsed_res or "op_exists" in parsed_res
 
 
@@ -1685,7 +1723,73 @@ def test_injectable_snapshot_repository_across_mcp_tools(
         kwargs=["alpha"],
         repository=repo,
     )
-    assert res["is_hallucinated"] is False
+    assert res.is_hallucinated is False
 
     snap_bundled = resolve_snapshot("amd_rdna", prefer_bundled=True)
     assert "categories" in snap_bundled
+    snap_ver = resolve_snapshot("amd_rdna", version="3.5")
+    assert "categories" in snap_ver
+
+    from ml_ecosystem_snapshots.mcp.registry import dispatch_tool_call
+
+    constrained_repo = SnapshotRepository(
+        backing_store={
+            "torch": {
+                "categories": {
+                    "math": [
+                        {
+                            "name": "matmul",
+                            "api_path": "torch.matmul",
+                            "kind": "function",
+                            "params": [
+                                {
+                                    "name": "input",
+                                    "kind": "POSITIONAL_OR_KEYWORD",
+                                    "allowed_dtypes": ["float32"],
+                                    "rank_constraint": "2",
+                                    "shape_spec": "[M, K]",
+                                },
+                                {
+                                    "name": "other",
+                                    "kind": "POSITIONAL_OR_KEYWORD",
+                                    "allowed_dtypes": ["float32"],
+                                    "rank_constraint": "2",
+                                    "shape_spec": "[K, N]",
+                                },
+                            ],
+                        }
+                    ]
+                }
+            }
+        }
+    )
+    tool_res = dispatch_tool_call(
+        1,
+        "check_hallucination",
+        {
+            "framework": "torch",
+            "api_path": "torch.matmul",
+            "args_count": 2,
+            "arg_dtypes": {"input": "float32"},
+            "kwarg_dtypes": ["float32", "float32"],
+            "arg_ranks": [2, "2"],
+            "kwarg_ranks": {"input": 2, "other": "2"},
+            "arg_shapes": [[4, 8], [8, "N"], "ignored"],
+            "kwarg_shapes": {"input": [4, 8], "other": [8, "N"], "ignored": "scalar"},
+        },
+        repository=constrained_repo,
+    )
+    assert tool_res.error is None
+
+    tool_res_rank_dict = dispatch_tool_call(
+        2,
+        "check_hallucination",
+        {
+            "framework": "torch",
+            "api_path": "torch.matmul",
+            "args_count": 2,
+            "arg_ranks": {"input": 2, "other": "2"},
+        },
+        repository=constrained_repo,
+    )
+    assert tool_res_rank_dict.error is None

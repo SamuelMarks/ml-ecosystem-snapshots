@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 
 
 def cmd_diff(args: argparse.Namespace) -> None:
@@ -14,14 +13,14 @@ def cmd_diff(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.cli.resolver import resolve_snapshot_path
     from ml_ecosystem_snapshots.diff import diff_snapshots, generate_changelog
+    from ml_ecosystem_snapshots.models import ensure_json_dict
+    from ml_ecosystem_snapshots.network_env import load_json_data
 
     path1 = resolve_snapshot_path(args.json1)
     path2 = resolve_snapshot_path(args.json2)
 
-    with open(path1, encoding="utf-8") as f:
-        snap1 = json.load(f)
-    with open(path2, encoding="utf-8") as f:
-        snap2 = json.load(f)
+    snap1 = ensure_json_dict(load_json_data(path1), "snapshot 1")
+    snap2 = ensure_json_dict(load_json_data(path2), "snapshot 2")
 
     result = diff_snapshots(snap1, snap2)
 

@@ -94,10 +94,11 @@ def test_generate_stubs(tmp_path: Path) -> None:
 
     content = nn_init.read_text()
     assert "import typing" in content
+    assert "from _typeshed import Incomplete" in content
     assert "class Linear:" in content
     assert "def __init__(self, in_features: int, out_features: int) -> None: ..." in content
     assert "class EmptyClass:" in content
-    assert "def __init__(self) -> object: ..." in content
+    assert "def __init__(self) -> Incomplete: ..." in content
 
     func_init = Path(
         os.path.join(
@@ -108,7 +109,7 @@ def test_generate_stubs(tmp_path: Path) -> None:
     assert func_init.exists()
     content = func_init.read_text()
     assert "def relu(x: Tensor, *args, **kwargs) -> Tensor: ..." in content
-    assert "def varargs_func(x: object, *args: object) -> object: ..." in content
+    assert "def varargs_func(x: Incomplete, *args: Incomplete) -> Incomplete: ..." in content
 
 
 def test_generate_stubs_empty(tmp_path: Path) -> None:
@@ -156,7 +157,7 @@ def test_generate_stubs_default_vals(tmp_path: Path) -> None:
         )
     )
     content = nn_init.read_text()
-    assert "def __init__(self, in_features: int = 10) -> object: ..." in content
+    assert "def __init__(self, in_features: int = 10) -> Incomplete: ..." in content
 
 
 def test_generate_stubs_no_module(tmp_path: Path) -> None:
@@ -242,7 +243,15 @@ def test_generate_stubs_list_and_non_dict(tmp_path: Path) -> None:
     generate_stubs(list_data, str(list_out_dir))
     helper_init = Path(os.path.join(list_out_dir, "list_fw", "mod", "__init__.pyi"))
     assert helper_init.exists()
-    assert "def helper(x: object) -> object: ..." in helper_init.read_text()
+    assert "def helper(x: Incomplete) -> Incomplete: ..." in helper_init.read_text()
+
+    # Malformed categories (non-dict categories, non-list category items, and non-list params)
+    generate_stubs({"categories": "not_a_dict"}, str(tmp_path / "bad_cats"))
+    generate_stubs({"categories": {"ops": "not_a_list"}}, str(tmp_path / "bad_cat_list"))
+    generate_stubs(
+        {"categories": {"ops": [{"name": "fn", "api_path": "m.fn", "kind": "function", "params": "bad"}]}},
+        str(tmp_path / "bad_params"),
+    )
 
     # Test snapshot_data as unsupported non-dict non-list type (e.g. tuple)
     invalid_out_dir = Path(os.path.join(tmp_path, "stubs_invalid"))
@@ -387,7 +396,7 @@ def test_generate_stubs_overloads_and_dsl(tmp_path: Path) -> None:
     sass_pyi = Path(os.path.join(out_dir, "nvidia_sass", "__init__.pyi"))
     assert sass_pyi.exists()
     sass_text = sass_pyi.read_text()
-    assert "def HMMA16816(d: str) -> object: ..." in sass_text
+    assert "def HMMA16816(d: str) -> Incomplete: ..." in sass_text
 
 
 def test_generate_stubs_class_methods(tmp_path: Path) -> None:

@@ -12,6 +12,12 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
 )
 
+from ml_ecosystem_snapshots.frameworks._base import (
+    CollectorDomain,
+    DomainCollectorAdapter,
+    SymbolKind,
+)
+
 _LATEX_MACROS = [
     "frac",
     "sqrt",
@@ -129,6 +135,48 @@ _LATEX_ENVIRONMENTS = [
 ]
 
 
+def collect_domain(include_nonpublic: bool = False) -> list[GhostRef]:
+    """Collect LaTeX DSL macro and environment signatures without `SemanticTier` shoehorning.
+
+    Args:
+        include_nonpublic: Whether to include non-public symbols.
+
+    Returns:
+        List of `GhostRef` items representing LaTeX macros and environments.
+    """
+    del include_nonpublic
+    refs: list[GhostRef] = []
+
+    for macro in _LATEX_MACROS:
+        params = [GhostParam(name="args", kind=ParameterKind.VAR_POSITIONAL)]
+        refs.append(
+            GhostRef(
+                name=macro,
+                api_path=f"latex.{macro}",
+                kind=SymbolKind.FUNCTION.value,
+                params=params,
+                docstring=f"LaTeX \\{macro} macro.",
+            )
+        )
+
+    for env in _LATEX_ENVIRONMENTS:
+        params = [GhostParam(name="content", kind=ParameterKind.POSITIONAL_OR_KEYWORD)]
+        refs.append(
+            GhostRef(
+                name=env.replace("*", "_star"),
+                api_path=f"latex.env.{env.replace('*', '_star')}",
+                kind=SymbolKind.ELEMENT.value,
+                params=params,
+                docstring=f"LaTeX \\begin{{{env}}} environment.",
+            )
+        )
+
+    return refs
+
+
+DOMAIN_COLLECTOR = DomainCollectorAdapter(CollectorDomain.DOCUMENT_DSL, "elements", collect_domain)
+
+
 def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Entrypoint to collect the LaTeX DSL API signature.
 
@@ -141,33 +189,4 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
     """
     if category != SemanticTier.UTIL:
         return []
-
-    refs = []
-
-    # Macros
-    for macro in _LATEX_MACROS:
-        params = [GhostParam(name="args", kind=ParameterKind.VAR_POSITIONAL)]
-        refs.append(
-            GhostRef(
-                name=macro,
-                api_path=f"latex.{macro}",
-                kind="function",
-                params=params,
-                docstring=f"LaTeX \\{macro} macro.",
-            )
-        )
-
-    # Environments
-    for env in _LATEX_ENVIRONMENTS:
-        params = [GhostParam(name="content", kind=ParameterKind.POSITIONAL_OR_KEYWORD)]
-        refs.append(
-            GhostRef(
-                name=env.replace("*", "_star"),
-                api_path=f"latex.env.{env.replace('*', '_star')}",
-                kind="CLASS",
-                params=params,
-                docstring=f"LaTeX \\begin{{{env}}} environment.",
-            )
-        )
-
-    return refs
+    return collect_domain(include_nonpublic)

@@ -3,21 +3,23 @@
 from __future__ import annotations
 
 import importlib
-import inspect
 import types
 import typing
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    LivePythonTarget,
+    get_member_dict,
+)
 
 
 @typing.runtime_checkable
 class _TritonJitWrapperProtocol(typing.Protocol):
     """Protocol for Triton JITFunction wrappers exposing an underlying `.fn` callable."""
 
-    fn: InspectableTarget
+    fn: LivePythonTarget
 
 
 @typing.runtime_checkable
@@ -27,7 +29,7 @@ class _TritonLanguageWithMathProtocol(typing.Protocol):
     math: types.ModuleType
 
 
-def _extract_triton_kernel(obj: InspectableTarget, name: str, module_name: str, inspector: GhostInspector) -> GhostRef:
+def _extract_triton_kernel(obj: LivePythonTarget, name: str, module_name: str, inspector: GhostInspector) -> GhostRef:
     """Extract a `GhostRef` for a Triton JIT kernel or language primitive.
 
     Args:
@@ -39,10 +41,10 @@ def _extract_triton_kernel(obj: InspectableTarget, name: str, module_name: str, 
     Returns:
         The extracted `GhostRef` with `tl.constexpr` annotations normalized.
     """
-    fn: InspectableTarget = obj.fn if isinstance(obj, _TritonJitWrapperProtocol) and obj.fn is not None else obj
+    fn: LivePythonTarget = obj.fn if isinstance(obj, _TritonJitWrapperProtocol) and obj.fn is not None else obj
 
     ref = inspector.inspect(fn, f"{module_name}.{name}")
-    fn_members = dict(inspect.getmembers(fn))
+    fn_members = get_member_dict(fn)
     raw_annos = fn_members.get("__annotations__")
     if isinstance(raw_annos, dict):
         for param in ref.params:
@@ -71,7 +73,7 @@ def _collect_triton_module_callables(
         List of extracted `GhostRef` items.
     """
     collected: list[GhostRef] = []
-    for name, obj in inspect.getmembers(mod):
+    for name, obj in get_member_dict(mod).items():
         if not include_nonpublic and name.startswith("_"):
             continue
         if obj and callable(obj):
@@ -104,10 +106,12 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         tl = importlib.import_module("triton.language")
         results.extend(_collect_triton_module_callables(tl, "triton.language", include_nonpublic, inspector))
 
-        tl_members = dict(inspect.getmembers(tl))
+        tl_members = get_member_dict(tl)
         tl_math = tl_members.get("math")
         if isinstance(tl_math, types.ModuleType):
-            results.extend(_collect_triton_module_callables(tl_math, "triton.language.math", include_nonpublic, inspector))
+            results.extend(
+                _collect_triton_module_callables(tl_math, "triton.language.math", include_nonpublic, inspector)
+            )
     except ImportError:
         pass
 

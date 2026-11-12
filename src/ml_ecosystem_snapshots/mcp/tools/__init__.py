@@ -31,10 +31,8 @@ from ml_ecosystem_snapshots.mcp.tools.hallucination import (
     check_code_block,
     check_hallucination,
     explain_anti_pattern,
+    matches_rank_constraint,
     normalize_dtype_name,
-)
-from ml_ecosystem_snapshots.mcp.tools.hallucination import (
-    _matches_rank_constraint as _matches_rank_constraint,
 )
 from ml_ecosystem_snapshots.mcp.tools.ir import check_mlir_op, check_stablehlo_op
 from ml_ecosystem_snapshots.mcp.tools.isa import (
@@ -87,6 +85,7 @@ __all__ = [
     "explain_anti_pattern",
     "get_api_signature",
     "load_concept_map",
+    "matches_rank_constraint",
     "normalize_dtype_name",
     "search_apis",
     "translate_concept_arguments",

@@ -7,13 +7,19 @@ GhostRefs for layers, losses, optimizers, and activations.
 from __future__ import annotations
 
 import inspect
+import logging
 import types
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    LivePythonTarget,
+    get_member_dict,
+)
 from ml_ecosystem_snapshots.utils import get_all_members
+
+_LOGGER = logging.getLogger(__name__)
 
 tf: types.ModuleType | None = None
 
@@ -32,11 +38,24 @@ def _get_tf() -> types.ModuleType | None:
 
         tf = tf_mod
         return tf
-    except Exception:
+    except (
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        LookupError,
+        SyntaxError,
+        AssertionError,
+    ):
+        _LOGGER.debug("Optional tensorflow module unavailable", exc_info=True)
         return None
 
 
-def _get_submodule(parent: types.ModuleType | types.SimpleNamespace, name: str) -> types.ModuleType | types.SimpleNamespace | None:
+def _get_submodule(
+    parent: types.ModuleType | types.SimpleNamespace, name: str
+) -> types.ModuleType | types.SimpleNamespace | None:
     """Resolve a submodule attribute on `parent` via `inspect.getmembers`.
 
     Args:
@@ -46,7 +65,7 @@ def _get_submodule(parent: types.ModuleType | types.SimpleNamespace, name: str) 
     Returns:
         Submodule `ModuleType` / `SimpleNamespace` or None if absent.
     """
-    members: dict[str, InspectableTarget] = dict(inspect.getmembers(parent))
+    members: dict[str, LivePythonTarget] = get_member_dict(parent)
     sub = members.get(name)
     return sub if isinstance(sub, (types.ModuleType, types.SimpleNamespace)) else None
 
@@ -72,12 +91,24 @@ def _collect_tf_submodules(
     for sub_name in submodule_names:
         sub_mod = _get_submodule(tf_mod, sub_name)
         if sub_mod is not None:
-            for name, obj in inspect.getmembers(sub_mod):
-                if (callable(obj) or (allow_classes and inspect.isclass(obj))) and (include_nonpublic or not name.startswith("_")):
+            for name, obj in get_member_dict(sub_mod).items():
+                if (callable(obj) or (allow_classes and inspect.isclass(obj))) and (
+                    include_nonpublic or not name.startswith("_")
+                ):
                     try:
                         collected.append(GhostInspector.inspect(obj, f"tf.{sub_name}.{name}"))
-                    except Exception as exc:
-                        del exc
+                    except (
+                        ImportError,
+                        AttributeError,
+                        TypeError,
+                        ValueError,
+                        OSError,
+                        RuntimeError,
+                        LookupError,
+                        SyntaxError,
+                        AssertionError,
+                    ):
+                        _LOGGER.debug("Failed to inspect tf.%s.%s", sub_name, name, exc_info=True)
     return collected
 
 
@@ -130,7 +161,7 @@ def _collect_tf_activations(tf_mod: types.ModuleType) -> list[GhostRef]:
         "elu",
         "selu",
     }
-    nn_members: dict[str, InspectableTarget] = dict(inspect.getmembers(nn_mod))
+    nn_members: dict[str, LivePythonTarget] = get_member_dict(nn_mod)
     return [GhostInspector.inspect(nn_members[name], f"tf.nn.{name}") for name in target_names if name in nn_members]
 
 
@@ -176,17 +207,27 @@ def _collect_tf_type_methods(tf_mod: types.ModuleType, type_name: str, include_n
     Returns:
         List of inspected `GhostRef` items.
     """
-    tf_members: dict[str, InspectableTarget] = dict(inspect.getmembers(tf_mod))
+    tf_members: dict[str, LivePythonTarget] = get_member_dict(tf_mod)
     cls_obj = tf_members.get(type_name)
     if cls_obj is None:
         return []
     results: list[GhostRef] = []
-    for name, obj in inspect.getmembers(cls_obj):
+    for name, obj in get_member_dict(cls_obj).items():
         if (include_nonpublic or not name.startswith("_")) and callable(obj) and not inspect.isclass(obj):
             try:
                 results.append(GhostInspector.inspect(obj, f"tf.{type_name}.{name}", kind="method"))
-            except Exception as exc:
-                del exc
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                OSError,
+                RuntimeError,
+                LookupError,
+                SyntaxError,
+                AssertionError,
+            ):
+                _LOGGER.debug("Failed to inspect tf.%s.%s", type_name, name, exc_info=True)
     return results
 
 
@@ -214,8 +255,18 @@ def _collect_tf_raw_ops(tf_mod: types.ModuleType, include_nonpublic: bool, add_t
                         ref.environment_tags = []
                     ref.environment_tags.append("tf.raw_op")
                 results.append(ref)
-            except Exception as exc:
-                del exc
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                OSError,
+                RuntimeError,
+                LookupError,
+                SyntaxError,
+                AssertionError,
+            ):
+                _LOGGER.debug("Failed to inspect tf.raw_ops.%s", name, exc_info=True)
     return results
 
 
@@ -265,20 +316,45 @@ def _collect_tf_array_api(tf_mod: types.ModuleType, include_nonpublic: bool) -> 
         "where",
     ]
     seen_ops = set(top_level_tensor_ops)
-    tf_top_members: dict[str, InspectableTarget] = dict(inspect.getmembers(tf_mod))
+    tf_top_members: dict[str, LivePythonTarget] = get_member_dict(tf_mod)
     for name in top_level_tensor_ops:
         if name in tf_top_members and callable(tf_top_members[name]):
             try:
                 results.append(GhostInspector.inspect(tf_top_members[name], f"tf.{name}"))
-            except Exception as exc:
-                del exc
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                OSError,
+                RuntimeError,
+                LookupError,
+                SyntaxError,
+                AssertionError,
+            ):
+                _LOGGER.debug("Failed to inspect tf.%s", name, exc_info=True)
 
     for name, obj in get_all_members(tf_mod):
-        if (not name.startswith("_") or include_nonpublic) and name not in seen_ops and callable(obj) and not inspect.isclass(obj):
+        if (
+            (not name.startswith("_") or include_nonpublic)
+            and name not in seen_ops
+            and callable(obj)
+            and not inspect.isclass(obj)
+        ):
             try:
                 results.append(GhostInspector.inspect(obj, f"tf.{name}"))
-            except Exception as exc:
-                del exc
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                OSError,
+                RuntimeError,
+                LookupError,
+                SyntaxError,
+                AssertionError,
+            ):
+                _LOGGER.debug("Failed to inspect tf.%s", name, exc_info=True)
 
     results.extend(_collect_tf_raw_ops(tf_mod, include_nonpublic, add_tag=False))
     results.extend(_collect_tf_type_methods(tf_mod, "Tensor", include_nonpublic))
@@ -320,8 +396,18 @@ def _collect_live(category: SemanticTier, include_nonpublic: bool) -> list[Ghost
             results = _collect_tf_array_api(tf_mod, include_nonpublic)
         elif category == SemanticTier.UTIL:
             results = _collect_tf_raw_ops(tf_mod, include_nonpublic, add_tag=True)
-    except Exception as exc:
-        del exc
+    except (
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        LookupError,
+        SyntaxError,
+        AssertionError,
+    ):
+        _LOGGER.debug("Failed to collect live TensorFlow API for %s", category, exc_info=True)
 
     return results
 

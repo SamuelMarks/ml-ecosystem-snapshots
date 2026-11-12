@@ -6,7 +6,7 @@ types under the canonical `aten.*` domain matching `ATEN_REGISTRY`.
 
 from __future__ import annotations
 
-import inspect
+import logging
 import types
 import typing
 
@@ -28,6 +28,9 @@ from ml_ecosystem_snapshots.frameworks.torch import (
     _coerce_aten_schema,
     get_aten_op_schema,
 )
+from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @typing.runtime_checkable
@@ -45,31 +48,191 @@ class _TorchWithOpsProtocol(typing.Protocol):
 
 
 _ATEN_OP_DEFS: list[CanonicalPythonOpTuple] = [
-    ("add", "aten.add", "function", [("self", "POSITIONAL_ONLY", None), ("other", "POSITIONAL_ONLY", None), ("alpha", "KEYWORD_ONLY", "1.0")], "ATen addition dispatch kernel."),
-    ("sub", "aten.sub", "function", [("self", "POSITIONAL_ONLY", None), ("other", "POSITIONAL_ONLY", None), ("alpha", "KEYWORD_ONLY", "1.0")], "ATen subtraction dispatch kernel."),
-    ("mul", "aten.mul", "function", [("self", "POSITIONAL_ONLY", None), ("other", "POSITIONAL_ONLY", None)], "ATen elementwise multiplication dispatch kernel."),
-    ("div", "aten.div", "function", [("self", "POSITIONAL_ONLY", None), ("other", "POSITIONAL_ONLY", None)], "ATen division dispatch kernel."),
-    ("matmul", "aten.matmul", "function", [("self", "POSITIONAL_ONLY", None), ("other", "POSITIONAL_ONLY", None)], "ATen matrix multiplication dispatch kernel."),
-    ("mm", "aten.mm", "function", [("self", "POSITIONAL_ONLY", None), ("mat2", "POSITIONAL_ONLY", None)], "ATen 2D matrix multiplication dispatch kernel."),
-    ("bmm", "aten.bmm", "function", [("self", "POSITIONAL_ONLY", None), ("mat2", "POSITIONAL_ONLY", None)], "ATen batch matrix multiplication dispatch kernel."),
-    ("relu", "aten.relu", "function", [("self", "POSITIONAL_ONLY", None)], "ATen rectified linear unit dispatch kernel."),
-    ("sigmoid", "aten.sigmoid", "function", [("self", "POSITIONAL_ONLY", None)], "ATen sigmoid activation dispatch kernel."),
-    ("tanh", "aten.tanh", "function", [("self", "POSITIONAL_ONLY", None)], "ATen hyperbolic tangent activation dispatch kernel."),
-    ("gelu", "aten.gelu", "function", [("self", "POSITIONAL_ONLY", None), ("approximate", "KEYWORD_ONLY", "'none'")], "ATen Gaussian Error Linear Unit activation dispatch kernel."),
-    ("softmax", "aten.softmax", "function", [("self", "POSITIONAL_ONLY", None), ("dim", "POSITIONAL_ONLY", None), ("dtype", "KEYWORD_ONLY", "None")], "ATen softmax dispatch kernel."),
-    ("log_softmax", "aten.log_softmax", "function", [("self", "POSITIONAL_ONLY", None), ("dim", "POSITIONAL_ONLY", None), ("dtype", "KEYWORD_ONLY", "None")], "ATen log-softmax dispatch kernel."),
-    ("sum", "aten.sum", "function", [("self", "POSITIONAL_ONLY", None), ("dim", "KEYWORD_ONLY", "None"), ("keepdim", "KEYWORD_ONLY", "False"), ("dtype", "KEYWORD_ONLY", "None")], "ATen sum reduction dispatch kernel."),
-    ("mean", "aten.mean", "function", [("self", "POSITIONAL_ONLY", None), ("dim", "KEYWORD_ONLY", "None"), ("keepdim", "KEYWORD_ONLY", "False"), ("dtype", "KEYWORD_ONLY", "None")], "ATen mean reduction dispatch kernel."),
-    ("max", "aten.max", "function", [("self", "POSITIONAL_ONLY", None), ("dim", "KEYWORD_ONLY", "None"), ("keepdim", "KEYWORD_ONLY", "False")], "ATen maximum reduction dispatch kernel."),
-    ("min", "aten.min", "function", [("self", "POSITIONAL_ONLY", None), ("dim", "KEYWORD_ONLY", "None"), ("keepdim", "KEYWORD_ONLY", "False")], "ATen minimum reduction dispatch kernel."),
-    ("view", "aten.view", "function", [("self", "POSITIONAL_ONLY", None), ("size", "POSITIONAL_ONLY", None)], "ATen tensor view reshape kernel."),
-    ("reshape", "aten.reshape", "function", [("self", "POSITIONAL_ONLY", None), ("shape", "POSITIONAL_ONLY", None)], "ATen tensor reshape kernel."),
-    ("transpose", "aten.transpose", "function", [("self", "POSITIONAL_ONLY", None), ("dim0", "POSITIONAL_ONLY", None), ("dim1", "POSITIONAL_ONLY", None)], "ATen dimension transpose kernel."),
-    ("permute", "aten.permute", "function", [("self", "POSITIONAL_ONLY", None), ("dims", "POSITIONAL_ONLY", None)], "ATen tensor dimension permutation kernel."),
-    ("squeeze", "aten.squeeze", "function", [("self", "POSITIONAL_ONLY", None), ("dim", "KEYWORD_ONLY", "None")], "ATen singleton dimension squeeze kernel."),
-    ("unsqueeze", "aten.unsqueeze", "function", [("self", "POSITIONAL_ONLY", None), ("dim", "POSITIONAL_ONLY", None)], "ATen dimension unsqueeze kernel."),
-    ("clone", "aten.clone", "function", [("self", "POSITIONAL_ONLY", None), ("memory_format", "KEYWORD_ONLY", "None")], "ATen tensor memory clone kernel."),
-    ("pow", "aten.pow", "function", [("input", "POSITIONAL_OR_KEYWORD", None), ("exponent", "POSITIONAL_OR_KEYWORD", None)], "ATen pow C++ dispatch kernel."),
+    (
+        "add",
+        "aten.add",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("other", "POSITIONAL_ONLY", None), ("alpha", "KEYWORD_ONLY", "1.0")],
+        "ATen addition dispatch kernel.",
+    ),
+    (
+        "sub",
+        "aten.sub",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("other", "POSITIONAL_ONLY", None), ("alpha", "KEYWORD_ONLY", "1.0")],
+        "ATen subtraction dispatch kernel.",
+    ),
+    (
+        "mul",
+        "aten.mul",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("other", "POSITIONAL_ONLY", None)],
+        "ATen elementwise multiplication dispatch kernel.",
+    ),
+    (
+        "div",
+        "aten.div",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("other", "POSITIONAL_ONLY", None)],
+        "ATen division dispatch kernel.",
+    ),
+    (
+        "matmul",
+        "aten.matmul",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("other", "POSITIONAL_ONLY", None)],
+        "ATen matrix multiplication dispatch kernel.",
+    ),
+    (
+        "mm",
+        "aten.mm",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("mat2", "POSITIONAL_ONLY", None)],
+        "ATen 2D matrix multiplication dispatch kernel.",
+    ),
+    (
+        "bmm",
+        "aten.bmm",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("mat2", "POSITIONAL_ONLY", None)],
+        "ATen batch matrix multiplication dispatch kernel.",
+    ),
+    (
+        "relu",
+        "aten.relu",
+        "function",
+        [("self", "POSITIONAL_ONLY", None)],
+        "ATen rectified linear unit dispatch kernel.",
+    ),
+    (
+        "sigmoid",
+        "aten.sigmoid",
+        "function",
+        [("self", "POSITIONAL_ONLY", None)],
+        "ATen sigmoid activation dispatch kernel.",
+    ),
+    (
+        "tanh",
+        "aten.tanh",
+        "function",
+        [("self", "POSITIONAL_ONLY", None)],
+        "ATen hyperbolic tangent activation dispatch kernel.",
+    ),
+    (
+        "gelu",
+        "aten.gelu",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("approximate", "KEYWORD_ONLY", "'none'")],
+        "ATen Gaussian Error Linear Unit activation dispatch kernel.",
+    ),
+    (
+        "softmax",
+        "aten.softmax",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("dim", "POSITIONAL_ONLY", None), ("dtype", "KEYWORD_ONLY", "None")],
+        "ATen softmax dispatch kernel.",
+    ),
+    (
+        "log_softmax",
+        "aten.log_softmax",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("dim", "POSITIONAL_ONLY", None), ("dtype", "KEYWORD_ONLY", "None")],
+        "ATen log-softmax dispatch kernel.",
+    ),
+    (
+        "sum",
+        "aten.sum",
+        "function",
+        [
+            ("self", "POSITIONAL_ONLY", None),
+            ("dim", "KEYWORD_ONLY", "None"),
+            ("keepdim", "KEYWORD_ONLY", "False"),
+            ("dtype", "KEYWORD_ONLY", "None"),
+        ],
+        "ATen sum reduction dispatch kernel.",
+    ),
+    (
+        "mean",
+        "aten.mean",
+        "function",
+        [
+            ("self", "POSITIONAL_ONLY", None),
+            ("dim", "KEYWORD_ONLY", "None"),
+            ("keepdim", "KEYWORD_ONLY", "False"),
+            ("dtype", "KEYWORD_ONLY", "None"),
+        ],
+        "ATen mean reduction dispatch kernel.",
+    ),
+    (
+        "max",
+        "aten.max",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("dim", "KEYWORD_ONLY", "None"), ("keepdim", "KEYWORD_ONLY", "False")],
+        "ATen maximum reduction dispatch kernel.",
+    ),
+    (
+        "min",
+        "aten.min",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("dim", "KEYWORD_ONLY", "None"), ("keepdim", "KEYWORD_ONLY", "False")],
+        "ATen minimum reduction dispatch kernel.",
+    ),
+    (
+        "view",
+        "aten.view",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("size", "POSITIONAL_ONLY", None)],
+        "ATen tensor view reshape kernel.",
+    ),
+    (
+        "reshape",
+        "aten.reshape",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("shape", "POSITIONAL_ONLY", None)],
+        "ATen tensor reshape kernel.",
+    ),
+    (
+        "transpose",
+        "aten.transpose",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("dim0", "POSITIONAL_ONLY", None), ("dim1", "POSITIONAL_ONLY", None)],
+        "ATen dimension transpose kernel.",
+    ),
+    (
+        "permute",
+        "aten.permute",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("dims", "POSITIONAL_ONLY", None)],
+        "ATen tensor dimension permutation kernel.",
+    ),
+    (
+        "squeeze",
+        "aten.squeeze",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("dim", "KEYWORD_ONLY", "None")],
+        "ATen singleton dimension squeeze kernel.",
+    ),
+    (
+        "unsqueeze",
+        "aten.unsqueeze",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("dim", "POSITIONAL_ONLY", None)],
+        "ATen dimension unsqueeze kernel.",
+    ),
+    (
+        "clone",
+        "aten.clone",
+        "function",
+        [("self", "POSITIONAL_ONLY", None), ("memory_format", "KEYWORD_ONLY", "None")],
+        "ATen tensor memory clone kernel.",
+    ),
+    (
+        "pow",
+        "aten.pow",
+        "function",
+        [("input", "POSITIONAL_OR_KEYWORD", None), ("exponent", "POSITIONAL_OR_KEYWORD", None)],
+        "ATen pow C++ dispatch kernel.",
+    ),
     ("neg", "aten.neg", "function", [("input", "POSITIONAL_OR_KEYWORD", None)], "ATen neg C++ dispatch kernel."),
     ("abs", "aten.abs", "function", [("input", "POSITIONAL_OR_KEYWORD", None)], "ATen abs C++ dispatch kernel."),
     ("exp", "aten.exp", "function", [("input", "POSITIONAL_OR_KEYWORD", None)], "ATen exp C++ dispatch kernel."),
@@ -79,8 +242,30 @@ _ATEN_OP_DEFS: list[CanonicalPythonOpTuple] = [
     ("cos", "aten.cos", "function", [("input", "POSITIONAL_OR_KEYWORD", None)], "ATen cos C++ dispatch kernel."),
     ("tan", "aten.tan", "function", [("input", "POSITIONAL_OR_KEYWORD", None)], "ATen tan C++ dispatch kernel."),
     ("silu", "aten.silu", "function", [("input", "POSITIONAL_OR_KEYWORD", None)], "ATen silu C++ dispatch kernel."),
-    ("addmm", "aten.addmm", "function", [("input", "POSITIONAL_OR_KEYWORD", None), ("mat1", "POSITIONAL_OR_KEYWORD", None), ("mat2", "POSITIONAL_OR_KEYWORD", None), ("beta", "KEYWORD_ONLY", "1"), ("alpha", "KEYWORD_ONLY", "1")], "ATen addmm C++ dispatch kernel."),
-    ("linear", "aten.linear", "function", [("input", "POSITIONAL_OR_KEYWORD", None), ("weight", "POSITIONAL_OR_KEYWORD", None), ("bias", "POSITIONAL_OR_KEYWORD", "None")], "ATen linear C++ dispatch kernel."),
+    (
+        "addmm",
+        "aten.addmm",
+        "function",
+        [
+            ("input", "POSITIONAL_OR_KEYWORD", None),
+            ("mat1", "POSITIONAL_OR_KEYWORD", None),
+            ("mat2", "POSITIONAL_OR_KEYWORD", None),
+            ("beta", "KEYWORD_ONLY", "1"),
+            ("alpha", "KEYWORD_ONLY", "1"),
+        ],
+        "ATen addmm C++ dispatch kernel.",
+    ),
+    (
+        "linear",
+        "aten.linear",
+        "function",
+        [
+            ("input", "POSITIONAL_OR_KEYWORD", None),
+            ("weight", "POSITIONAL_OR_KEYWORD", None),
+            ("bias", "POSITIONAL_OR_KEYWORD", "None"),
+        ],
+        "ATen linear C++ dispatch kernel.",
+    ),
     (
         "convolution",
         "aten.convolution",
@@ -117,15 +302,40 @@ _ATEN_OP_DEFS: list[CanonicalPythonOpTuple] = [
         "layer_norm",
         "aten.layer_norm",
         "function",
-        [("input", "POSITIONAL_OR_KEYWORD", None), ("normalized_shape", "POSITIONAL_OR_KEYWORD", None), ("weight", "POSITIONAL_OR_KEYWORD", "None"), ("bias", "POSITIONAL_OR_KEYWORD", "None"), ("eps", "POSITIONAL_OR_KEYWORD", "1e-05"), ("cudnn_enable", "POSITIONAL_OR_KEYWORD", "True")],
+        [
+            ("input", "POSITIONAL_OR_KEYWORD", None),
+            ("normalized_shape", "POSITIONAL_OR_KEYWORD", None),
+            ("weight", "POSITIONAL_OR_KEYWORD", "None"),
+            ("bias", "POSITIONAL_OR_KEYWORD", "None"),
+            ("eps", "POSITIONAL_OR_KEYWORD", "1e-05"),
+            ("cudnn_enable", "POSITIONAL_OR_KEYWORD", "True"),
+        ],
         "ATen layer_norm C++ dispatch kernel.",
     ),
-    ("rms_norm", "aten.rms_norm", "function", [("input", "POSITIONAL_OR_KEYWORD", None), ("normalized_shape", "POSITIONAL_OR_KEYWORD", None), ("weight", "POSITIONAL_OR_KEYWORD", "None"), ("eps", "POSITIONAL_OR_KEYWORD", "None")], "ATen rms_norm C++ dispatch kernel."),
+    (
+        "rms_norm",
+        "aten.rms_norm",
+        "function",
+        [
+            ("input", "POSITIONAL_OR_KEYWORD", None),
+            ("normalized_shape", "POSITIONAL_OR_KEYWORD", None),
+            ("weight", "POSITIONAL_OR_KEYWORD", "None"),
+            ("eps", "POSITIONAL_OR_KEYWORD", "None"),
+        ],
+        "ATen rms_norm C++ dispatch kernel.",
+    ),
     (
         "group_norm",
         "aten.group_norm",
         "function",
-        [("input", "POSITIONAL_OR_KEYWORD", None), ("num_groups", "POSITIONAL_OR_KEYWORD", None), ("weight", "POSITIONAL_OR_KEYWORD", "None"), ("bias", "POSITIONAL_OR_KEYWORD", "None"), ("eps", "POSITIONAL_OR_KEYWORD", "1e-05"), ("cudnn_enabled", "POSITIONAL_OR_KEYWORD", "True")],
+        [
+            ("input", "POSITIONAL_OR_KEYWORD", None),
+            ("num_groups", "POSITIONAL_OR_KEYWORD", None),
+            ("weight", "POSITIONAL_OR_KEYWORD", "None"),
+            ("bias", "POSITIONAL_OR_KEYWORD", "None"),
+            ("eps", "POSITIONAL_OR_KEYWORD", "1e-05"),
+            ("cudnn_enabled", "POSITIONAL_OR_KEYWORD", "True"),
+        ],
         "ATen group_norm C++ dispatch kernel.",
     ),
     (
@@ -149,7 +359,13 @@ _ATEN_OP_DEFS: list[CanonicalPythonOpTuple] = [
         "embedding",
         "aten.embedding",
         "function",
-        [("weight", "POSITIONAL_OR_KEYWORD", None), ("indices", "POSITIONAL_OR_KEYWORD", None), ("padding_idx", "POSITIONAL_OR_KEYWORD", "-1"), ("scale_grad_by_freq", "POSITIONAL_OR_KEYWORD", "False"), ("sparse", "POSITIONAL_OR_KEYWORD", "False")],
+        [
+            ("weight", "POSITIONAL_OR_KEYWORD", None),
+            ("indices", "POSITIONAL_OR_KEYWORD", None),
+            ("padding_idx", "POSITIONAL_OR_KEYWORD", "-1"),
+            ("scale_grad_by_freq", "POSITIONAL_OR_KEYWORD", "False"),
+            ("sparse", "POSITIONAL_OR_KEYWORD", "False"),
+        ],
         "ATen embedding C++ dispatch kernel.",
     ),
     (
@@ -169,33 +385,180 @@ _ATEN_OP_DEFS: list[CanonicalPythonOpTuple] = [
         "ATen scaled_dot_product_attention C++ dispatch kernel.",
     ),
     ("t", "aten.t", "function", [("input", "POSITIONAL_OR_KEYWORD", None)], "ATen t C++ dispatch kernel."),
-    ("flatten", "aten.flatten", "function", [("input", "POSITIONAL_OR_KEYWORD", None), ("start_dim", "POSITIONAL_OR_KEYWORD", "0"), ("end_dim", "POSITIONAL_OR_KEYWORD", "-1")], "ATen flatten C++ dispatch kernel."),
-    ("cat", "aten.cat", "function", [("tensors", "POSITIONAL_OR_KEYWORD", None), ("dim", "POSITIONAL_OR_KEYWORD", "0")], "ATen cat C++ dispatch kernel."),
-    ("split", "aten.split", "function", [("input", "POSITIONAL_OR_KEYWORD", None), ("split_size", "POSITIONAL_OR_KEYWORD", None), ("dim", "POSITIONAL_OR_KEYWORD", "0")], "ATen split C++ dispatch kernel."),
-    ("slice", "aten.slice", "function", [("input", "POSITIONAL_OR_KEYWORD", None), ("dim", "POSITIONAL_OR_KEYWORD", "0"), ("start", "POSITIONAL_OR_KEYWORD", "None"), ("end", "POSITIONAL_OR_KEYWORD", "None"), ("step", "POSITIONAL_OR_KEYWORD", "1")], "ATen slice C++ dispatch kernel."),
-    ("select", "aten.select", "function", [("input", "POSITIONAL_OR_KEYWORD", None), ("dim", "POSITIONAL_OR_KEYWORD", None), ("index", "POSITIONAL_OR_KEYWORD", None)], "ATen select C++ dispatch kernel."),
-    ("index_select", "aten.index_select", "function", [("input", "POSITIONAL_OR_KEYWORD", None), ("dim", "POSITIONAL_OR_KEYWORD", None), ("index", "POSITIONAL_OR_KEYWORD", None)], "ATen index_select C++ dispatch kernel."),
-    ("prod", "aten.prod", "function", [("input", "POSITIONAL_OR_KEYWORD", None), ("dtype", "KEYWORD_ONLY", "None")], "ATen prod C++ dispatch kernel."),
-    ("argmax", "aten.argmax", "function", [("input", "POSITIONAL_OR_KEYWORD", None), ("dim", "POSITIONAL_OR_KEYWORD", "None"), ("keepdim", "POSITIONAL_OR_KEYWORD", "False")], "ATen argmax C++ dispatch kernel."),
-    ("argmin", "aten.argmin", "function", [("input", "POSITIONAL_OR_KEYWORD", None), ("dim", "POSITIONAL_OR_KEYWORD", "None"), ("keepdim", "POSITIONAL_OR_KEYWORD", "False")], "ATen argmin C++ dispatch kernel."),
-    ("zeros", "aten.zeros", "function", [("size", "POSITIONAL_OR_KEYWORD", None), ("names", "KEYWORD_ONLY", None), ("dtype", "KEYWORD_ONLY", "None"), ("layout", "KEYWORD_ONLY", "None"), ("device", "KEYWORD_ONLY", "None"), ("pin_memory", "KEYWORD_ONLY", "None")], "ATen zeros C++ dispatch kernel."),
-    ("ones", "aten.ones", "function", [("size", "POSITIONAL_OR_KEYWORD", None), ("names", "KEYWORD_ONLY", None), ("dtype", "KEYWORD_ONLY", "None"), ("layout", "KEYWORD_ONLY", "None"), ("device", "KEYWORD_ONLY", "None"), ("pin_memory", "KEYWORD_ONLY", "None")], "ATen ones C++ dispatch kernel."),
+    (
+        "flatten",
+        "aten.flatten",
+        "function",
+        [
+            ("input", "POSITIONAL_OR_KEYWORD", None),
+            ("start_dim", "POSITIONAL_OR_KEYWORD", "0"),
+            ("end_dim", "POSITIONAL_OR_KEYWORD", "-1"),
+        ],
+        "ATen flatten C++ dispatch kernel.",
+    ),
+    (
+        "cat",
+        "aten.cat",
+        "function",
+        [("tensors", "POSITIONAL_OR_KEYWORD", None), ("dim", "POSITIONAL_OR_KEYWORD", "0")],
+        "ATen cat C++ dispatch kernel.",
+    ),
+    (
+        "split",
+        "aten.split",
+        "function",
+        [
+            ("input", "POSITIONAL_OR_KEYWORD", None),
+            ("split_size", "POSITIONAL_OR_KEYWORD", None),
+            ("dim", "POSITIONAL_OR_KEYWORD", "0"),
+        ],
+        "ATen split C++ dispatch kernel.",
+    ),
+    (
+        "slice",
+        "aten.slice",
+        "function",
+        [
+            ("input", "POSITIONAL_OR_KEYWORD", None),
+            ("dim", "POSITIONAL_OR_KEYWORD", "0"),
+            ("start", "POSITIONAL_OR_KEYWORD", "None"),
+            ("end", "POSITIONAL_OR_KEYWORD", "None"),
+            ("step", "POSITIONAL_OR_KEYWORD", "1"),
+        ],
+        "ATen slice C++ dispatch kernel.",
+    ),
+    (
+        "select",
+        "aten.select",
+        "function",
+        [
+            ("input", "POSITIONAL_OR_KEYWORD", None),
+            ("dim", "POSITIONAL_OR_KEYWORD", None),
+            ("index", "POSITIONAL_OR_KEYWORD", None),
+        ],
+        "ATen select C++ dispatch kernel.",
+    ),
+    (
+        "index_select",
+        "aten.index_select",
+        "function",
+        [
+            ("input", "POSITIONAL_OR_KEYWORD", None),
+            ("dim", "POSITIONAL_OR_KEYWORD", None),
+            ("index", "POSITIONAL_OR_KEYWORD", None),
+        ],
+        "ATen index_select C++ dispatch kernel.",
+    ),
+    (
+        "prod",
+        "aten.prod",
+        "function",
+        [("input", "POSITIONAL_OR_KEYWORD", None), ("dtype", "KEYWORD_ONLY", "None")],
+        "ATen prod C++ dispatch kernel.",
+    ),
+    (
+        "argmax",
+        "aten.argmax",
+        "function",
+        [
+            ("input", "POSITIONAL_OR_KEYWORD", None),
+            ("dim", "POSITIONAL_OR_KEYWORD", "None"),
+            ("keepdim", "POSITIONAL_OR_KEYWORD", "False"),
+        ],
+        "ATen argmax C++ dispatch kernel.",
+    ),
+    (
+        "argmin",
+        "aten.argmin",
+        "function",
+        [
+            ("input", "POSITIONAL_OR_KEYWORD", None),
+            ("dim", "POSITIONAL_OR_KEYWORD", "None"),
+            ("keepdim", "POSITIONAL_OR_KEYWORD", "False"),
+        ],
+        "ATen argmin C++ dispatch kernel.",
+    ),
+    (
+        "zeros",
+        "aten.zeros",
+        "function",
+        [
+            ("size", "POSITIONAL_OR_KEYWORD", None),
+            ("names", "KEYWORD_ONLY", None),
+            ("dtype", "KEYWORD_ONLY", "None"),
+            ("layout", "KEYWORD_ONLY", "None"),
+            ("device", "KEYWORD_ONLY", "None"),
+            ("pin_memory", "KEYWORD_ONLY", "None"),
+        ],
+        "ATen zeros C++ dispatch kernel.",
+    ),
+    (
+        "ones",
+        "aten.ones",
+        "function",
+        [
+            ("size", "POSITIONAL_OR_KEYWORD", None),
+            ("names", "KEYWORD_ONLY", None),
+            ("dtype", "KEYWORD_ONLY", "None"),
+            ("layout", "KEYWORD_ONLY", "None"),
+            ("device", "KEYWORD_ONLY", "None"),
+            ("pin_memory", "KEYWORD_ONLY", "None"),
+        ],
+        "ATen ones C++ dispatch kernel.",
+    ),
     (
         "empty",
         "aten.empty",
         "function",
-        [("size", "POSITIONAL_OR_KEYWORD", None), ("dtype", "KEYWORD_ONLY", "None"), ("layout", "KEYWORD_ONLY", "None"), ("device", "KEYWORD_ONLY", "None"), ("pin_memory", "KEYWORD_ONLY", "None"), ("memory_format", "KEYWORD_ONLY", "None")],
+        [
+            ("size", "POSITIONAL_OR_KEYWORD", None),
+            ("dtype", "KEYWORD_ONLY", "None"),
+            ("layout", "KEYWORD_ONLY", "None"),
+            ("device", "KEYWORD_ONLY", "None"),
+            ("pin_memory", "KEYWORD_ONLY", "None"),
+            ("memory_format", "KEYWORD_ONLY", "None"),
+        ],
         "ATen empty C++ dispatch kernel.",
     ),
     (
         "full",
         "aten.full",
         "function",
-        [("size", "POSITIONAL_OR_KEYWORD", None), ("fill_value", "POSITIONAL_OR_KEYWORD", None), ("names", "KEYWORD_ONLY", None), ("dtype", "KEYWORD_ONLY", "None"), ("layout", "KEYWORD_ONLY", "None"), ("device", "KEYWORD_ONLY", "None"), ("pin_memory", "KEYWORD_ONLY", "None")],
+        [
+            ("size", "POSITIONAL_OR_KEYWORD", None),
+            ("fill_value", "POSITIONAL_OR_KEYWORD", None),
+            ("names", "KEYWORD_ONLY", None),
+            ("dtype", "KEYWORD_ONLY", "None"),
+            ("layout", "KEYWORD_ONLY", "None"),
+            ("device", "KEYWORD_ONLY", "None"),
+            ("pin_memory", "KEYWORD_ONLY", "None"),
+        ],
         "ATen full C++ dispatch kernel.",
     ),
-    ("arange", "aten.arange", "function", [("end", "POSITIONAL_OR_KEYWORD", None), ("dtype", "KEYWORD_ONLY", "None"), ("layout", "KEYWORD_ONLY", "None"), ("device", "KEYWORD_ONLY", "None"), ("pin_memory", "KEYWORD_ONLY", "None")], "ATen arange C++ dispatch kernel."),
-    ("where", "aten.where", "function", [("condition", "POSITIONAL_OR_KEYWORD", None), ("input", "POSITIONAL_OR_KEYWORD", None), ("other", "POSITIONAL_OR_KEYWORD", None)], "ATen where C++ dispatch kernel."),
+    (
+        "arange",
+        "aten.arange",
+        "function",
+        [
+            ("end", "POSITIONAL_OR_KEYWORD", None),
+            ("dtype", "KEYWORD_ONLY", "None"),
+            ("layout", "KEYWORD_ONLY", "None"),
+            ("device", "KEYWORD_ONLY", "None"),
+            ("pin_memory", "KEYWORD_ONLY", "None"),
+        ],
+        "ATen arange C++ dispatch kernel.",
+    ),
+    (
+        "where",
+        "aten.where",
+        "function",
+        [
+            ("condition", "POSITIONAL_OR_KEYWORD", None),
+            ("input", "POSITIONAL_OR_KEYWORD", None),
+            ("other", "POSITIONAL_OR_KEYWORD", None),
+        ],
+        "ATen where C++ dispatch kernel.",
+    ),
 ]
 
 CANONICAL_ATEN_OPS: list[CanonicalPythonOpSpec] = build_canonical_python_ops(_ATEN_OP_DEFS)
@@ -212,7 +575,18 @@ def _resolve_torch() -> _TorchWithOpsProtocol | types.ModuleType | None:
 
         torch_mod: types.ModuleType = torch
         return torch_mod
-    except Exception:
+    except (
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        LookupError,
+        SyntaxError,
+        AssertionError,
+    ):
+        _LOGGER.debug("Optional torch module unavailable for ATen resolution", exc_info=True)
         return None
 
 
@@ -226,8 +600,18 @@ def _get_torch_ops_aten() -> types.ModuleType | None:
         mod = _resolve_torch()
         if isinstance(mod, _TorchWithOpsProtocol):
             return mod.ops.aten
-    except Exception as exc:
-        del exc
+    except (
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        LookupError,
+        SyntaxError,
+        AssertionError,
+    ):
+        _LOGGER.debug("Failed to resolve torch.ops.aten namespace", exc_info=True)
     return None
 
 
@@ -262,7 +646,7 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
 
     results: list[GhostRef] = []
     seen: set[str] = set()
-    aten_names = {name for name, _ in inspect.getmembers(aten_ops)}
+    aten_names = set(get_member_dict(aten_ops))
 
     for op in CANONICAL_ATEN_OPS:
         name = op.name

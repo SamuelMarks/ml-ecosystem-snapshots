@@ -62,19 +62,19 @@ def test_offline_mcp_validation_tools() -> None:
     """Verify that MCP validation tools run offline with zero network calls."""
     # SASS check
     sass_res = check_sass_instruction("FADD", operands=["R", "R", "R"], sm_arch="sm_80")
-    assert sass_res["mnemonic_exists"] is True
+    assert sass_res.mnemonic_exists is True
 
     # RDNA check
     rdna_res = check_rdna_instruction("v_add_f32", operands=["VGPR", "VGPR", "VGPR"])
-    assert rdna_res["mnemonic_exists"] is True
+    assert rdna_res.mnemonic_exists is True
 
     # MLIR check
     mlir_res = check_mlir_op("arith.addf", operands_count=2)
-    assert mlir_res["op_exists"] is True
+    assert mlir_res.op_exists is True
 
     # StableHLO check
     hlo_res = check_mlir_op("stablehlo.dot_general", operands_count=2)
-    assert hlo_res["op_exists"] is True
+    assert hlo_res.op_exists is True
 
 
 def test_offline_symbol_lookup_and_search() -> None:
@@ -94,11 +94,19 @@ def test_zero_db_files_in_repo() -> None:
 
     for dirpath, _dirnames, filenames in os.walk(root_dir):
         # Skip git directory and temporary test outputs
-        if ".git" in dirpath or ".pytest_cache" in dirpath or ".mypy_cache" in dirpath or ".venv" in dirpath or "test_out" in dirpath:
+        if (
+            ".git" in dirpath
+            or ".pytest_cache" in dirpath
+            or ".mypy_cache" in dirpath
+            or ".venv" in dirpath
+            or "test_out" in dirpath
+        ):
             continue
         for fname in filenames:
             for ext in forbidden_exts:
-                assert not fname.endswith(ext), f"Forbidden database file detected in repo: {os.path.join(dirpath, fname)}"
+                assert not fname.endswith(ext), (
+                    f"Forbidden database file detected in repo: {os.path.join(dirpath, fname)}"
+                )
 
 
 def test_index_db_stored_in_cache_dir_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -331,7 +339,9 @@ def test_offline_cli_pull_forbidden(monkeypatch: pytest.MonkeyPatch) -> None:
     assert exc_info.value.code == 1
 
 
-def test_cli_import_and_list_snapshots_without_rich(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_import_and_list_snapshots_without_rich(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Verify CLI imports and executes list-snapshots without optional rich package installed.
 
     Args:
@@ -360,7 +370,9 @@ def test_cli_import_and_list_snapshots_without_rich(tmp_path: Path, monkeypatch:
     assert "Available Snapshots:" in captured.out or "No snapshot files found." in captured.out
 
 
-def test_offline_smoke_without_griffe_or_cdd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_offline_smoke_without_griffe_or_cdd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Verify CLI, MCP server, and introspection modules import and run without griffe or cdd.
 
     Args:
@@ -383,12 +395,13 @@ def test_offline_smoke_without_griffe_or_cdd(tmp_path: Path, monkeypatch: pytest
     assert "griffe" in req_text
     assert "cdd" in req_text
 
-    orig_ghost_inspector = inspector_mod.GhostInspector
     orig_griffe_cache = static_parsers_mod._GRIFFE_CACHE
-    monkeypatch.setitem(sys.modules, "griffe", None)
-    monkeypatch.setitem(sys.modules, "cdd", None)
+    orig_ghost_inspector = inspector_mod.GhostInspector
 
-    try:
+    with monkeypatch.context() as mp:
+        mp.setitem(sys.modules, "griffe", None)
+        mp.setitem(sys.modules, "cdd", None)
+
         reloaded_utils = importlib.reload(utils_mod)
         reloaded_static_parsers = importlib.reload(static_parsers_mod)
         reloaded_inspector = importlib.reload(inspector_mod)
@@ -399,15 +412,22 @@ def test_offline_smoke_without_griffe_or_cdd(tmp_path: Path, monkeypatch: pytest
         assert callable(reloaded_static_parsers.preload_griffe_cache)
         assert callable(reloaded_inspector.GhostInspector.inspect)
 
-        monkeypatch.setattr(capture_mod, "_get_pkg_dir", lambda: str(tmp_path))
-        monkeypatch.setattr(sys, "argv", ["ml_ecosystem_snapshots", "list-snapshots"])
+        mp.setattr(capture_mod, "_get_pkg_dir", lambda: str(tmp_path))
+        mp.setattr(sys, "argv", ["ml_ecosystem_snapshots", "list-snapshots"])
         reloaded_cli.main()
         captured = capsys.readouterr()
         assert "Available Snapshots:" in captured.out or "No snapshot files found." in captured.out
-        assert reloaded_mcp.check_sass_instruction("FADD")["is_valid"]
-        assert reloaded_mcp.check_rdna_instruction("v_add_f32")["is_valid"]
-        assert reloaded_mcp.check_ptx_instruction("add")["is_valid"]
-    finally:
-        pytest.MonkeyPatch().setattr(static_parsers_mod, "_GRIFFE_CACHE", orig_griffe_cache, raising=False)
-        pytest.MonkeyPatch().setattr(inspector_mod, "_GRIFFE_CACHE", orig_griffe_cache, raising=False)
-        pytest.MonkeyPatch().setattr(inspector_mod, "GhostInspector", orig_ghost_inspector, raising=False)
+        assert reloaded_mcp.check_sass_instruction("FADD").is_valid
+        assert reloaded_mcp.check_rdna_instruction("v_add_f32").is_valid
+        assert reloaded_mcp.check_ptx_instruction("add").is_valid
+
+    import ml_ecosystem_snapshots.introspection.cdd_inspector as cdd_insp_mod
+    import ml_ecosystem_snapshots.introspection.griffe_inspector as griffe_insp_mod
+
+    importlib.reload(utils_mod)
+    importlib.reload(static_parsers_mod)
+    importlib.reload(griffe_insp_mod)
+    importlib.reload(cdd_insp_mod)
+    importlib.reload(inspector_mod)
+    pytest.MonkeyPatch().setattr(inspector_mod, "GhostInspector", orig_ghost_inspector)
+    static_parsers_mod._GRIFFE_CACHE = orig_griffe_cache

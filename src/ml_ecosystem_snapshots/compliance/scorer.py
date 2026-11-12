@@ -15,7 +15,12 @@ from ml_ecosystem_snapshots.compliance.models import (
     ComplianceScoreReport,
     ParamSignatureTuple,
 )
-from ml_ecosystem_snapshots.models import JsonValue, SnapshotEnvelope
+from ml_ecosystem_snapshots.models import (
+    JsonValue,
+    SnapshotEnvelope,
+    ensure_json_dict,
+    ensure_json_list,
+)
 
 
 def _build_reference_map(
@@ -30,12 +35,12 @@ def _build_reference_map(
         Dictionary mapping API path strings to validated `GhostRef` instances.
     """
     reference_map: dict[str, GhostRef] = {}
-    raw_snap = reference_snapshot.model_dump() if isinstance(reference_snapshot, SnapshotEnvelope) else reference_snapshot
-    cats_obj: JsonValue = raw_snap.get("categories", {})
-    assert isinstance(cats_obj, dict)
+    raw_snap = (
+        reference_snapshot.model_dump() if isinstance(reference_snapshot, SnapshotEnvelope) else reference_snapshot
+    )
+    cats_obj = ensure_json_dict(raw_snap.get("categories", {}), "snapshot categories")
     for _cat, items in cats_obj.items():
-        assert isinstance(items, list)
-        for item in items:
+        for item in ensure_json_list(items, "category items"):
             ref = GhostRef.model_validate(item)
             reference_map[ref.api_path] = ref
             for alias in ref.aliases or []:

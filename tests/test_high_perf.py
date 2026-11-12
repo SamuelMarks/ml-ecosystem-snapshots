@@ -12,7 +12,7 @@ from ml_ecosystem_snapshots.frameworks.deepspeed import collect_api as ds_collec
 from ml_ecosystem_snapshots.frameworks.onnxruntime import collect_api as onnx_collect
 from ml_ecosystem_snapshots.frameworks.triton import collect_api as triton_collect
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 
 
 def test_triton_collect(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -25,13 +25,13 @@ def test_triton_collect(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_tl = types.ModuleType("triton.language")
 
     def constexpr() -> None:
-        """Execute helper constexpr."""
+        """Stub `triton.language.constexpr` callable."""
 
     def tensor() -> None:
-        """Execute helper tensor."""
+        """Stub `triton.language.tensor` callable."""
 
     def _priv() -> None:
-        """Execute helper _priv."""
+        """Stub private `triton.language._priv` callable."""
 
     monkeypatch.setattr(mock_tl, "constexpr", constexpr, raising=False)
     monkeypatch.setattr(mock_tl, "tensor", tensor, raising=False)
@@ -45,7 +45,7 @@ def test_triton_collect(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mock_math, "bad", 123, raising=False)
     monkeypatch.setattr(mock_tl, "math", mock_math, raising=False)
 
-    def fake_inspect(obj: InspectableTarget, path: str, **kw: InspectableTarget) -> GhostRef:
+    def fake_inspect(obj: LivePythonTarget, path: str, **kw: LivePythonTarget) -> GhostRef:
         """Return a stub GhostRef for the given path.
 
         Args:
@@ -107,12 +107,12 @@ def test_onnx_collect(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_onnx = types.ModuleType("onnxruntime")
 
     class InferenceSession:
-        """Mock or helper class InferenceSession for unit testing."""
+        """Stub ONNX Runtime `InferenceSession` class."""
 
     monkeypatch.setattr(mock_onnx, "InferenceSession", InferenceSession, raising=False)
     monkeypatch.setattr(mock_onnx, "utils", 123, raising=False)
 
-    def fake_inspect(self: GhostInspector, obj: InspectableTarget, path: str) -> GhostRef:
+    def fake_inspect(self: GhostInspector, obj: LivePythonTarget, path: str) -> GhostRef:
         """Return a stub GhostRef for ONNX Runtime symbols.
 
         Args:
@@ -149,12 +149,12 @@ def test_ds_collect(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_ds = types.ModuleType("deepspeed")
 
     def initialize() -> None:
-        """Execute helper initialize."""
+        """Stub DeepSpeed `initialize` entry point."""
 
     monkeypatch.setattr(mock_ds, "initialize", initialize, raising=False)
     monkeypatch.setattr(mock_ds, "utils", 123, raising=False)
 
-    def fake_inspect(self: GhostInspector, obj: InspectableTarget, path: str) -> GhostRef:
+    def fake_inspect(self: GhostInspector, obj: LivePythonTarget, path: str) -> GhostRef:
         """Return a stub GhostRef for DeepSpeed symbols.
 
         Args:

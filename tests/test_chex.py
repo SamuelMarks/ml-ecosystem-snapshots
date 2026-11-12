@@ -10,15 +10,15 @@ import pytest
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.api import (
-    _extract_version_with_griffe,
     extract_snapshot,
+    extract_version_with_griffe,
     get_pkg_version,
 )
 from ml_ecosystem_snapshots.cli.commands.check import cmd_check_chex
 from ml_ecosystem_snapshots.frameworks import chex
 from ml_ecosystem_snapshots.frameworks._base import scan_griffe_module_members
 from ml_ecosystem_snapshots.introspection.static_parsers import (
-    _GRIFFE_CACHE,
+    DEFAULT_GRIFFE_CACHE,
     load_griffe_module_safely,
 )
 from ml_ecosystem_snapshots.mcp.registry import dispatch_tool_call
@@ -29,63 +29,6 @@ from ml_ecosystem_snapshots.mcp.tools.hallucination import (
 )
 from ml_ecosystem_snapshots.mcp.tools.translation import translate_concept_arguments
 from ml_ecosystem_snapshots.utils import get_framework_docstring_parser
-
-
-class _FakeGriffeMember:
-    """Fake Griffe AST member implementing `GriffeMemberProtocol`."""
-
-    def __init__(
-        self,
-        is_class: bool = False,
-        is_function: bool = True,
-        is_public: bool = True,
-        raise_on_kind: bool = False,
-    ) -> None:
-        """Initialize fake Griffe member.
-
-        Args:
-            is_class: Whether member is a class.
-            is_function: Whether member is a function.
-            is_public: Whether member is public.
-            raise_on_kind: Whether accessing `is_class` raises an error.
-        """
-        self._is_class = is_class
-        self._is_function = is_function
-        self.is_public = is_public
-        self._raise_on_kind = raise_on_kind
-
-    @property
-    def is_class(self) -> bool:
-        """Return whether node is a class.
-
-        Returns:
-            True if the member is a class.
-        """
-        if self._raise_on_kind:
-            raise RuntimeError("broken alias")
-        return self._is_class
-
-    @property
-    def is_function(self) -> bool:
-        """Return whether node is a function.
-
-        Returns:
-            True if the member is a function.
-        """
-        return self._is_function
-
-
-class _FakeGriffeModule:
-    """Fake Griffe Module implementing `GriffeModuleMembersProtocol`."""
-
-    def __init__(self, members: dict[str, _FakeGriffeMember]) -> None:
-        """Initialize fake Griffe module.
-
-        Args:
-            members: Mapping of member names to `_FakeGriffeMember` instances.
-        """
-        self.members = members
-        self.is_public = True
 
 
 def test_chex_docstring_parser_and_version() -> None:
@@ -102,6 +45,8 @@ def test_get_chex_module_and_griffe_offline_and_live(
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
+    import griffe
+
     monkeypatch.setenv("ML_SNAPSHOTS_OFFLINE", "1")
     assert chex._get_chex_module() is None
     assert chex._get_chex_griffe_module() is None
@@ -120,12 +65,12 @@ def test_get_chex_module_and_griffe_offline_and_live(
     ):
         assert chex._get_chex_module() is None
 
-    fake_griffe = _FakeGriffeModule({})
+    real_griffe_mod = griffe.Module("chex")
     with patch(
         "ml_ecosystem_snapshots.frameworks.chex.load_griffe_module_safely",
-        return_value=fake_griffe,
+        return_value=real_griffe_mod,
     ):
-        assert chex._get_chex_griffe_module() is fake_griffe
+        assert chex._get_chex_griffe_module() is real_griffe_mod
 
 
 def test_load_griffe_module_safely_branches(
@@ -136,60 +81,67 @@ def test_load_griffe_module_safely_branches(
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
+    import griffe
+
     monkeypatch.setenv("ML_SNAPSHOTS_OFFLINE", "1")
     assert load_griffe_module_safely("chex") is None
 
     monkeypatch.setenv("ML_SNAPSHOTS_OFFLINE", "0")
-    fake_node = _FakeGriffeModule({})
-    _GRIFFE_CACHE["chex_cached_test"] = fake_node
+    cached_mod = griffe.Module("chex_cached_test")
+    DEFAULT_GRIFFE_CACHE.put("chex_cached_test", cached_mod)
     try:
-        assert load_griffe_module_safely("chex_cached_test") is fake_node
+        assert load_griffe_module_safely("chex_cached_test") is cached_mod
     finally:
-        _GRIFFE_CACHE.pop("chex_cached_test", None)
+        DEFAULT_GRIFFE_CACHE.pop("chex_cached_test", None)
 
     with patch("griffe.load", side_effect=RuntimeError("cannot load")):
         assert load_griffe_module_safely("nonexistent_pkg_xyz_123") is None
 
     # Success branch loading a real standard-library module via Griffe
-    _GRIFFE_CACHE.pop("json", None)
+    DEFAULT_GRIFFE_CACHE.pop("json", None)
     loaded_json = load_griffe_module_safely("json", framework_name="chex")
     assert loaded_json is not None
-    _GRIFFE_CACHE.pop("json", None)
+    DEFAULT_GRIFFE_CACHE.pop("json", None)
 
 
 def test_scan_griffe_module_members_all_branches() -> None:
     """Verify `scan_griffe_module_members` across all member filtering and error branches."""
+    import griffe
+
+    from ml_ecosystem_snapshots.introspection.runtime_boundary import StaticGriffeNode
+
     with patch(
         "ml_ecosystem_snapshots.frameworks._base.load_griffe_module_safely",
         return_value=None,
     ):
         assert scan_griffe_module_members("chex", "chex") == []
 
-    members = {
-        "_private_fn": _FakeGriffeMember(is_function=True),
-        "blocked_fn": _FakeGriffeMember(is_function=True),
-        "broken_member": _FakeGriffeMember(raise_on_kind=True),
-        "attr_only": _FakeGriffeMember(is_class=False, is_function=False),
-        "valid_fn": _FakeGriffeMember(is_function=True),
-        "valid_cls": _FakeGriffeMember(is_class=True, is_function=False),
-        "inspect_error_fn": _FakeGriffeMember(is_function=True),
-    }
-    fake_mod = _FakeGriffeModule(members)
+    griffe_mod = griffe.Module("chex")
+    griffe_mod.set_member("_private_fn", griffe.Function("_private_fn"))
+    griffe_mod.set_member("blocked_fn", griffe.Function("blocked_fn"))
+    griffe_mod.set_member("broken_member", griffe.Alias("broken_member", target="missing_pkg.missing_sym"))
+    griffe_mod.set_member("attr_only", griffe.Attribute("attr_only"))
+    griffe_mod.set_member("valid_fn", griffe.Function("valid_fn"))
+    griffe_mod.set_member("valid_cls", griffe.Class("valid_cls"))
+    griffe_mod.set_member("inspect_error_fn", griffe.Function("inspect_error_fn"))
 
     def fake_inspector(
-        obj: _FakeGriffeMember,
+        obj: StaticGriffeNode,
         api_path: str,
         is_public: bool | None = None,
     ) -> GhostRef:
-        """Fake inspector returning a `GhostRef` or raising on `inspect_error_fn`.
+        """Return a `GhostRef` or raise on `inspect_error_fn`.
 
         Args:
-            obj: Fake Griffe member node.
+            obj: Griffe AST member node.
             api_path: API path string.
             is_public: Public visibility flag.
 
         Returns:
             Constructed `GhostRef`.
+
+        Raises:
+            ValueError: When `api_path` ends with `inspect_error_fn`.
         """
         if api_path.endswith("inspect_error_fn"):
             raise ValueError("inspect failed")
@@ -204,7 +156,7 @@ def test_scan_griffe_module_members_all_branches() -> None:
     with (
         patch(
             "ml_ecosystem_snapshots.frameworks._base.load_griffe_module_safely",
-            return_value=fake_mod,
+            return_value=griffe_mod,
         ),
         patch(
             "ml_ecosystem_snapshots.frameworks._base.GhostInspector.inspect",
@@ -273,6 +225,8 @@ def test_collect_chex_api_offline_and_live(
         params=[],
     )
 
+    import griffe
+
     with (
         patch(
             "ml_ecosystem_snapshots.frameworks.chex._get_chex_module",
@@ -280,7 +234,7 @@ def test_collect_chex_api_offline_and_live(
         ),
         patch(
             "ml_ecosystem_snapshots.frameworks.chex._get_chex_griffe_module",
-            return_value=_FakeGriffeModule({}),
+            return_value=griffe.Module("chex"),
         ),
         patch(
             "ml_ecosystem_snapshots.frameworks.chex.scan_griffe_module_members",
@@ -314,17 +268,17 @@ def test_check_chex_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
         capsys: Pytest stdout/stderr capture fixture.
     """
     res_valid = check_chex_op("chex.assert_shape", inputs_count=2, attributes=["custom_message"])
-    assert res_valid["is_valid"] is True
+    assert res_valid.is_valid is True
 
     res_bad = check_chex_op("chex.nonexistent_assert")
-    assert res_bad["is_valid"] is False
+    assert res_bad.is_valid is False
 
     rpc_res = dispatch_tool_call(
         1,
         "check_chex_op",
         {"op_name": "assert_trees_all_close", "attributes": ["rtol", "atol"]},
     )
-    assert "result" in rpc_res
+    assert rpc_res.result is not None
 
     args_ok = argparse.Namespace(op_name="assert_shape", inputs_count=2, attributes="custom_message")
     cmd_check_chex(args_ok)
@@ -335,8 +289,8 @@ def test_check_chex_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
         cmd_check_chex(args_fail)
 
     anti = explain_anti_pattern("chex", "chex.assert_shape", "msg")
-    assert anti["is_known_anti_pattern"] is True
-    assert anti["canonical_argument"] == "custom_message"
+    assert anti.is_known_anti_pattern is True
+    assert anti.canonical_argument == "custom_message"
 
     trans = translate_concept_arguments(
         "assert_allclose",
@@ -344,85 +298,44 @@ def test_check_chex_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
         "chex",
         {"rtol": 1e-5, "atol": 1e-6, "msg": "mismatch"},
     )
-    assert trans["translated_kwargs"]["custom_message"] == "mismatch"
+    assert trans.translated_kwargs["custom_message"] == "mismatch"
 
     block_res = check_code_block(
         """import chex
 chex.assert_shape(x, (2, 3), msg='bad')"""
     )
-    assert block_res["total_analyzed"] == 1
+    assert block_res.total_analyzed == 1
 
 
 def test_extract_version_with_griffe_branches() -> None:
     """Verify `_extract_version_with_griffe` across alias, value, None, and exception branches."""
+    import griffe
 
-    class _FakeTarget:
-        """Fake Griffe alias target with a `value` attribute."""
+    col = griffe.ModulesCollection()
+    alias_mod = griffe.Module("chex", modules_collection=col)
+    col["chex"] = alias_mod
+    sub_mod = griffe.Module("_src")
+    sub_mod.set_member("VER", griffe.Attribute("VER", value="'0.1.90'"))
+    alias_mod.set_member("_src", sub_mod)
+    alias_mod.set_member("__version__", griffe.Alias("__version__", target="chex._src.VER"))
 
-        def __init__(self, value: str | None) -> None:
-            """Initialize fake target.
+    with patch("griffe.load", return_value=alias_mod):
+        assert extract_version_with_griffe("chex") == "0.1.90"
 
-            Args:
-                value: Version string or None.
-            """
-            self.value = value
+    attr_mod = griffe.Module("chex")
+    attr_mod.set_member("__version__", griffe.Attribute("__version__", value='"0.2.0"'))
+    with patch("griffe.load", return_value=attr_mod):
+        assert extract_version_with_griffe("chex") == "0.2.0"
 
-    class _FakeAlias:
-        """Fake Griffe Alias member."""
+    empty_mod = griffe.Module("chex")
+    with patch("griffe.load", return_value=empty_mod):
+        assert extract_version_with_griffe("chex") is None
 
-        def __init__(self, target: _FakeTarget | None) -> None:
-            """Initialize fake alias.
-
-            Args:
-                target: Target node or None.
-            """
-            self.target = target
-
-    class _FakeAttr:
-        """Fake Griffe Attribute member."""
-
-        def __init__(self, value: str | None) -> None:
-            """Initialize fake attribute.
-
-            Args:
-                value: Version string or None.
-            """
-            self.value = value
-
-    class _FakeMod:
-        """Fake Griffe Module with `members` dictionary."""
-
-        def __init__(self, members: dict[str, _FakeAlias | _FakeAttr | None]) -> None:
-            """Initialize fake module.
-
-            Args:
-                members: Mapping of member names to fake nodes.
-            """
-            self.members = members
-
-    with patch(
-        "griffe.load",
-        return_value=_FakeMod({"__version__": _FakeAlias(_FakeTarget("'0.1.90'"))}),
-    ):
-        assert _extract_version_with_griffe("chex") == "0.1.90"
-
-    with patch(
-        "griffe.load",
-        return_value=_FakeMod({"__version__": _FakeAttr('"0.2.0"')}),
-    ):
-        assert _extract_version_with_griffe("chex") == "0.2.0"
-
-    with patch(
-        "griffe.load",
-        return_value=_FakeMod({"__version__": None}),
-    ):
-        assert _extract_version_with_griffe("chex") is None
-
-    with patch("griffe.load", return_value="not_a_module"):
-        assert _extract_version_with_griffe("chex") is None
+    with patch("griffe.load", return_value=griffe.Function("not_a_module")):
+        assert extract_version_with_griffe("chex") is None
 
     with patch("griffe.load", side_effect=RuntimeError("fail")):
-        assert _extract_version_with_griffe("chex") is None
+        assert extract_version_with_griffe("chex") is None
 
     with (
         patch(
@@ -430,7 +343,7 @@ def test_extract_version_with_griffe_branches() -> None:
             side_effect=RuntimeError("not installed"),
         ),
         patch(
-            "ml_ecosystem_snapshots.api._extract_version_with_griffe",
+            "ml_ecosystem_snapshots.api.extract_version_with_griffe",
             return_value=None,
         ),
     ):

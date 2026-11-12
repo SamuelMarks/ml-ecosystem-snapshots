@@ -11,8 +11,61 @@ import typing
 
 from ml_switcheroo_ir.schema.ghost import GhostRef
 
-from ml_ecosystem_snapshots.cli.commands.verify_domains import _read_namespace_attr
-from ml_ecosystem_snapshots.models import JsonValue
+from ml_ecosystem_snapshots.compliance.models import NamespaceAlignmentRule
+from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
+from ml_ecosystem_snapshots.models import JsonValue, ensure_json_dict, ensure_json_list
+
+ZERO_ECOSYSTEM_ALIGNMENT_RULE = NamespaceAlignmentRule(
+    prefix_map={
+        "zero_jax": "jax",
+        "zero_optax": "optax",
+        "zero_chex": "chex",
+        "zero_orbax": "orbax",
+        "zero_grain": "grain",
+    },
+    subpackage_roots=("jax", "optax"),
+    node_prefix_rewrites={"zero_jax.": "{target_prefix}.jax."},
+    path_rewrites=(
+        (".activation", ""),
+        (".nn.nn", ".nn"),
+        (".initializers.initializers", ".initializers"),
+    ),
+)
+
+CLI_ALIGNMENT_PRESETS: dict[str, NamespaceAlignmentRule] = {
+    "default": NamespaceAlignmentRule(),
+    "zero": ZERO_ECOSYSTEM_ALIGNMENT_RULE,
+}
+
+
+def resolve_alignment_preset(preset_name: str | None, target_prefix: str = "") -> NamespaceAlignmentRule:
+    """Resolve a `NamespaceAlignmentRule` from an optional CLI preset name or target prefix.
+
+    Args:
+        preset_name: Optional CLI preset identifier (`'default'` or `'zero'`).
+        target_prefix: Target namespace prefix string.
+
+    Returns:
+        Matching `NamespaceAlignmentRule` instance.
+    """
+    if preset_name and preset_name in CLI_ALIGNMENT_PRESETS:
+        return CLI_ALIGNMENT_PRESETS[preset_name]
+    if target_prefix.startswith("zero"):
+        return ZERO_ECOSYSTEM_ALIGNMENT_RULE
+    return CLI_ALIGNMENT_PRESETS["default"]
+
+
+def _read_target_path(args: argparse.Namespace) -> str:
+    """Extract `args.target_path` as a string or empty string when absent.
+
+    Args:
+        args: Parsed CLI `Namespace` instance.
+
+    Returns:
+        Target path string or `""`.
+    """
+    raw_tp = get_member_dict(args).get("target_path")
+    return str(raw_tp or "")
 
 
 def _check_assembly_or_mlir_target(
@@ -41,12 +94,16 @@ def _check_assembly_or_mlir_target(
         target = str(reference_snapshot.get("target", "")).lower()
         if "rdna" in target or "amd" in target:
             res = check_rdna_assembly_compliance(content)
-            print(f"AMD RDNA snippet compliance: {res.get('verified_instructions')}/{res.get('total_instructions')} instructions valid.")
+            print(
+                f"AMD RDNA snippet compliance: {res.verified_instructions}/{res.total_instructions} instructions valid."
+            )
         else:
             res = check_sass_assembly_compliance(content)
-            print(f"NVIDIA SASS snippet compliance: {res.get('verified_instructions')}/{res.get('total_instructions')} instructions valid.")
-        if not res.get("is_compliant"):
-            for err in res.get("errors", []):
+            print(
+                f"NVIDIA SASS snippet compliance: {res.verified_instructions}/{res.total_instructions} instructions valid."
+            )
+        if not res.is_compliant:
+            for err in res.errors:
                 print(f"  - {err}")
             sys.exit(1)
         return True
@@ -57,9 +114,9 @@ def _check_assembly_or_mlir_target(
         with open(target_path, encoding="utf-8") as f:
             content = f.read()
         res = check_mlir_text_compliance(content)
-        print(f"MLIR snippet compliance: {res.get('verified_ops')}/{res.get('total_ops')} operations valid.")
-        if not res.get("is_compliant"):
-            for err in res.get("errors", []):
+        print(f"MLIR snippet compliance: {res.verified_ops}/{res.total_ops} operations valid.")
+        if not res.is_compliant:
+            for err in res.errors:
                 print(f"  - {err}")
             sys.exit(1)
         return True
@@ -148,11 +205,9 @@ def _print_missing_apis_table(
     print(f"\nMissing APIs ({len(missing)}):\n")
 
     ref_map: dict[str, GhostRef] = {}
-    cats = reference_snapshot.get("categories", {})
-    assert isinstance(cats, dict)
-    for _cat, items in cats.items():
-        assert isinstance(items, list)
-        for item in items:
+    cats = ensure_json_dict(reference_snapshot.get("categories", {}), "compliance categories")
+    for _cat, raw_items in cats.items():
+        for item in ensure_json_list(raw_items, "category items"):
             ref_item = GhostRef.model_validate(item)
             ref_map[ref_item.api_path] = ref_item
             for alias in ref_item.aliases or []:
@@ -182,36 +237,50 @@ def cmd_check(args: argparse.Namespace) -> None:
     with open(path, encoding="utf-8") as f:
         reference_snapshot = json.load(f)
 
-    target_path = str(_read_namespace_attr(args, "target_path", "") or "")
+    target_path = _read_target_path(args)
     target_ext = os.path.splitext(target_path)[1].lower() if target_path else ""
 
     if _check_assembly_or_mlir_target(target_path, target_ext, reference_snapshot):
         return
 
+    raw_preset = get_member_dict(args).get("alignment_preset")
+    preset_name = str(raw_preset) if isinstance(raw_preset, str) else None
+    alignment_rule = resolve_alignment_preset(preset_name, str(args.target_prefix))
+
     print(f"Extracting target APIs from {args.target_path}...")
-    target_refs = extract_target_refs(args.target_path, args.target_prefix, args.reference_prefix)
+    target_refs = extract_target_refs(
+        args.target_path,
+        args.target_prefix,
+        args.reference_prefix,
+        alignment_rule=alignment_rule,
+    )
 
     print("Scoring compliance...")
     results = score_compliance(reference_snapshot, target_refs)
 
-    score = results.get("score_percentage", 0.0)
+    score = results.score_percentage
     print("\n--- Compliance Report ---")
     print(f"Overall Compliance: {score}%\n")
 
-    matched = results.get("matched", [])
-    missing = results.get("missing", [])
+    matched = results.matched
+    missing = results.missing
     _print_module_breakdown(matched, missing)
 
     if missing:
         _print_missing_apis_table(missing, reference_snapshot)
 
-    mismatched = results.get("mismatched", [])
+    mismatched = results.mismatched
     if mismatched:
         print(f"\nMismatched APIs ({len(mismatched)}):")
-        for item in sorted(mismatched, key=lambda x: x["api_path"])[:20]:
-            print(f"  ~ {item['api_path']}\n    Expected: {item['expected']}\n    Actual:   {item['actual']}")
+        for item in sorted(mismatched, key=lambda x: x.api_path)[:20]:
+            print(f"  ~ {item.api_path}\n    Expected: {item.expected}\n    Actual:   {item.actual}")
         if len(mismatched) > 20:
             print(f"  ~ ... and {len(mismatched) - 20} more")
 
 
-__all__ = ["cmd_check"]
+__all__ = [
+    "CLI_ALIGNMENT_PRESETS",
+    "ZERO_ECOSYSTEM_ALIGNMENT_RULE",
+    "cmd_check",
+    "resolve_alignment_preset",
+]

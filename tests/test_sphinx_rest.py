@@ -8,7 +8,7 @@ import griffe
 import pytest_mock
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 from ml_ecosystem_snapshots.introspection.sanitize import sanitize_type_str
 from ml_ecosystem_snapshots.utils import (
     extract_griffe_docstring_metadata,
@@ -37,21 +37,21 @@ def test_griffe_rest_sphinx_field_lists() -> None:
     meta = extract_griffe_docstring_metadata(docstring, parser_name="rest")
 
     # Verify parameters
-    assert "query" in meta["params"]
-    assert "key" in meta["params"]
-    assert "value" in meta["params"]
+    assert "query" in meta.params
+    assert "key" in meta.params
+    assert "value" in meta.params
 
-    assert meta["params"]["query"]["typ"] == "torch.Tensor"
-    assert "Query tensor" in meta["params"]["query"]["doc"]
+    assert meta.params["query"].typ == "torch.Tensor"
+    assert "Query tensor" in meta.params["query"].doc
 
     # Verify return
-    assert meta["returns"] is not None
-    assert meta["returns"]["typ"] == "torch.Tensor"
-    assert "Attended output tensor" in meta["returns"]["doc"]
+    assert meta.returns is not None
+    assert meta.returns.typ == "torch.Tensor"
+    assert "Attended output tensor" in meta.returns.doc
 
     # Verify raises
-    assert "ValueError" in meta["raises"]
-    assert "RuntimeError" in meta["raises"]
+    assert "ValueError" in meta.raises
+    assert "RuntimeError" in meta.raises
 
 
 def test_get_framework_docstring_parser() -> None:
@@ -111,7 +111,7 @@ def test_resolve_griffe_parser() -> None:
 
     orig_hasattr = hasattr
 
-    def mock_hasattr(obj: InspectableTarget, attr: str) -> bool:
+    def mock_hasattr(obj: LivePythonTarget, attr: str) -> bool:
         """Mock hasattr to simulate missing 'rest' attribute on griffe.Parser.
 
         Args:
@@ -184,7 +184,7 @@ ValueError
 def test_ghost_inspector_sphinx_docstring() -> None:
     """Test GhostInspector inspection with full Sphinx docstring field lists."""
 
-    def dummy_op(x: InspectableTarget, y: InspectableTarget) -> None:
+    def dummy_op(x: LivePythonTarget, y: LivePythonTarget) -> None:
         """Dummy op summary.
 
         :param x: Primary input vector.
@@ -268,7 +268,9 @@ def test_ghost_inspector_merge_branches(mocker: pytest_mock.MockerFixture) -> No
     assert not ref.has_arg("ValueError")
 
     # Test hydrate with and without schema_version
-    hydrated_with = GhostInspector.hydrate({"name": "op", "api_path": "op", "kind": "function", "schema_version": "2.0.0"})
+    hydrated_with = GhostInspector.hydrate(
+        {"name": "op", "api_path": "op", "kind": "function", "schema_version": "2.0.0"}
+    )
     assert hydrated_with.schema_version == "2.0.0"
 
     hydrated_without = GhostInspector.hydrate({"name": "op", "api_path": "op", "kind": "function"})
@@ -363,15 +365,15 @@ def test_extract_griffe_docstring_metadata_edge_cases(
     )
 
     meta = extract_griffe_docstring_metadata("any doc")
-    assert "x" in meta["params"]
-    assert None not in meta["params"]
-    assert meta["raises"] == ["ValueError"]
+    assert "x" in meta.params
+    assert len(meta.params) == 1
+    assert meta.raises == ["ValueError"]
 
 
 def test_ghost_inspector_custom_fault_and_doc_return() -> None:
     """Test GhostInspector capturing custom non-Error/Exception raises and doc-only returns."""
 
-    def fn(x: InspectableTarget) -> None:
+    def fn(x: LivePythonTarget) -> None:
         """Function summary.
 
         :param x: Value.
@@ -398,7 +400,7 @@ def test_ghost_inspector_griffe_return_type_fallback(
         mocker: Pytest mocker fixture.
     """
 
-    def dummy_ret(x: InspectableTarget) -> None:
+    def dummy_ret(x: LivePythonTarget) -> None:
         """Dummy ret summary.
 
         :param x: Input.
@@ -484,7 +486,7 @@ def test_sanitize_type_str_with_sphinx_roles() -> None:
 def test_promote_documented_kwargs() -> None:
     """Test promoting documented kwargs from Sphinx/reST docstrings to formal GhostParams."""
 
-    def custom_layer(in_features: int, **kwargs: InspectableTarget) -> None:
+    def custom_layer(in_features: int, **kwargs: LivePythonTarget) -> None:
         """Initialize custom layer.
 
         Args:
@@ -593,7 +595,7 @@ def test_extract_griffe_docstring_metadata_duplicate_and_missing_params() -> Non
 :raises DuplicateError: Second occurrence.
 """
     meta = extract_griffe_docstring_metadata(docstring, parser_name="rest")
-    assert meta["raises"] == ["DuplicateError"]
+    assert meta.raises == ["DuplicateError"]
 
     fake_param_section = mock.MagicMock()
     fake_param_section.kind = "parameters"
@@ -609,9 +611,9 @@ def test_extract_griffe_docstring_metadata_duplicate_and_missing_params() -> Non
         return_value=[fake_param_section],
     ):
         meta_misclassified = extract_griffe_docstring_metadata(":raises MisclassifiedError: Doc.", parser_name="rest")
-        assert "MisclassifiedError" not in meta_misclassified["params"]
-        assert "MisclassifiedError" in meta_misclassified["raises"]
+        assert "MisclassifiedError" not in meta_misclassified.params
+        assert "MisclassifiedError" in meta_misclassified.raises
 
     with mock.patch("ml_ecosystem_snapshots.utils.parse_docstring_with_griffe", return_value=[]):
         meta_empty = extract_griffe_docstring_metadata(":raises SoloError: Doc.", parser_name="rest")
-        assert meta_empty["raises"] == ["SoloError"]
+        assert meta_empty.raises == ["SoloError"]

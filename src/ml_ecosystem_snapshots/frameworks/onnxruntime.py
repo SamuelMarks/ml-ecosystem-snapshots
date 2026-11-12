@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import inspect
 import logging
 
 from ml_switcheroo_ir.schema.ghost import (
@@ -14,12 +13,15 @@ from ml_switcheroo_ir.schema.ghost import (
 )
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    LivePythonTarget,
+    get_member_dict,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _inspect_ort_symbol(obj: InspectableTarget, name: str, inspector: GhostInspector) -> GhostRef | None:
+def _inspect_ort_symbol(obj: LivePythonTarget, name: str, inspector: GhostInspector) -> GhostRef | None:
     """Inspect a single ONNX Runtime symbol and inject `providers` on `InferenceSession`.
 
     Args:
@@ -81,7 +83,7 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
 
     inspector = GhostInspector()
 
-    for name, obj in inspect.getmembers(mod):
+    for name, obj in get_member_dict(mod).items():
         if (not include_nonpublic and name.startswith("_")) or obj is None:
             continue
 

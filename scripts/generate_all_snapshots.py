@@ -3,8 +3,18 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import warnings
+
+import pydantic
+
+from ml_ecosystem_snapshots.api import (
+    extract_snapshot,
+    extract_snapshot_isolated,
+    write_snapshot,
+)
+from ml_ecosystem_snapshots.exceptions import SnapshotError
 
 warnings.filterwarnings(
     "ignore",
@@ -15,12 +25,6 @@ warnings.filterwarnings(
 _src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
-
-from ml_ecosystem_snapshots.api import (  # noqa: E402
-    extract_snapshot,
-    extract_snapshot_isolated,
-    write_snapshot,
-)
 
 all_frameworks = [
     "torch",
@@ -95,7 +99,19 @@ def main() -> None:
                 snapshot = extract_snapshot(fw)
             write_snapshot(fw, snapshot, os.path.join("src", "ml_ecosystem_snapshots", "snapshots"))
             print("  -> Saved")
-        except Exception as e:
+        except (
+            SnapshotError,
+            ImportError,
+            AttributeError,
+            TypeError,
+            ValueError,
+            LookupError,
+            OSError,
+            RuntimeError,
+            SyntaxError,
+            subprocess.SubprocessError,
+            pydantic.ValidationError,
+        ) as e:
             print(f"  -> Failed: {e}")
             has_error = True
 

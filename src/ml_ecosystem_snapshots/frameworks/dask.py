@@ -2,20 +2,34 @@
 
 from __future__ import annotations
 
-import inspect
+import logging
 import types
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.frameworks._base import collect_dir_callables
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
+
+_LOGGER = logging.getLogger(__name__)
 
 da: types.ModuleType | None = None
 try:
     import dask.array as _da
 
     da = _da
-except Exception:
+except (
+    ImportError,
+    AttributeError,
+    TypeError,
+    ValueError,
+    OSError,
+    RuntimeError,
+    LookupError,
+    SyntaxError,
+    AssertionError,
+):
+    _LOGGER.debug("Optional dask.array module unavailable", exc_info=True)
     da = None
 
 
@@ -34,11 +48,13 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
     if category == SemanticTier.ARRAY_API:
         if not da:
             return results
-        da_members: dict[str, types.ModuleType] = dict(inspect.getmembers(da))
+        da_members = get_member_dict(da)
+        linalg_mod = da_members.get("linalg")
+        fft_mod = da_members.get("fft")
         submodules: list[tuple[types.ModuleType | None, str]] = [
             (da, "dask.array"),
-            (da_members.get("linalg"), "dask.array.linalg"),
-            (da_members.get("fft"), "dask.array.fft"),
+            (linalg_mod if isinstance(linalg_mod, types.ModuleType) else None, "dask.array.linalg"),
+            (fft_mod if isinstance(fft_mod, types.ModuleType) else None, "dask.array.fft"),
         ]
         for submod_obj, prefix in submodules:
             if submod_obj is None:
@@ -64,7 +80,17 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
                     inspector_fn=GhostInspector.inspect,
                 )
             )
-        except Exception as exc:
-            del exc
+        except (
+            ImportError,
+            AttributeError,
+            TypeError,
+            ValueError,
+            OSError,
+            RuntimeError,
+            LookupError,
+            SyntaxError,
+            AssertionError,
+        ):
+            _LOGGER.debug("Failed to collect dask top-level callables", exc_info=True)
 
     return results

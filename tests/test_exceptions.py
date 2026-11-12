@@ -74,8 +74,8 @@ def test_resolve_snapshot_path_not_found_error() -> None:
 def test_schema_and_introspection_domain_errors() -> None:
     """Verify SnapshotSchemaError, CExtensionSignatureError, and IntrospectionError are raised on invalid inputs."""
     from ml_ecosystem_snapshots.api import validate_snapshot_envelope
-    from ml_ecosystem_snapshots.c_extension_sig import _parse_c_sig_ast_arguments
-    from ml_ecosystem_snapshots.introspection.ast_kwargs import _parse_callable_ast
+    from ml_ecosystem_snapshots.c_extension_sig import parse_c_sig_ast_arguments
+    from ml_ecosystem_snapshots.introspection.ast_kwargs import parse_callable_ast
     from ml_ecosystem_snapshots.serialization.hydration import hydrate_ghost_ref
 
     invalid_payload: str = "not_a_dict"
@@ -89,7 +89,7 @@ def test_schema_and_introspection_domain_errors() -> None:
         validate_snapshot_envelope({"target": "torch", "categories": "not_a_dict"})
 
     with pytest.raises(CExtensionSignatureError, match="Failed to parse"):
-        _parse_c_sig_ast_arguments("??? invalid syntax $$$")
+        parse_c_sig_ast_arguments("??? invalid syntax $$$")
 
     with pytest.raises(IntrospectionError, match="Unable to parse AST"):
-        _parse_callable_ast(len)
+        parse_callable_ast(len)

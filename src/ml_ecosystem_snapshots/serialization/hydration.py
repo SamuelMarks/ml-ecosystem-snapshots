@@ -21,7 +21,7 @@ from ml_switcheroo_ir.schema.ghost import (
 )
 
 from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
-from ml_ecosystem_snapshots.models import JsonValue, ScalarValue
+from ml_ecosystem_snapshots.models import SCHEMA_VERSION, JsonValue, ScalarValue
 
 
 def _build_isa_operand_params(sig: list[str]) -> list[GhostParam]:
@@ -50,7 +50,9 @@ def _build_isa_operand_params(sig: list[str]) -> list[GhostParam]:
     return params
 
 
-def _extract_isa_operand_signatures(raw_operands: JsonValue | typing.Sequence[JsonValue | GhostParam] | None) -> list[list[str]]:
+def _extract_isa_operand_signatures(
+    raw_operands: JsonValue | typing.Sequence[JsonValue | GhostParam] | None,
+) -> list[list[str]]:
     """Normalize raw ISA `operands` payload into a list of operand signature lists.
 
     Args:
@@ -63,7 +65,12 @@ def _extract_isa_operand_signatures(raw_operands: JsonValue | typing.Sequence[Js
         return []
     if isinstance(raw_operands[0], list):
         return [[str(s) for s in sig] for sig in raw_operands if isinstance(sig, list)]
-    return [[str(op.get("type") or op.get("role") or op.get("name") or "op") if isinstance(op, dict) else str(op) for op in raw_operands]]
+    return [
+        [
+            str(op.get("type") or op.get("role") or op.get("name") or "op") if isinstance(op, dict) else str(op)
+            for op in raw_operands
+        ]
+    ]
 
 
 def _hydrate_isa_ref(
@@ -80,7 +87,9 @@ def _hydrate_isa_ref(
     name = str(data.get("name") or data["mnemonic"])
     desc = str(data.get("description") or f"ISA {name} instruction.")
     arch = data.get("architecture")
-    valid_archs: list[str] = [str(a) for a in arch] if isinstance(arch, list) else ([arch] if isinstance(arch, str) else [])
+    valid_archs: list[str] = (
+        [str(a) for a in arch] if isinstance(arch, list) else ([arch] if isinstance(arch, str) else [])
+    )
     raw_mods = data.get("modifiers")
     modifiers = [str(m) for m in raw_mods] if isinstance(raw_mods, list) else []
     operands_list = _extract_isa_operand_signatures(data.get("operands"))
@@ -111,16 +120,18 @@ def _hydrate_isa_ref(
         )
         for sig_idx, sig in enumerate(operands_list)
     ]
-    return GhostIsaRef(
-        name=name,
-        api_path=api_path,
-        kind=str(data.get("kind") or "function"),
-        schema_version="2.0.0",
-        params=params,
-        docstring=desc,
-        environment_tags=valid_archs,
-        overloads=isa_overloads if isa_overloads else None,
-        domain_metadata=domain_metadata,
+    return GhostIsaRef.model_validate(
+        {
+            "name": name,
+            "api_path": api_path,
+            "kind": str(data.get("kind") or "function"),
+            "schema_version": SCHEMA_VERSION,
+            "params": params,
+            "docstring": desc,
+            "environment_tags": valid_archs,
+            "overloads": isa_overloads if isa_overloads else None,
+            "domain_metadata": domain_metadata,
+        }
     )
 
 
@@ -139,8 +150,8 @@ def _hydrate_legacy_mlir_ref(
     name = str(data.get("name") or api_path.split(".")[-1])
     mlir_params: list[GhostParam] = []
 
-    raw_mlir_ops = data.get("operands") or []
-    assert isinstance(raw_mlir_ops, list)
+    raw_ops = data.get("operands")
+    raw_mlir_ops: list[JsonValue | GhostParam] = list(raw_ops) if isinstance(raw_ops, list) else []
     for op in raw_mlir_ops:
         op_name = op if isinstance(op, str) else str(op.get("name", "arg") if isinstance(op, dict) else "arg")
         mlir_params.append(
@@ -151,10 +162,12 @@ def _hydrate_legacy_mlir_ref(
             )
         )
 
-    raw_mlir_attrs = data.get("attributes") or []
-    assert isinstance(raw_mlir_attrs, list)
+    raw_attrs_in = data.get("attributes")
+    raw_mlir_attrs: list[JsonValue | GhostParam] = list(raw_attrs_in) if isinstance(raw_attrs_in, list) else []
     for attr in raw_mlir_attrs:
-        attr_name = attr if isinstance(attr, str) else str(attr.get("name", "attr") if isinstance(attr, dict) else "attr")
+        attr_name = (
+            attr if isinstance(attr, str) else str(attr.get("name", "attr") if isinstance(attr, dict) else "attr")
+        )
         mlir_params.append(
             ExtendedGhostParam(
                 name=attr_name,
@@ -164,8 +177,8 @@ def _hydrate_legacy_mlir_ref(
         )
 
     results: list[GhostResult] = []
-    raw_mlir_res = data.get("results") or []
-    assert isinstance(raw_mlir_res, list)
+    raw_res = data.get("results")
+    raw_mlir_res: list[JsonValue | GhostParam] = list(raw_res) if isinstance(raw_res, list) else []
     for res in raw_mlir_res:
         results.append(
             GhostResult(
@@ -184,7 +197,7 @@ def _hydrate_legacy_mlir_ref(
         name=name,
         api_path=api_path,
         kind=str(data.get("kind") or "operation"),
-        schema_version="2.0.0",
+        schema_version=SCHEMA_VERSION,
         params=mlir_params,
         returns=results,
         docstring=str(raw_doc) if raw_doc is not None else None,
@@ -214,7 +227,9 @@ def _normalize_single_v2_param(p: JsonValue | GhostParam) -> ExtendedGhostParam:
     has_legacy_dtypes = "dtypes" in p_dict and p_dict["dtypes"] is not None and "allowed_dtypes" not in p_dict
     has_legacy_rank = "rank" in p_dict and p_dict["rank"] is not None and "rank_constraint" not in p_dict
     if has_legacy_dtypes or has_legacy_rank:
-        raise SnapshotSchemaError("Legacy v1.x 'dtypes'/'rank' fields are not supported; use 'allowed_dtypes'/'rank_constraint'.")
+        raise SnapshotSchemaError(
+            "Legacy v1.x 'dtypes'/'rank' fields are not supported; use 'allowed_dtypes'/'rank_constraint'."
+        )
     p_dict.pop("dtypes", None)
     p_dict.pop("rank", None)
     if "default" in p_dict and p_dict["default"] is not None and not isinstance(p_dict["default"], str):
@@ -225,26 +240,25 @@ def _normalize_single_v2_param(p: JsonValue | GhostParam) -> ExtendedGhostParam:
 def _normalize_v2_typed_lists(
     data_copy: dict[str, JsonValue | typing.Sequence[JsonValue | GhostParam]],
 ) -> None:
-    """Populate default `'Any'` constraint/type fields on `operands`, `attributes`, and `returns` lists.
+    """Populate domain-accurate default constraint/type fields on `operands`, `attributes`, and `returns` lists.
 
     Args:
         data_copy: Mutable shallow copy of the GhostRef dictionary being hydrated.
     """
-    for list_field, key_field in (
-        ("operands", "constraint"),
-        ("attributes", "type"),
-        ("returns", "type"),
+    for list_field, key_field, default_constraint in (
+        ("operands", "constraint", "Tensor"),
+        ("attributes", "type", "Attribute"),
+        ("returns", "type", "Value"),
     ):
         raw_list = data_copy.get(list_field)
         if isinstance(raw_list, list):
             normalized_items: list[JsonValue] = []
-            for item in raw_list:
+            for item in [entry for entry in raw_list if not isinstance(entry, GhostParam)]:
                 if isinstance(item, dict) and not item.get(key_field):
                     item_copy = dict(item)
-                    item_copy[key_field] = "Any"
+                    item_copy[key_field] = default_constraint
                     normalized_items.append(item_copy)
                 else:
-                    assert not isinstance(item, GhostParam)
                     normalized_items.append(item)
             data_copy[list_field] = normalized_items
 
@@ -278,19 +292,25 @@ def hydrate_ghost_ref(
     if "mnemonic" in data and ("name" not in data or "operands" in data):
         return _hydrate_isa_ref(data)
 
-    if ("attributes" in data or "results" in data) and ("name" not in data or "params" not in data) and data.get("domain_type") != "mlir":
+    if (
+        ("attributes" in data or "results" in data)
+        and ("name" not in data or "params" not in data)
+        and data.get("domain_type") != "mlir"
+    ):
         return _hydrate_legacy_mlir_ref(data)
 
     raw_domain_type = data.get("domain_type")
     ref_cls: type[ExtendedGhostRef] = _DOMAIN_REF_CLASSES.get(str(raw_domain_type), ExtendedGhostRef)
 
-    raw_version = data.get("schema_version", "2.0.0")
-    if raw_version != "2.0.0":
-        raise SnapshotSchemaError(f"Unsupported schema_version '{raw_version}'; expected '2.0.0'.")
+    raw_version = data.get("schema_version", SCHEMA_VERSION)
+    if raw_version != SCHEMA_VERSION:
+        raise SnapshotSchemaError(f"Unsupported schema_version '{raw_version}'; expected '{SCHEMA_VERSION}'.")
 
     data_copy: dict[str, JsonValue | typing.Sequence[JsonValue | GhostParam]] = dict(data)
-    data_copy["schema_version"] = "2.0.0"
-    if (isinstance(data_copy.get("name"), str) or isinstance(data_copy.get("api_path"), str)) and "kind" not in data_copy:
+    data_copy["schema_version"] = SCHEMA_VERSION
+    if (
+        isinstance(data_copy.get("name"), str) or isinstance(data_copy.get("api_path"), str)
+    ) and "kind" not in data_copy:
         data_copy["kind"] = "function"
 
     try:

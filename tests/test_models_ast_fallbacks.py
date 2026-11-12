@@ -15,7 +15,7 @@ from ml_ecosystem_snapshots.introspection.ast_kwargs import (
     extract_accepted_kwargs_from_ast,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 
 
 class BaseParentModel:
@@ -70,7 +70,7 @@ class SimpleClassModel:
 
 
 def target_fn_ast_edges(
-    self: InspectableTarget,
+    self: LivePythonTarget,
     ast_arg: int = 42,
     broken_arg: str = "x",
     hint_arg: int = 1,
@@ -125,7 +125,9 @@ def test_extract_accepted_kwargs_subscript_branches() -> None:
     Returns:
         None.
     """
-    tree = ast.parse("def sample_fn(**kwargs):\n    kwargs[123]\n    kwargs['alpha']\n    kwargs[var]\n    other_dict['ignored']\n")
+    tree = ast.parse(
+        "def sample_fn(**kwargs):\n    kwargs[123]\n    kwargs['alpha']\n    kwargs[var]\n    other_dict['ignored']\n"
+    )
 
     with patch("inspect.getsource", return_value="def sample_fn(**kwargs): pass"):
         with patch(
@@ -260,7 +262,9 @@ def test_ghost_inspector_super_init_branches(
     """
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.get_runtime_source",
-        return_value=("class DerivedClassModel(BaseParentModel):\n    def __init__(self, a: int = 10, **kwargs: int) -> None:\n        OtherHelperModel.__init__(helper_instance)\n        super().__init__(arg1=a)\n"),
+        return_value=(
+            "class DerivedClassModel(BaseParentModel):\n    def __init__(self, a: int = 10, **kwargs: int) -> None:\n        OtherHelperModel.__init__(helper_instance)\n        super().__init__(arg1=a)\n"
+        ),
     )
     ref = GhostInspector.inspect(DerivedClassModel, "DerivedClassModel")
     assert ref.has_arg("a")
@@ -387,9 +391,9 @@ def test_ghost_inspector_parent_mro_signature_exception(
     )
 
     def mock_signature(
-        obj: InspectableTarget,
-        *args: InspectableTarget,
-        **kwargs: InspectableTarget,
+        obj: LivePythonTarget,
+        *args: LivePythonTarget,
+        **kwargs: LivePythonTarget,
     ) -> inspect.Signature:
         """Mock signature raising on MroParentClass.__init__.
 
@@ -410,7 +414,9 @@ def test_ghost_inspector_parent_mro_signature_exception(
 
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.get_runtime_source",
-        return_value=("class MroChildClass(MroParentClass):\n    def __init__(self, **kwargs: int) -> None:\n        super().__init__(**kwargs)\n"),
+        return_value=(
+            "class MroChildClass(MroParentClass):\n    def __init__(self, **kwargs: int) -> None:\n        super().__init__(**kwargs)\n"
+        ),
     )
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.get_runtime_signature",
@@ -458,23 +464,13 @@ def test_ghost_inspector_overload_without_parameters() -> None:
     Returns:
         None.
     """
+    import griffe
 
-    class BareOverload:
-        """Overload object without parameters attribute."""
+    bare_ov = griffe.Function("bare_overload_fn", parameters=griffe.Parameters(), returns="int")
+    fn_node = griffe.Function("bare_overload_fn", parameters=griffe.Parameters())
+    fn_node.overloads = [bare_ov]
 
-        returns = "int"
-
-    class FakeNodeWithOverload:
-        """Fake griffe node containing bare overload."""
-
-        is_class = False
-        is_function = True
-        is_public = True
-        parameters: list[str] = []
-        docstring = None
-        overloads = [BareOverload()]
-
-    ref = GhostInspector.inspect(FakeNodeWithOverload(), "bare_overload_fn")
+    ref = GhostInspector.inspect(fn_node, "bare_overload_fn")
     assert ref.overloads is not None
     assert len(ref.overloads) == 1
     ov0 = ref.overloads[0]
@@ -525,7 +521,7 @@ def test_ghost_inspector_c_ext_overload_infer_exception(
     )
     mocker.patch("inspect.signature", side_effect=TypeError("no signature"))
 
-    def c_ext_dummy(x: InspectableTarget) -> None:
+    def c_ext_dummy(x: LivePythonTarget) -> None:
         """Dummy C extension function.
 
         Args:

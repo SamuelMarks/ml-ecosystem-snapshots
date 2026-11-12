@@ -60,7 +60,7 @@ def test_get_test_coverage_coverage_report_exception(
     mocker.patch("os.path.exists", return_value=True)
     mock_run = mocker.patch("subprocess.run")
     mock_run.side_effect = [
-        Exception("coverage report failed"),
+        OSError("coverage report failed"),
         mocker.MagicMock(stdout="TOTAL  95 0 95%\n"),
     ]
     assert get_test_coverage() == "95"
@@ -213,7 +213,9 @@ def test_update_shields_main_entrypoint(mocker: pytest_mock.MockerFixture, tmp_p
     """
     import runpy
 
-    mocker.patch("subprocess.run").return_value.stdout = "TOTAL 100 0 100%\nRESULT: PASSED (minimum: 80.0%, actual: 100.0%)\n"
+    mocker.patch(
+        "subprocess.run"
+    ).return_value.stdout = "TOTAL 100 0 100%\nRESULT: PASSED (minimum: 80.0%, actual: 100.0%)\n"
     readme_path = tmp_path / "README.md"
     readme_path.write_text("[![License](license)]()\n[![Tests](oldtests)]()\n[![Docs](olddocs)]()\n")
     import importlib.util

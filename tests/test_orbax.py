@@ -13,7 +13,7 @@ from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli.commands.check import cmd_check_orbax
 from ml_ecosystem_snapshots.frameworks import orbax_checkpoint
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 from ml_ecosystem_snapshots.mcp.registry import dispatch_tool_call
 from ml_ecosystem_snapshots.mcp.tools.domain_ops import check_orbax_op
 from ml_ecosystem_snapshots.mcp.tools.hallucination import (
@@ -34,7 +34,7 @@ def test_orbax_docstring_parser_and_version_fallback() -> None:
             side_effect=RuntimeError("not installed"),
         ),
         patch(
-            "ml_ecosystem_snapshots.api._extract_version_with_griffe",
+            "ml_ecosystem_snapshots.api.extract_version_with_griffe",
             return_value=None,
         ),
     ):
@@ -154,7 +154,7 @@ def test_scan_and_collect_orbax_api_all_branches(
     real_inspect = GhostInspector.inspect
 
     def selective_inspect(
-        obj: InspectableTarget,
+        obj: LivePythonTarget,
         api_path: str,
         is_public: bool = True,
     ) -> GhostRef:
@@ -167,6 +167,9 @@ def test_scan_and_collect_orbax_api_all_branches(
 
         Returns:
             Inspected `GhostRef`.
+
+        Raises:
+            RuntimeError: When `api_path` ends with `failing_export_fn`.
         """
         if api_path.endswith("failing_export_fn"):
             raise RuntimeError("boom")
@@ -233,23 +236,23 @@ def test_check_orbax_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
         inputs_count=8,
         attributes=["options", "metadata"],
     )
-    assert res_valid["is_valid"] is True
+    assert res_valid.is_valid is True
 
     res_export = check_orbax_op(
         "orbax.export.ExportManager",
         inputs_count=2,
     )
-    assert res_export["is_valid"] is True
+    assert res_export.is_valid is True
 
     res_bad = check_orbax_op("orbax.checkpoint.NonExistentCheckpointer")
-    assert res_bad["is_valid"] is False
+    assert res_bad.is_valid is False
 
     rpc_res = dispatch_tool_call(
         1,
         "check_orbax_op",
         {"op_name": "CheckpointManagerOptions", "attributes": ["max_to_keep"]},
     )
-    assert "result" in rpc_res
+    assert rpc_res.result is not None
 
     args_ok = argparse.Namespace(
         op_name="CheckpointManagerOptions",
@@ -264,17 +267,17 @@ def test_check_orbax_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
         cmd_check_orbax(args_fail)
 
     anti = explain_anti_pattern("orbax", "orbax.checkpoint.CheckpointManagerOptions", "max_checkpoints")
-    assert anti["is_known_anti_pattern"] is True
-    assert anti["canonical_argument"] == "max_to_keep"
+    assert anti.is_known_anti_pattern is True
+    assert anti.canonical_argument == "max_to_keep"
 
     block_res_orbax = check_code_block(
         """import orbax.checkpoint
 mgr = orbax.checkpoint.CheckpointManagerOptions(max_checkpoints=3)"""
     )
-    assert block_res_orbax["total_analyzed"] == 1
+    assert block_res_orbax.total_analyzed == 1
 
     block_res_ocp = check_code_block("""mgr = ocp.CheckpointManagerOptions(max_checkpoints=3)""")
-    assert block_res_ocp["total_analyzed"] == 1
+    assert block_res_ocp.total_analyzed == 1
 
 
 def test_extract_snapshot_orbax(monkeypatch: pytest.MonkeyPatch) -> None:

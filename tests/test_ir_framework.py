@@ -126,18 +126,21 @@ def test_ir_symbol_signatures_and_annotations() -> None:
 
 def test_ir_live_signature_reflection_parity() -> None:
     """Verify every extracted GhostRef in frameworks/ir.py matches live ml_switcheroo_ir signatures."""
+    from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict, get_runtime_signature
+
     refs = collect_api(SemanticTier.NEURAL)
-    ir_members = dict(inspect.getmembers(ir))
+    ir_members = get_member_dict(ir)
     for ref in refs:
         assert ref.name in ir_members, f"Missing symbol {ref.name} in ml_switcheroo_ir"
         obj = ir_members[ref.name]
         if ref.name in {"DType", "DiagnosticSeverity", "CyclicGraphError"}:
             continue
         assert callable(obj)
-        sig = inspect.signature(obj)
+        sig = get_runtime_signature(obj)
         live_params = list(sig.parameters.values())
         assert [p.name for p in ref.params] == [p.name for p in live_params], f"Parameter name mismatch for {ref.name}"
-        for ghost_p, live_p in zip(ref.params, live_params):
+        for idx, ghost_p in enumerate(ref.params):
+            live_p = live_params[idx]
             assert ghost_p.kind.value == live_p.kind.name, f"Parameter kind mismatch on {ref.name}.{ghost_p.name}"
             has_live_default = live_p.default is not inspect.Parameter.empty
             has_ghost_default = ghost_p.default is not None

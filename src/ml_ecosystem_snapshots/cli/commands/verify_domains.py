@@ -3,30 +3,56 @@
 from __future__ import annotations
 
 import argparse
-import inspect
 import sys
 import typing
 
 import typing_extensions
 
-from ml_ecosystem_snapshots.mcp.models import DomainOpCheckResult
+from ml_ecosystem_snapshots.grounding.domain_ops import check_domain_op
+from ml_ecosystem_snapshots.grounding.models import DomainOpCheckResult
+from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
 from ml_ecosystem_snapshots.models import JsonValue
 
 
-def _read_namespace_attr(args: argparse.Namespace, attr_name: str, default: JsonValue = None) -> JsonValue:
-    """Read an optional attribute from an `argparse.Namespace` via member lookup.
+def _parse_cli_attributes(args: argparse.Namespace) -> list[str] | None:
+    """Extract comma-separated CLI attributes from `args` if provided.
 
     Args:
         args: Parsed CLI `Namespace` instance.
-        attr_name: Attribute name to look up.
-        default: Default value when absent.
 
     Returns:
-        Attribute value or `default`.
+        List of non-empty stripped attribute names, or None if unspecified.
     """
-    raw = dict(inspect.getmembers(args)).get(attr_name, default)
-    assert isinstance(raw, (str, int, float, bool, list, dict)) or raw is None
-    return raw
+    raw_attrs = get_member_dict(args).get("attributes")
+    if not raw_attrs:
+        return None
+    return [item.strip() for item in str(raw_attrs).split(",") if item.strip()]
+
+
+def _parse_inputs_count(args: argparse.Namespace) -> int | None:
+    """Extract optional integer `inputs_count` from `args`.
+
+    Args:
+        args: Parsed CLI `Namespace` instance.
+
+    Returns:
+        Integer input count or None.
+    """
+    raw = get_member_dict(args).get("inputs_count")
+    return int(str(raw)) if raw is not None else None
+
+
+def _parse_operands_count(args: argparse.Namespace) -> int | None:
+    """Extract optional integer `operands_count` from `args`.
+
+    Args:
+        args: Parsed CLI `Namespace` instance.
+
+    Returns:
+        Integer operand count or None.
+    """
+    raw = get_member_dict(args).get("operands_count")
+    return int(str(raw)) if raw is not None else None
 
 
 class _DomainOpNameCheckProto(typing.Protocol):
@@ -48,7 +74,6 @@ class _DomainOpNameCheckProto(typing.Protocol):
         Returns:
             Check result model or dictionary.
         """
-        ...
 
 
 class _DomainMnemonicCheckProto(typing.Protocol):
@@ -70,7 +95,6 @@ class _DomainMnemonicCheckProto(typing.Protocol):
         Returns:
             Check result model or dictionary.
         """
-        ...
 
 
 class _DomainOnnxCheckProto(typing.Protocol):
@@ -94,7 +118,6 @@ class _DomainOnnxCheckProto(typing.Protocol):
         Returns:
             Check result model or dictionary.
         """
-        ...
 
 
 class _DomainMetalCheckProto(typing.Protocol):
@@ -118,140 +141,36 @@ class _DomainMetalCheckProto(typing.Protocol):
         Returns:
             Check result model or dictionary.
         """
-        ...
 
 
-DomainCheckCallable: typing_extensions.TypeAlias = "_DomainOpNameCheckProto | _DomainMnemonicCheckProto | _DomainOnnxCheckProto | _DomainMetalCheckProto"
+DomainCheckCallable: typing_extensions.TypeAlias = (
+    "_DomainOpNameCheckProto | _DomainMnemonicCheckProto | _DomainOnnxCheckProto | _DomainMetalCheckProto"
+)
 
 
-def _is_onnx_check_fn(
-    check_fn: DomainCheckCallable,
-    extra_kwargs: dict[str, JsonValue] | None,
-) -> typing_extensions.TypeGuard[_DomainOnnxCheckProto]:
-    """Narrow `check_fn` to `_DomainOnnxCheckProto` when `domain` extra kwargs are supplied.
-
-    Args:
-        check_fn: Domain check callable.
-        extra_kwargs: Optional extra keyword arguments dictionary.
-
-    Returns:
-        True if `extra_kwargs` contains a `'domain'` key.
-    """
-    return bool(extra_kwargs is not None and "domain" in extra_kwargs)
-
-
-def _is_metal_check_fn(
-    check_fn: DomainCheckCallable,
-    extra_kwargs: dict[str, JsonValue] | None,
-) -> typing_extensions.TypeGuard[_DomainMetalCheckProto]:
-    """Narrow `check_fn` to `_DomainMetalCheckProto` when `address_space` extra kwargs are supplied.
-
-    Args:
-        check_fn: Domain check callable.
-        extra_kwargs: Optional extra keyword arguments dictionary.
-
-    Returns:
-        True if `extra_kwargs` contains an `'address_space'` key.
-    """
-    return bool(extra_kwargs is not None and "address_space" in extra_kwargs)
-
-
-def _is_mnemonic_check_fn(
-    check_fn: DomainCheckCallable,
-    op_attr: str,
-) -> typing_extensions.TypeGuard[_DomainMnemonicCheckProto]:
-    """Narrow `check_fn` to `_DomainMnemonicCheckProto` when `op_attr` is `'mnemonic'`.
-
-    Args:
-        check_fn: Domain check callable.
-        op_attr: Target operation attribute name.
-
-    Returns:
-        True if `op_attr == 'mnemonic'`.
-    """
-    return op_attr == "mnemonic"
-
-
-def _is_op_name_check_fn(
-    check_fn: DomainCheckCallable,
-    op_attr: str,
-) -> typing_extensions.TypeGuard[_DomainOpNameCheckProto]:
-    """Narrow `check_fn` to `_DomainOpNameCheckProto` for standard domain operations.
-
-    Args:
-        check_fn: Domain check callable.
-        op_attr: Target operation attribute name.
-
-    Returns:
-        True if `op_attr != 'mnemonic'`.
-    """
-    return op_attr != "mnemonic"
-
-
-def _run_domain_op_check_cli(
-    args: argparse.Namespace,
-    check_fn: DomainCheckCallable,
+def _report_domain_check_result(
     label: str,
-    op_attr: str = "op_name",
-    count_attr: str = "inputs_count",
-    count_param: str = "inputs_count",
-    invalid_format: str = "Invalid:",
-    extra_kwargs: dict[str, JsonValue] | None = None,
+    target: str,
+    res: DomainOpCheckResult | typing.Mapping[str, JsonValue],
+    invalid_format: str = "is invalid:",
 ) -> None:
-    """Execute a domain op verification check and format CLI stdout/exit codes.
+    """Format and print a domain operation verification result, exiting with code 1 when invalid.
 
     Args:
-        args: Parsed CLI `Namespace` object.
-        check_fn: Underlying MCP verification callable.
-        label: Human-readable domain operation prefix (e.g. 'ONNX Operation', 'WASM Instruction').
-        op_attr: Attribute name on `args` holding the operation or mnemonic string.
-        count_attr: Attribute name on `args` holding the expected operand/input count.
-        count_param: Keyword parameter name accepted by `check_fn` for operand/input count.
-        invalid_format: Suffix string when reporting an invalid operation ('Invalid:' or 'is invalid:').
-        extra_kwargs: Optional additional keyword arguments to forward to `check_fn`.
-    """
-    del count_param
-    raw_attrs = _read_namespace_attr(args, "attributes")
-    attrs: list[str] | None = [a.strip() for a in str(raw_attrs).split(",") if a.strip()] if raw_attrs else None
-    target = str(_read_namespace_attr(args, op_attr, ""))
-    raw_count = _read_namespace_attr(args, count_attr)
-    count_val: int | None = int(raw_count) if isinstance(raw_count, int) else None
+        label: Human-readable domain label (e.g. `'ONNX Operation'`).
+        target: Verified operation or mnemonic name.
+        res: Verification result model or mapping.
+        invalid_format: Suffix text rendered when `res` is invalid.
 
-    res: DomainOpCheckResult | typing.Mapping[str, JsonValue]
-    if extra_kwargs and _is_onnx_check_fn(check_fn, extra_kwargs):
-        res = check_fn(
-            op_name=target,
-            domain=str(extra_kwargs["domain"] or ""),
-            inputs_count=count_val,
-            attributes=attrs,
-        )
-    elif extra_kwargs and _is_metal_check_fn(check_fn, extra_kwargs):
-        addr_val = extra_kwargs["address_space"]
-        res = check_fn(
-            op_name=target,
-            address_space=str(addr_val) if addr_val is not None else None,
-            inputs_count=count_val,
-            attributes=attrs,
-        )
-    elif _is_mnemonic_check_fn(check_fn, op_attr):
-        res = check_fn(
-            mnemonic=target,
-            operands_count=count_val,
-            attributes=attrs,
-        )
-    else:
-        assert _is_op_name_check_fn(check_fn, op_attr)
-        res = check_fn(
-            op_name=target,
-            inputs_count=count_val,
-            attributes=attrs,
-        )
+    Raises:
+        SystemExit: Exits with status code `1` when verification fails.
+    """
     is_valid = res.is_valid if isinstance(res, DomainOpCheckResult) else bool(res.get("is_valid"))
     if not is_valid:
         print(f"{label} '{target}' {invalid_format}")
         errs = res.errors if isinstance(res, DomainOpCheckResult) else res.get("errors", [])
-        assert isinstance(errs, list)
-        for err in errs:
+        err_list = errs if isinstance(errs, list) else []
+        for err in err_list:
             print(f"  - {err}")
         sys.exit(1)
 
@@ -270,14 +189,16 @@ def cmd_check_onnx(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command line arguments.
     """
-    from ml_ecosystem_snapshots.mcp_server import check_onnx_op
-
-    _run_domain_op_check_cli(
-        args,
-        check_onnx_op,
-        "ONNX Operation",
-        extra_kwargs={"domain": str(_read_namespace_attr(args, "domain", "") or "")},
+    target = str(args.op_name)
+    domain_val = str(get_member_dict(args).get("domain") or "")
+    res = check_domain_op(
+        "onnx",
+        op_name=target,
+        domain=domain_val,
+        inputs_count=_parse_inputs_count(args),
+        attributes=_parse_cli_attributes(args),
     )
+    _report_domain_check_result("ONNX Operation", target, res, invalid_format="Invalid:")
 
 
 def cmd_check_metal(args: argparse.Namespace) -> None:
@@ -286,15 +207,17 @@ def cmd_check_metal(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command line arguments.
     """
-    from ml_ecosystem_snapshots.mcp_server import check_metal_op
-
-    raw_addr = _read_namespace_attr(args, "address_space")
-    _run_domain_op_check_cli(
-        args,
-        check_metal_op,
-        "Metal Operation",
-        extra_kwargs={"address_space": str(raw_addr) if raw_addr is not None else None},
+    target = str(args.op_name)
+    raw_addr = get_member_dict(args).get("address_space")
+    addr_str = str(raw_addr) if raw_addr is not None else None
+    res = check_domain_op(
+        "metal",
+        op_name=target,
+        address_space=addr_str,
+        inputs_count=_parse_inputs_count(args),
+        attributes=_parse_cli_attributes(args),
     )
+    _report_domain_check_result("Metal Operation", target, res, invalid_format="Invalid:")
 
 
 def cmd_check_wasm(args: argparse.Namespace) -> None:
@@ -303,57 +226,25 @@ def cmd_check_wasm(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command line arguments.
     """
-    from ml_ecosystem_snapshots.mcp_server import check_wasm_instruction
-
-    _run_domain_op_check_cli(
-        args,
-        check_wasm_instruction,
-        "WASM Instruction",
-        op_attr="mnemonic",
-        count_attr="operands_count",
-        count_param="operands_count",
+    target = str(args.mnemonic)
+    res = check_domain_op(
+        "wasm",
+        op_name=target,
+        inputs_count=_parse_operands_count(args),
+        attributes=_parse_cli_attributes(args),
     )
-
-
-def _resolve_simple_domain_check_fn(fn_name: str) -> _DomainOpNameCheckProto:
-    """Resolve an MCP domain verifier callable by name without reflection.
-
-    Args:
-        fn_name: Name of the verifier function exported by `ml_ecosystem_snapshots.mcp_server`.
-
-    Returns:
-        Typed domain op check callable.
-    """
-    import ml_ecosystem_snapshots.mcp_server as _mcp_srv
-
-    dispatch: dict[str, _DomainOpNameCheckProto] = {
-        "check_webgl_op": _mcp_srv.check_webgl_op,
-        "check_cpp_op": _mcp_srv.check_cpp_op,
-        "check_array_api_op": _mcp_srv.check_array_api_op,
-        "check_scipy_op": _mcp_srv.check_scipy_op,
-        "check_torchvision_op": _mcp_srv.check_torchvision_op,
-        "check_torchaudio_op": _mcp_srv.check_torchaudio_op,
-        "check_safetensors_op": _mcp_srv.check_safetensors_op,
-        "check_aten_op": _mcp_srv.check_aten_op,
-        "check_nccl_op": _mcp_srv.check_nccl_op,
-        "check_flash_attention_op": _mcp_srv.check_flash_attention_op,
-        "check_chex_op": _mcp_srv.check_chex_op,
-        "check_grain_op": _mcp_srv.check_grain_op,
-        "check_orbax_op": _mcp_srv.check_orbax_op,
-        "check_optax_op": _mcp_srv.check_optax_op,
-    }
-    return dispatch[fn_name]
+    _report_domain_check_result("WASM Instruction", target, res, invalid_format="Invalid:")
 
 
 def _make_simple_domain_check_cmd(
-    fn_name: str,
+    domain_key: str,
     label: str,
     invalid_format: str = "is invalid:",
 ) -> typing.Callable[[argparse.Namespace], None]:
-    """Create a CLI command handler for a standard MCP domain operation verifier.
+    """Create a CLI command handler for a `grounding.domain_ops` domain verifier.
 
     Args:
-        fn_name: Name of the verifier function exported by `ml_ecosystem_snapshots.mcp_server`.
+        domain_key: Key into `DOMAIN_OP_CONFIGS` (e.g. `'webgl'`, `'array_api'`).
         label: Human-readable domain operation prefix.
         invalid_format: Suffix string when reporting an invalid operation.
 
@@ -367,31 +258,32 @@ def _make_simple_domain_check_cmd(
         Args:
             args: Parsed command line arguments.
         """
-        check_fn = _resolve_simple_domain_check_fn(fn_name)
-        _run_domain_op_check_cli(
-            args,
-            check_fn,
-            label,
-            invalid_format=invalid_format,
+        target = str(args.op_name)
+        res = check_domain_op(
+            domain_key,
+            op_name=target,
+            inputs_count=_parse_inputs_count(args),
+            attributes=_parse_cli_attributes(args),
         )
+        _report_domain_check_result(label, target, res, invalid_format=invalid_format)
 
     return _handler
 
 
-cmd_check_webgl = _make_simple_domain_check_cmd("check_webgl_op", "WebGL Operation", invalid_format="Invalid:")
-cmd_check_cpp = _make_simple_domain_check_cmd("check_cpp_op", "C++ Operation", invalid_format="Invalid:")
-cmd_check_array_api = _make_simple_domain_check_cmd("check_array_api_op", "Array API Operation")
-cmd_check_scipy = _make_simple_domain_check_cmd("check_scipy_op", "SciPy Operation")
-cmd_check_torchvision = _make_simple_domain_check_cmd("check_torchvision_op", "TorchVision Operation")
-cmd_check_torchaudio = _make_simple_domain_check_cmd("check_torchaudio_op", "TorchAudio Operation")
-cmd_check_safetensors = _make_simple_domain_check_cmd("check_safetensors_op", "SafeTensors Operation")
-cmd_check_aten = _make_simple_domain_check_cmd("check_aten_op", "ATen Operation")
-cmd_check_nccl = _make_simple_domain_check_cmd("check_nccl_op", "NCCL Operation")
-cmd_check_flash_attention = _make_simple_domain_check_cmd("check_flash_attention_op", "Attention Operation")
-cmd_check_chex = _make_simple_domain_check_cmd("check_chex_op", "Chex Operation")
-cmd_check_grain = _make_simple_domain_check_cmd("check_grain_op", "Grain Operation")
-cmd_check_orbax = _make_simple_domain_check_cmd("check_orbax_op", "Orbax Operation")
-cmd_check_optax = _make_simple_domain_check_cmd("check_optax_op", "Optax Operation")
+cmd_check_webgl = _make_simple_domain_check_cmd("webgl", "WebGL Operation", invalid_format="Invalid:")
+cmd_check_cpp = _make_simple_domain_check_cmd("cpp", "C++ Operation", invalid_format="Invalid:")
+cmd_check_array_api = _make_simple_domain_check_cmd("array_api", "Array API Operation")
+cmd_check_scipy = _make_simple_domain_check_cmd("scipy", "SciPy Operation")
+cmd_check_torchvision = _make_simple_domain_check_cmd("torchvision", "TorchVision Operation")
+cmd_check_torchaudio = _make_simple_domain_check_cmd("torchaudio", "TorchAudio Operation")
+cmd_check_safetensors = _make_simple_domain_check_cmd("safetensors", "SafeTensors Operation")
+cmd_check_aten = _make_simple_domain_check_cmd("aten", "ATen Operation")
+cmd_check_nccl = _make_simple_domain_check_cmd("nccl", "NCCL Operation")
+cmd_check_flash_attention = _make_simple_domain_check_cmd("flash_attention", "Attention Operation")
+cmd_check_chex = _make_simple_domain_check_cmd("chex", "Chex Operation")
+cmd_check_grain = _make_simple_domain_check_cmd("grain", "Grain Operation")
+cmd_check_orbax = _make_simple_domain_check_cmd("orbax", "Orbax Operation")
+cmd_check_optax = _make_simple_domain_check_cmd("optax", "Optax Operation")
 
 
 __all__ = [

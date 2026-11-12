@@ -13,7 +13,7 @@ import types
 
 import pytest
 
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 
 
 class MockArgument:
@@ -151,7 +151,7 @@ class MockTorchOp:
         """
         return ["__doc__", "__module__", "__name__", "_op_name"]
 
-    def __call__(self, *args: InspectableTarget, **kwargs: InspectableTarget) -> None:
+    def __call__(self, *args: LivePythonTarget, **kwargs: LivePythonTarget) -> None:
         """Execute mock operator.
 
         Args:
@@ -540,29 +540,33 @@ def create_mock_torch() -> types.ModuleType:
     return torch_mod
 
 
-def install_mock_torch() -> types.ModuleType:
-    """Install the mock PyTorch module into sys.modules.
+def build_mock_torch_modules() -> dict[str, types.ModuleType]:
+    """Construct an in-memory map of mock `torch` and its submodules without mutating `sys.modules`.
 
     Returns:
-        The installed mock torch module.
+        Dictionary mapping `'torch'` and submodule names to mock `ModuleType` instances.
     """
     torch_mod = create_mock_torch()
-    sys.modules["torch"] = torch_mod
-    sys.modules["torch.ops"] = torch_mod.ops
-    sys.modules["torch.ops.aten"] = torch_mod.ops.aten
-    sys.modules["torch._C"] = torch_mod._C
-    sys.modules["torch.nn"] = torch_mod.nn
-    sys.modules["torch.optim"] = torch_mod.optim
-    sys.modules["torch.utils"] = torch_mod.utils
-    sys.modules["torch.utils.data"] = torch_mod.utils.data
-    return torch_mod
+    return {
+        "torch": torch_mod,
+        "torch.ops": torch_mod.ops,
+        "torch.ops.aten": torch_mod.ops.aten,
+        "torch._C": torch_mod._C,
+        "torch.nn": torch_mod.nn,
+        "torch.optim": torch_mod.optim,
+        "torch.utils": torch_mod.utils,
+        "torch.utils.data": torch_mod.utils.data,
+    }
 
 
-def ensure_torch() -> types.ModuleType:
-    """Ensure PyTorch is available, falling back to an in-memory mock if uninstalled.
+def mock_torch_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
+    """Ensure PyTorch is available in `sys.modules`, scoping mock installation to `monkeypatch`.
+
+    Args:
+        monkeypatch: Pytest `MonkeyPatch` fixture restoring `sys.modules` on teardown.
 
     Returns:
-        The real torch module if available, or a mock torch module.
+        Real `torch` module if installed on host, otherwise scoped mock `torch` module.
     """
     try:
         import importlib
@@ -570,5 +574,8 @@ def ensure_torch() -> types.ModuleType:
         torch_mod: types.ModuleType = importlib.import_module("torch")
         _ = torch_mod.ops.aten
         return torch_mod
-    except (ImportError, AttributeError, Exception):
-        return install_mock_torch()
+    except (ImportError, AttributeError):
+        mods = build_mock_torch_modules()
+        for mod_name, mod_obj in mods.items():
+            monkeypatch.setitem(sys.modules, mod_name, mod_obj)
+        return mods["torch"]

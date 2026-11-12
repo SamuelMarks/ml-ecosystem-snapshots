@@ -172,15 +172,20 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         name_key="mnemonic",
         operand_annotation_fn=lambda op, inp: "v128" if inp != "addr" else "i32",
         operand_description_fn=lambda op, inp: f"WASM operand {inp}",
-        operand_direction_fn=lambda op, inp: OperandDirection.WRITE if op["mnemonic"] == "v128.store" and inp == "addr" else OperandDirection.READ,
+        operand_direction_fn=lambda op, inp: (
+            OperandDirection.WRITE if op.mnemonic == "v128.store" and inp == "addr" else OperandDirection.READ
+        ),
         attr_description_prefix="WASM immediate/attribute",
         result_type="v128",
         empty_return_type="None",
         provenance_fn=lambda op: {
             "source_type": "wasm_spec",
             "upstream_version": "2.0",
-            "category": op.get("category", "simd"),
+            "category": op.category or "simd",
         },
         default_doc_fn=lambda mnemonic: f"WebAssembly {mnemonic} instruction.",
         environment_tags=("wasm", "simd", "v128"),
     )
+
+
+load_wasm_simd_ops = _load_wasm_simd_ops

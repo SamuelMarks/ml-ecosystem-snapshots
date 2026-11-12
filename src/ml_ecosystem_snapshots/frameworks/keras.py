@@ -10,9 +10,9 @@ import types
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
-from ml_ecosystem_snapshots.frameworks._base import GriffeModuleMembersProtocol
+from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 
 griffe: types.ModuleType | None = None
 try:
@@ -51,11 +51,21 @@ def _scan_griffe_module(
     found: list[GhostRef] = []
 
     try:
-        mod: GriffeModuleMembersProtocol | InspectableTarget = griffe.load(module_path)
-    except Exception:
+        mod = griffe.load(module_path)
+    except (
+        SnapshotError,
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        LookupError,
+        OSError,
+        RuntimeError,
+        SyntaxError,
+        griffe.GriffeError,
+    ):
         return []
 
-    assert isinstance(mod, GriffeModuleMembersProtocol)
     for name, member in mod.members.items():
         if (not include_nonpublic and name.startswith("_")) or name in block_list:
             continue
@@ -64,7 +74,7 @@ def _scan_griffe_module(
         is_function = member.is_function
 
         if (kind == "class" and is_class) or (kind == "function" and is_function):
-            member_target: InspectableTarget = member
+            member_target: LivePythonTarget = member
             found.append(GhostInspector.inspect(member_target, f"{prefix}.{name}"))
 
     return found

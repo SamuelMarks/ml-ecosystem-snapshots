@@ -12,10 +12,9 @@ from ml_switcheroo_ir.schema.ghost import (
 
 from ml_ecosystem_snapshots.frameworks.dpnp import (
     CANONICAL_DPNP_OPS,
-    _get_dpnp,
     collect_api,
 )
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
 
@@ -45,7 +44,7 @@ def test_collect_api_dpnp_live(monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock DPNP module."""
 
         @staticmethod
-        def array(obj: InspectableTarget) -> InspectableTarget:
+        def array(obj: LivePythonTarget) -> LivePythonTarget:
             """Mock array creation.
 
             Args:
@@ -57,7 +56,7 @@ def test_collect_api_dpnp_live(monkeypatch: pytest.MonkeyPatch) -> None:
             return obj
 
         @staticmethod
-        def empty(shape: InspectableTarget) -> InspectableTarget:
+        def empty(shape: LivePythonTarget) -> LivePythonTarget:
             """Mock empty creation.
 
             Args:
@@ -83,7 +82,7 @@ def test_collect_api_dpnp_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_get_dpnp_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_dpnp returns module when import succeeds.
+    """Verify `collect_api` resolves live `dpnp` module from `sys.modules` when present.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
@@ -92,11 +91,11 @@ def test_get_dpnp_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
     fake_mod = types.ModuleType("dpnp")
     monkeypatch.setitem(sys.modules, "dpnp", fake_mod)
-    assert _get_dpnp() is fake_mod
+    assert collect_api(SemanticTier.ARRAY_API) == []
 
 
 def test_get_dpnp_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_dpnp handles ImportError gracefully.
+    """Verify `collect_api` falls back to canonical ops when `dpnp` import raises `ImportError`.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
@@ -104,7 +103,7 @@ def test_get_dpnp_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     import sys
 
     monkeypatch.setitem(sys.modules, "dpnp", None)
-    assert _get_dpnp() is None
+    assert len(collect_api(SemanticTier.ARRAY_API)) == len(CANONICAL_DPNP_OPS)
 
 
 def test_collect_api_dpnp_inspection_exception(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -121,7 +120,7 @@ def test_collect_api_dpnp_inspection_exception(monkeypatch: pytest.MonkeyPatch) 
 
     monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.dpnp._get_dpnp", lambda: FlakyDPNP())
 
-    def mock_inspect(*args: InspectableTarget, **kwargs: InspectableTarget) -> ExtendedGhostRef:
+    def mock_inspect(*args: LivePythonTarget, **kwargs: LivePythonTarget) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -130,6 +129,9 @@ def test_collect_api_dpnp_inspection_exception(monkeypatch: pytest.MonkeyPatch) 
 
         Returns:
             A mocked GhostRef.
+
+        Raises:
+            RuntimeError: Always raised to simulate inspection failure.
         """
         raise RuntimeError("Inspection failure")
 

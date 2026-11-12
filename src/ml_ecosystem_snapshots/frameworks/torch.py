@@ -6,7 +6,9 @@ GhostRefs for layers, losses, optimizers, and activations.
 
 from __future__ import annotations
 
+import importlib
 import inspect
+import logging
 import os
 import re
 import types
@@ -17,13 +19,16 @@ import pydantic
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.c_extension_sig import CExtensionSignature
+from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
-    InspectableTarget,
+    LivePythonTarget,
     get_member_dict,
 )
-from ml_ecosystem_snapshots.models import ExtendedGhostRef, JsonValue
+from ml_ecosystem_snapshots.models import ExtendedGhostRef, JsonValue, ensure_present
 from ml_ecosystem_snapshots.utils import get_all_members
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @typing.runtime_checkable
@@ -82,7 +87,7 @@ warnings.filterwarnings(
 )
 
 try:
-    import torch  # noqa: F401
+    importlib.import_module("torch")
     import torch.nn as _nn
     import torch.optim as _optim
     import torch.utils.data as _data
@@ -156,23 +161,23 @@ def _get_activation_names() -> set[str]:
     try:
         import torch.nn.modules.activation as act_mod
 
-        assert nn is not None
+        nn_mod = ensure_present(nn, "torch.nn")
         for name, obj in get_all_members(act_mod):
-            if inspect.isclass(obj) and issubclass(obj, nn.Module):
+            if inspect.isclass(obj) and issubclass(obj, nn_mod.Module):
                 names.add(name)
     except (
+        ImportError,
         AttributeError,
         TypeError,
         ValueError,
-        KeyError,
-        IndexError,
-        SyntaxError,
         OSError,
-        ImportError,
         RuntimeError,
-        Exception,
+        LookupError,
+        SyntaxError,
+        AssertionError,
+        SnapshotError,
     ):
-        pass
+        _LOGGER.debug("Failed to inspect torch.nn.modules.activation", exc_info=True)
     if not names:
         names = {
             "ReLU",
@@ -302,18 +307,17 @@ def _scan_metrics(include_nonpublic: bool) -> list[GhostRef]:
                 try:
                     found.append(GhostInspector.inspect(obj, f"torchmetrics.{name}"))
                 except (
+                    ImportError,
                     AttributeError,
                     TypeError,
                     ValueError,
-                    KeyError,
-                    IndexError,
-                    SyntaxError,
                     OSError,
-                    ImportError,
                     RuntimeError,
-                    Exception,
+                    LookupError,
+                    SyntaxError,
+                    AssertionError,
                 ):
-                    pass
+                    _LOGGER.debug("Failed to inspect torchmetrics.%s", name, exc_info=True)
     except ImportError:
         pass
     return found
@@ -360,8 +364,18 @@ def _collect_torch_namespace(
         if (include_nonpublic or not name.startswith("_")) and callable(obj) and not inspect.isclass(obj):
             try:
                 collected.append(GhostInspector.inspect(obj, f"{api_prefix}.{name}"))
-            except Exception as exc:
-                del exc
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                OSError,
+                RuntimeError,
+                LookupError,
+                SyntaxError,
+                AssertionError,
+            ):
+                _LOGGER.debug("Failed to inspect %s.%s", api_prefix, name, exc_info=True)
     return collected
 
 
@@ -394,7 +408,7 @@ def _collect_torch_tensor_methods(tensor_cls: type, include_nonpublic: bool) -> 
         List of `GhostRef` method descriptors for `torch.Tensor`.
     """
     collected: list[GhostRef] = []
-    for name, obj in inspect.getmembers(tensor_cls):
+    for name, obj in get_member_dict(tensor_cls).items():
         if (include_nonpublic or not name.startswith("_")) and callable(obj) and not inspect.isclass(obj):
             try:
                 ref = GhostInspector.inspect(obj, f"torch.Tensor.{name}", kind="method")
@@ -439,12 +453,13 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
         found.extend(_collect_torch_namespace(torch, "torch", include_nonpublic))
 
         # 2-7. Submodule namespaces
-        torch_members: dict[str, types.ModuleType] = dict(inspect.getmembers(torch))
+        torch_members = get_member_dict(torch)
         for attr_name in ("linalg", "special", "fft", "autograd", "distributed"):
-            if attr_name in torch_members:
+            submod = torch_members.get(attr_name)
+            if isinstance(submod, (types.ModuleType, type)):
                 found.extend(
                     _collect_torch_namespace(
-                        torch_members[attr_name],
+                        submod,
                         f"torch.{attr_name}",
                         include_nonpublic,
                     )
@@ -465,7 +480,7 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
 
         # 9. torch.ops.aten operations
         if isinstance(torch, TorchModuleWithOpsProtocol) and isinstance(torch.ops, TorchOpsContainerProtocol):
-            for name, obj in inspect.getmembers(torch.ops.aten):
+            for name, obj in get_member_dict(torch.ops.aten).items():
                 if not name.startswith("_") and callable(obj) and not inspect.isclass(obj):
                     try:
                         found.append(GhostInspector.inspect(obj, f"torch.ops.aten.{name}"))
@@ -588,30 +603,6 @@ class AtenSchemaArg(pydantic.BaseModel):
     dtypes: list[str] | None = None
     rank: str | None = None
 
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["name", "kind", "annotation"]) -> str: ...
-
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["is_out"]) -> bool: ...
-
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["default", "rank_constraint", "rank"]) -> str | None: ...
-
-    @typing.overload
-    def __getitem__(self, key: str) -> JsonValue: ...
-
-    def __getitem__(self, key: str) -> str | bool | None | JsonValue:
-        """Retrieve an argument field by dictionary key.
-
-        Args:
-            key: Field name.
-
-        Returns:
-            Field value.
-        """
-        d: dict[str, JsonValue] = self.model_dump()
-        return d[key]
-
 
 class AtenOpSchema(pydantic.BaseModel):
     """Pydantic model for an ATen or JIT operator overload schema."""
@@ -626,34 +617,10 @@ class AtenOpSchema(pydantic.BaseModel):
     is_inplace: bool = False
     is_out: bool = False
 
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["overload_name"]) -> str: ...
 
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["is_inplace", "is_out"]) -> bool: ...
-
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["params"]) -> list[AtenSchemaArg]: ...
-
-    @typing.overload
-    def __getitem__(self, key: str) -> str | bool | list[AtenSchemaArg] | JsonValue: ...
-
-    def __getitem__(self, key: str) -> str | bool | list[AtenSchemaArg] | JsonValue:
-        """Retrieve an overload schema field by dictionary key.
-
-        Args:
-            key: Field name.
-
-        Returns:
-            Field value.
-        """
-        if key == "params":
-            return self.params
-        d: dict[str, JsonValue] = self.model_dump()
-        return d[key]
-
-
-def infer_torch_dtype_and_rank(op_name: str, param_name: str, type_str: str = "") -> tuple[list[str] | None, str | None]:
+def infer_torch_dtype_and_rank(
+    op_name: str, param_name: str, type_str: str = ""
+) -> tuple[list[str] | None, str | None]:
     """Infer allowed PyTorch tensor dtypes and rank constraints for an operator parameter.
 
     Args:
@@ -979,7 +946,18 @@ def get_jit_schemas_for_op(op_name: str) -> list[AtenOpSchema]:
 
         if not isinstance(torch, TorchModuleWithCProtocol) or not isinstance(torch._C, TorchCModuleProtocol):
             return []
-    except Exception:
+    except (
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        LookupError,
+        SyntaxError,
+        AssertionError,
+    ):
+        _LOGGER.debug("Failed to resolve torch._C for JIT schemas", exc_info=True)
         return []
 
     clean_op = op_name.split(".")[-1]
@@ -1057,12 +1035,12 @@ def get_aten_op_schema(op_name: str) -> list[AtenOpSchema] | None:
         return None
 
     clean_op = op_name.split(".")[-1]
-    aten_members: dict[str, TorchAtenOverloadPacketProtocol | InspectableTarget] = dict(inspect.getmembers(torch.ops.aten))
+    aten_members = get_member_dict(torch.ops.aten)
     aten_op = aten_members.get(clean_op)
     results: list[AtenOpSchema] = []
 
-    if isinstance(aten_op, TorchAtenOverloadPacketProtocol):
-        ov_members: dict[str, TorchAtenOverloadVariantProtocol | InspectableTarget] = dict(inspect.getmembers(aten_op))
+    if aten_op is not None and isinstance(aten_op, TorchAtenOverloadPacketProtocol):
+        ov_members: typing.Mapping[str, TorchAtenOverloadVariantProtocol | LivePythonTarget] = get_member_dict(aten_op)
         for ov_name in aten_op.overloads():
             ov = ov_members.get(ov_name)
             schema = ov._schema if isinstance(ov, TorchAtenOverloadVariantProtocol) else None
@@ -1127,7 +1105,9 @@ def _coerce_aten_schema(
     return AtenOpSchema.model_validate(dict(ov))
 
 
-def extract_aten_c_extension_signature(target: InspectableTarget, name: str | None = None, is_method: bool = False) -> CExtensionSignature | None:
+def extract_aten_c_extension_signature(
+    target: LivePythonTarget, name: str | None = None, is_method: bool = False
+) -> CExtensionSignature | None:
     """Extract a CExtensionSignature with exhaustive overloads from torch.ops.aten.
 
     Args:

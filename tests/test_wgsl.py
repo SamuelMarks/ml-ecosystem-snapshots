@@ -48,8 +48,10 @@ def test_wgsl_op_properties_and_roles() -> None:
 
     # storageStore: value operand has WRITE direction
     store_ref = by_name["storageStore"]
-    assert store_ref.kind == "function"
-    store_params: dict[str, ExtendedGhostParam] = {p.name: p for p in store_ref.params if isinstance(p, ExtendedGhostParam)}
+    assert store_ref.kind == "operation"
+    store_params: dict[str, ExtendedGhostParam] = {
+        p.name: p for p in store_ref.params if isinstance(p, ExtendedGhostParam)
+    }
     assert store_params["buffer"].direction == OperandDirection.READ
     assert store_params["index"].direction == OperandDirection.READ
     assert store_params["value"].direction == OperandDirection.WRITE
@@ -69,7 +71,7 @@ def test_extract_snapshot_wgsl_envelope() -> None:
     assert "categories" in snap
     cats = snap["categories"]
     assert isinstance(cats, dict)
-    assert "neural" in cats
+    assert "operations" in cats
 
     env = validate_snapshot_envelope(snap)
     assert isinstance(env, SnapshotEnvelope)
@@ -79,23 +81,23 @@ def test_check_wgsl_op_validation() -> None:
     """Test check_wgsl_op for valid and invalid inputs, counts, and attributes."""
     # Valid operation
     res_valid = check_wgsl_op("storageStore", inputs_count=3, attributes=["address_space"])
-    assert res_valid["is_valid"] is True
-    assert res_valid["op_exists"] is True
+    assert res_valid.is_valid is True
+    assert res_valid.op_exists is True
 
     # Bad inputs count
     res_bad_count = check_wgsl_op("storageStore", inputs_count=1)
-    assert res_bad_count["is_valid"] is False
-    assert any("expects 3 inputs" in err for err in res_bad_count["errors"])
+    assert res_bad_count.is_valid is False
+    assert any("expects 3 inputs" in err for err in res_bad_count.errors)
 
     # Invalid attribute
     res_bad_attr = check_wgsl_op("storageStore", attributes=["invalid_attr"])
-    assert res_bad_attr["is_valid"] is False
-    assert any("Attribute 'invalid_attr' is not valid" in err for err in res_bad_attr["errors"])
+    assert res_bad_attr.is_valid is False
+    assert any("Attribute 'invalid_attr' is not valid" in err for err in res_bad_attr.errors)
 
     # Unknown operation
     res_unknown = check_wgsl_op("nonexistent_op")
-    assert res_unknown["is_valid"] is False
-    assert res_unknown["op_exists"] is False
+    assert res_unknown.is_valid is False
+    assert res_unknown.op_exists is False
 
 
 def test_check_wgsl_shader_compliance() -> None:
@@ -111,19 +113,13 @@ def test_check_wgsl_shader_compliance() -> None:
     }
     """
     res = check_wgsl_shader_compliance(shader_code)
-    assert res["is_compliant"] is True
-    assert res["verified_ops"] >= 3
-    assert res["errors"] == []
+    assert res.is_compliant is True
+    assert res.verified_ops >= 3
+    assert res.errors == []
 
-    from unittest.mock import patch
-
-    with patch(
-        "ml_ecosystem_snapshots.mcp_server.check_wgsl_op",
-        return_value={"op_exists": True, "is_valid": False, "errors": ["Mock error"]},
-    ):
-        res_err = check_wgsl_shader_compliance("storageStore(1);")
-        assert res_err["is_compliant"] is False
-        assert "Mock error" in res_err["errors"]
+    res_err = check_wgsl_shader_compliance("storageStore(1);")
+    assert res_err.is_compliant is False
+    assert any("expects 3 inputs, but got 1" in e for e in res_err.errors)
 
 
 def test_cmd_check_wgsl_cli(capsys: pytest.CaptureFixture[str]) -> None:
@@ -198,20 +194,16 @@ def test_cmd_check_wgsl_cli(capsys: pytest.CaptureFixture[str]) -> None:
         bad_path = f_bad.name
 
     try:
-        from unittest.mock import patch
-
-        with patch(
-            "ml_ecosystem_snapshots.compliance.check_wgsl_shader_compliance",
-            return_value={"is_compliant": False, "errors": ["Mock error"]},
-        ):
-            args_bad_content = argparse.Namespace(
-                op_name=None,
-                inputs_count=None,
-                attributes=None,
-                file=bad_path,
-            )
-            with pytest.raises(SystemExit):
-                cmd_check_wgsl(args_bad_content)
+        args_bad_content = argparse.Namespace(
+            op_name=None,
+            inputs_count=None,
+            attributes=None,
+            file=bad_path,
+        )
+        with pytest.raises(SystemExit):
+            cmd_check_wgsl(args_bad_content)
+        out_bad = capsys.readouterr().out
+        assert "WGSL Compliance Check Failed" in out_bad
     finally:
         if os.path.exists(bad_path):
             os.remove(bad_path)
@@ -227,7 +219,7 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
 
     from ml_ecosystem_snapshots.frameworks.wgsl import (
         CANONICAL_WGSL_OPS,
-        _load_wgsl_ops,
+        load_wgsl_ops,
     )
 
     # Case 1: Exception on open
@@ -236,7 +228,7 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_schema_res = MagicMock()
     mock_schema_res.joinpath.return_value = mock_file
     monkeypatch.setattr("importlib.resources.files", lambda _: mock_schema_res)
-    ops = _load_wgsl_ops()
+    ops = load_wgsl_ops()
     assert ops == CANONICAL_WGSL_OPS
 
     # Case 2: Empty ops in json
@@ -247,7 +239,7 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_schema_res_empty = MagicMock()
     mock_schema_res_empty.joinpath.return_value = mock_file_empty
     monkeypatch.setattr("importlib.resources.files", lambda _: mock_schema_res_empty)
-    ops_empty = _load_wgsl_ops()
+    ops_empty = load_wgsl_ops()
     assert ops_empty == CANONICAL_WGSL_OPS
 
     # Case 3: Outer import failure
@@ -266,7 +258,7 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         raise RuntimeError("Outer failure")
 
     monkeypatch.setattr("importlib.resources.files", mock_files_raise)
-    ops_err = _load_wgsl_ops()
+    ops_err = load_wgsl_ops()
     assert ops_err == CANONICAL_WGSL_OPS
 
     # Case 4: Non-empty ops list in json returns ops directly
@@ -275,10 +267,10 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_schema_res_valid = MagicMock()
     mock_schema_res_valid.joinpath.return_value = mock_file_valid
     monkeypatch.setattr("importlib.resources.files", lambda _: mock_schema_res_valid)
-    ops_valid = _load_wgsl_ops()
+    ops_valid = load_wgsl_ops()
     assert len(ops_valid) == 1
-    assert ops_valid[0]["name"] == "mockOp"
-    assert ops_valid[0]["domain"] == "wgsl"
+    assert ops_valid[0].name == "mockOp"
+    assert ops_valid[0].domain == "wgsl"
 
 
 def test_wgsl_roundtrip_serialization() -> None:

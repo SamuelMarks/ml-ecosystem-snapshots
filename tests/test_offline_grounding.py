@@ -43,15 +43,15 @@ def forbid_network_connections() -> typing.Generator[None, None, None]:
 def test_offline_mcp_sass_grounding() -> None:
     """Verify SASS instruction verification operates offline using bundled JSON."""
     res = mcp_server.check_sass_instruction("FADD", operands=["R0", "R1", "R2"])
-    assert res["is_valid"] is True
-    assert res["mnemonic_exists"] is True
+    assert res.is_valid is True
+    assert res.mnemonic_exists is True
 
 
 def test_offline_mcp_rdna_grounding() -> None:
     """Verify AMD RDNA instruction verification operates offline using bundled JSON."""
     res = mcp_server.check_rdna_instruction("v_add_f32", operands=["v0", "v1", "v2"])
-    assert res["is_valid"] is True
-    assert res["mnemonic_exists"] is True
+    assert res.is_valid is True
+    assert res.mnemonic_exists is True
 
 
 def test_offline_mcp_ptx_grounding() -> None:
@@ -61,27 +61,27 @@ def test_offline_mcp_ptx_grounding() -> None:
         types=[".f32"],
         operands=["%f0", "%f1", "%f2"],
     )
-    assert res["is_valid"] is True
-    assert res["mnemonic_exists"] is True
+    assert res.is_valid is True
+    assert res.mnemonic_exists is True
 
 
 def test_offline_mcp_mlir_grounding() -> None:
     """Verify MLIR operation verification operates offline using bundled JSON."""
     res = mcp_server.check_mlir_op("arith.addf")
-    assert res["is_valid"] is True
-    assert res["op_exists"] is True
+    assert res.is_valid is True
+    assert res.op_exists is True
 
 
 def test_offline_mcp_stablehlo_grounding() -> None:
     """Verify StableHLO operation verification operates offline using bundled JSON."""
     res = mcp_server.check_stablehlo_op("stablehlo.add")
-    assert res["is_valid"] is True
-    assert res["op_exists"] is True
+    assert res.is_valid is True
+    assert res.op_exists is True
 
 
 def test_offline_mcp_hallucination_check() -> None:
     """Verify API hallucination checking operates offline using local snapshot."""
-    mcp_server._SNAPSHOT_CACHE["torch"] = {
+    mcp_server.DEFAULT_SNAPSHOT_REPOSITORY.store["torch"] = {
         "_snapshot_source": "local_cache",
         "categories": {
             "ACTIVATION": [
@@ -100,15 +100,15 @@ def test_offline_mcp_hallucination_check() -> None:
         api_path="torch.relu",
         strict_kwargs=True,
     )
-    assert res["api_exists"] is True
-    assert res["is_hallucinated"] is False
-    assert res["snapshot_source"] == "local_cache"
+    assert res.api_exists is True
+    assert res.is_hallucinated is False
+    assert res.snapshot_source == "local_cache"
 
 
 def test_offline_mcp_hallucination_accepted_kwargs() -> None:
     """Verify accepted_kwargs closes unconstrained kwargs loophole offline."""
     # Mock an API that has VAR_KEYWORD but specifies accepted_kwargs
-    mcp_server._SNAPSHOT_CACHE["custom_fw"] = {
+    mcp_server.DEFAULT_SNAPSHOT_REPOSITORY.store["custom_fw"] = {
         "_snapshot_source": "local_cache",
         "categories": {
             "ARRAY_API": [
@@ -132,10 +132,10 @@ def test_offline_mcp_hallucination_accepted_kwargs() -> None:
         api_path="custom_fw.tensor_op",
         kwargs=["dtype", "device"],
     )
-    assert valid_res["api_exists"] is True
-    assert valid_res["is_hallucinated"] is False
-    assert valid_res["invalid_kwargs"] == []
-    assert valid_res["has_unconstrained_kwargs"] is False
+    assert valid_res.api_exists is True
+    assert valid_res.is_hallucinated is False
+    assert valid_res.invalid_kwargs == []
+    assert valid_res.has_unconstrained_kwargs is False
 
     # 2. Hallucinated kwarg not in accepted_kwargs must be rejected
     invalid_res = mcp_server.check_hallucination(
@@ -143,10 +143,10 @@ def test_offline_mcp_hallucination_accepted_kwargs() -> None:
         api_path="custom_fw.tensor_op",
         kwargs=["dtype", "hallucinated_axis"],
     )
-    assert invalid_res["api_exists"] is True
-    assert invalid_res["is_hallucinated"] is True
-    assert "hallucinated_axis" in invalid_res["invalid_kwargs"]
-    assert invalid_res["has_unconstrained_kwargs"] is False
+    assert invalid_res.api_exists is True
+    assert invalid_res.is_hallucinated is True
+    assert "hallucinated_axis" in invalid_res.invalid_kwargs
+    assert invalid_res.has_unconstrained_kwargs is False
 
 
 def test_offline_mcp_hallucination_missing_snapshot_diagnostic() -> None:
@@ -155,10 +155,10 @@ def test_offline_mcp_hallucination_missing_snapshot_diagnostic() -> None:
         framework="nonexistent_framework_xyz",
         api_path="nonexistent_framework_xyz.foo",
     )
-    assert res["api_exists"] is False
-    assert res["is_hallucinated"] is True
-    assert "could not be verified: no local ground-truth snapshot" in res["reason"]
-    assert "To ground offline" in res["reason"]
+    assert res.api_exists is False
+    assert res.is_hallucinated is True
+    assert "could not be verified: no local ground-truth snapshot" in res.reason
+    assert "To ground offline" in res.reason
 
 
 def test_offline_mlir_decoupled_operands_and_regions() -> None:

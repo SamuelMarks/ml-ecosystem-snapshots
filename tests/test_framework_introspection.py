@@ -40,7 +40,7 @@ from ml_ecosystem_snapshots.frameworks import (
     tensorflow as tf_fw,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 
 
 def test_ir_collect_api_all_categories() -> None:
@@ -102,7 +102,7 @@ def _build_fake_ort_module() -> types.ModuleType:
 
 def _make_ort_inspect_side_effect(
     providers_present: list[bool],
-) -> typing.Callable[[InspectableTarget, str], GhostRef | None]:
+) -> typing.Callable[[LivePythonTarget, str], GhostRef | None]:
     """Create a side-effect callback for `GhostInspector.inspect` on ONNX Runtime targets.
 
     Args:
@@ -112,7 +112,7 @@ def _make_ort_inspect_side_effect(
         Callable side-effect function returning a `GhostRef` or `None`.
     """
 
-    def _mock_inspect(obj: InspectableTarget, path: str) -> GhostRef | None:
+    def _mock_inspect(obj: LivePythonTarget, path: str) -> GhostRef | None:
         """Simulate `GhostInspector.inspect` for ONNX Runtime test targets.
 
         Args:
@@ -330,7 +330,7 @@ def test_numpy_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> No
 
     original_inspect = GhostInspector.inspect
 
-    def mock_inspect_act(obj: InspectableTarget, name: str, is_public: bool = True) -> GhostRef:
+    def mock_inspect_act(obj: LivePythonTarget, name: str, is_public: bool = True) -> GhostRef:
         """Simulate `GhostInspector.inspect` for NumPy activation symbols.
 
         Args:
@@ -356,7 +356,7 @@ def test_numpy_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> No
     fake_np_array = _build_fake_numpy_array_module(stubs)
     failing_tokens = ("add", "inv", "ifft")
 
-    def mock_inspect_arr(obj: InspectableTarget, name: str, is_public: bool = True) -> GhostRef:
+    def mock_inspect_arr(obj: LivePythonTarget, name: str, is_public: bool = True) -> GhostRef:
         """Simulate `GhostInspector.inspect` for NumPy array API symbols.
 
         Args:
@@ -388,18 +388,18 @@ def test_numpy_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> No
     assert len(res_bare) == 1
 
 
-def test_numpy_import_error_handling() -> None:
-    """Test numpy module import failure fallback branch."""
-    saved_np = numpy_mod.np
-    saved_sys_np = sys.modules.get("numpy")
+def test_numpy_import_error_handling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test numpy module import failure fallback branch.
 
-    with patch.dict(sys.modules, {"numpy": None}):
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    saved_np = numpy_mod.np
+    with monkeypatch.context() as mp:
+        mp.setitem(sys.modules, "numpy", None)
         importlib.reload(numpy_mod)
         assert numpy_mod.np is None
 
-    # Restore clean numpy import
-    if saved_sys_np is not None:
-        sys.modules["numpy"] = saved_sys_np
     numpy_mod.np = saved_np
     assert numpy_mod.np is not None
 
@@ -498,7 +498,7 @@ def _build_fake_mlx_modules() -> tuple[types.ModuleType, types.ModuleType, types
     return fake_mlx, fake_nn, fake_losses
 
 
-def _mock_mlx_inspect(obj: InspectableTarget, path: str) -> GhostRef:
+def _mock_mlx_inspect(obj: LivePythonTarget, path: str) -> GhostRef:
     """Simulate `GhostInspector.inspect` for MLX collector tests.
 
     Args:
@@ -585,9 +585,12 @@ def test_mlx_collect_api_all_branches(mocker: pytest_mock.MockerFixture) -> None
     assert mlx_mod.collect_api(SemanticTier.LAYER) == []
 
 
-def test_mlx_import_error_handling() -> None:
-    """Test mlx module import success and failure fallback branches."""
-    # 1. Test simulated import success of mlx
+def test_mlx_import_error_handling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test mlx module import success and failure fallback branches.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     mock_mlx_root = types.ModuleType("mlx")
     mock_mlx_core = types.ModuleType("mlx.core")
     mock_mlx_nn = types.ModuleType("mlx.nn")
@@ -601,32 +604,23 @@ def test_mlx_import_error_handling() -> None:
         """
         return mlx_mod.mlx
 
-    with patch.dict(
-        sys.modules,
-        {
-            "mlx": mock_mlx_root,
-            "mlx.core": mock_mlx_core,
-            "mlx.nn": mock_mlx_nn,
-            "mlx.optimizers": mock_mlx_opt,
-        },
-    ):
+    with monkeypatch.context() as mp:
+        for mod_name, mod_val in (
+            ("mlx", mock_mlx_root),
+            ("mlx.core", mock_mlx_core),
+            ("mlx.nn", mock_mlx_nn),
+            ("mlx.optimizers", mock_mlx_opt),
+        ):
+            mp.setitem(sys.modules, mod_name, mod_val)
         importlib.reload(mlx_mod)
         assert _get_mlx() is mock_mlx_root
 
-    # 2. Test simulated import failure of mlx
-    with patch.dict(
-        sys.modules,
-        {
-            "mlx": None,
-            "mlx.core": None,
-            "mlx.nn": None,
-            "mlx.optimizers": None,
-        },
-    ):
+    with monkeypatch.context() as mp:
+        for mod_name in ("mlx", "mlx.core", "mlx.nn", "mlx.optimizers"):
+            mp.setitem(sys.modules, mod_name, None)
         importlib.reload(mlx_mod)
         assert _get_mlx() is None
 
-    # Restore clean reload
     importlib.reload(mlx_mod)
 
 
@@ -647,8 +641,8 @@ class _HfDummyGenFull:
         default_val: int = 10,
         no_default: float = 0.0,
         no_anno=None,
-        *args: InspectableTarget,
-        **kwargs: InspectableTarget,
+        *args: LivePythonTarget,
+        **kwargs: LivePythonTarget,
     ) -> None:
         """Run stub generation with diverse parameter kinds.
 
@@ -718,7 +712,7 @@ class _HfLargeMod:
         )
         return names
 
-    def __getattr__(self, name: str) -> InspectableTarget:
+    def __getattr__(self, name: str) -> LivePythonTarget:
         """Resolve dynamic attributes on the fake `transformers` module.
 
         Args:
@@ -792,7 +786,7 @@ def _check_hf_helper_extractors(mocker: pytest_mock.MockerFixture) -> None:
     assert len([p for p in ref4.params if p.name == "config"]) == 1
 
 
-def _mock_hf_inspect_large(obj: InspectableTarget, path: str) -> GhostRef | None:
+def _mock_hf_inspect_large(obj: LivePythonTarget, path: str) -> GhostRef | None:
     """Simulate `GhostInspector.inspect` for the fake `transformers` module.
 
     Args:
@@ -986,34 +980,42 @@ def test_tensorflow_collect_api_inspection_failures(
     mocker.patch.object(tf_fw, "tf", fake_tf)
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",
-        side_effect=Exception("inspection failure"),
+        side_effect=RuntimeError("inspection failure"),
     )
 
     res = tf_fw.collect_api(SemanticTier.ARRAY_API)
     assert res == []
 
 
-def test_jax_import_reload_branches() -> None:
+def test_jax_import_reload_branches(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test jax module reload when jax is successfully imported and when it fails.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
 
     Returns:
         None.
     """
+    from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
+
     fake_jax_mod = types.ModuleType("jax")
-    with patch.dict("sys.modules", {"jax": fake_jax_mod}):
+    with monkeypatch.context() as mp:
+        mp.setitem(sys.modules, "jax", fake_jax_mod)
         importlib.reload(jax_fw)
-        assert jax_fw.jax is fake_jax_mod
+        assert get_member_dict(jax_fw).get("jax") is fake_jax_mod
 
-    with patch.dict("sys.modules", {"jax": None}):
+    with monkeypatch.context() as mp:
+        mp.setitem(sys.modules, "jax", None)
         importlib.reload(jax_fw)
-        assert jax_fw.jax is None
+        assert get_member_dict(jax_fw).get("jax") is None
+    importlib.reload(jax_fw)
 
 
-def test_jax_sharding_and_pallas_collection(mocker: pytest_mock.MockerFixture) -> None:
+def test_jax_sharding_and_pallas_collection(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test collection of jax.sharding and jax.experimental.pallas symbols.
 
     Args:
-        mocker: Pytest mocker fixture.
+        monkeypatch: Pytest monkeypatch fixture.
 
     Returns:
         None.
@@ -1033,10 +1035,10 @@ def test_jax_sharding_and_pallas_collection(mocker: pytest_mock.MockerFixture) -
         pass
 
     fake_sharding = types.ModuleType("jax.sharding")
-    pytest.MonkeyPatch().setattr(fake_sharding, "Mesh", Mesh, raising=False)
-    pytest.MonkeyPatch().setattr(fake_sharding, "shard_map", shard_map, raising=False)
-    pytest.MonkeyPatch().setattr(fake_sharding, "_priv_sharding", _priv_sharding, raising=False)
-    pytest.MonkeyPatch().setattr(fake_sharding, "not_callable", 42, raising=False)
+    monkeypatch.setattr(fake_sharding, "Mesh", Mesh, raising=False)
+    monkeypatch.setattr(fake_sharding, "shard_map", shard_map, raising=False)
+    monkeypatch.setattr(fake_sharding, "_priv_sharding", _priv_sharding, raising=False)
+    monkeypatch.setattr(fake_sharding, "not_callable", 42, raising=False)
 
     def pallas_call() -> None:
         """Mock pallas_call kernel."""
@@ -1047,70 +1049,72 @@ def test_jax_sharding_and_pallas_collection(mocker: pytest_mock.MockerFixture) -
         pass
 
     fake_pallas = types.ModuleType("jax.experimental.pallas")
-    pytest.MonkeyPatch().setattr(fake_pallas, "pallas_call", pallas_call, raising=False)
-    pytest.MonkeyPatch().setattr(fake_pallas, "_priv_pallas", _priv_pallas, raising=False)
-    pytest.MonkeyPatch().setattr(fake_pallas, "not_callable", 99, raising=False)
+    monkeypatch.setattr(fake_pallas, "pallas_call", pallas_call, raising=False)
+    monkeypatch.setattr(fake_pallas, "_priv_pallas", _priv_pallas, raising=False)
+    monkeypatch.setattr(fake_pallas, "not_callable", 99, raising=False)
 
     fake_experimental = types.ModuleType("jax.experimental")
-    pytest.MonkeyPatch().setattr(fake_experimental, "pallas", fake_pallas, raising=False)
+    monkeypatch.setattr(fake_experimental, "pallas", fake_pallas, raising=False)
 
+    fake_lax = types.ModuleType("jax.lax")
+    fake_random = types.ModuleType("jax.random")
     fake_jax = types.ModuleType("jax")
-    pytest.MonkeyPatch().setattr(fake_jax, "sharding", fake_sharding, raising=False)
-    pytest.MonkeyPatch().setattr(fake_jax, "experimental", fake_experimental, raising=False)
-    pytest.MonkeyPatch().setattr(fake_jax, "lax", types.ModuleType("jax.lax"), raising=False)
-    pytest.MonkeyPatch().setattr(fake_jax, "random", types.ModuleType("jax.random"), raising=False)
-    pytest.MonkeyPatch().setattr(fake_jax, "Array", type("Array", (), {}), raising=False)
+    monkeypatch.setattr(fake_jax, "sharding", fake_sharding, raising=False)
+    monkeypatch.setattr(fake_jax, "experimental", fake_experimental, raising=False)
+    monkeypatch.setattr(fake_jax, "lax", fake_lax, raising=False)
+    monkeypatch.setattr(fake_jax, "random", fake_random, raising=False)
+    monkeypatch.setattr(fake_jax, "Array", type("Array", (), {}), raising=False)
 
     fake_jnp = types.ModuleType("jax.numpy")
     fake_numpy = types.ModuleType("numpy")
-    pytest.MonkeyPatch().setattr(fake_numpy, "float32", float, raising=False)
+    monkeypatch.setattr(fake_numpy, "float32", float, raising=False)
 
-    mocker.patch.dict(
-        "sys.modules",
-        {
-            "jax": fake_jax,
-            "jax.sharding": fake_sharding,
-            "jax.experimental": fake_experimental,
-            "jax.experimental.pallas": fake_pallas,
-            "jax.lax": fake_jax.lax,
-            "jax.random": fake_jax.random,
-            "jax.numpy": fake_jnp,
-            "numpy": fake_numpy,
-        },
-    )
+    for mod_key, mod_obj in (
+        ("jax", fake_jax),
+        ("jax.sharding", fake_sharding),
+        ("jax.experimental", fake_experimental),
+        ("jax.experimental.pallas", fake_pallas),
+        ("jax.lax", fake_lax),
+        ("jax.random", fake_random),
+        ("jax.numpy", fake_jnp),
+        ("numpy", fake_numpy),
+    ):
+        monkeypatch.setitem(sys.modules, mod_key, mod_obj)
 
-    # 1. Public symbols only
-    refs = jax_fw._scan_array_api(include_nonpublic=False)
+    refs = jax_fw.collect_api(SemanticTier.ARRAY_API, include_nonpublic=False)
     paths = {r.api_path for r in refs}
     assert "jax.sharding.shard_map" in paths
     assert "jax.experimental.pallas.pallas_call" in paths
     assert "jax.sharding._priv_sharding" not in paths
     assert "jax.experimental.pallas._priv_pallas" not in paths
 
-    # 2. Including non-public symbols
-    refs_all = jax_fw._scan_array_api(include_nonpublic=True)
+    refs_all = jax_fw.collect_api(SemanticTier.ARRAY_API, include_nonpublic=True)
     paths_all = {r.api_path for r in refs_all}
     assert "jax.sharding._priv_sharding" in paths_all
     assert "jax.experimental.pallas._priv_pallas" in paths_all
 
 
-def test_jax_array_ops_inspect_exceptions(mocker: pytest_mock.MockerFixture) -> None:
+def test_jax_array_ops_inspect_exceptions(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test jax array ops collection when GhostInspector.inspect raises exceptions across all branches.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
 
     Returns:
         None.
     """
     fake_jnp = types.ModuleType("jax.numpy")
-    pytest.MonkeyPatch().setattr(fake_jnp, "abs", lambda: None, raising=False)
+    monkeypatch.setattr(fake_jnp, "abs", lambda: None, raising=False)
 
     fake_lax = types.ModuleType("jax.lax")
-    pytest.MonkeyPatch().setattr(fake_lax, "add", lambda: None, raising=False)
+    monkeypatch.setattr(fake_lax, "add", lambda: None, raising=False)
 
     fake_random = types.ModuleType("jax.random")
-    pytest.MonkeyPatch().setattr(fake_random, "uniform", lambda: None, raising=False)
+    monkeypatch.setattr(fake_random, "uniform", lambda: None, raising=False)
 
     class FakeArray:
         """Fake Array class."""
@@ -1120,44 +1124,42 @@ def test_jax_array_ops_inspect_exceptions(mocker: pytest_mock.MockerFixture) -> 
             pass
 
     fake_sharding = types.ModuleType("jax.sharding")
-    pytest.MonkeyPatch().setattr(fake_sharding, "shard_map", lambda: None, raising=False)
+    monkeypatch.setattr(fake_sharding, "shard_map", lambda: None, raising=False)
 
     fake_pallas = types.ModuleType("jax.experimental.pallas")
-    pytest.MonkeyPatch().setattr(fake_pallas, "pallas_call", lambda: None, raising=False)
+    monkeypatch.setattr(fake_pallas, "pallas_call", lambda: None, raising=False)
 
     fake_experimental = types.ModuleType("jax.experimental")
-    pytest.MonkeyPatch().setattr(fake_experimental, "pallas", fake_pallas, raising=False)
+    monkeypatch.setattr(fake_experimental, "pallas", fake_pallas, raising=False)
 
     fake_jax = types.ModuleType("jax")
-    pytest.MonkeyPatch().setattr(fake_jax, "lax", fake_lax, raising=False)
-    pytest.MonkeyPatch().setattr(fake_jax, "random", fake_random, raising=False)
-    pytest.MonkeyPatch().setattr(fake_jax, "sharding", fake_sharding, raising=False)
-    pytest.MonkeyPatch().setattr(fake_jax, "experimental", fake_experimental, raising=False)
-    pytest.MonkeyPatch().setattr(fake_jax, "jit", lambda fn: fn, raising=False)
-    pytest.MonkeyPatch().setattr(fake_jax, "grad", lambda fn: fn, raising=False)
-    pytest.MonkeyPatch().setattr(fake_jax, "vmap", lambda fn: fn, raising=False)
-    pytest.MonkeyPatch().setattr(fake_jax, "pmap", lambda fn: fn, raising=False)
-    pytest.MonkeyPatch().setattr(fake_jax, "checkpoint", lambda fn: fn, raising=False)
-    pytest.MonkeyPatch().setattr(fake_jax, "Array", FakeArray, raising=False)
+    monkeypatch.setattr(fake_jax, "lax", fake_lax, raising=False)
+    monkeypatch.setattr(fake_jax, "random", fake_random, raising=False)
+    monkeypatch.setattr(fake_jax, "sharding", fake_sharding, raising=False)
+    monkeypatch.setattr(fake_jax, "experimental", fake_experimental, raising=False)
+    monkeypatch.setattr(fake_jax, "jit", lambda fn: fn, raising=False)
+    monkeypatch.setattr(fake_jax, "grad", lambda fn: fn, raising=False)
+    monkeypatch.setattr(fake_jax, "vmap", lambda fn: fn, raising=False)
+    monkeypatch.setattr(fake_jax, "pmap", lambda fn: fn, raising=False)
+    monkeypatch.setattr(fake_jax, "checkpoint", lambda fn: fn, raising=False)
+    monkeypatch.setattr(fake_jax, "Array", FakeArray, raising=False)
 
     fake_numpy = types.ModuleType("numpy")
-    pytest.MonkeyPatch().setattr(fake_numpy, "float32", float, raising=False)
+    monkeypatch.setattr(fake_numpy, "float32", float, raising=False)
 
-    mocker.patch.dict(
-        "sys.modules",
-        {
-            "jax": fake_jax,
-            "jax.numpy": fake_jnp,
-            "jax.lax": fake_lax,
-            "jax.random": fake_random,
-            "jax.sharding": fake_sharding,
-            "jax.experimental": fake_experimental,
-            "jax.experimental.pallas": fake_pallas,
-            "numpy": fake_numpy,
-        },
-    )
+    for mod_key, mod_obj in (
+        ("jax", fake_jax),
+        ("jax.numpy", fake_jnp),
+        ("jax.lax", fake_lax),
+        ("jax.random", fake_random),
+        ("jax.sharding", fake_sharding),
+        ("jax.experimental", fake_experimental),
+        ("jax.experimental.pallas", fake_pallas),
+        ("numpy", fake_numpy),
+    ):
+        monkeypatch.setitem(sys.modules, mod_key, mod_obj)
 
-    def mock_inspect(obj: InspectableTarget, name: str, **kwargs: InspectableTarget) -> GhostRef:
+    def mock_inspect(obj: LivePythonTarget, name: str, **kwargs: LivePythonTarget) -> GhostRef:
         """Mock inspect function.
 
         Args:
@@ -1167,64 +1169,67 @@ def test_jax_array_ops_inspect_exceptions(mocker: pytest_mock.MockerFixture) -> 
 
         Returns:
             A mocked GhostRef.
+
+        Raises:
+            RuntimeError: When `name` is not `jax.numpy.float32`.
         """
         if name == "jax.numpy.float32":
             return GhostRef(name="float32", api_path="jax.numpy.float32", kind="class")
         raise RuntimeError("inspection failure")
 
     mocker.patch(
-        "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",
+        "ml_ecosystem_snapshots.frameworks.jax.GhostInspector.inspect",
         side_effect=mock_inspect,
     )
 
-    refs = jax_fw._scan_array_api(include_nonpublic=False)
+    refs = jax_fw.collect_api(SemanticTier.ARRAY_API, include_nonpublic=False)
     assert len(refs) == 1
     assert refs[0].api_path == "jax.numpy.float32"
 
 
-def test_jax_pallas_import_failure(mocker: pytest_mock.MockerFixture) -> None:
+def test_jax_pallas_import_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test jax array ops collection when importing jax.experimental.pallas raises an exception.
 
     Args:
-        mocker: Pytest mocker fixture.
+        monkeypatch: Pytest monkeypatch fixture.
 
     Returns:
         None.
     """
+    fake_lax = types.ModuleType("jax.lax")
+    fake_random = types.ModuleType("jax.random")
     fake_jax = types.ModuleType("jax")
-    pytest.MonkeyPatch().setattr(fake_jax, "lax", types.ModuleType("jax.lax"), raising=False)
-    pytest.MonkeyPatch().setattr(fake_jax, "random", types.ModuleType("jax.random"), raising=False)
-    pytest.MonkeyPatch().setattr(fake_jax, "Array", type("Array", (), {}), raising=False)
+    monkeypatch.setattr(fake_jax, "lax", fake_lax, raising=False)
+    monkeypatch.setattr(fake_jax, "random", fake_random, raising=False)
+    monkeypatch.setattr(fake_jax, "Array", type("Array", (), {}), raising=False)
     fake_jnp = types.ModuleType("jax.numpy")
     fake_numpy = types.ModuleType("numpy")
-    pytest.MonkeyPatch().setattr(fake_numpy, "float32", float, raising=False)
+    monkeypatch.setattr(fake_numpy, "float32", float, raising=False)
 
-    mocker.patch.dict(
-        "sys.modules",
-        {
-            "jax": fake_jax,
-            "jax.numpy": fake_jnp,
-            "jax.lax": fake_jax.lax,
-            "jax.random": fake_jax.random,
-            "jax.experimental": None,
-            "jax.experimental.pallas": None,
-            "numpy": fake_numpy,
-        },
-    )
+    for mod_key, mod_obj in (
+        ("jax", fake_jax),
+        ("jax.numpy", fake_jnp),
+        ("jax.lax", fake_lax),
+        ("jax.random", fake_random),
+        ("jax.experimental", None),
+        ("jax.experimental.pallas", None),
+        ("numpy", fake_numpy),
+    ):
+        monkeypatch.setitem(sys.modules, mod_key, mod_obj)
 
     refs = jax_fw.collect_api(SemanticTier.ARRAY_API)
     assert len(refs) > 0
     assert any(ref.api_path == "jax.numpy.float32" for ref in refs)
 
 
-def test_jax_array_ops_import_error(mocker: pytest_mock.MockerFixture) -> None:
+def test_jax_array_ops_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test jax array ops collection when import jax raises ImportError.
 
     Args:
-        mocker: Pytest mocker fixture.
+        monkeypatch: Pytest monkeypatch fixture.
 
     Returns:
         None.
     """
-    mocker.patch.dict("sys.modules", {"jax": None})
+    monkeypatch.setitem(sys.modules, "jax", None)
     assert jax_fw.collect_api(SemanticTier.ARRAY_API) == []

@@ -20,6 +20,8 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
 )
 
+from ml_ecosystem_snapshots.frameworks._base import CollectorDomain, DomainCollectorAdapter
+
 from ..models import (
     ExtendedGhostParam,
     GhostMlirRef,
@@ -139,10 +141,14 @@ def _validate_mlir_element_constraint(
     if cat in _CONTAINER_CATEGORIES:
         inner = cleaned.rstrip(">").split("x")[-1].strip()
         if classify_mlir_type(inner) not in allowed_cats:
-            return [f"Type '{type_str}' does not satisfy {kind_label} constraint '{constraint}': element type '{inner}' is not {kind_label}."]
+            return [
+                f"Type '{type_str}' does not satisfy {kind_label} constraint '{constraint}': element type '{inner}' is not {kind_label}."
+            ]
         return []
     if cat not in allowed_cats:
-        return [f"Type '{type_str}' does not satisfy {kind_label} constraint '{constraint}': expected {kind_label} type."]
+        return [
+            f"Type '{type_str}' does not satisfy {kind_label} constraint '{constraint}': expected {kind_label} type."
+        ]
     return []
 
 
@@ -166,12 +172,28 @@ def _validate_mlir_shaped_constraint(
         List of container constraint mismatch messages.
     """
     if "unrankedtensorof" in c_low:
-        return [] if (cat == MLIRTypeCategory.TENSOR.value and "*" in cleaned) else [f"Type '{type_str}' does not satisfy UnrankedTensorOf constraint."]
+        return (
+            []
+            if (cat == MLIRTypeCategory.TENSOR.value and "*" in cleaned)
+            else [f"Type '{type_str}' does not satisfy UnrankedTensorOf constraint."]
+        )
     if "rankedtensorof" in c_low:
-        return [] if (cat == MLIRTypeCategory.TENSOR.value and "*" not in cleaned) else [f"Type '{type_str}' does not satisfy RankedTensorOf constraint '{constraint}'."]
+        return (
+            []
+            if (cat == MLIRTypeCategory.TENSOR.value and "*" not in cleaned)
+            else [f"Type '{type_str}' does not satisfy RankedTensorOf constraint '{constraint}'."]
+        )
     if "vectorof" in c_low:
-        return [] if cat == MLIRTypeCategory.VECTOR.value else [f"Type '{type_str}' does not satisfy VectorOf constraint '{constraint}'."]
-    return [] if cat == MLIRTypeCategory.MEMREF.value else [f"Type '{type_str}' does not satisfy MemRefOf constraint '{constraint}'."]
+        return (
+            []
+            if cat == MLIRTypeCategory.VECTOR.value
+            else [f"Type '{type_str}' does not satisfy VectorOf constraint '{constraint}'."]
+        )
+    return (
+        []
+        if cat == MLIRTypeCategory.MEMREF.value
+        else [f"Type '{type_str}' does not satisfy MemRefOf constraint '{constraint}'."]
+    )
 
 
 def _validate_mlir_type_constraint(type_str: str, cleaned: str, cat: str, constraint: str) -> list[str]:
@@ -212,7 +234,9 @@ def _validate_mlir_type_constraint(type_str: str, cleaned: str, cat: str, constr
         if cat != MLIRTypeCategory.TENSOR.value:
             errors.append(f"Type '{type_str}' does not satisfy tensor constraint '{constraint}': expected tensor type.")
         elif "staticshapetensor" in c_low and ("?" in cleaned or "*" in cleaned):
-            errors.append(f"Type '{type_str}' does not satisfy static shape constraint '{constraint}': dynamic or unranked dimensions not permitted.")
+            errors.append(
+                f"Type '{type_str}' does not satisfy static shape constraint '{constraint}': dynamic or unranked dimensions not permitted."
+            )
     elif c_low == "index" and cat != MLIRTypeCategory.INDEX.value:
         errors.append(f"Type '{type_str}' does not satisfy index constraint '{constraint}': expected 'index' type.")
     return errors
@@ -266,20 +290,32 @@ def _validate_segment_traits(
     attrs_provided = attributes is not None or structured_attributes is not None
 
     if MLIRDialectTrait.ATTR_SIZED_OPERAND_SEGMENTS.value in t_set:
-        has_op_seg = bool((attributes and "operand_segment_sizes" in attributes) or (structured_attributes and "operand_segment_sizes" in structured_attributes))
+        has_op_seg = bool(
+            (attributes and "operand_segment_sizes" in attributes)
+            or (structured_attributes and "operand_segment_sizes" in structured_attributes)
+        )
         if structured_attributes and "operand_segment_sizes" in structured_attributes:
             seg_val = structured_attributes["operand_segment_sizes"]
             if isinstance(seg_val, list) and operand_types is not None:
                 seg_ints = [x for x in seg_val if isinstance(x, int)]
                 if sum(seg_ints) != len(operand_types):
-                    errors.append(f"AttrSizedOperandSegments mismatch for '{op_name}': sum of operand_segment_sizes ({sum(seg_ints)}) does not match operand count ({len(operand_types)}).")
+                    errors.append(
+                        f"AttrSizedOperandSegments mismatch for '{op_name}': sum of operand_segment_sizes ({sum(seg_ints)}) does not match operand count ({len(operand_types)})."
+                    )
         if not has_op_seg and attrs_provided:
-            errors.append(f"Missing required attribute 'operand_segment_sizes' for op '{op_name}' with AttrSizedOperandSegments trait.")
+            errors.append(
+                f"Missing required attribute 'operand_segment_sizes' for op '{op_name}' with AttrSizedOperandSegments trait."
+            )
 
     if MLIRDialectTrait.ATTR_SIZED_RESULT_SEGMENTS.value in t_set:
-        has_res_seg = bool((attributes and "result_segment_sizes" in attributes) or (structured_attributes and "result_segment_sizes" in structured_attributes))
+        has_res_seg = bool(
+            (attributes and "result_segment_sizes" in attributes)
+            or (structured_attributes and "result_segment_sizes" in structured_attributes)
+        )
         if not has_res_seg and attrs_provided:
-            errors.append(f"Missing required attribute 'result_segment_sizes' for op '{op_name}' with AttrSizedResultSegments trait.")
+            errors.append(
+                f"Missing required attribute 'result_segment_sizes' for op '{op_name}' with AttrSizedResultSegments trait."
+            )
 
     return errors
 
@@ -318,23 +354,37 @@ def validate_mlir_traits(
     if MLIRDialectTrait.SAME_OPERANDS_AND_RESULT_TYPE.value in t_set:
         all_types = list(operand_types or []) + list(result_types or [])
         if len(set(all_types)) > 1:
-            errors.append(f"Trait violation for '{op_name}': SameOperandsAndResultType requires all operand and result types to be identical (got operands={operand_types}, results={result_types}).")
+            errors.append(
+                f"Trait violation for '{op_name}': SameOperandsAndResultType requires all operand and result types to be identical (got operands={operand_types}, results={result_types})."
+            )
 
     if MLIRDialectTrait.SAME_TYPE_OPERANDS.value in t_set and operand_types and len(set(operand_types)) > 1:
-        errors.append(f"Trait violation for '{op_name}': SameTypeOperands requires all operand types to match (got {operand_types}).")
+        errors.append(
+            f"Trait violation for '{op_name}': SameTypeOperands requires all operand types to match (got {operand_types})."
+        )
 
     errors.extend(_validate_segment_traits(op_name, t_set, operand_types, attributes, structured_attributes))
 
     if MLIRDialectTrait.COMMUTATIVE.value in t_set and operand_types is not None and len(operand_types) < 2:
-        errors.append(f"Trait violation for '{op_name}': Commutative trait requires at least 2 operands, got {len(operand_types)}.")
+        errors.append(
+            f"Trait violation for '{op_name}': Commutative trait requires at least 2 operands, got {len(operand_types)}."
+        )
 
     if MLIRDialectTrait.ELEMENTWISE.value in t_set and operand_types and len(operand_types) >= 2:
         elem_types = [t.split("<")[-1].rstrip(">") for t in operand_types if "<" in t]
         if len(set(elem_types)) > 1:
-            errors.append(f"Trait violation for '{op_name}': Elementwise trait requires operands to have matching element types (got {elem_types}).")
+            errors.append(
+                f"Trait violation for '{op_name}': Elementwise trait requires operands to have matching element types (got {elem_types})."
+            )
 
-    if MLIRDialectTrait.ISOLATED_FROM_ABOVE.value in t_set and structured_attributes and structured_attributes.get("has_external_captures"):
-        errors.append(f"Trait violation for '{op_name}': IsolatedFromAbove forbids implicit captures of SSA values defined above the region.")
+    if (
+        MLIRDialectTrait.ISOLATED_FROM_ABOVE.value in t_set
+        and structured_attributes
+        and structured_attributes.get("has_external_captures")
+    ):
+        errors.append(
+            f"Trait violation for '{op_name}': IsolatedFromAbove forbids implicit captures of SSA values defined above the region."
+        )
 
     return errors
 
@@ -364,11 +414,15 @@ def validate_mlir_region(
     if clean_op in ("scf.for", "for"):
         if region_name == "body":
             if not block_args or block_args[0] != "index":
-                errors.append(f"scf.for body region first block argument (induction variable) must be 'index' type (got {block_args[0] if block_args else 'none'}).")
+                errors.append(
+                    f"scf.for body region first block argument (induction variable) must be 'index' type (got {block_args[0] if block_args else 'none'})."
+                )
             if len(block_args) > 1:
                 iter_args = block_args[1:]
                 if yield_types and yield_types != iter_args:
-                    errors.append(f"scf.for body region yield types ({yield_types}) must match loop-carried iter_args ({iter_args}).")
+                    errors.append(
+                        f"scf.for body region yield types ({yield_types}) must match loop-carried iter_args ({iter_args})."
+                    )
 
     elif clean_op in ("scf.while", "while"):
         if region_name == "before":
@@ -407,7 +461,9 @@ def validate_mlir_successors(
     if clean_op == "cf.br" and len(successors) != 1:
         errors.append(f"Unconditional branch 'cf.br' requires exactly 1 successor block (got {len(successors)}).")
     elif clean_op == "cf.cond_br" and len(successors) != 2:
-        errors.append(f"Conditional branch 'cf.cond_br' requires exactly 2 successor blocks (true_dest, false_dest, got {len(successors)}).")
+        errors.append(
+            f"Conditional branch 'cf.cond_br' requires exactly 2 successor blocks (true_dest, false_dest, got {len(successors)})."
+        )
 
     return errors
 
@@ -740,7 +796,7 @@ def _load_mlir_exhaustive() -> list[GhostRef]:
             GhostMlirRef(
                 name=str(op.get("class_name", "UnknownOp")),
                 api_path=str(op.get("api_path", "")),
-                kind="function",
+                kind="operation",
                 params=params_list,
                 operands=ssa_operands,
                 docstring="\n".join(docstring_parts),
@@ -758,6 +814,22 @@ def _load_mlir_exhaustive() -> list[GhostRef]:
     return refs
 
 
+def collect_domain(include_nonpublic: bool = False) -> list[GhostRef]:
+    """Collect MLIR dialect operation schemas without `SemanticTier` shoehorning.
+
+    Args:
+        include_nonpublic: Whether to include non-public operations.
+
+    Returns:
+        List of `GhostMlirRef` items.
+    """
+    del include_nonpublic
+    return _load_mlir_exhaustive()
+
+
+DOMAIN_COLLECTOR = DomainCollectorAdapter(CollectorDomain.COMPILER_IR, "operations", collect_domain)
+
+
 def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Entrypoint to collect the MLIR API signature for a given category.
 
@@ -771,4 +843,8 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
     if category != SemanticTier.UTIL:
         return []
 
-    return _load_mlir_exhaustive()
+    return collect_domain(include_nonpublic)
+
+
+get_canonical_mlir_records = _get_canonical_mlir_records
+load_mlir_exhaustive = _load_mlir_exhaustive

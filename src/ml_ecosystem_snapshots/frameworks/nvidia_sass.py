@@ -21,6 +21,8 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
 )
 
+from ml_ecosystem_snapshots.frameworks._base import CollectorDomain, DomainCollectorAdapter
+
 from ..models import (
     ExtendedGhostParam,
     ExtendedGhostRef,
@@ -223,7 +225,9 @@ def _validate_sass_uniform_register_pair(
     """
     errors: list[str] = []
     if sm_arch == "sm_70":
-        errors.append(f"Uniform registers (UR) are only supported on sm_75+ architectures, but target architecture is '{sm_arch}'.")
+        errors.append(
+            f"Uniform registers (UR) are only supported on sm_75+ architectures, but target architecture is '{sm_arch}'."
+        )
     if start_idx > 63 or end_idx > 63:
         errors.append(f"Uniform register index out of range in '{operand}': max is UR63.")
     elif end_idx - start_idx != 1:
@@ -251,7 +255,9 @@ def _validate_sass_scalar_register(cleaned: str, sm_arch: str | None) -> list[st
     ur_match = re.match(r"^UR(\d+)$", cleaned, re.IGNORECASE)
     if cleaned.upper() == "URZ" or ur_match:
         if sm_arch == "sm_70":
-            errors.append(f"Uniform registers (UR) are only supported on sm_75+ architectures, but target architecture is '{sm_arch}'.")
+            errors.append(
+                f"Uniform registers (UR) are only supported on sm_75+ architectures, but target architecture is '{sm_arch}'."
+            )
         if ur_match and int(ur_match.group(1)) > 63:
             errors.append(f"Uniform register index UR{int(ur_match.group(1))} out of range (UR0-UR63).")
 
@@ -262,7 +268,9 @@ def _validate_sass_scalar_register(cleaned: str, sm_arch: str | None) -> list[st
     up_match = re.match(r"^!?UP(\d+)$", cleaned, re.IGNORECASE)
     if cleaned.upper() in ("UPT", "!UPT") or up_match:
         if sm_arch == "sm_70":
-            errors.append(f"Uniform predicate registers (UP) are only supported on sm_75+ architectures, but target architecture is '{sm_arch}'.")
+            errors.append(
+                f"Uniform predicate registers (UP) are only supported on sm_75+ architectures, but target architecture is '{sm_arch}'."
+            )
         if up_match and int(up_match.group(1)) > 7:
             errors.append(f"Uniform predicate register index UP{int(up_match.group(1))} out of range (UP0-UP7).")
 
@@ -315,13 +323,19 @@ def validate_sass_register(operand: str, role: str = "src", sm_arch: str | None 
         return []
 
     # Check 64-bit / 128-bit vector register range: R<start>:R<end> or R[<start>:<end>]
-    quad_pair_match = re.match(r"^R(\d+):R(\d+)$", cleaned, re.IGNORECASE) or re.match(r"^R\[(\d+):(\d+)\]$", cleaned, re.IGNORECASE)
+    quad_pair_match = re.match(r"^R(\d+):R(\d+)$", cleaned, re.IGNORECASE) or re.match(
+        r"^R\[(\d+):(\d+)\]$", cleaned, re.IGNORECASE
+    )
     if quad_pair_match:
-        errors.extend(_validate_sass_register_pair_or_quad(operand, int(quad_pair_match.group(1)), int(quad_pair_match.group(2))))
+        errors.extend(
+            _validate_sass_register_pair_or_quad(operand, int(quad_pair_match.group(1)), int(quad_pair_match.group(2)))
+        )
         return errors
 
     # Check uniform register pair: UR<start>:UR<end> or UR[<start>:<end>]
-    ur_pair_match = re.match(r"^UR(\d+):UR(\d+)$", cleaned, re.IGNORECASE) or re.match(r"^UR\[(\d+):(\d+)\]$", cleaned, re.IGNORECASE)
+    ur_pair_match = re.match(r"^UR(\d+):UR(\d+)$", cleaned, re.IGNORECASE) or re.match(
+        r"^UR\[(\d+):(\d+)\]$", cleaned, re.IGNORECASE
+    )
     if ur_pair_match:
         errors.extend(
             _validate_sass_uniform_register_pair(
@@ -367,9 +381,15 @@ def validate_sass_operand_directionality(operands: list[str], mnemonic: str) -> 
         elif "c[" in dst.lower() or "cx[" in dst.lower() or dst in ("c[bank][offset]", "cx[bank][offset]"):
             errors.append(f"Operand 0 is a destination (write) slot and cannot be constant bank memory: '{dst}'.")
 
-    c_bank_count = sum(1 for op in operands if "c[" in op.lower() or "cx[" in op.lower() or op in ("c[bank][offset]", "cx[bank][offset]"))
+    c_bank_count = sum(
+        1
+        for op in operands
+        if "c[" in op.lower() or "cx[" in op.lower() or op in ("c[bank][offset]", "cx[bank][offset]")
+    )
     if c_bank_count > 1:
-        errors.append(f"Hardware resource conflict in '{mnemonic}': SASS instructions permit at most 1 constant bank reference per cycle due to shared read ports (found {c_bank_count}).")
+        errors.append(
+            f"Hardware resource conflict in '{mnemonic}': SASS instructions permit at most 1 constant bank reference per cycle due to shared read ports (found {c_bank_count})."
+        )
 
     return errors
 
@@ -410,7 +430,9 @@ def validate_sass_modifiers(mnemonic: str, modifiers: list[str]) -> list[str]:
             SASSInstructionFamily.BARRIER.value,
             SASSInstructionFamily.CONTROL.value,
         ):
-            errors.append(f"Saturation modifier '.SAT' is not supported on instruction family '{family}' for '{mnemonic}'.")
+            errors.append(
+                f"Saturation modifier '.SAT' is not supported on instruction family '{family}' for '{mnemonic}'."
+            )
 
     return errors
 
@@ -449,7 +471,9 @@ def _validate_sass_control_timing(
         latency = control_codes["latency_ticks"]
         min_ticks, max_ticks = get_sass_latency_range(family, sm_arch)
         if not isinstance(latency, int) or latency < min_ticks or latency > max_ticks:
-            errors.append(f"Latency ticks {latency} out of bounds for {family} on {sm_arch}: expected between {min_ticks} and {max_ticks} cycles.")
+            errors.append(
+                f"Latency ticks {latency} out of bounds for {family} on {sm_arch}: expected between {min_ticks} and {max_ticks} cycles."
+            )
 
     return errors
 
@@ -994,11 +1018,21 @@ def _load_exhaustive_sass() -> list[IsaInstructionRecordModel]:
                 all_ops: list[IsaInstructionRecordModel] = []
                 for cat_ops in data["categories"].values():
                     if isinstance(cat_ops, list):
-                        all_ops.extend(IsaInstructionRecordModel(item) for item in cat_ops if isinstance(item, dict))
+                        all_ops.extend(
+                            IsaInstructionRecordModel.model_validate(item) for item in cat_ops if isinstance(item, dict)
+                        )
                 return all_ops
             raw_cand = data.get("instructions") or data.get("operations") or data.get("items") or []
-            return [IsaInstructionRecordModel(item) for item in (raw_cand if isinstance(raw_cand, list) else []) if isinstance(item, dict)]
-        return [IsaInstructionRecordModel(item) for item in (data if isinstance(data, list) else []) if isinstance(item, dict)]
+            return [
+                IsaInstructionRecordModel.model_validate(item)
+                for item in (raw_cand if isinstance(raw_cand, list) else [])
+                if isinstance(item, dict)
+            ]
+        return [
+            IsaInstructionRecordModel.model_validate(item)
+            for item in (data if isinstance(data, list) else [])
+            if isinstance(item, dict)
+        ]
 
 
 def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
@@ -1019,20 +1053,22 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
     sass_data = _load_exhaustive_sass()
 
     for inst_data in sass_data:
-        mnemonic = str(inst_data["mnemonic"])
-        base_desc = str(inst_data.get("description", f"NVIDIA SASS {mnemonic} instruction."))
-        raw_mods = inst_data.get("modifiers", [])
-        raw_modifiers = [str(m) for m in (raw_mods if isinstance(raw_mods, list) else [])]
+        mnemonic = inst_data.mnemonic
+        base_desc = inst_data.description or f"NVIDIA SASS {mnemonic} instruction."
+        raw_modifiers = [str(m) for m in inst_data.modifiers]
         parsed_modifiers = parse_sass_modifiers(raw_modifiers)
 
-        arch = inst_data.get("architecture")
+        arch: JsonValue = (
+            list(inst_data.architecture) if isinstance(inst_data.architecture, list) else inst_data.architecture
+        )
         valid_archs = resolve_sm_architectures(arch)
         env_tags = ["cuda"] + valid_archs
 
         docstring = f"NVIDIA SASS {mnemonic} instruction.\nDescription: {base_desc}\nModifiers: {', '.join(parsed_modifiers) if parsed_modifiers else 'None'}\nTarget Architectures: {', '.join(valid_archs)}\nPredicate Guard: Supported (@P0, @!P1)"
 
-        raw_operands = inst_data.get("operands", [])
-        operands_list: list[list[str]] = [[str(op) for op in sig] for sig in (raw_operands if isinstance(raw_operands, list) else []) if isinstance(sig, list)]
+        operands_list: list[list[str]] = [
+            [str(op) for op in sig] for sig in inst_data.operands if isinstance(sig, list)
+        ]
 
         # Find the maximum length signature for the canonical representation
         max_sig: list[str] = []
@@ -1047,7 +1083,7 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
             direction = OperandDirection.WRITE if i == 0 else OperandDirection.READ
             params.append(
                 ExtendedGhostParam(
-                    name=f"op{i}",
+                    name=role,
                     kind=ParameterKind.POSITIONAL_ONLY,
                     annotation=op_type,
                     standardized_name=role,
@@ -1057,7 +1093,9 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
                 )
             )
 
-        arch_json: JsonValue = [str(a) for a in arch] if isinstance(arch, list) else (str(arch) if arch is not None else None)
+        arch_json: JsonValue = (
+            [str(a) for a in arch] if isinstance(arch, list) else (str(arch) if arch is not None else None)
+        )
         domain_metadata: dict[str, JsonValue] = {
             "architecture": arch_json,
             "valid_architectures": list(valid_archs),
@@ -1077,7 +1115,7 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
                 direction = OperandDirection.WRITE if i == 0 else OperandDirection.READ
                 overload_params.append(
                     ExtendedGhostParam(
-                        name=f"op{i}",
+                        name=role,
                         kind=ParameterKind.POSITIONAL_ONLY,
                         annotation=op_type,
                         standardized_name=role,
@@ -1090,7 +1128,7 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
                 ExtendedGhostRef(
                     name=mnemonic,
                     api_path=f"nvidia_sass.inst.{mnemonic}",
-                    kind="function",
+                    kind="instruction",
                     params=overload_params,
                     docstring=f"Overload {sig_idx} for {mnemonic}: {', '.join(sig)}",
                     environment_tags=env_tags,
@@ -1101,28 +1139,47 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         raw_struct_ops = build_structured_sass_operands(max_sig, mnemonic)
 
         refs.append(
-            GhostIsaRef(
-                name=mnemonic,
-                api_path=f"nvidia_sass.inst.{mnemonic}",
-                kind="function",
-                params=params,
-                docstring=docstring,
-                environment_tags=env_tags,
-                overloads=overloads,
-                domain_metadata=domain_metadata,
-                predicate_guards=["@P0", "@!P0", "@P1", "@!P1", "@PT"],
-                instruction_modifiers=parsed_modifiers,
-                supported_architectures=valid_archs,
-                control_codes=IsaControlCodesSpec(
-                    latency=4,
-                    stall_count=1,
-                    yield_flag=False,
-                    read_barrier=0,
-                    write_barrier=0,
-                    wait_barrier_mask=0,
-                ),
-                structured_operands=[IsaStructuredOperandSpec.model_validate(op) for op in raw_struct_ops],
+            GhostIsaRef.model_validate(
+                {
+                    "name": mnemonic,
+                    "api_path": f"nvidia_sass.inst.{mnemonic}",
+                    "kind": "instruction",
+                    "params": params,
+                    "docstring": docstring,
+                    "environment_tags": env_tags,
+                    "overloads": overloads,
+                    "domain_metadata": domain_metadata,
+                    "predicate_guards": ["@P0", "@!P0", "@P1", "@!P1", "@PT"],
+                    "instruction_modifiers": parsed_modifiers,
+                    "supported_architectures": valid_archs,
+                    "control_codes": IsaControlCodesSpec(
+                        latency=4,
+                        stall_count=1,
+                        yield_flag=False,
+                        read_barrier=0,
+                        write_barrier=0,
+                        wait_barrier_mask=0,
+                    ),
+                    "structured_operands": [IsaStructuredOperandSpec.model_validate(op) for op in raw_struct_ops],
+                }
             )
         )
 
     return refs
+
+
+def collect_domain(include_nonpublic: bool = False) -> list[GhostRef]:
+    """Collect NVIDIA SASS hardware instruction schemas without `SemanticTier` shoehorning.
+
+    Args:
+        include_nonpublic: Whether to include non-public instructions.
+
+    Returns:
+        List of `GhostIsaRef` items.
+    """
+    return collect_api(SemanticTier.UTIL, include_nonpublic)
+
+
+DOMAIN_COLLECTOR = DomainCollectorAdapter(CollectorDomain.HARDWARE_ISA, "instructions", collect_domain)
+get_canonical_fallback_sass = _get_canonical_fallback_sass
+load_exhaustive_sass = _load_exhaustive_sass

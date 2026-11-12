@@ -134,6 +134,7 @@ cython_debug/
 *.gemini.*
 run_*.py
 check_*.py
+!scripts/check_function_coverage.py
 implement_*.py
 run_test_temp*.py
 run_test_cdd*.py

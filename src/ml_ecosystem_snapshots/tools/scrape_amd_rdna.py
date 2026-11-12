@@ -271,24 +271,22 @@ def resolve_td_instruction_info(def_name: str, class_name: str, mnemonic: str) -
     search_tokens = f"{cls_df} {mnemonic.upper()}"
 
     encoding = "VOP1"
-    modifiers: list[JsonValue] = []
+    modifiers: list[str] = []
     operands: list[JsonValue] = [["VGPR", "VGPR"]]
 
     for keywords, enc_name, prof_mods, prof_ops in _RDNA_ENCODING_PROFILES:
         if any(k in search_tokens for k in keywords):
             encoding = enc_name
-            modifiers = list(prof_mods)
+            modifiers = [str(m) for m in prof_mods]
             operands = [list(sig) if isinstance(sig, list) else sig for sig in prof_ops]
             break
 
     return IsaInstructionRecordModel(
-        {
-            "mnemonic": mnemonic,
-            "architecture": _resolve_rdna_architecture(cls_df),
-            "encoding": encoding,
-            "modifiers": modifiers,
-            "operands": operands,
-        }
+        mnemonic=mnemonic,
+        architecture=_resolve_rdna_architecture(cls_df),
+        encoding=encoding,
+        modifiers=modifiers,
+        operands=operands,
     )
 
 
@@ -299,7 +297,7 @@ def parse_td_content(content: str) -> list[IsaInstructionRecordModel]:
         content: Raw TableGen text content.
 
     Returns:
-        List of extracted instruction dictionaries.
+        List of extracted instruction records.
     """
     instructions: list[IsaInstructionRecordModel] = []
 
@@ -313,12 +311,14 @@ def parse_td_content(content: str) -> list[IsaInstructionRecordModel]:
         info = resolve_td_instruction_info(def_name, class_name, mnemonic)
         instructions.append(info)
 
-    multiclass_pattern = re.compile(r"defm\s+([A-Za-z0-9_]+)\s*:\s*([A-Za-z0-9_]*(?:VOP3|VOP3P|SOPK|VOPD|VOP2|VOP1)[A-Za-z0-9_]*)\s*;")
+    multiclass_pattern = re.compile(
+        r"defm\s+([A-Za-z0-9_]+)\s*:\s*([A-Za-z0-9_]*(?:VOP3|VOP3P|SOPK|VOPD|VOP2|VOP1)[A-Za-z0-9_]*)\s*;"
+    )
     for match in multiclass_pattern.finditer(content):
         def_name = match.group(1)
         class_name = match.group(2)
         mnemonic = def_name.lower()
-        if not any(i["mnemonic"] == mnemonic for i in instructions):
+        if not any(i.mnemonic == mnemonic for i in instructions):
             info = resolve_td_instruction_info(def_name, class_name, mnemonic)
             instructions.append(info)
 
@@ -403,13 +403,13 @@ def parse_llvm_tblgen_json(
                 break
 
         operands = _extract_tblgen_record_operands(record)
-        operands_list: JsonValue
+        operands_list: list[JsonValue]
         if not operands:
             info = resolve_td_instruction_info(def_name, sc_str, clean_mnemonic)
-            operands_list = [list(s) for s in info["operands"]]
-            modifiers = [str(m) for m in info["modifiers"]]
+            operands_list = [list(s) if isinstance(s, list) else s for s in info.operands]
+            modifiers = list(info.modifiers)
             if encoding == "Unknown":
-                encoding = str(info["encoding"])
+                encoding = info.encoding or "Unknown"
         else:
             operands_list = [operands]
             modifiers = list(_TBLGEN_ENCODING_MODIFIERS.get(encoding, []))
@@ -418,14 +418,12 @@ def parse_llvm_tblgen_json(
 
         instructions.append(
             IsaInstructionRecordModel(
-                {
-                    "mnemonic": clean_mnemonic,
-                    "architecture": arch,
-                    "description": f"AMD RDNA {clean_mnemonic} instruction.",
-                    "encoding": encoding,
-                    "modifiers": list(sorted(list(set(modifiers)))),
-                    "operands": operands_list,
-                }
+                mnemonic=clean_mnemonic,
+                architecture=arch,
+                description=f"AMD RDNA {clean_mnemonic} instruction.",
+                encoding=encoding,
+                modifiers=list(sorted(list(set(modifiers)))),
+                operands=operands_list,
             )
         )
 
@@ -472,16 +470,18 @@ def scrape_amd_rdna(
             parsed_instrs: Sequence of parsed `IsaInstructionRecordModel` items.
         """
         for instr in parsed_instrs:
-            base_name = str(instr["mnemonic"])
-            inst_enc[base_name] = str(instr.get("encoding", "Unknown"))
-            inst_arch[base_name] = str(instr.get("architecture", "GFX10+"))
+            base_name = instr.mnemonic
+            inst_enc[base_name] = instr.encoding or "Unknown"
+            inst_arch[base_name] = (
+                ",".join(instr.architecture)
+                if isinstance(instr.architecture, list)
+                else str(instr.architecture or "GFX10+")
+            )
 
-            raw_mods = instr.get("modifiers", [])
-            for mod in raw_mods if isinstance(raw_mods, list) else []:
+            for mod in instr.modifiers:
                 inst_mods[base_name].add(str(mod))
 
-            raw_ops = instr.get("operands", [])
-            for sig in raw_ops if isinstance(raw_ops, list) else []:
+            for sig in instr.operands:
                 if sig not in inst_ops[base_name]:
                     inst_ops[base_name].append(sig)
 
@@ -500,14 +500,12 @@ def scrape_amd_rdna(
     for mnemonic in sorted(inst_enc.keys()):
         exhaustive_list.append(
             IsaInstructionRecordModel(
-                {
-                    "mnemonic": mnemonic,
-                    "architecture": inst_arch[mnemonic],
-                    "description": f"AMD RDNA {mnemonic} instruction.",
-                    "encoding": inst_enc[mnemonic],
-                    "modifiers": list(sorted(list(inst_mods[mnemonic]))),
-                    "operands": inst_ops[mnemonic],
-                }
+                mnemonic=mnemonic,
+                architecture=inst_arch[mnemonic],
+                description=f"AMD RDNA {mnemonic} instruction.",
+                encoding=inst_enc[mnemonic],
+                modifiers=list(sorted(list(inst_mods[mnemonic]))),
+                operands=inst_ops[mnemonic],
             )
         )
 
@@ -526,7 +524,7 @@ def scrape_amd_rdna(
             "GFX11.5",
             "GFX12/RDNA4",
         ],
-        "instructions": [dict(r) for r in exhaustive_list],
+        "instructions": [r.model_dump(exclude_none=True) for r in exhaustive_list],
     }
 
     with open(resolved_output, "w", encoding="utf-8", newline="\n") as f:

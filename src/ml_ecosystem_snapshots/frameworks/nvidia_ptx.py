@@ -20,10 +20,13 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
 )
 
+from ml_ecosystem_snapshots.frameworks._base import CollectorDomain, DomainCollectorAdapter
+
 from ..models import (
     ExtendedGhostParam,
     IRParameterRole,
     JsonValue,
+    ensure_json_dict,
 )
 
 
@@ -276,15 +279,21 @@ def _validate_ptx_inst_qualifiers(
         allowed_spaces = [str(s) for s in (raw_spaces if isinstance(raw_spaces, list) else [])]
         norm_space = state_space if state_space.startswith(".") else f".{state_space}"
         if not allowed_spaces:
-            errors.append(f"State space '{state_space}' is not valid for instruction '{mnemonic}': instruction does not accept memory state spaces.")
+            errors.append(
+                f"State space '{state_space}' is not valid for instruction '{mnemonic}': instruction does not accept memory state spaces."
+            )
         elif norm_space not in allowed_spaces:
-            errors.append(f"State space '{state_space}' is not valid for instruction '{mnemonic}' (supported: {allowed_spaces}).")
+            errors.append(
+                f"State space '{state_space}' is not valid for instruction '{mnemonic}' (supported: {allowed_spaces})."
+            )
 
     if scope:
         errors.extend(validate_ptx_scope(scope))
         cat = inst_meta.get("category")
         if cat not in ("memory", "barrier"):
-            errors.append(f"Memory scope '{scope}' is not valid for instruction '{mnemonic}': only memory and barrier instructions accept scopes.")
+            errors.append(
+                f"Memory scope '{scope}' is not valid for instruction '{mnemonic}': only memory and barrier instructions accept scopes."
+            )
 
     if vector_width:
         errors.extend(validate_ptx_vector_width(vector_width))
@@ -294,7 +303,9 @@ def _validate_ptx_inst_qualifiers(
         if not allowed_widths:
             errors.append(f"Vector width '{vector_width}' is not supported for PTX instruction '{mnemonic}'.")
         elif norm_vw not in allowed_widths:
-            errors.append(f"Vector width '{vector_width}' is not supported for PTX instruction '{mnemonic}' (supported: {allowed_widths}).")
+            errors.append(
+                f"Vector width '{vector_width}' is not supported for PTX instruction '{mnemonic}' (supported: {allowed_widths})."
+            )
 
     return errors
 
@@ -636,12 +647,13 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         params: list[GhostParam] = []
 
         raw_ops = inst.get("operands", [])
-        for idx, op in enumerate(raw_ops if isinstance(raw_ops, list) else []):
-            assert isinstance(op, dict)
+        for idx, raw_op in enumerate(raw_ops if isinstance(raw_ops, list) else []):
+            op = ensure_json_dict(raw_op, "PTX operand")
             role = IRParameterRole.RESULT if op.get("role") == "dst" else IRParameterRole.OPERAND
+            default_role_name = "dst" if idx == 0 else f"src{idx - 1}"
             params.append(
                 ExtendedGhostParam(
-                    name=str(op.get("name", f"op{idx}")),
+                    name=str(op.get("name") or op.get("role") or default_role_name),
                     annotation="PTXOperand",
                     default=None,
                     kind=ParameterKind.POSITIONAL_ONLY,
@@ -655,7 +667,7 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
             GhostRef(
                 api_path=f"nvidia_ptx.inst.{mnem}",
                 name=mnem,
-                kind="function",
+                kind="instruction",
                 is_public=True,
                 has_varargs=False,
                 environment_tags=[
@@ -674,3 +686,20 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         )
 
     return refs
+
+
+def collect_domain(include_nonpublic: bool = False) -> list[GhostRef]:
+    """Collect NVIDIA PTX hardware instruction schemas without `SemanticTier` shoehorning.
+
+    Args:
+        include_nonpublic: Whether to include non-public instructions.
+
+    Returns:
+        List of `GhostRef` items.
+    """
+    return collect_api(SemanticTier.UTIL, include_nonpublic)
+
+
+DOMAIN_COLLECTOR = DomainCollectorAdapter(CollectorDomain.HARDWARE_ISA, "instructions", collect_domain)
+get_canonical_fallback_ptx = _get_canonical_fallback_ptx
+load_exhaustive_ptx = _load_exhaustive_ptx

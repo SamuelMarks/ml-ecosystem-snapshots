@@ -11,6 +11,7 @@ Extracts deterministic, reproducible data loading (`DataLoader`, `MapDataset`,
 from __future__ import annotations
 
 import importlib
+import logging
 import types
 import typing
 
@@ -33,6 +34,8 @@ from ml_ecosystem_snapshots.introspection.static_parsers import (
     load_griffe_module_safely,
 )
 from ml_ecosystem_snapshots.network_env import is_offline_mode
+
+_LOGGER = logging.getLogger(__name__)
 
 _GRAIN_OP_DEFS: list[
     tuple[
@@ -729,8 +732,18 @@ def _get_grain_module() -> dict[str, types.ModuleType | None]:
     ):
         try:
             mods[key] = importlib.import_module(mod_path)
-        except Exception as exc:
-            del exc
+        except (
+            ImportError,
+            AttributeError,
+            TypeError,
+            ValueError,
+            OSError,
+            RuntimeError,
+            LookupError,
+            SyntaxError,
+            AssertionError,
+        ):
+            _LOGGER.debug("Optional grain module %s unavailable", mod_path, exc_info=True)
     return mods
 
 

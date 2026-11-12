@@ -24,7 +24,7 @@ def test_nvidia_ptx_collect_api_util() -> None:
 
     for ref in refs:
         assert isinstance(ref, GhostRef)
-        assert ref.kind == "function"
+        assert ref.kind == "instruction"
         assert ref.api_path.startswith("nvidia_ptx.inst.")
         assert ref.name in ref.api_path
         assert isinstance(ref.docstring, str)
@@ -188,12 +188,12 @@ def test_load_exhaustive_ptx_dict_envelope() -> None:
 def test_check_ptx_instruction_mcp() -> None:
     """Test check_ptx_instruction via MCP server endpoint and call_tool dispatch."""
     res_valid = mcp_server.check_ptx_instruction("add", types=[".f32"], operands=["%f0", "%f1", "%f2"])
-    assert res_valid["is_valid"] is True
-    assert res_valid["mnemonic_exists"] is True
+    assert res_valid.is_valid is True
+    assert res_valid.mnemonic_exists is True
 
     res_invalid = mcp_server.check_ptx_instruction("fake_ptx_op")
-    assert res_invalid["is_valid"] is False
-    assert res_invalid["mnemonic_exists"] is False
+    assert res_invalid.is_valid is False
+    assert res_invalid.mnemonic_exists is False
 
     from ml_ecosystem_snapshots.models import JsonValue
 
@@ -212,8 +212,8 @@ def test_check_ptx_instruction_mcp() -> None:
         },
     }
     resp = mcp_server.handle_mcp_message(msg)
-    assert "result" in resp
-    assert "content" in resp["result"]
+    assert resp.result is not None
+    assert resp.result.content is not None
 
 
 def test_validate_ptx_scope() -> None:
@@ -340,4 +340,4 @@ def test_validate_ptx_instruction_scopes_and_vectors() -> None:
         state_space=".global",
         scope=".gpu",
     )
-    assert res_mcp["is_valid"] is True
+    assert res_mcp.is_valid is True

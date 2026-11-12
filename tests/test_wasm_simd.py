@@ -14,8 +14,8 @@ from ml_switcheroo_ir.schema.ghost import (
 from ml_ecosystem_snapshots.cli import cmd_check_wasm
 from ml_ecosystem_snapshots.frameworks.wasm_simd import (
     CANONICAL_WASM_SIMD_OPS,
-    _load_wasm_simd_ops,
     collect_api,
+    load_wasm_simd_ops,
 )
 from ml_ecosystem_snapshots.mcp_server import check_wasm_instruction
 
@@ -63,33 +63,33 @@ def test_check_wasm_instruction_validation() -> None:
     """Test check_wasm_instruction validating existence, operands count, and immediate attributes."""
     # 1. Valid instruction
     res_valid = check_wasm_instruction("f32x4.add", operands_count=2)
-    assert res_valid["is_valid"] is True
-    assert res_valid["op_exists"] is True
-    assert len(res_valid["errors"]) == 0
+    assert res_valid.is_valid is True
+    assert res_valid.op_exists is True
+    assert len(res_valid.errors) == 0
 
     # 2. Prefix stripping (wasm.f32x4.add)
     res_prefix = check_wasm_instruction("wasm.f32x4.add", operands_count=2)
-    assert res_prefix["is_valid"] is True
+    assert res_prefix.is_valid is True
 
     # 3. Operands count mismatch
     res_count_err = check_wasm_instruction("f32x4.add", operands_count=4)
-    assert res_count_err["is_valid"] is False
-    assert any("expects 2 inputs, but got 4" in e for e in res_count_err["errors"])
+    assert res_count_err.is_valid is False
+    assert any("expects 2 inputs, but got 4" in e for e in res_count_err.errors)
 
     # 4. Valid attributes
     res_attr = check_wasm_instruction("v128.load", attributes=["offset", "align"])
-    assert res_attr["is_valid"] is True
+    assert res_attr.is_valid is True
 
     # 5. Invalid attribute
     res_bad_attr = check_wasm_instruction("v128.load", attributes=["invalid_attr"])
-    assert res_bad_attr["is_valid"] is False
-    assert any("Attribute 'invalid_attr' is not valid" in e for e in res_bad_attr["errors"])
+    assert res_bad_attr.is_valid is False
+    assert any("Attribute 'invalid_attr' is not valid" in e for e in res_bad_attr.errors)
 
     # 6. Non-existent instruction
     res_nonexistent = check_wasm_instruction("nonexistent.opcode")
-    assert res_nonexistent["is_valid"] is False
-    assert res_nonexistent["op_exists"] is False
-    assert any("Unknown WebAssembly SIMD instruction" in e for e in res_nonexistent["errors"])
+    assert res_nonexistent.is_valid is False
+    assert res_nonexistent.op_exists is False
+    assert any("Unknown WebAssembly SIMD instruction" in e for e in res_nonexistent.errors)
 
 
 def test_cmd_check_wasm_cli(capsys: pytest.CaptureFixture[str]) -> None:
@@ -147,5 +147,5 @@ def test_wasm_simd_roundtrip_serialization() -> None:
 
 def test_load_wasm_simd_ops_catalog() -> None:
     """Verify _load_wasm_simd_ops catalog returns standard canonical definitions."""
-    ops = _load_wasm_simd_ops()
+    ops = load_wasm_simd_ops()
     assert ops == CANONICAL_WASM_SIMD_OPS

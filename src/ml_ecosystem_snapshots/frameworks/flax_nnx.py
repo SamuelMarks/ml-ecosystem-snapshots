@@ -8,6 +8,7 @@ losses, optimizers, and activations.
 from __future__ import annotations
 
 import inspect
+import logging
 import types
 import typing
 
@@ -16,6 +17,8 @@ from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 from ml_ecosystem_snapshots.frameworks.jax import collect_api as jax_collect_api
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.utils import get_all_members
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @typing.runtime_checkable
@@ -42,7 +45,18 @@ def _get_nnx() -> types.ModuleType | None:
 
         nnx = _nnx
         return nnx
-    except Exception:
+    except (
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        LookupError,
+        SyntaxError,
+        AssertionError,
+    ):
+        _LOGGER.debug("Failed to import flax.nnx", exc_info=True)
         return None
 
 
@@ -60,10 +74,9 @@ def _scan_nnx_layers(include_nonpublic: bool) -> list[GhostRef]:
     """
     found: list[GhostRef] = []
     nnx_mod = _get_nnx()
-    if not nnx_mod:
+    if not isinstance(nnx_mod, _NnxModuleProtocol):
         return found
     try:
-        assert isinstance(nnx_mod, _NnxModuleProtocol)
         base_mod = nnx_mod.Module
         for name, obj in get_all_members(nnx_mod):
             if not include_nonpublic and name.startswith("_"):
@@ -74,8 +87,18 @@ def _scan_nnx_layers(include_nonpublic: bool) -> list[GhostRef]:
                         found.append(GhostInspector.inspect(obj, f"flax.nnx.{name}"))
                 except TypeError:
                     pass
-    except Exception as exc:
-        del exc
+    except (
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        LookupError,
+        SyntaxError,
+        AssertionError,
+    ):
+        _LOGGER.debug("Failed to scan flax.nnx layers", exc_info=True)
 
     return found
 

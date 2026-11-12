@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import logging
 import types
 import typing
 
@@ -39,13 +40,25 @@ from ml_ecosystem_snapshots.introspection.static_parsers import (
 from ml_ecosystem_snapshots.network_env import is_offline_mode
 from ml_ecosystem_snapshots.utils import get_all_members
 
+_LOGGER = logging.getLogger(__name__)
+
 ocp: types.ModuleType | None = None
 try:
     import orbax.checkpoint as _ocp_mod
 
     ocp = _ocp_mod
-except Exception as exc:
-    del exc
+except (
+    ImportError,
+    AttributeError,
+    TypeError,
+    ValueError,
+    OSError,
+    RuntimeError,
+    LookupError,
+    SyntaxError,
+    AssertionError,
+):
+    _LOGGER.debug("Optional orbax.checkpoint module unavailable", exc_info=True)
 
 
 _ORBAX_OP_DEFS: list[
@@ -866,10 +879,30 @@ def _scan_orbax_checkpoint(include_nonpublic: bool = False) -> list[GhostRef]:
                     continue
                 try:
                     found.append(GhostInspector.inspect(obj, f"orbax.checkpoint.{name}"))
-                except Exception as exc:
-                    del exc
-    except Exception as exc:
-        del exc
+                except (
+                    ImportError,
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    OSError,
+                    RuntimeError,
+                    LookupError,
+                    SyntaxError,
+                    AssertionError,
+                ):
+                    _LOGGER.debug("Failed to inspect orbax.checkpoint.%s", name, exc_info=True)
+    except (
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        LookupError,
+        SyntaxError,
+        AssertionError,
+    ):
+        _LOGGER.debug("Failed to scan orbax.checkpoint members", exc_info=True)
 
     return found
 
@@ -893,8 +926,18 @@ def _scan_orbax_export_live(include_nonpublic: bool = False) -> list[GhostRef]:
                 api_path = f"orbax.export.{name}"
                 try:
                     results.append(GhostInspector.inspect(obj, api_path))
-                except Exception as exc:
-                    del exc
+                except (
+                    ImportError,
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    OSError,
+                    RuntimeError,
+                    LookupError,
+                    SyntaxError,
+                    AssertionError,
+                ):
+                    _LOGGER.debug("Failed to inspect %s", api_path, exc_info=True)
     return results
 
 

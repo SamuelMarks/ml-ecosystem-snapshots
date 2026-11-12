@@ -9,15 +9,15 @@ import typing
 from pathlib import Path
 
 from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
 from ml_ecosystem_snapshots.models import (
+    SCHEMA_VERSION,
     JsonValue,
     ScalarValue,
     SnapshotEnvelope,
 )
 from ml_ecosystem_snapshots.network_env import (
-    ZstdModuleProtocol,
     load_json_data,
+    load_zstandard_module,
     stream_snapshot_items,
 )
 
@@ -38,11 +38,16 @@ def write_snapshot(
 
     Returns:
         The path to the generated snapshot file.
+
+    Raises:
+        SnapshotError: If `compress='zstd'` is requested and `zstandard` is unavailable.
     """
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    snap_dict: dict[str, JsonValue] = snapshot_data.model_dump() if isinstance(snapshot_data, SnapshotEnvelope) else dict(snapshot_data)
+    snap_dict: dict[str, JsonValue] = (
+        snapshot_data.model_dump() if isinstance(snapshot_data, SnapshotEnvelope) else dict(snapshot_data)
+    )
     raw_version = snap_dict.get("version")
     version = str(raw_version) if raw_version is not None else "unknown"
     safe_ver = version.replace("+", "_").replace(" ", "_")
@@ -57,22 +62,10 @@ def write_snapshot(
     elif compress == "zstd":
         file_path = Path(os.path.join(out_path, f"{framework_name}_v{safe_ver}.json.zst"))
         raw_bytes = json.dumps(snap_dict, indent=2, sort_keys=True).encode("utf-8") + b"\n"
-        try:
-            import importlib
-
-            zstd: InspectableTarget = importlib.import_module("zstandard")
-            assert isinstance(zstd, ZstdModuleProtocol)
-            cctx = zstd.ZstdCompressor()
-            compressed: bytes = cctx.compress(raw_bytes)
-            with open(file_path, "wb") as f:
-                f.write(compressed)
-        except (ImportError, OSError, ValueError, TypeError, RuntimeError, AssertionError):
-            import gzip
-
-            file_path = Path(os.path.join(out_path, f"{framework_name}_v{safe_ver}.json.gz"))
-            with gzip.open(file_path, "wt", encoding="utf-8", newline="\n") as f:
-                json.dump(snap_dict, f, indent=2, sort_keys=True)
-                f.write("\n")
+        zstd = load_zstandard_module()
+        compressed: bytes = zstd.ZstdCompressor().compress(raw_bytes)
+        with open(file_path, "wb") as f:
+            f.write(compressed)
     else:
         file_path = Path(os.path.join(out_path, f"{framework_name}_v{safe_ver}.json"))
         with open(file_path, "w", encoding="utf-8", newline="\n") as f:
@@ -101,7 +94,11 @@ def validate_snapshot_envelope(
     target = snapshot_dict.get("target") or "unknown"
     envelope_data = dict(snapshot_dict)
     envelope_data.setdefault("target", target)
-    envelope_data.setdefault("schema_version", "1.0.0")
+    raw_ver = envelope_data.get("schema_version")
+    if raw_ver is None or raw_ver == "1.0.0":
+        envelope_data["schema_version"] = SCHEMA_VERSION
+    elif raw_ver != SCHEMA_VERSION:
+        raise SnapshotSchemaError(f"Unsupported envelope schema_version '{raw_ver}'; expected '{SCHEMA_VERSION}'.")
     if "generated_at" not in envelope_data or not envelope_data["generated_at"]:
         envelope_data["generated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     try:

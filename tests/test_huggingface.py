@@ -5,10 +5,9 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
+from ml_switcheroo_ir.schema.ghost import SemanticTier
 
 from ml_ecosystem_snapshots.frameworks.huggingface import (
-    _parse_pretrained_config,
     collect_diffusers,
     collect_tokenizers,
     collect_transformers,
@@ -20,28 +19,27 @@ def test_collect_transformers() -> None:
     mock_mod = MagicMock()
 
     class DummyConfig:
-        """Mock or helper class DummyConfig for unit testing."""
+        """Stub Hugging Face `PreTrainedConfig` subclass with typed fields."""
 
         __annotations__ = {"vocab_size": int, "hidden_size": int}
 
     class AutoModelForCausalLM:
-        """Mock or helper class AutoModelForCausalLM for unit testing."""
+        """Stub Hugging Face `AutoModelForCausalLM` factory class."""
 
         pass
 
     class DummyModel:
-        """Mock or helper class DummyModel for unit testing."""
+        """Stub Hugging Face causal model exposing a `generate` method."""
 
         def generate(self, input_ids: str, max_length: int = 20) -> str:
-            """Execute helper generate.
+            """Generate decoded text from token identifiers.
 
             Args:
                 input_ids: Input token ID tensor.
                 max_length: Maximum generation sequence length.
 
-
             Returns:
-                Computed result.
+                Empty placeholder string for signature extraction tests.
             """
             return ""
 
@@ -97,7 +95,7 @@ def test_collect_diffusers() -> None:
     mock_mod = MagicMock()
 
     class DummyScheduler:
-        """Mock or helper class DummyScheduler for unit testing."""
+        """Stub Diffusers noise scheduler class."""
 
         pass
 
@@ -128,7 +126,7 @@ def test_collect_tokenizers() -> None:
     mock_mod = MagicMock()
 
     class DummyTokenizer:
-        """Mock or helper class DummyTokenizer for unit testing."""
+        """Stub Hugging Face fast tokenizer class."""
 
         pass
 
@@ -154,22 +152,27 @@ def test_collect_tokenizers() -> None:
         assert res[0].name == "DummyTokenizer"
 
 
-def test_parse_pretrained_config_with_empty_annotations() -> None:
-    """Verify parse pretrained config with empty annotations behavior."""
-    ref = GhostRef(name="MyConfig", api_path="pkg.MyConfig", kind="class")
+def test_parse_pretrained_config_with_empty_annotations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify `collect_transformers` leaves config params empty when `__annotations__` is `{}`.
 
-    class DummyConfig:
-        """Mock or helper class DummyConfig for unit testing."""
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    import sys
+    import types
 
-        def __init__(self, **kwargs: str | int | float | bool | None) -> None:
-            """Init docstring.
+    class EmptyConfig:
+        """Stub configuration class with empty `__annotations__`."""
 
-            Args:
-                **kwargs: kwargs
-            """
+        def __init__(self) -> None:
+            """Initialize empty configuration."""
             pass
 
-    pytest.MonkeyPatch().setattr(DummyConfig, "__annotations__", {}, raising=False)
+    monkeypatch.setattr(EmptyConfig, "__annotations__", {}, raising=False)
+    fake_tf = types.ModuleType("transformers")
+    monkeypatch.setattr(fake_tf, "EmptyConfig", EmptyConfig, raising=False)
+    monkeypatch.setitem(sys.modules, "transformers", fake_tf)
 
-    _parse_pretrained_config(DummyConfig, ref)
-    assert len(ref.params) == 0
+    res = collect_transformers(SemanticTier.MODEL)
+    cfg_ref = next(r for r in res if r.name == "EmptyConfig")
+    assert len(cfg_ref.params) == 0

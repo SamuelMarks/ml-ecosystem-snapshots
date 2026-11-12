@@ -31,40 +31,40 @@ def _populate_missing_exhaustive_json(req: str, target_file: str) -> None:
             json.dump(DEFAULT_CONCEPT_MAP, f, indent=2)
     elif req == "nvidia_sass_exhaustive.json":
         from ml_ecosystem_snapshots.frameworks.nvidia_sass import (
-            _get_canonical_fallback_sass,
+            get_canonical_fallback_sass,
         )
 
         with open(target_file, "w", encoding="utf-8") as f:
-            json.dump(_get_canonical_fallback_sass(), f, indent=2)
+            json.dump([r.model_dump() for r in get_canonical_fallback_sass()], f, indent=2)
     elif req == "amd_rdna_exhaustive.json":
         from ml_ecosystem_snapshots.frameworks.amd_rdna import (
-            _get_canonical_fallback_rdna,
+            get_canonical_fallback_rdna,
         )
 
-        rdna_data = _get_canonical_fallback_rdna()
+        rdna_data = get_canonical_fallback_rdna()
         with open(target_file, "w", encoding="utf-8") as f:
             json.dump(rdna_data + rdna_data, f, indent=2)
     elif req == "mlir_exhaustive.json":
         from ml_ecosystem_snapshots.frameworks.mlir import (
-            _get_canonical_mlir_records,
+            get_canonical_mlir_records,
         )
 
         with open(target_file, "w", encoding="utf-8") as f:
-            json.dump(_get_canonical_mlir_records(), f, indent=2)
+            json.dump(get_canonical_mlir_records(), f, indent=2)
     elif req == "stablehlo_exhaustive.json":
         from ml_ecosystem_snapshots.frameworks.stablehlo import (
-            _get_canonical_stablehlo_records,
+            get_canonical_stablehlo_records,
         )
 
         with open(target_file, "w", encoding="utf-8") as f:
-            json.dump(_get_canonical_stablehlo_records(), f, indent=2)
+            json.dump(get_canonical_stablehlo_records(), f, indent=2)
     elif req == "nvidia_ptx_exhaustive.json":
         from ml_ecosystem_snapshots.frameworks.nvidia_ptx import (
-            _get_canonical_fallback_ptx,
+            get_canonical_fallback_ptx,
         )
 
         with open(target_file, "w", encoding="utf-8") as f:
-            json.dump(_get_canonical_fallback_ptx(), f, indent=2)
+            json.dump(get_canonical_fallback_ptx(), f, indent=2)
     else:
         dummy_entries = [
             {
@@ -211,7 +211,9 @@ def test_wheel_bundles_dynamic_snapshots(tmp_path: os.PathLike[str]) -> None:
         with zipfile.ZipFile(whl_path, "r") as zf:
             names = zf.namelist()
             # Assert test json is included
-            assert any(n.endswith("testframework_v1.0.0.json") for n in names), "Dynamic snapshot JSON was not included in wheel"
+            assert any(n.endswith("testframework_v1.0.0.json") for n in names), (
+                "Dynamic snapshot JSON was not included in wheel"
+            )
             # Assert test db is excluded
             assert not any(n.endswith("testleak.db") for n in names), "Database file was leaked into wheel"
     finally:

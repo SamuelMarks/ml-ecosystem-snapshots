@@ -7,6 +7,8 @@ import os
 import tempfile
 from unittest import mock
 
+import pytest
+
 from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.tools import scrape_nvidia_sass
 
@@ -171,19 +173,19 @@ def test_parse_nvdisasm_binary_info() -> None:
     records = scrape_nvidia_sass.parse_nvdisasm_binary_info(raw_disasm)
     assert len(records) >= 4
 
-    fadd = next(r for r in records if r["mnemonic"] == "FADD")
-    assert ".FTZ" in fadd["modifiers"]
-    assert ".RN" in fadd["modifiers"]
-    assert fadd["operands"] == [["R", "R", "FI"]]
+    fadd = next(r for r in records if r.mnemonic == "FADD")
+    assert ".FTZ" in fadd.modifiers
+    assert ".RN" in fadd.modifiers
+    assert fadd.operands == [["R", "R", "FI"]]
 
-    mov = next(r for r in records if r["mnemonic"] == "MOV")
-    assert mov["operands"] == [["R", "c[bank][offset]"]]
+    mov = next(r for r in records if r.mnemonic == "MOV")
+    assert mov.operands == [["R", "c[bank][offset]"]]
 
-    ldg = next(r for r in records if r["mnemonic"] == "LDG")
-    assert ldg["operands"] == [["R", "ADDR"]]
+    ldg = next(r for r in records if r.mnemonic == "LDG")
+    assert ldg.operands == [["R", "ADDR"]]
 
-    nop = next(r for r in records if r["mnemonic"] == "NOP")
-    assert nop["operands"] == [[]]
+    nop = next(r for r in records if r.mnemonic == "NOP")
+    assert nop.operands == [[]]
 
 
 def test_scrape_sass_nvdisasm_file() -> None:
@@ -201,10 +203,10 @@ def test_scrape_sass_nvdisasm_file() -> None:
         records = scrape_nvidia_sass.scrape_sass(input_path=input_path, output_path=output_path)
         assert os.path.exists(output_path)
         assert len(records) == 2
-        ffma = next(r for r in records if r["mnemonic"] == "FFMA")
-        assert ffma["operands"] == [["R", "R", "R", "R"]]
-        fadd = next(r for r in records if r["mnemonic"] == "FADD")
-        assert fadd["operands"] == [["R", "UR", "I"]]
+        ffma = next(r for r in records if r.mnemonic == "FFMA")
+        assert ffma.operands == [["R", "R", "R", "R"]]
+        fadd = next(r for r in records if r.mnemonic == "FADD")
+        assert fadd.operands == [["R", "UR", "I"]]
 
 
 def test_scrape_sass_json_list() -> None:
@@ -220,7 +222,7 @@ def test_scrape_sass_json_list() -> None:
         records = scrape_nvidia_sass.scrape_sass(input_path=input_path, output_path=output_path)
         assert os.path.exists(output_path)
         assert len(records) == 1
-        assert records[0]["mnemonic"] == "FADD"
+        assert records[0].mnemonic == "FADD"
 
 
 def test_scrape_sass_json_scalar() -> None:
@@ -235,7 +237,7 @@ def test_scrape_sass_json_scalar() -> None:
         records = scrape_nvidia_sass.scrape_sass(input_path=input_path, output_path=output_path)
         assert os.path.exists(output_path)
         assert len(records) == 1
-        assert records[0]["mnemonic"] == "123"
+        assert records[0].mnemonic == "123"
 
 
 def test_scrape_sass_env_var() -> None:
@@ -252,8 +254,8 @@ def test_scrape_sass_env_var() -> None:
         with mock.patch.dict(os.environ, {"NVIDIA_SASS_INPUT_PATH": input_path}):
             records = scrape_nvidia_sass.scrape_sass(output_path=output_path)
             assert len(records) == 1
-            assert records[0]["mnemonic"] == "FADD"
-            assert records[0]["operands"] == [["R", "R", "R"]]
+            assert records[0].mnemonic == "FADD"
+            assert records[0].operands == [["R", "R", "R"]]
             assert os.path.isfile(output_path)
 
 
@@ -318,3 +320,19 @@ def test_resolve_instruction_architectures_and_expanded_catalog() -> None:
     ]
     catalog_all = build_expanded_sass_catalog(base_with_all)
     assert len(catalog_all) > 800
+
+    from ml_ecosystem_snapshots.models import IsaInstructionRecordModel
+
+    catalog_model = build_expanded_sass_catalog([IsaInstructionRecordModel(mnemonic="MODEL_OP")])
+    assert any(r.mnemonic == "MODEL_OP" for r in catalog_model)
+
+
+def test_scrape_sass_missing_input_raises_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify `scrape_sass` raises `ValueError` when neither `input_path` nor `NVIDIA_SASS_INPUT_PATH` is set.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    monkeypatch.delenv("NVIDIA_SASS_INPUT_PATH", raising=False)
+    with pytest.raises(ValueError, match="input_path"):
+        scrape_nvidia_sass.scrape_sass(input_path=None)

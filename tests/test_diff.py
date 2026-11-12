@@ -297,8 +297,12 @@ def test_diff_branches() -> None:
     from ml_ecosystem_snapshots.diff import diff_snapshots
 
     # Hit line 81->87 (_compare_params empty)
-    s1: dict[str, JsonValue] = {"categories": {"MODEL": [{"name": "A", "api_path": "A", "kind": "function", "params": []}]}}
-    s2: dict[str, JsonValue] = {"categories": {"MODEL": [{"name": "A", "api_path": "A", "kind": "function", "params": []}]}}
+    s1: dict[str, JsonValue] = {
+        "categories": {"MODEL": [{"name": "A", "api_path": "A", "kind": "function", "params": []}]}
+    }
+    s2: dict[str, JsonValue] = {
+        "categories": {"MODEL": [{"name": "A", "api_path": "A", "kind": "function", "params": []}]}
+    }
     res_empty = diff_snapshots(s1, s2)
     assert res_empty.added == []
     assert res_empty.removed == []
@@ -655,8 +659,12 @@ def test_diff_return_type_mutations() -> None:
     assert "ops.compute" in res_none.breaking_signature_changed
 
     # Wildcard to int (non-breaking)
-    snap_any: dict[str, JsonValue] = {"categories": {"ops": [{"api_path": "ops.compute", "params": [], "returns_type": "A" + "ny"}]}}
-    snap_int: dict[str, JsonValue] = {"categories": {"ops": [{"api_path": "ops.compute", "params": [], "returns_type": "int"}]}}
+    snap_any: dict[str, JsonValue] = {
+        "categories": {"ops": [{"api_path": "ops.compute", "params": [], "returns_type": "A" + "ny"}]}
+    }
+    snap_int: dict[str, JsonValue] = {
+        "categories": {"ops": [{"api_path": "ops.compute", "params": [], "returns_type": "int"}]}
+    }
     res_any = diff_snapshots(snap_any, snap_int)
     assert "ops.compute" in res_any.non_breaking_signature_changed
 
@@ -716,8 +724,12 @@ def test_diff_overloads_and_changelog() -> None:
     assert "fn.overloaded" in res_added_ov.non_breaking_signature_changed
 
     # Empty return type string (non-breaking)
-    snap_empty_ret: dict[str, JsonValue] = {"categories": {"fn": [{"api_path": "fn.empty", "params": [], "returns_type": ""}]}}
-    snap_valid_ret: dict[str, JsonValue] = {"categories": {"fn": [{"api_path": "fn.empty", "params": [], "returns_type": "int"}]}}
+    snap_empty_ret: dict[str, JsonValue] = {
+        "categories": {"fn": [{"api_path": "fn.empty", "params": [], "returns_type": ""}]}
+    }
+    snap_valid_ret: dict[str, JsonValue] = {
+        "categories": {"fn": [{"api_path": "fn.empty", "params": [], "returns_type": "int"}]}
+    }
     res_empty_ret = diff_snapshots(snap_empty_ret, snap_valid_ret)
     assert "fn.empty" in res_empty_ret.non_breaking_signature_changed
 

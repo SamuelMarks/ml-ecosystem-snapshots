@@ -13,11 +13,10 @@ from ml_switcheroo_ir.schema.ghost import (
 
 from ml_ecosystem_snapshots.frameworks.awkward import (
     CANONICAL_AWKWARD_OPS,
-    _get_awkward,
     collect_api,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
 
@@ -32,7 +31,7 @@ def test_collect_api_awkward_live(monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock Awkward Array module."""
 
         @staticmethod
-        def Array(data: InspectableTarget) -> InspectableTarget:
+        def Array(data: LivePythonTarget) -> LivePythonTarget:
             """Mock Array constructor.
 
             Args:
@@ -44,7 +43,7 @@ def test_collect_api_awkward_live(monkeypatch: pytest.MonkeyPatch) -> None:
             return data
 
         @staticmethod
-        def Record(data: InspectableTarget) -> InspectableTarget:
+        def Record(data: LivePythonTarget) -> LivePythonTarget:
             """Mock Record constructor.
 
             Args:
@@ -56,7 +55,7 @@ def test_collect_api_awkward_live(monkeypatch: pytest.MonkeyPatch) -> None:
             return data
 
         @staticmethod
-        def flatten(data: InspectableTarget) -> InspectableTarget:
+        def flatten(data: LivePythonTarget) -> LivePythonTarget:
             """Mock flatten method.
 
             Args:
@@ -68,7 +67,7 @@ def test_collect_api_awkward_live(monkeypatch: pytest.MonkeyPatch) -> None:
             return data
 
         @staticmethod
-        def mean(data: InspectableTarget) -> InspectableTarget:
+        def mean(data: LivePythonTarget) -> LivePythonTarget:
             """Mock mean method.
 
             Args:
@@ -83,7 +82,7 @@ def test_collect_api_awkward_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
     real_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: InspectableTarget, name: str, is_public: bool = True) -> ExtendedGhostRef:
+    def mock_inspect(obj: LivePythonTarget, name: str, is_public: bool = True) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -93,6 +92,9 @@ def test_collect_api_awkward_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
         Returns:
             A mocked GhostRef.
+
+        Raises:
+            RuntimeError: When inspecting `mean` to simulate failure.
         """
         if "mean" in name:
             raise RuntimeError("Simulated inspection failure")
@@ -130,24 +132,24 @@ def test_collect_api_awkward_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_get_awkward_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_awkward returns module when import succeeds.
+    """Verify `collect_api` resolves live `awkward` module from `sys.modules` when present.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
     fake_mod = types.ModuleType("awkward")
     monkeypatch.setitem(sys.modules, "awkward", fake_mod)
-    assert _get_awkward() is fake_mod
+    assert collect_api(SemanticTier.ARRAY_API) == []
 
 
 def test_get_awkward_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_awkward handles ImportError gracefully.
+    """Verify `collect_api` falls back to canonical ops when `awkward` import raises `ImportError`.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
     monkeypatch.setitem(sys.modules, "awkward", None)
-    assert _get_awkward() is None
+    assert len(collect_api(SemanticTier.ARRAY_API)) == len(CANONICAL_AWKWARD_OPS)
 
 
 def test_collect_api_awkward_inspection_exception(
@@ -166,7 +168,7 @@ def test_collect_api_awkward_inspection_exception(
 
     monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.awkward._get_awkward", lambda: FlakyAwkward())
 
-    def mock_inspect(*args: InspectableTarget, **kwargs: InspectableTarget) -> ExtendedGhostRef:
+    def mock_inspect(*args: LivePythonTarget, **kwargs: LivePythonTarget) -> ExtendedGhostRef:
         """Mock inspect raising RuntimeError.
 
         Args:

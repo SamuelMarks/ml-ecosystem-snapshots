@@ -7,9 +7,10 @@ import os
 import typing
 from pathlib import Path
 
-from ml_ecosystem_snapshots.exceptions import OfflineModeNetworkError
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.exceptions import OfflineModeNetworkError, SnapshotError
 from ml_ecosystem_snapshots.models import JsonValue
+
+ZSTD_MAGIC_HEADER: bytes = b"\x28\xb5\x2f\xfd"
 
 
 @typing.runtime_checkable
@@ -87,6 +88,26 @@ def get_custom_snapshots_paths() -> list[str]:
     return paths
 
 
+def load_zstandard_module() -> ZstdModuleProtocol:
+    """Import and validate the optional `zstandard` compression module.
+
+    Returns:
+        Validated `ZstdModuleProtocol` module object.
+
+    Raises:
+        SnapshotError: If `zstandard` is not installed or lacks compressor/decompressor classes.
+    """
+    import importlib
+
+    try:
+        mod = importlib.import_module("zstandard")
+    except ImportError as exc:
+        raise SnapshotError("zstandard package is required for .zst snapshot compression.") from exc
+    if not isinstance(mod, ZstdModuleProtocol):
+        raise SnapshotError("Installed 'zstandard' module does not satisfy ZstdModuleProtocol.")
+    return mod
+
+
 def load_json_data(file_path: str | Path) -> JsonValue:
     """Load JSON data from a plain .json, compressed .json.gz, or .json.zst file.
 
@@ -95,6 +116,9 @@ def load_json_data(file_path: str | Path) -> JsonValue:
 
     Returns:
         Deserialized JSON object (dict, list, or primitive).
+
+    Raises:
+        SnapshotError: If a binary `.zst` frame cannot be decompressed due to missing `zstandard`.
     """
     path_str = str(file_path)
     if path_str.endswith(".gz"):
@@ -103,25 +127,22 @@ def load_json_data(file_path: str | Path) -> JsonValue:
         with gzip.open(path_str, "rt", encoding="utf-8") as f:
             res_gz: JsonValue = json.load(f)
             return res_gz
-    elif path_str.endswith(".zst"):
-        import importlib
-
-        try:
-            zstd: InspectableTarget = importlib.import_module("zstandard")
-            assert isinstance(zstd, ZstdModuleProtocol)
-            dctx = zstd.ZstdDecompressor()
-            with open(path_str, "rb") as bf:
-                decompressed: bytes = dctx.decompress(bf.read())
-            res_zst: JsonValue = json.loads(decompressed.decode("utf-8"))
-            return res_zst
-        except Exception:
-            with open(path_str, "rb") as bf:
-                res_fallback: JsonValue = json.loads(bf.read().decode("utf-8"))
-                return res_fallback
-    else:
-        with open(path_str, encoding="utf-8") as f:
-            res_plain: JsonValue = json.load(f)
-            return res_plain
+    if path_str.endswith(".zst"):
+        with open(path_str, "rb") as bf:
+            raw_bytes = bf.read()
+        if not raw_bytes.startswith(ZSTD_MAGIC_HEADER):
+            try:
+                plain_zst: JsonValue = json.loads(raw_bytes.decode("utf-8"))
+                return plain_zst
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                pass
+        zstd = load_zstandard_module()
+        decompressed: bytes = zstd.ZstdDecompressor().decompress(raw_bytes)
+        res_zst: JsonValue = json.loads(decompressed.decode("utf-8"))
+        return res_zst
+    with open(path_str, encoding="utf-8") as f:
+        res_plain: JsonValue = json.load(f)
+        return res_plain
 
 
 def _iter_dict_items(items: JsonValue) -> typing.Iterator[dict[str, JsonValue]]:
@@ -191,6 +212,7 @@ def fetch_url(url: str, timeout: int = 10, strict_offline: bool = False) -> str 
 
 
 __all__ = [
+    "ZSTD_MAGIC_HEADER",
     "ZstdCompressorProtocol",
     "ZstdDecompressorProtocol",
     "ZstdModuleProtocol",
@@ -198,5 +220,6 @@ __all__ = [
     "get_custom_snapshots_paths",
     "is_offline_mode",
     "load_json_data",
+    "load_zstandard_module",
     "stream_snapshot_items",
 ]

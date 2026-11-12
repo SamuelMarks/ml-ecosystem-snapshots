@@ -11,6 +11,7 @@ import types
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
+from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.utils import get_all_members
 
@@ -27,7 +28,7 @@ except ImportError:
     BaseEstimator = None
 
 
-def _scan_module(
+def scan_sklearn_module(
     module: types.ModuleType | None,
     prefix: str,
     kind: str = "class",
@@ -57,7 +58,17 @@ def _scan_module(
     try:
         # Some sklearn modules can be missing attributes or lazy loaded
         members = get_all_members(module)
-    except Exception:
+    except (
+        SnapshotError,
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        LookupError,
+        OSError,
+        RuntimeError,
+        SyntaxError,
+    ):
         return []
 
     for name, obj in members:
@@ -73,6 +84,9 @@ def _scan_module(
             found.append(GhostInspector.inspect(obj, f"{prefix}.{name}", is_public=not name.startswith("_")))
 
     return found
+
+
+_scan_module = scan_sklearn_module
 
 
 def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:

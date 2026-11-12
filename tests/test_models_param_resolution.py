@@ -118,7 +118,9 @@ def test_ghost_inspector_super_kwargs_already_present_param(
     """
     monkeypatch.setattr(
         "ml_ecosystem_snapshots.introspection.inspector.get_runtime_source",
-        lambda _obj: "class SampleChildForSuper(SampleParentForSuper):\n    def __init__(self, a: int, **kwargs: str) -> None:\n        super().__init__(a=a, **kwargs)\n",
+        lambda _obj: (
+            "class SampleChildForSuper(SampleParentForSuper):\n    def __init__(self, a: int, **kwargs: str) -> None:\n        super().__init__(a=a, **kwargs)\n"
+        ),
     )
     ref = GhostInspector.inspect(SampleChildForSuper, "tests.SampleChildForSuper")
     param_names = [p.name for p in ref.params]

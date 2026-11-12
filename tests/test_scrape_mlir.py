@@ -16,13 +16,15 @@ def test_main_live_inspection(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
+    from ml_ecosystem_snapshots.models import TableGenRecordModel
+
     mocker.patch(
         "ml_ecosystem_snapshots.tools.scrape_mlir.fetch_url",
         return_value=None,
     )
     mocker.patch(
         "ml_ecosystem_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
-        return_value=[{"api_path": "arith.addf"}],
+        return_value=[TableGenRecordModel(api_path="arith.addf")],
     )
     mocker.patch(
         "ml_ecosystem_snapshots.tools.scrape_mlir.extract_ops",
@@ -75,27 +77,27 @@ def TrailingOp : Op<"trailing"> {
     ops = scrape_mlir.parse_mlir_tablegen(sample_tablegen, "arith")
     assert len(ops) == 4
 
-    addf = next(o for o in ops if o["class_name"] == "AddFOp")
-    assert addf["api_path"] == "arith.addf"
-    assert len(addf["operands"]) == 2
-    assert len(addf["attributes"]) == 1
-    assert addf["attributes"][0]["name"] == "fastmath"
-    assert len(addf["results"]) == 1
-    assert "Commutative" in addf["traits"]
+    addf = next(o for o in ops if o.class_name == "AddFOp")
+    assert addf.api_path == "arith.addf"
+    assert len(addf.operands) == 2
+    assert len(addf.attributes) == 1
+    assert addf.attributes[0]["name"] == "fastmath"
+    assert len(addf.results) == 1
+    assert "Commutative" in addf.traits
 
-    generic = next(o for o in ops if o["class_name"] == "GenericOp")
-    assert generic["api_path"] == "arith.generic"
-    assert "region" in generic["regions"]
-    assert len(generic["operands"]) == 2
+    generic = next(o for o in ops if o.class_name == "GenericOp")
+    assert generic.api_path == "arith.generic"
+    assert "region" in generic.regions
+    assert len(generic.operands) == 2
 
-    empty = next(o for o in ops if o["class_name"] == "Op")
-    assert len(empty["operands"]) == 0
-    assert len(empty["results"]) == 0
+    empty = next(o for o in ops if o.class_name == "Op")
+    assert len(empty.operands) == 0
+    assert len(empty.results) == 0
 
-    trailing = next(o for o in ops if o["class_name"] == "TrailingOp")
-    assert len(trailing["operands"]) == 2
-    assert len(trailing["results"]) == 1
-    assert len(trailing["regions"]) == 1
+    trailing = next(o for o in ops if o.class_name == "TrailingOp")
+    assert len(trailing.operands) == 2
+    assert len(trailing.results) == 1
+    assert len(trailing.regions) == 1
 
 
 def test_inspect_mlir_python_module(mocker: pytest_mock.MockerFixture) -> None:
@@ -146,8 +148,8 @@ def test_inspect_mlir_python_module(mocker: pytest_mock.MockerFixture) -> None:
 
     ops = scrape_mlir.inspect_mlir_python_module(dialects=["arith", "math"])
     assert len(ops) == 1
-    assert ops[0]["class_name"] == "AddFOp"
-    assert ops[0]["api_path"] == "arith.addf"
+    assert ops[0].class_name == "AddFOp"
+    assert ops[0].api_path == "arith.addf"
 
 
 def test_tablegen_helpers() -> None:
@@ -158,7 +160,9 @@ def test_tablegen_helpers() -> None:
     assert "//" not in clean
     assert "let y = 2;" in clean
 
-    operands, attributes = scrape_mlir.parse_tablegen_args("FloatLike:$lhs, FloatLike:$rhs, FastMathFlagsAttr:$fastmath, I64Attr:$dim, anonymous")
+    operands, attributes = scrape_mlir.parse_tablegen_args(
+        "FloatLike:$lhs, FloatLike:$rhs, FastMathFlagsAttr:$fastmath, I64Attr:$dim, anonymous"
+    )
     assert len(operands) == 3
     assert operands[0]["name"] == "lhs"
     assert len(attributes) == 2
@@ -196,11 +200,11 @@ def test_tablegen_inheritance_resolution() -> None:
     ops = scrape_mlir.parse_mlir_tablegen(td_source, "math")
     assert len(ops) == 1
     derived = ops[0]
-    assert derived["api_path"] == "math.derived_add"
-    assert len(derived["operands"]) == 2
-    assert derived["operands"][0]["name"] == "lhs"
-    assert len(derived["results"]) == 1
-    assert derived["results"][0]["name"] == "result"
+    assert derived.api_path == "math.derived_add"
+    assert len(derived.operands) == 2
+    assert derived.operands[0]["name"] == "lhs"
+    assert len(derived.results) == 1
+    assert derived.results[0]["name"] == "result"
 
 
 def test_tablegen_parsing_missing_branches() -> None:
@@ -237,14 +241,14 @@ def test_parse_mlir_tablegen_mnemonic_traits_and_unary() -> None:
     ops = scrape_mlir.parse_mlir_tablegen(td_source, "arith")
     assert len(ops) == 2
 
-    explicit_op = next(o for o in ops if o["class_name"] == "ExplicitMnemonicOp")
-    assert explicit_op["api_path"] == "arith.explicit_add"
-    assert "Pure" in explicit_op["traits"]
-    assert "Commutative" in explicit_op["traits"]
+    explicit_op = next(o for o in ops if o.class_name == "ExplicitMnemonicOp")
+    assert explicit_op.api_path == "arith.explicit_add"
+    assert "Pure" in explicit_op.traits
+    assert "Commutative" in explicit_op.traits
 
-    unary_op = next(o for o in ops if o["class_name"] == "UnaryFallbackOp")
-    assert len(unary_op["operands"]) == 1
-    assert unary_op["operands"][0]["name"] == "in"
+    unary_op = next(o for o in ops if o.class_name == "UnaryFallbackOp")
+    assert len(unary_op.operands) == 1
+    assert unary_op.operands[0]["name"] == "in"
 
 
 def test_main_tablegen_empty_and_duplicate_ops(
@@ -293,19 +297,21 @@ def test_main_tablegen_empty_and_duplicate_ops(
 
     mocker.patch("ml_ecosystem_snapshots.tools.scrape_mlir.fetch_url", side_effect=mock_fetch)
 
+    from ml_ecosystem_snapshots.models import TableGenRecordModel
+
     mocker.patch(
         "ml_ecosystem_snapshots.tools.scrape_mlir.inspect_mlir_python_module",
         return_value=[
-            {"api_path": "arith.live_unique_op", "name": "live_unique_op"},
-            {"api_path": "arith.live_unique_op", "name": "live_unique_op"},
+            TableGenRecordModel(api_path="arith.live_unique_op", name="live_unique_op"),
+            TableGenRecordModel(api_path="arith.live_unique_op", name="live_unique_op"),
         ],
     )
 
     mocker.patch(
         "ml_ecosystem_snapshots.tools.scrape_mlir.extract_ops",
         return_value=[
-            {"api_path": "arith.live_unique_op", "name": "live_unique_op"},
-            {"api_path": "stablehlo.abs", "name": "abs"},
+            TableGenRecordModel(api_path="arith.live_unique_op", name="live_unique_op"),
+            TableGenRecordModel(api_path="stablehlo.abs", name="abs"),
         ],
     )
 
@@ -326,11 +332,11 @@ def test_parse_mlir_tablegen_sized_segments() -> None:
     """
     ops = scrape_mlir.parse_mlir_tablegen(content, "test")
     assert len(ops) == 1
-    attr_names = [a["name"] for a in ops[0]["attributes"]]
+    attr_names = [a["name"] for a in ops[0].attributes]
     assert "operand_segment_sizes" in attr_names
     assert "result_segment_sizes" in attr_names
-    assert "AttrSizedOperandSegments" in ops[0]["traits"]
-    assert "AttrSizedResultSegments" in ops[0]["traits"]
+    assert "AttrSizedOperandSegments" in ops[0].traits
+    assert "AttrSizedResultSegments" in ops[0].traits
 
 
 def test_parse_mlir_tablegen_existing_sized_segments_attributes() -> None:
@@ -345,11 +351,11 @@ def test_parse_mlir_tablegen_existing_sized_segments_attributes() -> None:
     """
     ops = scrape_mlir.parse_mlir_tablegen(content, "test")
     assert len(ops) == 1
-    attr_names = [a["name"] for a in ops[0]["attributes"]]
+    attr_names = [a["name"] for a in ops[0].attributes]
     assert attr_names.count("operand_segment_sizes") == 1
     assert attr_names.count("result_segment_sizes") == 1
-    assert "AttrSizedOperandSegments" in ops[0]["traits"]
-    assert "AttrSizedResultSegments" in ops[0]["traits"]
+    assert "AttrSizedOperandSegments" in ops[0].traits
+    assert "AttrSizedResultSegments" in ops[0].traits
 
 
 def test_tablegen_ast_parser() -> None:
@@ -459,26 +465,26 @@ def test_parse_llvm_tblgen_json() -> None:
     ops = scrape_mlir.parse_llvm_tblgen_json(mock_json, "arith")
     assert len(ops) == 3
 
-    addf = next(o for o in ops if o["class_name"] == "AddFOp")
-    assert addf["api_path"] == "arith.addf"
-    assert len(addf["operands"]) == 3
-    assert len(addf["attributes"]) == 1
-    assert addf["attributes"][0]["name"] == "fastmath"
-    assert len(addf["results"]) == 2
-    assert addf["results"][0]["name"] == "result"
-    assert addf["regions"] == ["body"]
-    assert "Commutative" in addf["traits"]
+    addf = next(o for o in ops if o.class_name == "AddFOp")
+    assert addf.api_path == "arith.addf"
+    assert len(addf.operands) == 3
+    assert len(addf.attributes) == 1
+    assert addf.attributes[0]["name"] == "fastmath"
+    assert len(addf.results) == 2
+    assert addf.results[0]["name"] == "result"
+    assert addf.regions == ["body"]
+    assert "Commutative" in addf.traits
 
-    list_op = next(o for o in ops if o["class_name"] == "ListOp")
-    assert list_op["api_path"] == "arith.list"
-    assert len(list_op["operands"]) == 2
-    assert len(list_op["attributes"]) == 1
-    assert list_op["regions"] == ["region0"]
-    assert "Elementwise" in list_op["traits"]
+    list_op = next(o for o in ops if o.class_name == "ListOp")
+    assert list_op.api_path == "arith.list"
+    assert len(list_op.operands) == 2
+    assert len(list_op.attributes) == 1
+    assert list_op.regions == ["region0"]
+    assert "Elementwise" in list_op.traits
 
-    raw_custom = next(o for o in ops if o["class_name"] == "RawCustomOp")
-    assert raw_custom["api_path"] == "arith.rawcustom"
-    assert raw_custom["description"] == "Summary without description"
+    raw_custom = next(o for o in ops if o.class_name == "RawCustomOp")
+    assert raw_custom.api_path == "arith.rawcustom"
+    assert raw_custom.description == "Summary without description"
 
     # Test string input
     import json
@@ -537,13 +543,13 @@ def test_parse_llvm_tblgen_json_edge_branches() -> None:
 
     ops = scrape_mlir.parse_llvm_tblgen_json(mock_json, "arith")
     assert len(ops) == 2
-    malformed = next(o for o in ops if o["class_name"] == "MalformedOp")
-    assert len(malformed["operands"]) == 0
-    assert len(malformed["results"]) == 0
-    assert len(malformed["traits"]) == 0
-    none_op = next(o for o in ops if o["class_name"] == "NoneOp")
-    assert len(none_op["operands"]) == 0
-    assert len(none_op["results"]) == 0
+    malformed = next(o for o in ops if o.class_name == "MalformedOp")
+    assert len(malformed.operands) == 0
+    assert len(malformed.results) == 0
+    assert len(malformed.traits) == 0
+    none_op = next(o for o in ops if o.class_name == "NoneOp")
+    assert len(none_op.operands) == 0
+    assert len(none_op.results) == 0
 
 
 def test_validate_dialect_ops_ods() -> None:
@@ -606,7 +612,7 @@ def test_dump_ast_via_llvm_tooling() -> None:
         res_succ = scrape_mlir.dump_ast_via_llvm_tooling("test.td", "arith", tool_binary="/usr/bin/llvm-tblgen")
         assert res_succ is not None
         assert len(res_succ) == 1
-        assert res_succ[0]["api_path"] == "arith.addf"
+        assert res_succ[0].api_path == "arith.addf"
 
     # 3. Binary fails with returncode != 0
     mock_proc_fail = mock.MagicMock()
@@ -696,7 +702,7 @@ def test_parse_mlir_tablegen_class_blocks_and_cast() -> None:
     }
     """
     ops = scrape_mlir.parse_mlir_tablegen(td_content, "arith")
-    paths = {op["api_path"] for op in ops}
+    paths = {op.api_path for op in ops}
     assert "arith.semi_op" in paths
     assert "arith.traitfirstop" in paths
     assert "arith.cast_op" in paths
@@ -711,7 +717,7 @@ def test_parse_mlir_tablegen_unary_fallback() -> None:
     """
     ops = scrape_mlir.parse_mlir_tablegen(content, "arith")
     assert len(ops) == 1
-    assert any(op["name"] == "in" for op in ops[0]["operands"])
+    assert any(op["name"] == "in" for op in ops[0].operands)
 
     content_bin = """
     def Test_AddFOp : Arith_BinaryOp<"addf", []> {
@@ -720,5 +726,5 @@ def test_parse_mlir_tablegen_unary_fallback() -> None:
     """
     ops_bin = scrape_mlir.parse_mlir_tablegen(content_bin, "arith")
     assert len(ops_bin) == 1
-    assert any(op["name"] == "lhs" for op in ops_bin[0]["operands"])
-    assert any(op["name"] == "rhs" for op in ops_bin[0]["operands"])
+    assert any(op["name"] == "lhs" for op in ops_bin[0].operands)
+    assert any(op["name"] == "rhs" for op in ops_bin[0].operands)

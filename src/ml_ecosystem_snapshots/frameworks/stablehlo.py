@@ -17,6 +17,8 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
 )
 
+from ml_ecosystem_snapshots.frameworks._base import CollectorDomain, DomainCollectorAdapter
+
 from ..models import (
     ExtendedGhostParam,
     GhostMlirRef,
@@ -210,9 +212,13 @@ def validate_dot_dimension_numbers(
     rhs_c = raw_rhs_c if isinstance(raw_rhs_c, list) else []
 
     if len(lhs_b) != len(rhs_b):
-        errors.append(f"Batch dimension count mismatch in DotDimensionNumbersAttr: lhs has {len(lhs_b)}, rhs has {len(rhs_b)}.")
+        errors.append(
+            f"Batch dimension count mismatch in DotDimensionNumbersAttr: lhs has {len(lhs_b)}, rhs has {len(rhs_b)}."
+        )
     if len(lhs_c) != len(rhs_c):
-        errors.append(f"Contracting dimension count mismatch in DotDimensionNumbersAttr: lhs has {len(lhs_c)}, rhs has {len(rhs_c)}.")
+        errors.append(
+            f"Contracting dimension count mismatch in DotDimensionNumbersAttr: lhs has {len(lhs_c)}, rhs has {len(rhs_c)}."
+        )
 
     lhs_b_ints = _to_int_list(lhs_b)
     rhs_b_ints = _to_int_list(rhs_b)
@@ -221,9 +227,13 @@ def validate_dot_dimension_numbers(
 
     # Disjointness checks
     if set(lhs_b_ints) & set(lhs_c_ints):
-        errors.append(f"LHS batch and contracting dimensions must be disjoint (overlap: {set(lhs_b_ints) & set(lhs_c_ints)}).")
+        errors.append(
+            f"LHS batch and contracting dimensions must be disjoint (overlap: {set(lhs_b_ints) & set(lhs_c_ints)})."
+        )
     if set(rhs_b_ints) & set(rhs_c_ints):
-        errors.append(f"RHS batch and contracting dimensions must be disjoint (overlap: {set(rhs_b_ints) & set(rhs_c_ints)}).")
+        errors.append(
+            f"RHS batch and contracting dimensions must be disjoint (overlap: {set(rhs_b_ints) & set(rhs_c_ints)})."
+        )
 
     # Rank bounds check
     for side, dims, rank in (("LHS", lhs_b + lhs_c, lhs_rank), ("RHS", rhs_b + rhs_c, rhs_rank)):
@@ -268,7 +278,9 @@ def validate_conv_dimension_numbers(
 
     # Spatial counts must match
     if not (len(in_spatial) == len(k_spatial) == len(out_spatial)):
-        errors.append(f"Spatial dimensions count mismatch in ConvDimensionNumbersAttr: input={len(in_spatial)}, kernel={len(k_spatial)}, output={len(out_spatial)}.")
+        errors.append(
+            f"Spatial dimensions count mismatch in ConvDimensionNumbersAttr: input={len(in_spatial)}, kernel={len(k_spatial)}, output={len(out_spatial)}."
+        )
 
     for label, d0, d1, spatial, rank in (
         ("Input", in_b, in_f, in_spatial, input_rank),
@@ -301,7 +313,9 @@ def validate_scatter_dimension_numbers(
     ins_w = _to_int_list(dim_numbers.get("inserted_window_dims", []))
 
     if set(upd_w) & set(ins_w):
-        errors.append(f"update_window_dims and inserted_window_dims in ScatterDimensionNumbersAttr must be disjoint (overlap: {set(upd_w) & set(ins_w)}).")
+        errors.append(
+            f"update_window_dims and inserted_window_dims in ScatterDimensionNumbersAttr must be disjoint (overlap: {set(upd_w) & set(ins_w)})."
+        )
 
     return errors
 
@@ -322,7 +336,9 @@ def validate_gather_dimension_numbers(
     col_d = _to_int_list(dim_numbers.get("collapsed_slice_dims", []))
 
     if set(off_d) & set(col_d):
-        errors.append(f"offset_dims and collapsed_slice_dims in GatherDimensionNumbersAttr must be disjoint (overlap: {set(off_d) & set(col_d)}).")
+        errors.append(
+            f"offset_dims and collapsed_slice_dims in GatherDimensionNumbersAttr must be disjoint (overlap: {set(off_d) & set(col_d)})."
+        )
 
     return errors
 
@@ -350,7 +366,9 @@ def _validate_while_or_sort_region(
             if not yield_types or not any("i1" in yt for yt in yield_types):
                 errors.append(f"stablehlo.while condition region must terminate with tensor<i1> (got {yield_types}).")
         elif region_name == "body" and block_args and yield_types and block_args != yield_types:
-            errors.append(f"stablehlo.while body region yield types ({yield_types}) must match block arguments ({block_args}).")
+            errors.append(
+                f"stablehlo.while body region yield types ({yield_types}) must match block arguments ({block_args})."
+            )
     elif region_name == "comparator":
         if len(block_args) != 2:
             errors.append(f"stablehlo.sort comparator region takes 2 scalar arguments (got {len(block_args)}).")
@@ -377,11 +395,15 @@ def _validate_scf_for_region(
     errors: list[str] = []
     if region_name == "body":
         if not block_args or block_args[0] != "index":
-            errors.append(f"scf.for body region first block argument (induction variable) must be 'index' type (got {block_args[0] if block_args else 'none'}).")
+            errors.append(
+                f"scf.for body region first block argument (induction variable) must be 'index' type (got {block_args[0] if block_args else 'none'})."
+            )
         if len(block_args) > 1:
             iter_args = block_args[1:]
             if yield_types and yield_types != iter_args:
-                errors.append(f"scf.for body region yield types ({yield_types}) must match loop-carried iter_args ({iter_args}).")
+                errors.append(
+                    f"scf.for body region yield types ({yield_types}) must match loop-carried iter_args ({iter_args})."
+                )
     return errors
 
 
@@ -407,9 +429,13 @@ def validate_stablehlo_region(
 
     if clean_op == "stablehlo.reduce":
         if len(block_args) < 2 or len(block_args) % 2 != 0:
-            errors.append(f"stablehlo.reduce region takes 2 scalar arguments per reduce operand (got {len(block_args)}).")
+            errors.append(
+                f"stablehlo.reduce region takes 2 scalar arguments per reduce operand (got {len(block_args)})."
+            )
         elif len(yield_types) * 2 != len(block_args):
-            errors.append(f"stablehlo.reduce terminator yield count ({len(yield_types)}) must match reduce operand count ({len(block_args) // 2}).")
+            errors.append(
+                f"stablehlo.reduce terminator yield count ({len(yield_types)}) must match reduce operand count ({len(block_args) // 2})."
+            )
     elif clean_op in ("stablehlo.while", "stablehlo.sort"):
         errors.extend(_validate_while_or_sort_region(clean_op, region_name, block_args, yield_types))
     elif clean_op in ("scf.for", "for"):
@@ -436,7 +462,9 @@ def validate_broadcast_in_dim(
     errors: list[str] = []
 
     if len(broadcast_dimensions) != len(operand_shape):
-        errors.append(f"broadcast_dimensions length ({len(broadcast_dimensions)}) must match operand rank ({len(operand_shape)}).")
+        errors.append(
+            f"broadcast_dimensions length ({len(broadcast_dimensions)}) must match operand rank ({len(operand_shape)})."
+        )
         return errors
 
     for i, b_dim in enumerate(broadcast_dimensions):
@@ -449,7 +477,9 @@ def validate_broadcast_in_dim(
         # Ignore dynamic dims ('?' or None)
         if op_d not in (1, "?", None) and res_d not in ("?", None):
             if op_d != res_d:
-                errors.append(f"Broadcast dimension mismatch at operand dim {i} (size {op_d}) mapping to result dim {b_dim} (size {res_d}).")
+                errors.append(
+                    f"Broadcast dimension mismatch at operand dim {i} (size {op_d}) mapping to result dim {b_dim} (size {res_d})."
+                )
 
     return errors
 
@@ -636,10 +666,10 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
                     "type": "ConvDimensionNumbersAttr",
                     "required": True,
                 },
-                {"name": "window_strides", "type": "DenseIntElementsAttr"},
+                {"name": "window_strides", "type": "DenseI64ArrayAttr"},
                 {
                     "name": "padding",
-                    "type": "DenseIntElementsAttr",
+                    "type": "DenseI64ArrayAttr",
                     "required": True,
                 },
             ],
@@ -707,7 +737,7 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
             "attributes": [
                 {
                     "name": "broadcast_dimensions",
-                    "type": "DenseIntElementsAttr",
+                    "type": "DenseI64ArrayAttr",
                     "required": True,
                 }
             ],
@@ -726,7 +756,7 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
             "attributes": [
                 {
                     "name": "dimensions",
-                    "type": "DenseIntElementsAttr",
+                    "type": "DenseI64ArrayAttr",
                     "required": True,
                 }
             ],
@@ -803,7 +833,7 @@ def _get_canonical_stablehlo_records() -> list[dict[str, JsonValue]]:
                     "type": "GatherDimensionNumbersAttr",
                     "required": True,
                 },
-                {"name": "slice_sizes", "type": "DenseIntElementsAttr"},
+                {"name": "slice_sizes", "type": "DenseI64ArrayAttr"},
                 {"name": "indices_are_sorted", "type": "BoolAttr"},
             ],
             "traits": [],
@@ -958,7 +988,7 @@ def _build_stablehlo_mlir_ref(op: dict[str, JsonValue]) -> GhostMlirRef:
     return GhostMlirRef(
         name=str(op.get("class_name", "UnknownOp")),
         api_path=api_path,
-        kind="function",
+        kind="operation",
         params=params_list,
         operands=ssa_operands,
         docstring="\n".join(docstring_parts),
@@ -983,6 +1013,22 @@ def _load_stablehlo_exhaustive() -> list[GhostRef]:
     return [_build_stablehlo_mlir_ref(op) for op in ops_list]
 
 
+def collect_domain(include_nonpublic: bool = False) -> list[GhostRef]:
+    """Collect StableHLO operation schemas without `SemanticTier` shoehorning.
+
+    Args:
+        include_nonpublic: Whether to include non-public operations.
+
+    Returns:
+        List of `GhostMlirRef` items.
+    """
+    del include_nonpublic
+    return _load_stablehlo_exhaustive()
+
+
+DOMAIN_COLLECTOR = DomainCollectorAdapter(CollectorDomain.COMPILER_IR, "operations", collect_domain)
+
+
 def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
     """Entrypoint to collect the StableHLO API signature for a given category.
 
@@ -996,4 +1042,8 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
     if category != SemanticTier.UTIL:
         return []
 
-    return _load_stablehlo_exhaustive()
+    return collect_domain(include_nonpublic)
+
+
+get_canonical_stablehlo_records = _get_canonical_stablehlo_records
+load_stablehlo_exhaustive = _load_stablehlo_exhaustive

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import enum
-import inspect
 import logging
 import re
 import types
@@ -12,7 +11,8 @@ import typing
 import pydantic
 
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
-    InspectableTarget,
+    LivePythonTarget,
+    get_member_dict,
 )
 
 if typing.TYPE_CHECKING:
@@ -33,8 +33,8 @@ class _DocstringParamItemProtocol(typing.Protocol):
     """Protocol for a Griffe docstring parameter element."""
 
     name: str | None
-    annotation: InspectableTarget
-    value: InspectableTarget
+    annotation: LivePythonTarget
+    value: LivePythonTarget
     description: str | None
 
 
@@ -42,7 +42,7 @@ class _DocstringParamItemProtocol(typing.Protocol):
 class _DocstringReturnItemProtocol(typing.Protocol):
     """Protocol for a Griffe docstring return element."""
 
-    annotation: InspectableTarget
+    annotation: LivePythonTarget
     description: str | None
 
 
@@ -50,7 +50,7 @@ class _DocstringReturnItemProtocol(typing.Protocol):
 class _DocstringRaiseItemProtocol(typing.Protocol):
     """Protocol for a Griffe docstring raise element."""
 
-    annotation: InspectableTarget
+    annotation: LivePythonTarget
 
 
 class DocstringParamMeta(pydantic.BaseModel):
@@ -62,30 +62,6 @@ class DocstringParamMeta(pydantic.BaseModel):
     typ: str | None = None
     default: str | None = None
 
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["doc"]) -> str: ...
-
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["typ", "default"]) -> str | None: ...
-
-    @typing.overload
-    def __getitem__(self, key: str) -> str | None: ...
-
-    def __getitem__(self, key: str) -> str | None:
-        """Retrieve a docstring parameter field by key.
-
-        Args:
-            key: Field name ('doc', 'typ', or 'default').
-
-        Returns:
-            Field value.
-        """
-        if key == "doc":
-            return self.doc
-        if key == "typ":
-            return self.typ
-        return self.default
-
 
 class DocstringReturnMeta(pydantic.BaseModel):
     """Extracted return metadata from a parsed docstring."""
@@ -94,28 +70,6 @@ class DocstringReturnMeta(pydantic.BaseModel):
 
     doc: str = ""
     typ: str | None = None
-
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["doc"]) -> str: ...
-
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["typ"]) -> str | None: ...
-
-    @typing.overload
-    def __getitem__(self, key: str) -> str | None: ...
-
-    def __getitem__(self, key: str) -> str | None:
-        """Retrieve a docstring return field by key.
-
-        Args:
-            key: Field name ('doc' or 'typ').
-
-        Returns:
-            Field value.
-        """
-        if key == "doc":
-            return self.doc
-        return self.typ
 
 
 class DocstringMetadata(pydantic.BaseModel):
@@ -127,85 +81,11 @@ class DocstringMetadata(pydantic.BaseModel):
     returns: DocstringReturnMeta | None = None
     raises: list[str] = pydantic.Field(default_factory=list)
 
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["params"]) -> dict[str, DocstringParamMeta]: ...
-
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["returns"]) -> DocstringReturnMeta | None: ...
-
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["raises"]) -> list[str]: ...
-
-    @typing.overload
-    def __getitem__(self, key: str) -> dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None: ...
-
-    def __getitem__(self, key: str) -> dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None:
-        """Retrieve a docstring metadata field by key.
-
-        Args:
-            key: Field name ('params', 'returns', or 'raises').
-
-        Returns:
-            Field value.
-        """
-        if key == "params":
-            return self.params
-        if key == "returns":
-            return self.returns
-        return self.raises
-
-    @typing.overload
-    def get(
-        self,
-        key: typing.Literal["params"],
-        default: dict[str, DocstringParamMeta] | None = None,
-    ) -> dict[str, DocstringParamMeta]: ...
-
-    @typing.overload
-    def get(
-        self,
-        key: typing.Literal["returns"],
-        default: DocstringReturnMeta | None = None,
-    ) -> DocstringReturnMeta | None: ...
-
-    @typing.overload
-    def get(
-        self,
-        key: typing.Literal["raises"],
-        default: list[str] | None = None,
-    ) -> list[str]: ...
-
-    @typing.overload
-    def get(
-        self,
-        key: str,
-        default: (dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None) = None,
-    ) -> dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None: ...
-
-    def get(
-        self,
-        key: str,
-        default: (dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None) = None,
-    ) -> dict[str, DocstringParamMeta] | DocstringReturnMeta | list[str] | None:
-        """Retrieve a docstring metadata field by key with default.
-
-        Args:
-            key: Field name.
-            default: Default value when absent.
-
-        Returns:
-            Field value or `default`.
-        """
-        if key in ("params", "returns", "raises"):
-            res = self[key]
-            return default if res is None else res
-        return default
-
 
 def get_all_members(
     module: types.ModuleType | types.SimpleNamespace | type,
-) -> list[tuple[str, InspectableTarget]]:
-    """Safely extract all accessible members from a module or class via `inspect.getmembers`.
+) -> list[tuple[str, LivePythonTarget]]:
+    """Safely extract all accessible members from a module or class.
 
     Args:
         module: The module or class to inspect.
@@ -213,12 +93,7 @@ def get_all_members(
     Returns:
         A list of `(name, member_target)` tuples.
     """
-    try:
-        raw_members: list[tuple[str, InspectableTarget]] = inspect.getmembers(module)
-        return raw_members
-    except (OSError, TypeError, ValueError, KeyError, AttributeError, RuntimeError, ImportError) as exc:
-        _LOGGER.debug("Skipping inaccessible module members: %s", exc)
-        return []
+    return list(get_member_dict(module).items())
 
 
 def _detect_docstring_style_from_text(docstring: str) -> str | None:
@@ -287,7 +162,7 @@ def resolve_griffe_parser(parser_name: str) -> griffe.Parser | None:
         import griffe as _griffe_mod
 
         if parser_name == "rest":
-            parser_cls: InspectableTarget = _griffe_mod.Parser
+            parser_cls: LivePythonTarget = _griffe_mod.Parser
             if isinstance(parser_cls, _RestParserClassProtocol):
                 rest_val: griffe.Parser = parser_cls.rest
                 return rest_val
@@ -358,7 +233,7 @@ def strip_sphinx_roles(text: str | None) -> str | None:
 
 
 def _extract_griffe_params_section(
-    items: list[InspectableTarget],
+    items: list[LivePythonTarget],
     params: dict[str, DocstringParamMeta],
 ) -> None:
     """Populate `params` from a parsed Griffe parameters section list.
@@ -368,7 +243,8 @@ def _extract_griffe_params_section(
         params: Mutable dictionary mapping parameter names to `DocstringParamMeta`.
     """
     for item in items:
-        assert isinstance(item, _DocstringParamItemProtocol)
+        if not isinstance(item, _DocstringParamItemProtocol):
+            continue
         p_name = item.name
         if p_name:
             annotation = item.annotation
@@ -383,7 +259,7 @@ def _extract_griffe_params_section(
 
 
 def _extract_griffe_returns_section(
-    items: list[InspectableTarget],
+    items: list[LivePythonTarget],
 ) -> DocstringReturnMeta | None:
     """Extract `DocstringReturnMeta` from a parsed Griffe returns section list.
 
@@ -395,7 +271,8 @@ def _extract_griffe_returns_section(
     """
     returns: DocstringReturnMeta | None = None
     for item in items:
-        assert isinstance(item, _DocstringReturnItemProtocol)
+        if not isinstance(item, _DocstringReturnItemProtocol):
+            continue
         annotation = item.annotation
         desc = item.description
         cleaned_typ = strip_sphinx_roles(str(annotation)) if annotation is not None else None
@@ -407,7 +284,7 @@ def _extract_griffe_returns_section(
 
 
 def _extract_griffe_raises_section(
-    items: list[InspectableTarget],
+    items: list[LivePythonTarget],
     raises: list[str],
 ) -> None:
     """Populate `raises` from a parsed Griffe raises section list.
@@ -417,7 +294,8 @@ def _extract_griffe_raises_section(
         raises: Mutable list of unique exception type names.
     """
     for item in items:
-        assert isinstance(item, _DocstringRaiseItemProtocol)
+        if not isinstance(item, _DocstringRaiseItemProtocol):
+            continue
         annotation = item.annotation
         if annotation:
             exc_name = strip_sphinx_roles(str(annotation)) or str(annotation)
@@ -442,8 +320,12 @@ def extract_griffe_docstring_metadata(docstring: str, parser_name: str | None = 
     raises: list[str] = []
 
     for section in sections:
-        raw_kind: InspectableTarget = section.kind
-        kind_name: str = raw_kind if isinstance(raw_kind, str) else (str(raw_kind.value) if isinstance(raw_kind, enum.Enum) else str(raw_kind))
+        raw_kind: LivePythonTarget = section.kind
+        kind_name: str = (
+            raw_kind
+            if isinstance(raw_kind, str)
+            else (str(raw_kind.value) if isinstance(raw_kind, enum.Enum) else str(raw_kind))
+        )
         if kind_name == "parameters" and isinstance(section.value, list):
             _extract_griffe_params_section(section.value, params)
         elif kind_name == "returns" and isinstance(section.value, list):

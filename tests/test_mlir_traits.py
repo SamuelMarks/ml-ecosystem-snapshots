@@ -187,15 +187,15 @@ def test_check_mlir_op_with_traits() -> None:
         operand_types=["tensor<4xf32>", "tensor<4xf32>"],
         result_types=["tensor<4xf32>"],
     )
-    assert res_valid["is_valid"] is True
+    assert res_valid.is_valid is True
 
     # SameOperandsAndResultType violation
     res_bad = check_mlir_op(
         "arith.addf",
         operand_types=["tensor<4xf32>", "tensor<4xi32>"],
     )
-    assert res_bad["is_valid"] is False
-    assert any("SameOperandsAndResultType" in e or "SameTypeOperands" in e for e in res_bad["errors"])
+    assert res_bad.is_valid is False
+    assert any("SameOperandsAndResultType" in e or "SameTypeOperands" in e for e in res_bad.errors)
 
 
 def test_cli_check_mlir(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import typing
 
 from ml_switcheroo_ir.schema.ghost import (
@@ -11,10 +12,13 @@ from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
 )
 
+from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.models import JsonValue
 
+_LOGGER = logging.getLogger(__name__)
+
 if typing.TYPE_CHECKING:
-    from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository
+    from ml_ecosystem_snapshots.serialization.repository import SnapshotRepository
 
 
 def export_llm_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
@@ -36,7 +40,7 @@ def export_llm_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
         param_details: list[str] = []
 
         for p in ref.params:
-            type_annot = p.annotation or "Any"
+            type_annot = p.annotation if p.annotation and p.annotation != "Any" else "untyped"
             default_part = f" = {p.default}" if p.default is not None else ""
             params_str_list.append(f"{p.name}: {type_annot}{default_part}")
 
@@ -118,9 +122,15 @@ def _format_single_sass_ref(ref: GhostRef) -> str:
     raw_modifiers = meta.get("modifiers")
     modifiers: list[str] = [str(m) for m in raw_modifiers] if isinstance(raw_modifiers, list) else []
     raw_archs = meta.get("valid_architectures")
-    archs: list[str] = [str(a) for a in raw_archs] if isinstance(raw_archs, list) and raw_archs else list(ref.environment_tags or [])
+    archs: list[str] = (
+        [str(a) for a in raw_archs] if isinstance(raw_archs, list) and raw_archs else list(ref.environment_tags or [])
+    )
     raw_op_sigs = meta.get("operand_signatures")
-    op_sigs: list[list[str]] = [[str(item) for item in sig] for sig in raw_op_sigs if isinstance(sig, list)] if isinstance(raw_op_sigs, list) else []
+    op_sigs: list[list[str]] = (
+        [[str(item) for item in sig] for sig in raw_op_sigs if isinstance(sig, list)]
+        if isinstance(raw_op_sigs, list)
+        else []
+    )
 
     syntax_str = _build_sass_syntax_str(ref.name, modifiers, op_sigs)
     lines = [
@@ -140,7 +150,9 @@ def _format_single_sass_ref(ref: GhostRef) -> str:
         for p in ref.params:
             dir_val = p.direction if isinstance(p, ExtendedGhostParam) else None
             dir_str = f" [{dir_val}]" if dir_val else ""
-            lines.append(f"  - `{p.name}` ({p.standardized_name or 'operand'}, type `{p.annotation or 'Register'}`){dir_str}")
+            lines.append(
+                f"  - `{p.name}` ({p.standardized_name or 'operand'}, type `{p.annotation or 'Register'}`){dir_str}"
+            )
 
     if ref.docstring:
         lines.append(f"- **Description**: {ref.docstring.strip().splitlines()[0]}")
@@ -316,11 +328,12 @@ def _collect_matching_scoped_items(
     Returns:
         Filtered list of raw symbol dictionaries.
     """
-    assert isinstance(raw_categories, dict)
+    from ml_ecosystem_snapshots.models import ensure_json_dict, ensure_json_list
+
+    categories = ensure_json_dict(raw_categories, "scoped prompt categories")
     matching_items: list[dict[str, JsonValue]] = []
-    for _cat, items in sorted(raw_categories.items()):
-        assert isinstance(items, list)
-        for raw_it in items:
+    for _cat, raw_items in sorted(categories.items()):
+        for raw_it in ensure_json_list(raw_items, "scoped prompt items"):
             if not isinstance(raw_it, dict):
                 continue
             item = dict(raw_it)
@@ -391,9 +404,11 @@ def export_scoped_prompt_context(
         Structured Markdown string containing an index summary followed by detailed signatures.
     """
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-    from ml_ecosystem_snapshots.mcp.cache import resolve_snapshot
+    from ml_ecosystem_snapshots.serialization.repository import (
+        resolve_repository_snapshot,
+    )
 
-    snap = resolve_snapshot(framework, repository=repository)
+    snap = resolve_repository_snapshot(framework, repository=repository)
     matching_items = _collect_matching_scoped_items(snap.get("categories", {}), module_prefix)
     total_matching = len(matching_items)
 
@@ -401,8 +416,8 @@ def export_scoped_prompt_context(
     for item in matching_items[:max_symbols]:
         try:
             hydrated_refs.append(GhostInspector.hydrate(item))
-        except Exception as exc:
-            del exc
+        except (SnapshotError, ValueError, TypeError, LookupError):
+            _LOGGER.debug("Skipping unhydratable prompt item", exc_info=True)
 
     index_lines = _build_scoped_index_lines(framework, matching_items)
 
@@ -416,7 +431,9 @@ def export_scoped_prompt_context(
     result_parts = ["\n".join(index_lines), details]
 
     if total_matching > max_symbols:
-        result_parts.append(f"*(Showing {max_symbols} of {total_matching} operations to prevent context explosion. Query specific submodules or APIs using 'search_apis' or 'get_api_signature' for complete constraints.)*\n")
+        result_parts.append(
+            f"*(Showing {max_symbols} of {total_matching} operations to prevent context explosion. Query specific submodules or APIs using 'search_apis' or 'get_api_signature' for complete constraints.)*\n"
+        )
 
     return "\n\n".join(result_parts).strip() + "\n"
 

@@ -19,10 +19,18 @@ from ml_ecosystem_snapshots.cli import cmd_check_safetensors
 from ml_ecosystem_snapshots.frameworks import safetensors
 from ml_ecosystem_snapshots.mcp_server import check_safetensors_op
 
-if "safetensors" not in sys.modules:
-    fake_st = types.ModuleType("safetensors")
-    pytest.MonkeyPatch().setattr(fake_st, "__version__", "0.7.0", raising=False)
-    sys.modules["safetensors"] = fake_st
+
+@pytest.fixture(autouse=True)
+def _ensure_scoped_safetensors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Install a scoped stub `safetensors` module when `safetensors` is absent from `sys.modules`.
+
+    Args:
+        monkeypatch: Pytest `MonkeyPatch` fixture restoring `sys.modules` on teardown.
+    """
+    if "safetensors" not in sys.modules:
+        fake_st = types.ModuleType("safetensors")
+        monkeypatch.setattr(fake_st, "__version__", "0.7.0", raising=False)
+        monkeypatch.setitem(sys.modules, "safetensors", fake_st)
 
 
 def test_safetensors_version() -> None:
@@ -129,32 +137,32 @@ def test_check_safetensors_op_mcp() -> None:
     """Verify MCP validator check_safetensors_op behavior across valid and invalid inputs."""
     # Valid call
     valid_res = check_safetensors_op("save_file", inputs_count=2)
-    assert valid_res["is_valid"] is True
-    assert valid_res["op_exists"] is True
+    assert valid_res.is_valid is True
+    assert valid_res.op_exists is True
 
     # Valid with prefix
     prefix_res = check_safetensors_op("safetensors.torch.load_file", inputs_count=1)
-    assert prefix_res["is_valid"] is True
+    assert prefix_res.is_valid is True
 
     # Unknown operation
     unknown_res = check_safetensors_op("non_existent_op")
-    assert unknown_res["is_valid"] is False
-    assert unknown_res["op_exists"] is False
-    assert len(unknown_res["errors"]) > 0
+    assert unknown_res.is_valid is False
+    assert unknown_res.op_exists is False
+    assert len(unknown_res.errors) > 0
 
     # Wrong inputs count
     wrong_inputs = check_safetensors_op("save_file", inputs_count=5)
-    assert wrong_inputs["is_valid"] is False
-    assert "expects 2 positional inputs" in wrong_inputs["errors"][0]
+    assert wrong_inputs.is_valid is False
+    assert "expects 2 positional inputs" in wrong_inputs.errors[0]
 
     # Valid keyword arguments
     valid_kw = check_safetensors_op("save_file", attributes=["metadata"])
-    assert valid_kw["is_valid"] is True
+    assert valid_kw.is_valid is True
 
     # Invalid keyword arguments
     invalid_kw = check_safetensors_op("save_file", attributes=["invalid_kwarg"])
-    assert invalid_kw["is_valid"] is False
-    assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw["errors"][0]
+    assert invalid_kw.is_valid is False
+    assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw.errors[0]
 
 
 def test_cmd_check_safetensors_cli_valid(capsys: pytest.CaptureFixture[str]) -> None:

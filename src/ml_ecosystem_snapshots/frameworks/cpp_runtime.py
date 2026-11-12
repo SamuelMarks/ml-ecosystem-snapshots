@@ -126,15 +126,20 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         name_key="name",
         operand_annotation_fn=lambda op, inp: "float" if inp in ("v", "lo", "hi", "x", "y", "z", "arg") else "auto",
         operand_description_fn=lambda op, inp: f"C++ operand {inp}",
-        operand_direction_fn=lambda op, inp: OperandDirection.WRITE if op["name"] in ("from_blob", "data_ptr") and inp == "data" else OperandDirection.READ,
+        operand_direction_fn=lambda op, inp: (
+            OperandDirection.WRITE if op.name in ("from_blob", "data_ptr") and inp == "data" else OperandDirection.READ
+        ),
         attr_description_prefix="C++ attribute",
         result_type="auto",
         empty_return_type="void",
         provenance_fn=lambda op: {
             "source_type": "cpp_spec",
             "upstream_version": "17",
-            "category": op.get("category", "runtime"),
+            "category": op.category or "runtime",
         },
         default_doc_fn=lambda op_name: f"C++ {op_name} operation.",
         environment_tags=("cpp", "cpp17", "pybind11"),
     )
+
+
+load_cpp_runtime_ops = _load_cpp_runtime_ops

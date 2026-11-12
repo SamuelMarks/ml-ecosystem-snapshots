@@ -10,7 +10,7 @@ import typing
 from ml_switcheroo_ir.schema.ghost import GhostRef
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.models import JsonValue
+from ml_ecosystem_snapshots.models import JsonValue, ensure_json_dict, ensure_json_list
 
 
 def cmd_stubs(args: argparse.Namespace) -> None:
@@ -20,11 +20,11 @@ def cmd_stubs(args: argparse.Namespace) -> None:
         args: Parsed command line arguments containing input, out_dir, and include_nonpublic.
     """
     from ml_ecosystem_snapshots.cli.resolver import resolve_snapshot_path
+    from ml_ecosystem_snapshots.network_env import load_json_data
     from ml_ecosystem_snapshots.stubs import generate_stubs
 
     path = resolve_snapshot_path(args.input)
-    with open(path, encoding="utf-8") as f:
-        snap = json.load(f)
+    snap = ensure_json_dict(load_json_data(path), "snapshot")
     generate_stubs(snap, args.out_dir, include_nonpublic=args.include_nonpublic)
     print(f"Stubs generated in {args.out_dir}")
 
@@ -41,16 +41,12 @@ def _hydrate_snapshot_refs(snap: JsonValue) -> list[GhostRef]:
     refs: list[GhostRef] = []
     if isinstance(snap, list):
         for item in snap:
-            assert isinstance(item, dict)
-            refs.append(GhostInspector.hydrate(item))
+            refs.append(GhostInspector.hydrate(ensure_json_dict(item, "snapshot item")))
     elif isinstance(snap, dict):
-        cats = snap.get("categories", {})
-        assert isinstance(cats, dict)
+        cats = ensure_json_dict(snap.get("categories", {}), "snapshot categories")
         for _cat, items in cats.items():
-            assert isinstance(items, list)
-            for item in items:
-                assert isinstance(item, dict)
-                refs.append(GhostInspector.hydrate(item))
+            for item in ensure_json_list(items, "category items"):
+                refs.append(GhostInspector.hydrate(ensure_json_dict(item, "snapshot item")))
     return refs
 
 
@@ -98,7 +94,11 @@ def _export_prompt_format(
         print(f"Exported {label} prompt context to {out_path}")
         return True
     if fmt == "scoped_prompt":
-        fw_name = (snap.get("target") if isinstance(snap, dict) else None) or (refs[0].model_dump().get("framework") if refs else None) or "unknown"
+        fw_name = (
+            (snap.get("target") if isinstance(snap, dict) else None)
+            or (refs[0].model_dump().get("framework") if refs else None)
+            or "unknown"
+        )
         content = export_scoped_prompt_context(str(fw_name))
         out_path = os.path.join(out_dir, "scoped_context.md")
         with open(out_path, "w", encoding="utf-8") as f:
@@ -162,10 +162,10 @@ def cmd_export(args: argparse.Namespace) -> None:
         ValueError: If an unsupported export format is requested.
     """
     from ml_ecosystem_snapshots.cli.resolver import resolve_snapshot_path
+    from ml_ecosystem_snapshots.network_env import load_json_data
 
     path = resolve_snapshot_path(args.input)
-    with open(path, encoding="utf-8") as f:
-        snap: JsonValue = json.load(f)
+    snap: JsonValue = load_json_data(path)
 
     refs = _hydrate_snapshot_refs(snap)
     os.makedirs(args.out_dir, exist_ok=True)

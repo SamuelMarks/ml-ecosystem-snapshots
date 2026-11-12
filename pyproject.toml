@@ -44,9 +44,9 @@ allow-direct-references = true
 
 [tool.mypy]
 python_version = "3.10"
-mypy_path = ["src", "../ml-switcheroo-ir/src"]
+mypy_path = ["src"]
 files = ["src", "tests", "scripts"]
-ignore_missing_imports = true
+ignore_missing_imports = false
 plugins = ["pydantic.mypy"]
 strict = true
 disallow_any_unimported = true
@@ -80,33 +80,38 @@ enable_error_code = [
 module = [
     "torch",
     "torch.*",
+    "torchmetrics",
     "jax",
     "jax.*",
-    "scipy",
-    "scipy.*",
     "tensorflow",
-    "tensorflow.*",
-    "keras",
-    "keras.*",
     "dask",
     "dask.*",
     "onnx",
     "onnx.*",
     "mlx",
-    "mlx.*",
     "cupy",
-    "cupy.*",
     "numba",
-    "numba.*",
     "sparse",
-    "sparse.*",
     "pyarrow",
     "pyarrow.*",
     "awkward",
-    "awkward.*",
-    "transformers",
-    "transformers.*",
+    "sklearn",
+    "sklearn.*",
+    "optax",
+    "orbax",
+    "orbax.*",
+    "paxml",
+    "praxis",
+    "maxtext",
+    "dpnp",
+    "bohrium",
+    "boto3",
+    "cdd",
+    "cdd.*",
+    "test_overload_mock_unique",
+    "test_class_overload_mock",
 ]
+ignore_missing_imports = true
 follow_imports = "skip"
 
 [tool.pydantic-mypy]
@@ -164,9 +169,9 @@ exclude = [
 
 [tool.ruff]
 target-version = "py310"
-line-length = 300
+line-length = 120
 lint.select = ["E", "F", "UP", "B", "I", "C901", "PLR09", "D", "ANN401", "PGH003", "TID251"]
-lint.ignore = ["E501", "B905"]
+lint.ignore = ["E501"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "cdd._DynamicAttrType".msg = "Disguised Any smuggling via cdd._DynamicAttrType is strictly banned; use concrete types or protocols."
@@ -222,7 +227,7 @@ ignore-nested-classes = false
 ignore-setters = false
 ignore-overloaded-functions = true
 fail-under = 100
-exclude = ["tests", "docs"]
+exclude = ["docs"]
 ignore-regex = []
 # possible values: 0 (minimal output), 1 (-v), 2 (-vv)
 verbose = 0

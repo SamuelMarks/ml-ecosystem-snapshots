@@ -14,10 +14,13 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
 )
 
+from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.frameworks._base import CanonicalPythonOpSpec
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
-CANONICAL_PYARROW_COMPUTE_OPS: list[CanonicalPythonOpSpec] = pydantic.TypeAdapter(list[CanonicalPythonOpSpec]).validate_python(
+CANONICAL_PYARROW_COMPUTE_OPS: list[CanonicalPythonOpSpec] = pydantic.TypeAdapter(
+    list[CanonicalPythonOpSpec]
+).validate_python(
     [
         {
             "name": "add",
@@ -141,7 +144,17 @@ def _get_pyarrow_compute() -> types.ModuleType | None:
 
         mod: types.ModuleType = pc
         return mod
-    except Exception:
+    except (
+        SnapshotError,
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        LookupError,
+        OSError,
+        RuntimeError,
+        SyntaxError,
+    ):
         return None
 
 

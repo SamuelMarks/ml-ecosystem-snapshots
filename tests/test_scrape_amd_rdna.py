@@ -193,64 +193,64 @@ def test_resolve_td_instruction_info_profiles() -> None:
     """Test resolving instruction definitions across all major TableGen classes and architectures."""
     # VOP1
     vop1 = scrape_amd_rdna.resolve_td_instruction_info("V_MOV_B32", "VOP1Inst", "v_mov_b32")
-    assert vop1["encoding"] == "VOP1"
-    assert ["VGPR", "VGPR"] in vop1["operands"]
+    assert vop1.encoding == "VOP1"
+    assert ["VGPR", "VGPR"] in vop1.operands
 
     # VOP3
     vop3 = scrape_amd_rdna.resolve_td_instruction_info("V_FMA_F32", "VOP3Inst_gfx10", "v_fma_f32")
-    assert vop3["encoding"] == "VOP3"
-    assert "clamp" in vop3["modifiers"]
-    assert vop3["architecture"] == "GFX10/RDNA1"
+    assert vop3.encoding == "VOP3"
+    assert "clamp" in vop3.modifiers
+    assert vop3.architecture == "GFX10/RDNA1"
 
     # VOPC
     vopc = scrape_amd_rdna.resolve_td_instruction_info("V_CMP_EQ_F32", "VOPCInst_gfx11", "v_cmp_eq_f32")
-    assert vopc["encoding"] == "VOPC"
-    assert ["VCC", "VGPR", "VGPR"] in vopc["operands"]
-    assert vopc["architecture"] == "GFX11/RDNA3"
+    assert vopc.encoding == "VOPC"
+    assert ["VCC", "VGPR", "VGPR"] in vopc.operands
+    assert vopc.architecture == "GFX11/RDNA3"
 
     # VOP3P
     vop3p = scrape_amd_rdna.resolve_td_instruction_info("V_PK_ADD_F16", "VOP3PInst_gfx12", "v_pk_add_f16")
-    assert vop3p["encoding"] == "VOP3P"
-    assert vop3p["architecture"] == "GFX12/RDNA4"
+    assert vop3p.encoding == "VOP3P"
+    assert vop3p.architecture == "GFX12/RDNA4"
 
     # SOP2
     sop2 = scrape_amd_rdna.resolve_td_instruction_info("S_ADD_U32", "SOP2_32_gfx10_3", "s_add_u32")
-    assert sop2["encoding"] == "SOP2"
-    assert sop2["architecture"] == "GFX10.3/RDNA2"
+    assert sop2.encoding == "SOP2"
+    assert sop2.architecture == "GFX10.3/RDNA2"
 
     # SOPK
     sopk = scrape_amd_rdna.resolve_td_instruction_info("S_MOVK_I32", "SOPK_32", "s_movk_i32")
-    assert sopk["encoding"] == "SOPK"
-    assert ["SGPR", "simm16"] in sopk["operands"]
+    assert sopk.encoding == "SOPK"
+    assert ["SGPR", "simm16"] in sopk.operands
 
     # SOPP
     sopp = scrape_amd_rdna.resolve_td_instruction_info("S_BRANCH", "SOPP_Pseudo", "s_branch")
-    assert sopp["encoding"] == "SOPP"
+    assert sopp.encoding == "SOPP"
 
     # Memory: SM, FLAT, BUF, DS
     sm = scrape_amd_rdna.resolve_td_instruction_info("S_LOAD_DWORD", "SM_Real_gfx9", "s_load_dword")
-    assert sm["encoding"] == "SM"
-    assert sm["architecture"] == "GFX9/CDNA"
+    assert sm.encoding == "SM"
+    assert sm.architecture == "GFX9/CDNA"
 
     flat = scrape_amd_rdna.resolve_td_instruction_info("FLAT_LOAD_DWORD", "FLAT_Real_gfx11_5", "flat_load_dword")
-    assert flat["encoding"] == "FLAT"
-    assert flat["architecture"] == "GFX11.5"
+    assert flat.encoding == "FLAT"
+    assert flat.architecture == "GFX11.5"
 
     buf = scrape_amd_rdna.resolve_td_instruction_info("BUFFER_LOAD_DWORD", "BUF_Real", "buffer_load_dword")
-    assert buf["encoding"] == "BUF"
+    assert buf.encoding == "BUF"
 
     ds = scrape_amd_rdna.resolve_td_instruction_info("DS_READ_B32", "DS_Real", "ds_read_b32")
-    assert ds["encoding"] == "DS"
+    assert ds.encoding == "DS"
 
     # Fallback / default
     fallback = scrape_amd_rdna.resolve_td_instruction_info("CUSTOM_INST", "CUSTOM_CLASS", "custom_inst")
-    assert fallback["encoding"] == "VOP1"
+    assert fallback.encoding == "VOP1"
 
     # VOPD (dual-issue)
     vopd = scrape_amd_rdna.resolve_td_instruction_info("V_DUAL_ADD_F32", "VOPD_Real_gfx11", "v_dual_add_f32")
-    assert vopd["encoding"] == "VOPD"
-    assert "dual" in vopd["modifiers"]
-    assert vopd["architecture"] == "GFX11/RDNA3"
+    assert vopd.encoding == "VOPD"
+    assert "dual" in vopd.modifiers
+    assert vopd.architecture == "GFX11/RDNA3"
 
 
 def test_parse_td_content_multiclass() -> None:
@@ -261,8 +261,8 @@ def test_parse_td_content_multiclass() -> None:
     """
     ops = scrape_amd_rdna.parse_td_content(content)
     assert len(ops) == 1
-    assert ops[0]["mnemonic"] == "v_dual_fmac_f32"
-    assert ops[0]["encoding"] == "VOPD"
+    assert ops[0].mnemonic == "v_dual_fmac_f32"
+    assert ops[0].encoding == "VOPD"
 
 
 def test_parse_llvm_tblgen_json() -> None:
@@ -315,38 +315,38 @@ def test_parse_llvm_tblgen_json() -> None:
     }
 
     results = scrape_amd_rdna.parse_llvm_tblgen_json(mock_tblgen)
-    res_map = {r["mnemonic"]: r for r in results}
+    res_map = {r.mnemonic: r for r in results}
 
     assert "v_add_generic" in res_map
-    assert res_map["v_add_generic"]["architecture"] == "GFX10+"
-    assert "_e32" in res_map["v_add_generic"]["modifiers"]
+    assert res_map["v_add_generic"].architecture == "GFX10+"
+    assert "_e32" in res_map["v_add_generic"].modifiers
 
     assert "v_mov_b32" in res_map
-    assert res_map["v_mov_b32"]["encoding"] == "VOP1"
-    assert res_map["v_mov_b32"]["architecture"] == "GFX10/RDNA1"
-    assert res_map["v_mov_b32"]["operands"] == [["VGPR_32", "VGPR_32"]]
-    assert "_e32" in res_map["v_mov_b32"]["modifiers"]
+    assert res_map["v_mov_b32"].encoding == "VOP1"
+    assert res_map["v_mov_b32"].architecture == "GFX10/RDNA1"
+    assert res_map["v_mov_b32"].operands == [["VGPR_32", "VGPR_32"]]
+    assert "_e32" in res_map["v_mov_b32"].modifiers
 
     assert "v_fma_f32" in res_map
-    assert res_map["v_fma_f32"]["encoding"] == "VOP3"
-    assert res_map["v_fma_f32"]["architecture"] == "GFX11/RDNA3"
-    assert "clamp" in res_map["v_fma_f32"]["modifiers"]
+    assert res_map["v_fma_f32"].encoding == "VOP3"
+    assert res_map["v_fma_f32"].architecture == "GFX11/RDNA3"
+    assert "clamp" in res_map["v_fma_f32"].modifiers
 
     assert "v_pk_add_f16" in res_map
-    assert res_map["v_pk_add_f16"]["encoding"] == "VOP3P"
-    assert res_map["v_pk_add_f16"]["architecture"] == "GFX12/RDNA4"
-    assert "op_sel" in res_map["v_pk_add_f16"]["modifiers"]
+    assert res_map["v_pk_add_f16"].encoding == "VOP3P"
+    assert res_map["v_pk_add_f16"].architecture == "GFX12/RDNA4"
+    assert "op_sel" in res_map["v_pk_add_f16"].modifiers
 
     assert "v_dual_add_f32" in res_map
-    assert res_map["v_dual_add_f32"]["encoding"] == "VOPD"
-    assert res_map["v_dual_add_f32"]["architecture"] == "GFX11.5"
-    assert "dual" in res_map["v_dual_add_f32"]["modifiers"]
+    assert res_map["v_dual_add_f32"].encoding == "VOPD"
+    assert res_map["v_dual_add_f32"].architecture == "GFX11.5"
+    assert "dual" in res_map["v_dual_add_f32"].modifiers
 
     assert "v_mfma_f32_16x16x16f16" in res_map
-    assert res_map["v_mfma_f32_16x16x16f16"]["architecture"] == "GFX9/CDNA"
+    assert res_map["v_mfma_f32_16x16x16f16"].architecture == "GFX9/CDNA"
 
     assert "v_nop" in res_map
-    assert res_map["v_nop"]["architecture"] == "GFX10.3/RDNA2"
+    assert res_map["v_nop"].architecture == "GFX10.3/RDNA2"
 
 
 def test_scrape_amd_rdna_with_tblgen_json(tmp_path: Path) -> None:
@@ -369,8 +369,8 @@ def test_scrape_amd_rdna_with_tblgen_json(tmp_path: Path) -> None:
 
     result = scrape_amd_rdna.scrape_amd_rdna(output_path=str(out_path), tblgen_json_path=str(json_path))
     assert len(result) == 1
-    assert result[0]["mnemonic"] == "v_add_f32"
-    assert result[0]["encoding"] == "VOP2"
+    assert result[0].mnemonic == "v_add_f32"
+    assert result[0].encoding == "VOP2"
 
 
 def test_parse_llvm_tblgen_json_operand_and_encoding_fallbacks() -> None:
@@ -400,13 +400,13 @@ def test_parse_llvm_tblgen_json_operand_and_encoding_fallbacks() -> None:
     }
 
     results = scrape_amd_rdna.parse_llvm_tblgen_json(mock_tblgen)
-    res_map = {r["mnemonic"]: r for r in results}
+    res_map = {r.mnemonic: r for r in results}
 
     assert "custom_nop" in res_map
     assert "v_empty_ops" in res_map
     assert "s_mov_sop1" in res_map
-    assert res_map["s_mov_sop1"]["encoding"] == "SOP1"
-    assert res_map["s_mov_sop1"]["modifiers"] == []
+    assert res_map["s_mov_sop1"].encoding == "SOP1"
+    assert res_map["s_mov_sop1"].modifiers == []
 
 
 def test_scrape_amd_rdna_duplicate_operand_signatures(tmp_path: Path) -> None:
@@ -435,8 +435,8 @@ def test_scrape_amd_rdna_duplicate_operand_signatures(tmp_path: Path) -> None:
 
     result = scrape_amd_rdna.scrape_amd_rdna(output_path=str(out_path), tblgen_json_path=str(json_path))
     assert len(result) == 1
-    assert result[0]["mnemonic"] == "v_add_f32"
-    assert len(result[0]["operands"]) == 1
+    assert result[0].mnemonic == "v_add_f32"
+    assert len(result[0].operands) == 1
 
 
 def test_fetch_td_file_local_dir(tmp_path: Path) -> None:
@@ -473,3 +473,34 @@ def test_scrape_amd_rdna_main_entrypoint(mocker: pytest_mock.MockerFixture) -> N
     res = runpy.run_path(spec.origin, run_name="__main__")
     assert "main" in res
     assert mock_open.called
+
+
+def test_fetch_amdgpu_td_file_cache_and_network_edge_cases(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify `fetch_td_file` handles read-only cache directories, `None` network responses, and `use_cache=False`.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    import os
+
+    monkeypatch.setattr("ml_ecosystem_snapshots.network_env.fetch_url", lambda _url: "def V_ADD_F32;")
+
+    def deny_makedirs(*args: str | int, **kwargs: bool | int) -> None:
+        """Simulate read-only filesystem when creating cache directory.
+
+        Args:
+            *args: Positional path arguments.
+            **kwargs: Keyword directory-mode arguments.
+
+        Raises:
+            OSError: Always raised to simulate permission denial.
+        """
+        del args, kwargs
+        raise OSError("Permission denied")
+
+    monkeypatch.setattr(os, "makedirs", deny_makedirs)
+    assert scrape_amd_rdna.fetch_td_file("UncachedFakeInst.td", use_cache=True) == "def V_ADD_F32;"
+    assert scrape_amd_rdna.fetch_td_file("UncachedFakeInst.td", use_cache=False) == "def V_ADD_F32;"
+
+    monkeypatch.setattr("ml_ecosystem_snapshots.network_env.fetch_url", lambda _url: None)
+    assert scrape_amd_rdna.fetch_td_file("UncachedMissingInst.td", use_cache=True) == ""

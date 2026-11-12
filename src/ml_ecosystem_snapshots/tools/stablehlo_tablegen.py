@@ -6,7 +6,7 @@ import json
 import re
 import typing
 
-from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel
+from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel, ensure_json_dict
 from ml_ecosystem_snapshots.tools.mlir_tablegen import (
     TableGenASTParser,
     _extract_brace_block,
@@ -126,8 +126,12 @@ def _extract_stablehlo_base_classes(
         term = m.group(3)
         cls_body, _ = _extract_brace_block(clean_content, m.end()) if term == "{" else ("", m.end())
 
-        args_m = re.search(r"let\s+arguments\s*=\s*\(\s*ins(.*?)\);", cls_body, re.DOTALL) or re.search(r"Arguments<\s*\(\s*ins(.*?)\)>", supers_raw, re.DOTALL)
-        res_m = re.search(r"let\s+results\s*=\s*\(\s*outs(.*?)\);", cls_body, re.DOTALL) or re.search(r"Results<\s*\(\s*outs(.*?)\)>", supers_raw, re.DOTALL)
+        args_m = re.search(r"let\s+arguments\s*=\s*\(\s*ins(.*?)\);", cls_body, re.DOTALL) or re.search(
+            r"Arguments<\s*\(\s*ins(.*?)\)>", supers_raw, re.DOTALL
+        )
+        res_m = re.search(r"let\s+results\s*=\s*\(\s*outs(.*?)\);", cls_body, re.DOTALL) or re.search(
+            r"Results<\s*\(\s*outs(.*?)\)>", supers_raw, re.DOTALL
+        )
         supers = [s.split("<")[0].strip() for s in re.split(r",", supers_raw) if s.strip()]
         base_classes[cls_name] = {
             "args": args_m.group(1).strip() if args_m else None,
@@ -436,8 +440,14 @@ def _resolve_stablehlo_args_str(
     Returns:
         Resolved `(ins ...)` inner string or None.
     """
-    args_match = re.search(r"let\s+arguments\s*=\s*\(\s*ins(.*?)\);", body, re.DOTALL) or re.search(r"Arguments<\s*\(\s*ins(.*?)\)>", targs_raw, re.DOTALL)
-    args_str = args_match.group(1).strip() if args_match else _resolve_stablehlo_inherited_field(base_classes, base_cls, "args")
+    args_match = re.search(r"let\s+arguments\s*=\s*\(\s*ins(.*?)\);", body, re.DOTALL) or re.search(
+        r"Arguments<\s*\(\s*ins(.*?)\)>", targs_raw, re.DOTALL
+    )
+    args_str = (
+        args_match.group(1).strip()
+        if args_match
+        else _resolve_stablehlo_inherited_field(base_classes, base_cls, "args")
+    )
     if not args_str:
         combined = f"{base_cls} {class_name}"
         if "Binary" in combined:
@@ -464,8 +474,14 @@ def _resolve_stablehlo_results_str(
     Returns:
         Resolved `(outs ...)` inner string or None.
     """
-    results_match = re.search(r"let\s+results\s*=\s*\(\s*outs(.*?)\);", body, re.DOTALL) or re.search(r"Results<\s*\(\s*outs(.*?)\)>", targs_raw, re.DOTALL)
-    res_str = results_match.group(1).strip() if results_match else _resolve_stablehlo_inherited_field(base_classes, base_cls, "results")
+    results_match = re.search(r"let\s+results\s*=\s*\(\s*outs(.*?)\);", body, re.DOTALL) or re.search(
+        r"Results<\s*\(\s*outs(.*?)\)>", targs_raw, re.DOTALL
+    )
+    res_str = (
+        results_match.group(1).strip()
+        if results_match
+        else _resolve_stablehlo_inherited_field(base_classes, base_cls, "results")
+    )
     if not res_str and any(k in base_cls for k in ("Binary", "Unary", "Cast")):
         return "HLO_Tensor:$result"
     return res_str
@@ -498,29 +514,27 @@ def _build_stablehlo_record(
     results, returns_type = parsed_results
     verification_rules, region_signatures = build_verification_and_region_metadata(op_name)
     return TableGenRecordModel(
-        {
-            "api_path": f"stablehlo.{op_name}",
-            "name": op_name,
-            "class_name": clean_class_name,
-            "kind": "function",
-            "is_public": True,
-            "has_varargs": False,
-            "environment_tags": ["cpu", "cuda", "rocm", "tpu"],
-            "aliases": [],
-            "overloads": [],
-            "params": params,
-            "operands": operands,
-            "attributes": attributes,
-            "results": results,
-            "returns_type": returns_type,
-            "returns_description": None,
-            "raises": [],
-            "docstring": docstring,
-            "traits": traits,
-            "regions": regions,
-            "verification_rules": verification_rules,
-            "region_signatures": region_signatures,
-        }
+        api_path=f"stablehlo.{op_name}",
+        name=op_name,
+        class_name=clean_class_name,
+        kind="function",
+        is_public=True,
+        has_varargs=False,
+        environment_tags=["cpu", "cuda", "rocm", "tpu"],
+        aliases=[],
+        overloads=[],
+        params=[ensure_json_dict(p) for p in params],
+        operands=[ensure_json_dict(o) for o in operands],
+        attributes=[ensure_json_dict(a) for a in attributes],
+        results=[ensure_json_dict(r) for r in results],
+        returns_type=returns_type,
+        returns_description=None,
+        raises=[],
+        docstring=docstring,
+        traits=[str(t) for t in traits],
+        regions=[ensure_json_dict(rg) if isinstance(rg, dict) else str(rg) for rg in regions],
+        verification_rules=dict(verification_rules),
+        region_signatures=dict(region_signatures),
     )
 
 
@@ -688,7 +702,13 @@ def parse_stablehlo_llvm_tblgen_json(
 
         raw_supers = rec.get("!superclasses", [])
         superclasses = [str(s) for s in (raw_supers if isinstance(raw_supers, list) else [])]
-        is_op = rec_name in op_def_names or "StableHLO_Op" in superclasses or any("StableHLO_" in s for s in superclasses) or rec_name.startswith("StableHLO_") or rec_name.endswith("Op")
+        is_op = (
+            rec_name in op_def_names
+            or "StableHLO_Op" in superclasses
+            or any("StableHLO_" in s for s in superclasses)
+            or rec_name.startswith("StableHLO_")
+            or rec_name.endswith("Op")
+        )
         if not is_op:
             continue
 

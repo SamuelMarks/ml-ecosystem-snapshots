@@ -205,17 +205,17 @@ def test_check_grain_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
         "grain.python.DataLoader",
         attributes=["data_source", "sampler", "worker_count"],
     )
-    assert res_valid["is_valid"] is True
+    assert res_valid.is_valid is True
 
     res_bad = check_grain_op("grain.UnknownDatasetOp")
-    assert res_bad["is_valid"] is False
+    assert res_bad.is_valid is False
 
     rpc_res = dispatch_tool_call(
         1,
         "check_grain_op",
         {"op_name": "IndexSampler", "inputs_count": 2},
     )
-    assert "result" in rpc_res
+    assert rpc_res.result is not None
 
     args_ok = argparse.Namespace(
         op_name="DataLoader",
@@ -230,8 +230,8 @@ def test_check_grain_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
         cmd_check_grain(args_fail)
 
     anti = explain_anti_pattern("grain", "grain.DataLoader", "num_workers")
-    assert anti["is_known_anti_pattern"] is True
-    assert anti["canonical_argument"] == "worker_count"
+    assert anti.is_known_anti_pattern is True
+    assert anti.canonical_argument == "worker_count"
 
     trans = translate_concept_arguments(
         "data_loader",
@@ -239,7 +239,7 @@ def test_check_grain_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
         "grain",
         {"dataset": "ds", "sampler": "samp", "num_workers": 4},
     )
-    assert trans["translated_kwargs"] == {
+    assert trans.translated_kwargs == {
         "data_source": "ds",
         "sampler": "samp",
         "worker_count": 4,
@@ -249,7 +249,7 @@ def test_check_grain_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
         """import grain
 loader = grain.DataLoader(data_source=ds, sampler=s, num_workers=4)"""
     )
-    assert block_res["total_analyzed"] == 1
+    assert block_res.total_analyzed == 1
 
 
 def test_extract_snapshot_grain(monkeypatch: pytest.MonkeyPatch) -> None:

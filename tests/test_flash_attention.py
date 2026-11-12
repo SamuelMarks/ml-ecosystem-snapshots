@@ -64,22 +64,36 @@ def test_collect_api_live_mode() -> None:
         assert len(refs) >= 7
 
 
-def test_collect_api_inspection_exception_handled() -> None:
-    """Verify that inspection errors on specific objects fall back gracefully."""
+def test_collect_api_inspection_exception_handled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that inspection errors on specific objects fall back gracefully.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     import types
 
-    fake_mod = types.SimpleNamespace(flash_attn_func="not_inspectable")
+    fake_mod = types.ModuleType("flash_attn")
+    monkeypatch.setattr(fake_mod, "flash_attn_func", "not_inspectable", raising=False)
 
-    with patch(
-        "ml_ecosystem_snapshots.frameworks.flash_attention._discover_flash_attn_module",
-        return_value=fake_mod,
-    ):
-        with patch(
-            "ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect",
-            side_effect=ValueError("boom"),
-        ):
-            refs = flash_attention.collect_api(SemanticTier.NEURAL_OPS)
-            assert len(refs) >= 7
+    def _raise_boom(*_args: str, **_kwargs: bool) -> None:
+        """Raise `ValueError` to simulate live inspection failure.
+
+        Args:
+            *_args: Ignored positional arguments.
+            **_kwargs: Ignored keyword arguments.
+
+        Raises:
+            ValueError: Always raised to exercise fallback path.
+        """
+        raise ValueError("boom")
+
+    monkeypatch.setattr(flash_attention, "_discover_flash_attn_module", lambda: fake_mod)
+    monkeypatch.setattr(
+        "ml_ecosystem_snapshots.frameworks.flash_attention.GhostInspector.inspect",
+        _raise_boom,
+    )
+    refs = flash_attention.collect_api(SemanticTier.NEURAL_OPS)
+    assert len(refs) >= 7
 
 
 def test_extract_snapshot_flash_attention() -> None:
@@ -95,40 +109,40 @@ def test_check_flash_attention_op_mcp() -> None:
     """Verify MCP validator check_flash_attention_op behavior across valid and invalid inputs."""
     # Valid call
     valid_res = check_flash_attention_op("flash_attn_func", inputs_count=3)
-    assert valid_res["is_valid"] is True
-    assert valid_res["op_exists"] is True
+    assert valid_res.is_valid is True
+    assert valid_res.op_exists is True
 
     # Valid with prefix flash_attn.
     prefix_fa = check_flash_attention_op("flash_attn.flash_attn_func", inputs_count=3)
-    assert prefix_fa["is_valid"] is True
+    assert prefix_fa.is_valid is True
 
     # Valid with prefix vllm.
     prefix_vllm = check_flash_attention_op("vllm.paged_attention_v1", inputs_count=10)
-    assert prefix_vllm["is_valid"] is True
+    assert prefix_vllm.is_valid is True
 
     # Valid with prefix ml.switcheroo.custom.
     prefix_custom = check_flash_attention_op("ml.switcheroo.custom.FlashAttention", inputs_count=3)
-    assert prefix_custom["is_valid"] is True
+    assert prefix_custom.is_valid is True
 
     # Unknown operation
     unknown_res = check_flash_attention_op("non_existent_op")
-    assert unknown_res["is_valid"] is False
-    assert unknown_res["op_exists"] is False
-    assert len(unknown_res["errors"]) > 0
+    assert unknown_res.is_valid is False
+    assert unknown_res.op_exists is False
+    assert len(unknown_res.errors) > 0
 
     # Wrong inputs count
     wrong_inputs = check_flash_attention_op("flash_attn_func", inputs_count=1)
-    assert wrong_inputs["is_valid"] is False
-    assert "expects 3 positional inputs" in wrong_inputs["errors"][0]
+    assert wrong_inputs.is_valid is False
+    assert "expects 3 positional inputs" in wrong_inputs.errors[0]
 
     # Valid keyword arguments
     valid_kw = check_flash_attention_op("flash_attn_func", attributes=["causal", "dropout_p"])
-    assert valid_kw["is_valid"] is True
+    assert valid_kw.is_valid is True
 
     # Invalid keyword arguments
     invalid_kw = check_flash_attention_op("flash_attn_func", attributes=["invalid_kwarg"])
-    assert invalid_kw["is_valid"] is False
-    assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw["errors"][0]
+    assert invalid_kw.is_valid is False
+    assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw.errors[0]
 
 
 def test_cmd_check_flash_attention_cli_valid(

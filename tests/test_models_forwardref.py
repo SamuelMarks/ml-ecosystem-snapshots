@@ -2,41 +2,31 @@
 
 from __future__ import annotations
 
-import sys
-
-import pytest
-
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
 
 class TensorRef:
-    """Mock or helper class TensorRef for unit testing."""
+    """Placeholder tensor type referenced via postponed string annotations."""
 
     pass
 
 
 def forward(x: TensorRef) -> TensorRef:
-    """Execute helper forward.
+    """Return `x` unchanged to exercise `ForwardRef` annotation resolution.
 
     Args:
         x: Forward-referenced parameter operand.
 
-
     Returns:
-        Computed result.
+        Unmodified `TensorRef` input operand.
     """
     return x
-
-
-pytest.MonkeyPatch().setattr(sys.modules[__name__], "TensorRef", TensorRef, raising=False)
 
 
 def test_resolve_forward_ref() -> None:
     """Verify resolve forward ref behavior."""
     ref = GhostInspector.inspect(forward, "forward")
     assert ref.has_arg("x")
-    # Due to stringification and sanitization, <class 'test_models_forwardref.TensorRef'>
-    # should become 'test_models_forwardref.TensorRef' or 'TensorRef' depending on how it's resolved.
     assert ref.params[0].annotation is not None
     assert "TensorRef" in ref.params[0].annotation
     assert ref.returns_type is not None

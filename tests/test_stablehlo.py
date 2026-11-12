@@ -194,7 +194,10 @@ def test_validate_dot_dimension_numbers() -> None:
         "lhs_contracting_dimensions": [1],
         "rhs_contracting_dimensions": [1],
     }
-    assert any("RHS batch and contracting dimensions must be disjoint" in e for e in stablehlo_fw.validate_dot_dimension_numbers(overlap_rhs))
+    assert any(
+        "RHS batch and contracting dimensions must be disjoint" in e
+        for e in stablehlo_fw.validate_dot_dimension_numbers(overlap_rhs)
+    )
 
     # Rank bounds
     out_of_bounds: dict[str, JsonValue] = {
@@ -247,31 +250,43 @@ def test_validate_conv_dimension_numbers() -> None:
         **valid_conv,
         "input_batch_dimension": 4,
     }
-    assert any("exceeds input rank" in e for e in stablehlo_fw.validate_conv_dimension_numbers(bad_in_rank, input_rank=4))
+    assert any(
+        "exceeds input rank" in e for e in stablehlo_fw.validate_conv_dimension_numbers(bad_in_rank, input_rank=4)
+    )
 
     # Overlapping kernel dimensions
     bad_k: dict[str, JsonValue] = {
         **valid_conv,
         "kernel_output_feature_dimension": 1,
     }
-    assert any("Kernel dimensions in ConvDimensionNumbersAttr must be distinct" in e for e in stablehlo_fw.validate_conv_dimension_numbers(bad_k))
+    assert any(
+        "Kernel dimensions in ConvDimensionNumbersAttr must be distinct" in e
+        for e in stablehlo_fw.validate_conv_dimension_numbers(bad_k)
+    )
     bad_k_rank: dict[str, JsonValue] = {
         **valid_conv,
         "kernel_input_feature_dimension": 4,
     }
-    assert any("exceeds kernel rank" in e for e in stablehlo_fw.validate_conv_dimension_numbers(bad_k_rank, kernel_rank=4))
+    assert any(
+        "exceeds kernel rank" in e for e in stablehlo_fw.validate_conv_dimension_numbers(bad_k_rank, kernel_rank=4)
+    )
 
     # Output disjointness
     bad_out: dict[str, JsonValue] = {
         **valid_conv,
         "output_feature_dimension": 0,
     }
-    assert any("Output dimensions in ConvDimensionNumbersAttr must be distinct" in e for e in stablehlo_fw.validate_conv_dimension_numbers(bad_out))
+    assert any(
+        "Output dimensions in ConvDimensionNumbersAttr must be distinct" in e
+        for e in stablehlo_fw.validate_conv_dimension_numbers(bad_out)
+    )
     bad_out_rank: dict[str, JsonValue] = {
         **valid_conv,
         "output_batch_dimension": 4,
     }
-    assert any("exceeds output rank" in e for e in stablehlo_fw.validate_conv_dimension_numbers(bad_out_rank, output_rank=4))
+    assert any(
+        "exceeds output rank" in e for e in stablehlo_fw.validate_conv_dimension_numbers(bad_out_rank, output_rank=4)
+    )
 
     # Empty dictionary
     assert stablehlo_fw.validate_conv_dimension_numbers({}) == []
@@ -315,11 +330,20 @@ def test_validate_scatter_and_gather_dimension_numbers() -> None:
 def test_validate_stablehlo_region() -> None:
     """Test region arguments and terminator constraints for reduce, while, and sort."""
     # Reduce
-    assert stablehlo_fw.validate_stablehlo_region("stablehlo.reduce", "body", ["tensor<f32>", "tensor<f32>"], ["tensor<f32>"]) == []
-    err_reduce_odd = stablehlo_fw.validate_stablehlo_region("stablehlo.reduce", "body", ["tensor<f32>"], ["tensor<f32>"])
+    assert (
+        stablehlo_fw.validate_stablehlo_region(
+            "stablehlo.reduce", "body", ["tensor<f32>", "tensor<f32>"], ["tensor<f32>"]
+        )
+        == []
+    )
+    err_reduce_odd = stablehlo_fw.validate_stablehlo_region(
+        "stablehlo.reduce", "body", ["tensor<f32>"], ["tensor<f32>"]
+    )
     assert any("takes 2 scalar arguments per reduce operand" in e for e in err_reduce_odd)
 
-    err_reduce_yield = stablehlo_fw.validate_stablehlo_region("stablehlo.reduce", "body", ["tensor<f32>", "tensor<f32>"], [])
+    err_reduce_yield = stablehlo_fw.validate_stablehlo_region(
+        "stablehlo.reduce", "body", ["tensor<f32>", "tensor<f32>"], []
+    )
     assert any("terminator yield count" in e for e in err_reduce_yield)
 
     # While
@@ -341,10 +365,14 @@ def test_validate_stablehlo_region() -> None:
         )
         == []
     )
-    err_sort_args = stablehlo_fw.validate_stablehlo_region("stablehlo.sort", "comparator", ["tensor<f32>"], ["tensor<i1>"])
+    err_sort_args = stablehlo_fw.validate_stablehlo_region(
+        "stablehlo.sort", "comparator", ["tensor<f32>"], ["tensor<i1>"]
+    )
     assert any("takes 2 scalar arguments" in e for e in err_sort_args)
 
-    err_sort_yield = stablehlo_fw.validate_stablehlo_region("stablehlo.sort", "comparator", ["tensor<f32>", "tensor<f32>"], ["tensor<f32>"])
+    err_sort_yield = stablehlo_fw.validate_stablehlo_region(
+        "stablehlo.sort", "comparator", ["tensor<f32>", "tensor<f32>"], ["tensor<f32>"]
+    )
     assert any("must terminate with tensor<i1>" in e for e in err_sort_yield)
 
     # Unknown op or region
@@ -356,10 +384,15 @@ def test_validate_stablehlo_region() -> None:
 def test_validate_broadcast_and_binary_broadcasting() -> None:
     """Test broadcast_in_dim and binary broadcast invariant validation."""
     # broadcast_in_dim valid
-    assert stablehlo_fw.validate_broadcast_in_dim(operand_shape=[1, 3], result_shape=[2, 3], broadcast_dimensions=[0, 1]) == []
+    assert (
+        stablehlo_fw.validate_broadcast_in_dim(operand_shape=[1, 3], result_shape=[2, 3], broadcast_dimensions=[0, 1])
+        == []
+    )
 
     # broadcast_dimensions length mismatch
-    err_len = stablehlo_fw.validate_broadcast_in_dim(operand_shape=[1, 3], result_shape=[2, 3], broadcast_dimensions=[0])
+    err_len = stablehlo_fw.validate_broadcast_in_dim(
+        operand_shape=[1, 3], result_shape=[2, 3], broadcast_dimensions=[0]
+    )
     assert any("must match operand rank" in e for e in err_len)
 
     # broadcast_dimensions out of bounds
@@ -367,7 +400,9 @@ def test_validate_broadcast_and_binary_broadcasting() -> None:
     assert any("out of bounds for result rank" in e for e in err_oob)
 
     # broadcast dimension size mismatch
-    err_mismatch = stablehlo_fw.validate_broadcast_in_dim(operand_shape=[4], result_shape=[2, 3], broadcast_dimensions=[1])
+    err_mismatch = stablehlo_fw.validate_broadcast_in_dim(
+        operand_shape=[4], result_shape=[2, 3], broadcast_dimensions=[1]
+    )
     assert any("Broadcast dimension mismatch" in e for e in err_mismatch)
 
     # binary broadcast valid

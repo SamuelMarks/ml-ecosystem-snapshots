@@ -1,0 +1,615 @@
+"""Declarative domain-operation specifications and canonical spec loaders."""
+
+from __future__ import annotations
+
+import typing
+
+import pydantic
+import typing_extensions
+
+from ml_ecosystem_snapshots.frameworks._base import (
+    CanonicalPythonOpSpec,
+    CanonicalSsaOpSpec,
+    CanonicalSubmoduleOpSpec,
+)
+from ml_ecosystem_snapshots.models import JsonValue
+
+DomainOpRecord: typing_extensions.TypeAlias = (
+    "CanonicalSsaOpSpec | CanonicalPythonOpSpec | CanonicalSubmoduleOpSpec | dict[str, JsonValue]"
+)
+
+
+class DomainOpCheckConfig(pydantic.BaseModel):
+    """Declarative configuration for a domain-specific operation verifier."""
+
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
+
+    tool_name: str
+    display_name: str
+    op_label: str
+    unknown_label: str
+    key_field: str
+    prefixes: tuple[str, ...]
+    split_last_dot: bool
+    lowercase: bool
+    is_python_params: bool
+    loader_fn: typing.Callable[
+        [],
+        typing.Sequence[CanonicalSsaOpSpec | CanonicalPythonOpSpec | CanonicalSubmoduleOpSpec | dict[str, JsonValue]],
+    ]
+    tool_description: str
+    op_arg_name: str = "op_name"
+    op_arg_description: str = "Operation name."
+    count_arg_name: str = "inputs_count"
+    count_arg_description: str = "Optional inputs count."
+    attr_arg_description: str = "Optional attributes."
+
+
+def _load_wgsl() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical WGSL operations.
+
+    Returns:
+        List of canonical WGSL operation dictionaries.
+    """
+    from ml_ecosystem_snapshots.frameworks.wgsl import _load_wgsl_ops
+
+    return _load_wgsl_ops()
+
+
+def _load_onnx() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical ONNX operations.
+
+    Returns:
+        List of canonical ONNX operation dictionaries.
+    """
+    from ml_ecosystem_snapshots.frameworks.onnx_spec import _load_onnx_ops
+
+    return _load_onnx_ops()
+
+
+def _load_metal() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical Apple Metal operations.
+
+    Returns:
+        List of canonical Apple Metal operation dictionaries.
+    """
+    from ml_ecosystem_snapshots.frameworks.metal import _load_metal_ops
+
+    return _load_metal_ops()
+
+
+def _load_wasm() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical WebAssembly SIMD operations.
+
+    Returns:
+        List of canonical WebAssembly SIMD operation dictionaries.
+    """
+    from ml_ecosystem_snapshots.frameworks.wasm_simd import _load_wasm_simd_ops
+
+    return _load_wasm_simd_ops()
+
+
+def _load_webgl() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical WebGL operations.
+
+    Returns:
+        List of canonical WebGL operation dictionaries.
+    """
+    from ml_ecosystem_snapshots.frameworks.webgl import _load_webgl_ops
+
+    return _load_webgl_ops()
+
+
+def _load_cpp() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical C++ runtime operations.
+
+    Returns:
+        List of canonical C++ runtime operation dictionaries.
+    """
+    from ml_ecosystem_snapshots.frameworks.cpp_runtime import _load_cpp_runtime_ops
+
+    return _load_cpp_runtime_ops()
+
+
+def _load_array_api() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical Array API operations.
+
+    Returns:
+        List of canonical Array API operation dictionaries.
+    """
+    from ml_ecosystem_snapshots.frameworks.array_api import CANONICAL_ARRAY_API_OPS
+
+    return list(CANONICAL_ARRAY_API_OPS)
+
+
+def _load_scipy() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical SciPy operations.
+
+    Returns:
+        List of canonical SciPy operation dictionaries.
+    """
+    from ml_ecosystem_snapshots.frameworks.scipy import CANONICAL_SCIPY_OPS
+
+    return list(CANONICAL_SCIPY_OPS)
+
+
+def _load_torchvision() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical TorchVision operations.
+
+    Returns:
+        List of canonical TorchVision operation dictionaries.
+    """
+    from ml_ecosystem_snapshots.frameworks.torchvision import CANONICAL_TORCHVISION_OPS
+
+    return list(CANONICAL_TORCHVISION_OPS)
+
+
+def _load_torchaudio() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical TorchAudio operations.
+
+    Returns:
+        List of canonical TorchAudio operation dictionaries.
+    """
+    from ml_ecosystem_snapshots.frameworks.torchaudio import CANONICAL_TORCHAUDIO_OPS
+
+    return list(CANONICAL_TORCHAUDIO_OPS)
+
+
+def _load_safetensors() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical SafeTensors operations.
+
+    Returns:
+        List of canonical SafeTensors operation dictionaries.
+    """
+    from ml_ecosystem_snapshots.frameworks.safetensors import CANONICAL_SAFETENSORS_OPS
+
+    return list(CANONICAL_SAFETENSORS_OPS)
+
+
+def _load_aten() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical ATen operations.
+
+    Returns:
+        List of canonical ATen operation dictionaries.
+    """
+    from ml_ecosystem_snapshots.frameworks.aten import CANONICAL_ATEN_OPS
+
+    return list(CANONICAL_ATEN_OPS)
+
+
+def _load_nccl() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical NCCL operations.
+
+    Returns:
+        List of canonical NCCL operation dictionaries.
+    """
+    from ml_ecosystem_snapshots.frameworks.nccl import CANONICAL_NCCL_OPS
+
+    return list(CANONICAL_NCCL_OPS)
+
+
+def _load_flash_attn() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical FlashAttention operations.
+
+    Returns:
+        List of canonical FlashAttention operation dictionaries.
+    """
+    from ml_ecosystem_snapshots.frameworks.flash_attention import (
+        CANONICAL_FLASH_ATTN_OPS,
+    )
+
+    return list(CANONICAL_FLASH_ATTN_OPS)
+
+
+def _load_chex() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical Chex operations.
+
+    Returns:
+        List of canonical Chex operation specifications.
+    """
+    from ml_ecosystem_snapshots.frameworks.chex import CANONICAL_CHEX_OPS
+
+    return list(CANONICAL_CHEX_OPS)
+
+
+def _load_grain() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical Grain operations.
+
+    Returns:
+        List of canonical Grain operation specifications.
+    """
+    from ml_ecosystem_snapshots.frameworks.grain import CANONICAL_GRAIN_OPS
+
+    return list(CANONICAL_GRAIN_OPS)
+
+
+def _load_orbax() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical Orbax Checkpoint and Export operations.
+
+    Returns:
+        List of canonical Orbax operation specifications.
+    """
+    from ml_ecosystem_snapshots.frameworks.orbax_checkpoint import CANONICAL_ORBAX_OPS
+
+    return list(CANONICAL_ORBAX_OPS)
+
+
+def _load_optax() -> typing.Sequence[DomainOpRecord]:
+    """Load canonical Optax operations.
+
+    Returns:
+        List of canonical Optax operation specifications.
+    """
+    from ml_ecosystem_snapshots.frameworks.optax import CANONICAL_OPTAX_OPS
+
+    return list(CANONICAL_OPTAX_OPS)
+
+
+DOMAIN_OP_CONFIGS: dict[str, DomainOpCheckConfig] = {
+    "wgsl": DomainOpCheckConfig(
+        tool_name="check_wgsl_op",
+        display_name="WGSL",
+        op_label="Operation",
+        unknown_label="WGSL operation",
+        key_field="name",
+        prefixes=(),
+        split_last_dot=True,
+        lowercase=False,
+        is_python_params=False,
+        loader_fn=_load_wgsl,
+        tool_description="Validate a WebGPU WGSL built-in function, memory barrier, or address space.",
+        op_arg_description="WGSL function name (e.g. 'workgroupBarrier', 'storageStore').",
+        count_arg_description="Optional expected input operands count.",
+        attr_arg_description="Optional operation attributes.",
+    ),
+    "onnx": DomainOpCheckConfig(
+        tool_name="check_onnx_op",
+        display_name="ONNX",
+        op_label="Operation",
+        unknown_label="ONNX operation",
+        key_field="name",
+        prefixes=(),
+        split_last_dot=True,
+        lowercase=False,
+        is_python_params=False,
+        loader_fn=_load_onnx,
+        tool_description="Validate an ONNX operator specification.",
+        op_arg_description="ONNX operator name (e.g. 'MatMul', 'Conv', 'Relu').",
+        count_arg_description="Optional input count.",
+        attr_arg_description="Optional operator attributes.",
+    ),
+    "metal": DomainOpCheckConfig(
+        tool_name="check_metal_op",
+        display_name="Metal",
+        op_label="Operation",
+        unknown_label="Metal MSL operation",
+        key_field="name",
+        prefixes=(),
+        split_last_dot=True,
+        lowercase=False,
+        is_python_params=False,
+        loader_fn=_load_metal,
+        tool_description="Validate Apple Metal Shading Language (MSL) compute builtins.",
+        op_arg_description="Metal builtin name (e.g. 'simdgroup_matrix', 'threadgroup_barrier').",
+        count_arg_description="Optional input count.",
+        attr_arg_description="Optional attributes.",
+    ),
+    "wasm": DomainOpCheckConfig(
+        tool_name="check_wasm_instruction",
+        display_name="",
+        op_label="Instruction",
+        unknown_label="WebAssembly SIMD instruction",
+        key_field="mnemonic",
+        prefixes=("wasm.",),
+        split_last_dot=False,
+        lowercase=True,
+        is_python_params=False,
+        loader_fn=_load_wasm,
+        tool_description="Validate W3C WebAssembly 128-bit SIMD vector instruction opcodes.",
+        op_arg_name="mnemonic",
+        op_arg_description="WASM opcode mnemonic (e.g. 'f32x4.add', 'v128.load').",
+        count_arg_name="operands_count",
+        count_arg_description="Optional operands count.",
+        attr_arg_description="Optional instruction attributes.",
+    ),
+    "webgl": DomainOpCheckConfig(
+        tool_name="check_webgl_op",
+        display_name="WebGL",
+        op_label="Operation",
+        unknown_label="WebGL operation",
+        key_field="name",
+        prefixes=("webgl.",),
+        split_last_dot=False,
+        lowercase=False,
+        is_python_params=False,
+        loader_fn=_load_webgl,
+        tool_description="Validate WebGL 2.0 / GLSL ES 3.00 shader builtins and uniforms.",
+        op_arg_description="GLSL builtin name (e.g. 'texture', 'dFdx', 'fma').",
+        count_arg_description="Optional inputs count.",
+        attr_arg_description="Optional attributes.",
+    ),
+    "cpp": DomainOpCheckConfig(
+        tool_name="check_cpp_op",
+        display_name="C++",
+        op_label="Operation",
+        unknown_label="C++ operation",
+        key_field="name",
+        prefixes=("cpp.",),
+        split_last_dot=False,
+        lowercase=False,
+        is_python_params=False,
+        loader_fn=_load_cpp,
+        tool_description="Validate C++17 STL mathematical kernel runtime functions.",
+        op_arg_description="C++ function name (e.g. 'clamp', 'from_blob').",
+        count_arg_description="Optional inputs count.",
+        attr_arg_description="Optional attribute names.",
+    ),
+    "array_api": DomainOpCheckConfig(
+        tool_name="check_array_api_op",
+        display_name="Array API",
+        op_label="Operation",
+        unknown_label="Array API operation",
+        key_field="name",
+        prefixes=("array_api.",),
+        split_last_dot=False,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_array_api,
+        tool_description="Validate Python Array API standard consortium specification functions.",
+        op_arg_description="Array API function name (e.g. 'matmul', 'astype', 'reshape').",
+        count_arg_description="Optional positional arguments count.",
+        attr_arg_description="Optional keyword arguments.",
+    ),
+    "scipy": DomainOpCheckConfig(
+        tool_name="check_scipy_op",
+        display_name="SciPy",
+        op_label="Operation",
+        unknown_label="SciPy operation",
+        key_field="name",
+        prefixes=("scipy.",),
+        split_last_dot=True,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_scipy,
+        tool_description="Validate SciPy special functions, signal, or linalg APIs.",
+        op_arg_description="SciPy API name (e.g. 'erf', 'inv', 'convolve').",
+        count_arg_description="Optional positional arguments count.",
+        attr_arg_description="Optional keyword arguments.",
+    ),
+    "torchvision": DomainOpCheckConfig(
+        tool_name="check_torchvision_op",
+        display_name="TorchVision",
+        op_label="Operation",
+        unknown_label="TorchVision operation",
+        key_field="name",
+        prefixes=("torchvision.",),
+        split_last_dot=True,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_torchvision,
+        tool_description="Validate TorchVision vision transforms and operators.",
+        op_arg_description="TorchVision API name (e.g. 'nms', 'roi_align').",
+        count_arg_description="Optional positional arguments count.",
+        attr_arg_description="Optional keyword arguments.",
+    ),
+    "torchaudio": DomainOpCheckConfig(
+        tool_name="check_torchaudio_op",
+        display_name="TorchAudio",
+        op_label="Operation",
+        unknown_label="TorchAudio operation",
+        key_field="name",
+        prefixes=("torchaudio.",),
+        split_last_dot=True,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_torchaudio,
+        tool_description="Validate TorchAudio audio processing transforms and functionals.",
+        op_arg_description="TorchAudio API name (e.g. 'spectrogram', 'melscale_fbanks').",
+        count_arg_description="Optional positional arguments count.",
+        attr_arg_description="Optional keyword arguments.",
+    ),
+    "safetensors": DomainOpCheckConfig(
+        tool_name="check_safetensors_op",
+        display_name="SafeTensors",
+        op_label="Operation",
+        unknown_label="SafeTensors operation",
+        key_field="name",
+        prefixes=("safetensors.",),
+        split_last_dot=True,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_safetensors,
+        tool_description="Validate SafeTensors weight loading and serialization routines.",
+        op_arg_description="SafeTensors API name (e.g. 'save_file', 'load_file', 'safe_open').",
+        count_arg_description="Optional positional arguments count.",
+        attr_arg_description="Optional keyword arguments.",
+    ),
+    "aten": DomainOpCheckConfig(
+        tool_name="check_aten_op",
+        display_name="ATen",
+        op_label="Operation",
+        unknown_label="ATen operation",
+        key_field="name",
+        prefixes=("aten.",),
+        split_last_dot=False,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_aten,
+        tool_description="Validate PyTorch ATen C++ kernel dispatch operation.",
+        op_arg_description="ATen operator name (e.g. 'add', 'matmul', 'relu').",
+        count_arg_description="Optional inputs count.",
+        attr_arg_description="Optional keyword argument names.",
+    ),
+    "nccl": DomainOpCheckConfig(
+        tool_name="check_nccl_op",
+        display_name="NCCL",
+        op_label="Operation",
+        unknown_label="NCCL collective operation",
+        key_field="name",
+        prefixes=("nccl.", "rccl."),
+        split_last_dot=False,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_nccl,
+        tool_description="Validate NVIDIA NCCL / AMD RCCL GPU collective communications.",
+        op_arg_description="NCCL operation name (e.g. 'all_reduce', 'all_gather', 'reduce_scatter').",
+        count_arg_description="Optional inputs count.",
+        attr_arg_description="Optional attributes.",
+    ),
+    "flash_attention": DomainOpCheckConfig(
+        tool_name="check_flash_attention_op",
+        display_name="Attention",
+        op_label="Operation",
+        unknown_label="Attention operation",
+        key_field="name",
+        prefixes=("flash_attn.", "vllm.", "ml.switcheroo.custom."),
+        split_last_dot=False,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_flash_attn,
+        tool_description="Validate FlashAttention-2/3, PagedAttention, and custom kernel parameters.",
+        op_arg_description="Attention kernel API name (e.g. 'flash_attn_func', 'flash_attn_varlen_func').",
+        count_arg_description="Optional positional arguments count.",
+        attr_arg_description="Optional keyword arguments.",
+    ),
+    "chex": DomainOpCheckConfig(
+        tool_name="check_chex_op",
+        display_name="Chex",
+        op_label="Operation",
+        unknown_label="Chex operation",
+        key_field="name",
+        prefixes=("chex.",),
+        split_last_dot=True,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_chex,
+        tool_description="Validate Google DeepMind Chex assertion, dataclass, fake context, and test variant APIs.",
+        op_arg_description="Chex API name (e.g. 'assert_shape', 'assert_trees_all_close', 'dataclass').",
+        count_arg_description="Optional positional arguments count.",
+        attr_arg_description="Optional keyword arguments (e.g. ['custom_message', 'rtol', 'atol']).",
+    ),
+    "grain": DomainOpCheckConfig(
+        tool_name="check_grain_op",
+        display_name="Grain",
+        op_label="Operation",
+        unknown_label="Grain operation",
+        key_field="name",
+        prefixes=("grain.python.", "grain.experimental.", "grain."),
+        split_last_dot=True,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_grain,
+        tool_description="Validate Google PyGrain (`grain` / `grain.python`) data loader, dataset, sampler, and transformation APIs.",
+        op_arg_description="Grain API name (e.g. 'DataLoader', 'MapDataset', 'IndexSampler').",
+        count_arg_description="Optional positional arguments count.",
+        attr_arg_description="Optional keyword arguments (e.g. ['data_source', 'sampler', 'worker_count']).",
+    ),
+    "orbax": DomainOpCheckConfig(
+        tool_name="check_orbax_op",
+        display_name="Orbax",
+        op_label="Operation",
+        unknown_label="Orbax operation",
+        key_field="name",
+        prefixes=(
+            "orbax.checkpoint.args.",
+            "orbax.checkpoint.handlers.",
+            "orbax.checkpoint.checkpoint_utils.",
+            "orbax.checkpoint.msgpack_utils.",
+            "orbax.checkpoint.v1.",
+            "orbax.checkpoint.",
+            "orbax.export.",
+            "orbax.",
+            "ocp.args.",
+            "ocp.",
+        ),
+        split_last_dot=True,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_orbax,
+        tool_description="Validate Orbax Checkpoint and Orbax Export manager, handler, and save/restore argument APIs.",
+        op_arg_description="Orbax API name (e.g. 'CheckpointManager', 'PyTreeCheckpointer', 'ExportManager').",
+        count_arg_description="Optional positional arguments count.",
+        attr_arg_description="Optional keyword arguments (e.g. ['directory', 'options', 'max_to_keep']).",
+    ),
+    "optax": DomainOpCheckConfig(
+        tool_name="check_optax_op",
+        display_name="Optax",
+        op_label="Operation",
+        unknown_label="Optax operation",
+        key_field="name",
+        prefixes=(
+            "optax.losses.",
+            "optax.schedules.",
+            "optax.projections.",
+            "optax.tree_utils.",
+            "optax.second_order.",
+            "optax.assignment.",
+            "optax.perturbations.",
+            "optax.contrib.",
+            "optax.",
+        ),
+        split_last_dot=True,
+        lowercase=False,
+        is_python_params=True,
+        loader_fn=_load_optax,
+        tool_description="Validate Optax optimizers, gradient transformations, losses, schedules, and update utilities.",
+        op_arg_description="Optax API name (e.g. 'adam', 'adamw', 'chain', 'softmax_cross_entropy', 'apply_updates').",
+        count_arg_description="Optional positional arguments count.",
+        attr_arg_description="Optional keyword arguments (e.g. ['learning_rate', 'b1', 'b2', 'weight_decay']).",
+    ),
+}
+
+
+def build_domain_op_tool_schemas() -> list[dict[str, JsonValue]]:
+    """Generate MCP JSON Schema tool definitions for all registered domain op verifiers.
+
+    Returns:
+        List of MCP tool schema dictionaries.
+    """
+    schemas: list[dict[str, JsonValue]] = []
+    for key, cfg in DOMAIN_OP_CONFIGS.items():
+        props: dict[str, JsonValue] = {
+            cfg.op_arg_name: {
+                "type": "string",
+                "description": cfg.op_arg_description,
+            }
+        }
+        if key == "onnx":
+            props["domain"] = {
+                "type": "string",
+                "description": "Optional ONNX domain (e.g. 'ai.onnx').",
+            }
+        if key == "metal":
+            props["address_space"] = {
+                "type": "string",
+                "description": "Optional address space (e.g. 'device', 'threadgroup').",
+            }
+        props[cfg.count_arg_name] = {
+            "type": "integer",
+            "description": cfg.count_arg_description,
+        }
+        props["attributes"] = {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": cfg.attr_arg_description,
+        }
+        schemas.append(
+            {
+                "name": cfg.tool_name,
+                "description": cfg.tool_description,
+                "inputSchema": {
+                    "type": "object",
+                    "properties": props,
+                    "required": [cfg.op_arg_name],
+                },
+            }
+        )
+    return schemas
+
+
+__all__ = [
+    "DOMAIN_OP_CONFIGS",
+    "DomainOpCheckConfig",
+    "DomainOpRecord",
+    "build_domain_op_tool_schemas",
+]

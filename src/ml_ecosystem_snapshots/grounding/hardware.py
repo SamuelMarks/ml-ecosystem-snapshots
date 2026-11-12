@@ -8,6 +8,11 @@ import typing
 import pydantic
 
 from ml_ecosystem_snapshots.grounding.engine import GroundingEngine
+from ml_ecosystem_snapshots.grounding.hardware_isa import (
+    verify_ptx_instruction,
+    verify_rdna_instruction,
+    verify_sass_instruction,
+)
 from ml_ecosystem_snapshots.grounding.models import (
     DiagnosticSeverity,
     GroundingReport,
@@ -49,14 +54,18 @@ def _check_sass_operands(
     )
 
     raw_allowed_sigs = domain_meta.get("operand_signatures")
-    allowed_sigs = [sig for sig in raw_allowed_sigs if isinstance(sig, list)] if isinstance(raw_allowed_sigs, list) else []
+    allowed_sigs = (
+        [sig for sig in raw_allowed_sigs if isinstance(sig, list)] if isinstance(raw_allowed_sigs, list) else []
+    )
     if allowed_sigs:
         matching_count_sig = [sig for sig in allowed_sigs if len(sig) == len(operands)]
         if not matching_count_sig:
             allowed_counts = sorted(list({len(sig) for sig in allowed_sigs}))
             report.add_diagnostic(
                 field="operands",
-                message=(f"Instruction '{clean_mnemonic}' expects {allowed_counts} operands, but received {len(operands)}: {operands}."),
+                message=(
+                    f"Instruction '{clean_mnemonic}' expects {allowed_counts} operands, but received {len(operands)}: {operands}."
+                ),
                 severity=DiagnosticSeverity.ERROR,
             )
 
@@ -134,7 +143,9 @@ def validate_sass_instruction(
     if clean_arch not in valid_archs and valid_archs:
         report.add_diagnostic(
             field="architecture",
-            message=(f"Instruction '{clean_mnemonic}' is not supported on target architecture '{clean_arch}'. Supported architectures: {', '.join(valid_archs)}"),
+            message=(
+                f"Instruction '{clean_mnemonic}' is not supported on target architecture '{clean_arch}'. Supported architectures: {', '.join(valid_archs)}"
+            ),
             severity=DiagnosticSeverity.ERROR,
             suggested_fix=valid_archs[-1] if valid_archs else None,
         )
@@ -160,7 +171,9 @@ def validate_sass_instruction(
     _check_sass_operands(clean_mnemonic, clean_arch, operands, domain_meta, report)
 
     if control_codes is not None:
-        cc_dict: dict[str, int | bool | str | None] = control_codes.model_dump() if isinstance(control_codes, SassControlCodeSpec) else dict(control_codes)
+        cc_dict: dict[str, int | bool | str | None] = (
+            control_codes.model_dump() if isinstance(control_codes, SassControlCodeSpec) else dict(control_codes)
+        )
         for cc_err in validate_sass_control_code(
             clean_mnemonic,
             cc_dict,
@@ -205,7 +218,9 @@ def _check_rdna_operands(
         if not matching_len:
             report.add_diagnostic(
                 field="operands",
-                message=(f"Operand count mismatch for '{clean_mnemonic}': got {len(operands)}, expected {[len(s) for s in op_sigs]}"),
+                message=(
+                    f"Operand count mismatch for '{clean_mnemonic}': got {len(operands)}, expected {[len(s) for s in op_sigs]}"
+                ),
                 severity=DiagnosticSeverity.ERROR,
             )
 
@@ -299,14 +314,20 @@ def validate_rdna_instruction(
     raw_arch = extra_meta.get("architecture") or domain_meta.get("architecture")
     arch_str = str(raw_arch) if raw_arch is not None else None
     raw_supp = domain_meta.get("valid_architectures")
-    supported_archs: list[str] = [str(a) for a in raw_supp] if isinstance(raw_supp, list) else list(ref.environment_tags or resolve_gfx_architectures(arch_str))
+    supported_archs: list[str] = (
+        [str(a) for a in raw_supp]
+        if isinstance(raw_supp, list)
+        else list(ref.environment_tags or resolve_gfx_architectures(arch_str))
+    )
 
     if gfx_arch and supported_archs:
         norm_gfx = gfx_arch.strip()
         if not any(norm_gfx.upper() == a.upper() or a.upper().startswith(norm_gfx.upper()) for a in supported_archs):
             report.add_diagnostic(
                 field="gfx_arch",
-                message=(f"Instruction '{clean_mnemonic}' is not supported on '{gfx_arch}'. Supported: {', '.join(supported_archs)}"),
+                message=(
+                    f"Instruction '{clean_mnemonic}' is not supported on '{gfx_arch}'. Supported: {', '.join(supported_archs)}"
+                ),
                 severity=DiagnosticSeverity.ERROR,
             )
 
@@ -417,4 +438,7 @@ __all__ = [
     "validate_ptx_instruction",
     "validate_rdna_instruction",
     "validate_sass_instruction",
+    "verify_ptx_instruction",
+    "verify_rdna_instruction",
+    "verify_sass_instruction",
 ]

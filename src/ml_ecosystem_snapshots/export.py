@@ -6,6 +6,7 @@ from ml_ecosystem_snapshots.exporters.code_gen import (
     PROTO_DEFINITIONS_BY_TYPE,
     PROTO_ENUM_DEFINITIONS,
     PROTO_TENSOR_DEFINITION,
+    py_type_to_proto,
     to_cpp_header,
     to_protobuf,
     to_pydantic,
@@ -13,19 +14,11 @@ from ml_ecosystem_snapshots.exporters.code_gen import (
     to_typescript,
     to_typescript_interface,
 )
-from ml_ecosystem_snapshots.exporters.code_gen import (
-    _extract_ast_type_identifiers as _extract_ast_type_identifiers,
-)
-from ml_ecosystem_snapshots.exporters.code_gen import (
-    _py_type_to_proto as _py_type_to_proto,
-)
 from ml_ecosystem_snapshots.exporters.openapi_schema import (
     CddIrModel,
+    ghost_to_cdd_ir,
     to_json_schema,
     to_openapi,
-)
-from ml_ecosystem_snapshots.exporters.openapi_schema import (
-    _ghost_to_cdd_ir as _ghost_to_cdd_ir,
 )
 from ml_ecosystem_snapshots.exporters.prompts import (
     COMMON_HALLUCINATION_GUARDS,
@@ -58,6 +51,8 @@ __all__ = [
     "export_sass_prompt_context",
     "export_scoped_prompt_context",
     "export_stablehlo_prompt_context",
+    "ghost_to_cdd_ir",
+    "py_type_to_proto",
     "to_cpp_header",
     "to_json_schema",
     "to_llm_prompt",

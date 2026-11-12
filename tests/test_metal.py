@@ -14,8 +14,8 @@ from ml_switcheroo_ir.schema.ghost import (
 from ml_ecosystem_snapshots.cli import cmd_check_metal
 from ml_ecosystem_snapshots.frameworks.metal import (
     CANONICAL_METAL_OPS,
-    _load_metal_ops,
     collect_api,
+    load_metal_ops,
 )
 from ml_ecosystem_snapshots.mcp_server import check_metal_op
 
@@ -68,39 +68,39 @@ def test_check_metal_op_validation() -> None:
         inputs_count=4,
         attributes=["m", "n", "k"],
     )
-    assert res_valid["is_valid"] is True
-    assert res_valid["op_exists"] is True
-    assert len(res_valid["errors"]) == 0
+    assert res_valid.is_valid is True
+    assert res_valid.op_exists is True
+    assert len(res_valid.errors) == 0
 
     # 2. Input count mismatch
     res_count_err = check_metal_op(
         "simdgroup_multiply_accumulate",
         inputs_count=2,
     )
-    assert res_count_err["is_valid"] is False
-    assert any("expects 4 inputs, but got 2" in e for e in res_count_err["errors"])
+    assert res_count_err.is_valid is False
+    assert any("expects 4 inputs, but got 2" in e for e in res_count_err.errors)
 
     # 3. Address space mismatch
     res_space_err = check_metal_op(
         "simdgroup_multiply_accumulate",
         address_space="device",
     )
-    assert res_space_err["is_valid"] is False
-    assert any("operates in 'thread' address space" in e for e in res_space_err["errors"])
+    assert res_space_err.is_valid is False
+    assert any("operates in 'thread' address space" in e for e in res_space_err.errors)
 
     # 4. Invalid attribute
     res_attr_err = check_metal_op(
         "simdgroup_multiply_accumulate",
         attributes=["nonexistent_dim"],
     )
-    assert res_attr_err["is_valid"] is False
-    assert any("Attribute 'nonexistent_dim' is not valid" in e for e in res_attr_err["errors"])
+    assert res_attr_err.is_valid is False
+    assert any("Attribute 'nonexistent_dim' is not valid" in e for e in res_attr_err.errors)
 
     # 5. Non-existent operator
     res_nonexistent = check_metal_op("nonexistent_metal_op")
-    assert res_nonexistent["is_valid"] is False
-    assert res_nonexistent["op_exists"] is False
-    assert any("Unknown Metal MSL operation" in e for e in res_nonexistent["errors"])
+    assert res_nonexistent.is_valid is False
+    assert res_nonexistent.op_exists is False
+    assert any("Unknown Metal MSL operation" in e for e in res_nonexistent.errors)
 
 
 def test_cmd_check_metal_cli(capsys: pytest.CaptureFixture[str]) -> None:
@@ -161,5 +161,5 @@ def test_metal_roundtrip_serialization() -> None:
 
 def test_load_metal_ops_catalog() -> None:
     """Verify _load_metal_ops catalog returns standard canonical definitions."""
-    ops = _load_metal_ops()
+    ops = load_metal_ops()
     assert ops == CANONICAL_METAL_OPS

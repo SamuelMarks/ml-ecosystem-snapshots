@@ -96,7 +96,7 @@ def _format_param_list(
             if p_anno and p_anno != "Any":
                 p_str += f": {p_anno}"
             else:
-                p_str += ": object"
+                p_str += ": Incomplete"
 
             if p_default is not None:
                 sanitized = _sanitize_default(str(p_default))
@@ -105,7 +105,7 @@ def _format_param_list(
         param_strs.append(p_str)
 
     if has_varargs and not any(_param_field(p, "kind") == "VAR_POSITIONAL" for p in params):
-        param_strs.append("*args: object")
+        param_strs.append("*args: Incomplete")
 
     return ", ".join(param_strs)
 
@@ -119,9 +119,9 @@ def _extract_param_dicts(raw_params: JsonValue) -> list[dict[str, JsonValue]]:
     Returns:
         List of parameter dictionaries.
     """
-    raw = raw_params or []
-    assert isinstance(raw, list)
-    return [dict(p) for p in raw if isinstance(p, dict)]
+    if not isinstance(raw_params, list):
+        return []
+    return [dict(p) for p in raw_params if isinstance(p, dict)]
 
 
 def _extract_overload_dicts(raw_overloads: JsonValue) -> list[dict[str, JsonValue]]:
@@ -139,7 +139,9 @@ def _extract_overload_dicts(raw_overloads: JsonValue) -> list[dict[str, JsonValu
 
 
 def _extract_stub_categories(
-    snapshot_data: (SnapshotEnvelope | typing.Mapping[str, JsonValue] | typing.Sequence[typing.Mapping[str, JsonValue]]),
+    snapshot_data: (
+        SnapshotEnvelope | typing.Mapping[str, JsonValue] | typing.Sequence[typing.Mapping[str, JsonValue]]
+    ),
 ) -> dict[str, list[dict[str, JsonValue]]]:
     """Normalize snapshot input into a dictionary of category item lists.
 
@@ -154,12 +156,14 @@ def _extract_stub_categories(
         return {"all": [dict(x) for x in snapshot_data if isinstance(x, dict)]}
     if not isinstance(snapshot_data, (typing.Mapping, SnapshotEnvelope)):
         return categories_dict
-    raw_snap: typing.Mapping[str, JsonValue] = snapshot_data.model_dump() if isinstance(snapshot_data, SnapshotEnvelope) else snapshot_data
+    raw_snap: typing.Mapping[str, JsonValue] = (
+        snapshot_data.model_dump() if isinstance(snapshot_data, SnapshotEnvelope) else snapshot_data
+    )
     raw_cats = raw_snap.get("categories", {})
-    assert isinstance(raw_cats, dict)
-    for cat_k, cat_v in raw_cats.items():
-        assert isinstance(cat_v, list)
-        categories_dict[str(cat_k)] = [dict(x) for x in cat_v if isinstance(x, dict)]
+    if isinstance(raw_cats, dict):
+        for cat_k, cat_v in raw_cats.items():
+            if isinstance(cat_v, list):
+                categories_dict[str(cat_k)] = [dict(x) for x in cat_v if isinstance(x, dict)]
     return categories_dict
 
 
@@ -208,7 +212,7 @@ def _partition_stub_symbols(
     return modules, class_methods
 
 
-def _format_return_annotation(ret_val: JsonValue, fallback: str = "object") -> str:
+def _format_return_annotation(ret_val: JsonValue, fallback: str = "Incomplete") -> str:
     """Format a return type annotation for a `.pyi` stub signature.
 
     Args:
@@ -226,7 +230,7 @@ def _render_callable_stub_lines(
     item: dict[str, JsonValue],
     indent: str = "",
     is_method: bool = False,
-    overload_fallback_ret: str = "object",
+    overload_fallback_ret: str = "Incomplete",
 ) -> list[str]:
     """Render `.pyi` stub lines (including `@typing.overload` variants) for a function or method.
 
@@ -252,7 +256,7 @@ def _render_callable_stub_lines(
         has_varargs=bool(item.get("has_varargs", False)),
         is_method=is_method,
     )
-    ret_str = _format_return_annotation(item.get("returns_type"), fallback="object")
+    ret_str = _format_return_annotation(item.get("returns_type"), fallback="Incomplete")
     out.append(f"{indent}def {func_name}({sig}){ret_str}: ...")
     return out
 
@@ -270,7 +274,7 @@ def _render_module_stub_lines(
     Returns:
         List of `.pyi` source lines for the module.
     """
-    lines = ["import typing", ""]
+    lines = ["import typing", "from _typeshed import Incomplete", ""]
     handled_classes: set[str] = set()
 
     for obj_name, item in mod_items:
@@ -305,7 +309,9 @@ def _render_module_stub_lines(
 
 
 def generate_stubs(
-    snapshot_data: (SnapshotEnvelope | typing.Mapping[str, JsonValue] | typing.Sequence[typing.Mapping[str, JsonValue]]),
+    snapshot_data: (
+        SnapshotEnvelope | typing.Mapping[str, JsonValue] | typing.Sequence[typing.Mapping[str, JsonValue]]
+    ),
     output_dir: str,
     include_nonpublic: bool = False,
 ) -> None:

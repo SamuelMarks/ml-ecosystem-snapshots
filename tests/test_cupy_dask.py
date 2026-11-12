@@ -12,11 +12,11 @@ from ml_switcheroo_ir.schema.ghost import SemanticTier
 import ml_ecosystem_snapshots.frameworks.cupy as cupy_fw
 import ml_ecosystem_snapshots.frameworks.dask as dask_fw
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
 
-def create_module(name: str, attrs: dict[str, InspectableTarget]) -> types.ModuleType:
+def create_module(name: str, attrs: dict[str, LivePythonTarget]) -> types.ModuleType:
     """Create a mock module with given attributes.
 
     Args:
@@ -71,7 +71,7 @@ def test_cupy_collect(mocker: pytest_mock.MockerFixture) -> None:
     # Test ACTIVATION
     orig_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: InspectableTarget, fqn: str, is_public: bool) -> ExtendedGhostRef:
+    def mock_inspect(obj: LivePythonTarget, fqn: str, is_public: bool) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -81,6 +81,9 @@ def test_cupy_collect(mocker: pytest_mock.MockerFixture) -> None:
 
         Returns:
             A mocked GhostRef.
+
+        Raises:
+            ValueError: When `fqn` equals `cupy.exp`.
         """
         if fqn == "cupy.exp":
             raise ValueError("mock error")
@@ -106,10 +109,14 @@ def test_cupy_collect(mocker: pytest_mock.MockerFixture) -> None:
     assert cupy_fw.collect_api(SemanticTier.OPTIMIZER) == []
 
 
-def test_dask_collect(mocker: pytest_mock.MockerFixture) -> None:
+def test_dask_collect(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test dask_fw.collect_api function.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
     """
     # Test when da is None
@@ -136,7 +143,7 @@ def test_dask_collect(mocker: pytest_mock.MockerFixture) -> None:
 
     orig_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: InspectableTarget, fqn: str, is_public: bool) -> ExtendedGhostRef:
+    def mock_inspect(obj: LivePythonTarget, fqn: str, is_public: bool) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -146,6 +153,9 @@ def test_dask_collect(mocker: pytest_mock.MockerFixture) -> None:
 
         Returns:
             A mocked GhostRef.
+
+        Raises:
+            ValueError: When `fqn` equals `dask.array._private`.
         """
         if fqn == "dask.array._private":
             raise ValueError("mock error")
@@ -176,7 +186,7 @@ def test_dask_collect(mocker: pytest_mock.MockerFixture) -> None:
             "not_callable": 123,
         },
     )
-    mocker.patch.dict(sys.modules, {"dask": fake_top_dask})
+    monkeypatch.setitem(sys.modules, "dask", fake_top_dask)
 
     res_util = dask_fw.collect_api(SemanticTier.UTIL, include_nonpublic=False)
     assert len(res_util) > 0
@@ -184,27 +194,13 @@ def test_dask_collect(mocker: pytest_mock.MockerFixture) -> None:
     assert len(res_util_nonpublic) >= len(res_util)
 
     # Test UTIL tier when dask import raises
-    def mock_import_raise(*args: InspectableTarget, **kwargs: InspectableTarget) -> types.ModuleType:
-        """Mock import raising error when importing dask.
-
-        Args:
-            *args: Positional import arguments.
-            **kwargs: Keyword import arguments.
-
-        Raises:
-            RuntimeError: Always raised to simulate import failure.
-
-        Returns:
-            Never returns.
-        """
-        raise RuntimeError("Simulated dask error")
-
-    mocker.patch("builtins.__import__", side_effect=mock_import_raise)
-    assert dask_fw.collect_api(SemanticTier.UTIL) == []
+    with monkeypatch.context() as mp:
+        mp.setitem(sys.modules, "dask", None)
+        assert dask_fw.collect_api(SemanticTier.UTIL) == []
 
     # Test UTIL tier when inspect raises
     mocker.stopall()
-    mocker.patch.dict(sys.modules, {"dask": fake_top_dask})
+    monkeypatch.setitem(sys.modules, "dask", fake_top_dask)
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.dask.GhostInspector.inspect",
         side_effect=ValueError("simulated util error"),
@@ -212,52 +208,42 @@ def test_dask_collect(mocker: pytest_mock.MockerFixture) -> None:
     assert dask_fw.collect_api(SemanticTier.UTIL) == []
 
 
-def test_cupy_import_success(mocker: pytest_mock.MockerFixture) -> None:
+def test_cupy_import_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test cupy import logic when module is available.
 
     Args:
-        mocker: Pytest mocker fixture.
+        monkeypatch: Pytest monkeypatch fixture.
     """
-    import sys
-
-    # Mock cupy as a valid module
     fake_cupy = types.ModuleType("cupy")
-    mocker.patch.dict(sys.modules, {"cupy": fake_cupy})
-
-    # Reload framework to trigger the try block successfully
-    if "ml_ecosystem_snapshots.frameworks.cupy" in sys.modules:
-        del sys.modules["ml_ecosystem_snapshots.frameworks.cupy"]
+    monkeypatch.setitem(sys.modules, "cupy", fake_cupy)
+    monkeypatch.delitem(sys.modules, "ml_ecosystem_snapshots.frameworks.cupy", raising=False)
 
     import ml_ecosystem_snapshots.frameworks.cupy as c_fw
 
     assert c_fw.cp is fake_cupy
 
 
-def test_cupy_import_error(mocker: pytest_mock.MockerFixture) -> None:
+def test_cupy_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test cupy import logic when module is not available.
 
     Args:
-        mocker: Pytest mocker fixture.
+        monkeypatch: Pytest monkeypatch fixture.
     """
-    import sys
-
-    mocker.patch.dict(sys.modules, {"cupy": None})
-    if "ml_ecosystem_snapshots.frameworks.cupy" in sys.modules:
-        del sys.modules["ml_ecosystem_snapshots.frameworks.cupy"]
+    monkeypatch.setitem(sys.modules, "cupy", None)
+    monkeypatch.delitem(sys.modules, "ml_ecosystem_snapshots.frameworks.cupy", raising=False)
 
     import ml_ecosystem_snapshots.frameworks.cupy as c_fw
 
     assert c_fw.cp is None
 
 
-def test_dask_import_error(mocker: pytest_mock.MockerFixture) -> None:
+def test_dask_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test dask import logic when module is available and unavailable.
 
     Args:
-        mocker: Pytest mocker fixture.
+        monkeypatch: Pytest monkeypatch fixture.
     """
     import importlib
-    import sys
     import types
 
     import ml_ecosystem_snapshots.frameworks.dask as d_fw
@@ -270,19 +256,18 @@ def test_dask_import_error(mocker: pytest_mock.MockerFixture) -> None:
         """
         return d_fw.da
 
-    # 1. Available
-    fake_dask = types.ModuleType("dask")
-    fake_da = types.ModuleType("dask.array")
-    mocker.patch.dict(sys.modules, {"dask": fake_dask, "dask.array": fake_da})
-    importlib.reload(d_fw)
-    assert _get_da() is fake_da
+    with monkeypatch.context() as mp:
+        fake_dask = types.ModuleType("dask")
+        fake_da = types.ModuleType("dask.array")
+        mp.setitem(sys.modules, "dask", fake_dask)
+        mp.setitem(sys.modules, "dask.array", fake_da)
+        importlib.reload(d_fw)
+        assert _get_da() is fake_da
 
-    # 2. Unavailable
-    mocker.patch.dict(sys.modules, {"dask": None, "dask.array": None})
-    importlib.reload(d_fw)
-    assert _get_da() is None
-    assert d_fw.collect_api(SemanticTier.UTIL) == []
+        mp.setitem(sys.modules, "dask", None)
+        mp.setitem(sys.modules, "dask.array", None)
+        importlib.reload(d_fw)
+        assert _get_da() is None
+        assert d_fw.collect_api(SemanticTier.UTIL) == []
 
-    # Restore
-    mocker.stopall()
     importlib.reload(d_fw)

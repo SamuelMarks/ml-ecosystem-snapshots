@@ -14,6 +14,7 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
 )
 
+from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.frameworks._base import CanonicalPythonOpSpec
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 
@@ -143,7 +144,17 @@ def _get_sparse() -> types.ModuleType | None:
 
         mod: types.ModuleType = sparse
         return mod
-    except Exception:
+    except (
+        SnapshotError,
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        LookupError,
+        OSError,
+        RuntimeError,
+        SyntaxError,
+    ):
         return None
 
 

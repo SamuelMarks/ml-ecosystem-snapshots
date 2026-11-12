@@ -13,10 +13,9 @@ from ml_switcheroo_ir.schema.ghost import (
 
 from ml_ecosystem_snapshots.frameworks.bohrium import (
     CANONICAL_BOHRIUM_OPS,
-    _get_bohrium,
     collect_api,
 )
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
 
@@ -46,7 +45,7 @@ def test_collect_api_bohrium_live(monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock Bohrium module."""
 
         @staticmethod
-        def array(obj: InspectableTarget) -> InspectableTarget:
+        def array(obj: LivePythonTarget) -> LivePythonTarget:
             """Mock array creation.
 
             Args:
@@ -77,24 +76,24 @@ def test_collect_api_bohrium_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_get_bohrium_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_bohrium returns module when import succeeds.
+    """Verify `collect_api` resolves live `bohrium` module from `sys.modules` when present.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
     fake_mod = types.ModuleType("bohrium")
     monkeypatch.setitem(sys.modules, "bohrium", fake_mod)
-    assert _get_bohrium() is fake_mod
+    assert collect_api(SemanticTier.ARRAY_API) == []
 
 
 def test_get_bohrium_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_bohrium handles ImportError gracefully.
+    """Verify `collect_api` falls back to canonical ops when `bohrium` import raises `ImportError`.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
     monkeypatch.setitem(sys.modules, "bohrium", None)
-    assert _get_bohrium() is None
+    assert len(collect_api(SemanticTier.ARRAY_API)) == len(CANONICAL_BOHRIUM_OPS)
 
 
 def test_collect_api_bohrium_inspection_exception(
@@ -113,7 +112,7 @@ def test_collect_api_bohrium_inspection_exception(
 
     monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.bohrium._get_bohrium", lambda: FlakyBohrium())
 
-    def mock_inspect(*args: InspectableTarget, **kwargs: InspectableTarget) -> ExtendedGhostRef:
+    def mock_inspect(*args: LivePythonTarget, **kwargs: LivePythonTarget) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -122,6 +121,9 @@ def test_collect_api_bohrium_inspection_exception(
 
         Returns:
             A mocked GhostRef.
+
+        Raises:
+            RuntimeError: Always raised to simulate inspection failure.
         """
         raise RuntimeError("Inspection failure")
 

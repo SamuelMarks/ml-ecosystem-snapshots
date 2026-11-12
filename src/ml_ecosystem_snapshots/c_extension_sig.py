@@ -11,7 +11,7 @@ import typing_extensions
 
 from ml_ecosystem_snapshots.exceptions import CExtensionSignatureError
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
-    InspectableTarget,
+    LivePythonTarget,
     get_member_dict,
 )
 
@@ -35,23 +35,6 @@ class ParsedParamTuple(pydantic.BaseModel):
             Tuple of `(name, kind, default, annotation)`.
         """
         return (self.name, self.kind, self.default, self.annotation)
-
-    @typing.overload
-    def __getitem__(self, index: typing.Literal[0, 1]) -> str: ...
-
-    @typing.overload
-    def __getitem__(self, index: int) -> str | None: ...
-
-    def __getitem__(self, index: int) -> str | None:
-        """Retrieve a parameter element by tuple index.
-
-        Args:
-            index: Element index (0=name, 1=kind, 2=default, 3=annotation).
-
-        Returns:
-            Element string or None.
-        """
-        return self.as_tuple()[index]
 
 
 def _to_parsed_param_tuple(
@@ -131,7 +114,7 @@ class CExtensionSignature:
 
     def __eq__(
         self,
-        other: (CExtensionSignature | typing.Sequence[ParsedParamTuple | RawParamTuple] | InspectableTarget),
+        other: (CExtensionSignature | typing.Sequence[ParsedParamTuple | RawParamTuple] | LivePythonTarget),
     ) -> bool:
         """Compare equality against another `CExtensionSignature` or `list` of tuples.
 
@@ -209,7 +192,7 @@ def _transform_c_sig_token(tok: str) -> str:
     return tok
 
 
-def _normalize_c_sig_args(args_str: str) -> str:
+def normalize_c_sig_args(args_str: str) -> str:
     """Normalize C++ / PyBind / ATen parameter syntax to Python syntax for AST parsing.
 
     Converts signatures like 'Tensor self, bool inplace=False' into 'self: "Tensor" = False'.
@@ -224,7 +207,10 @@ def _normalize_c_sig_args(args_str: str) -> str:
     return ", ".join(transformed)
 
 
-def _parse_c_sig_ast_arguments(args_str: str) -> ast.arguments:
+_normalize_c_sig_args = normalize_c_sig_args
+
+
+def parse_c_sig_ast_arguments(args_str: str) -> ast.arguments:
     """Parse raw C-extension parameter text into an `ast.arguments` node.
 
     Args:
@@ -239,18 +225,17 @@ def _parse_c_sig_ast_arguments(args_str: str) -> ast.arguments:
     dummy_code = f"def dummy_func({args_str}): pass"
     try:
         tree = ast.parse(dummy_code)
-        func_def = tree.body[0]
-        assert isinstance(func_def, ast.FunctionDef)
-        return func_def.args
+        return [node.args for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)][0]
     except SyntaxError:
-        norm_args = _normalize_c_sig_args(args_str)
+        norm_args = normalize_c_sig_args(args_str)
         try:
             tree = ast.parse(f"def dummy_func({norm_args}): pass")
-            func_def = tree.body[0]
-            assert isinstance(func_def, ast.FunctionDef)
-            return func_def.args
+            return [node.args for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)][0]
         except SyntaxError as exc:
             raise CExtensionSignatureError(f"Failed to parse C-extension parameter signature: '{args_str}'") from exc
+
+
+_parse_c_sig_ast_arguments = parse_c_sig_ast_arguments
 
 
 def _unparse_c_sig_anno(node: ast.AST | None) -> str | None:
@@ -285,7 +270,7 @@ def _unparse_c_sig_default(node: ast.AST) -> str:
         return ast.unparse(node)
 
 
-def _parse_c_extension_sig_str(
+def parse_c_extension_sig_str(
     sig_line: str,
 ) -> tuple[str, list[ParsedParamTuple], str | None] | None:
     """Parse a single signature line into function name, params, and return type.
@@ -354,6 +339,9 @@ def _parse_c_extension_sig_str(
     return func_name, extracted_params, ret_type_str
 
 
+_parse_c_extension_sig_str = parse_c_extension_sig_str
+
+
 def _collect_docstring_signatures(
     lines: list[str],
     has_numbered: bool,
@@ -402,14 +390,18 @@ def _fallback_target_signature(
         stripped = line.strip()
         if "(" in stripped and ")" in stripped:
             clean_cand = re.sub(r"^(?:>>>|\.\.\.)\s*", "", stripped).strip()
-            if clean_cand.startswith(f"{target_name}(") or f".{target_name}(" in clean_cand or target_name in clean_cand:
+            if (
+                clean_cand.startswith(f"{target_name}(")
+                or f".{target_name}(" in clean_cand
+                or target_name in clean_cand
+            ):
                 parsed = _parse_c_extension_sig_str(clean_cand)
                 if parsed is not None:
                     return [parsed]
     return []
 
 
-def extract_c_extension_signature(target: InspectableTarget, target_name: str) -> CExtensionSignature | None:
+def extract_c_extension_signature(target: LivePythonTarget, target_name: str) -> CExtensionSignature | None:
     """Extract signature parameters from C-extension / PyBind11 docstrings.
 
     Args:
@@ -434,7 +426,13 @@ def extract_c_extension_signature(target: InspectableTarget, target_name: str) -
     if not parsed_sigs:
         return None
 
-    if len(parsed_sigs) > 1 and has_numbered and len(parsed_sigs[0][1]) == 2 and parsed_sigs[0][1][0][1] == "VAR_POSITIONAL" and parsed_sigs[0][1][1][1] == "VAR_KEYWORD":
+    if (
+        len(parsed_sigs) > 1
+        and has_numbered
+        and len(parsed_sigs[0][1]) == 2
+        and parsed_sigs[0][1][0].kind == "VAR_POSITIONAL"
+        and parsed_sigs[0][1][1].kind == "VAR_KEYWORD"
+    ):
         primary = parsed_sigs[1]
         secondary = parsed_sigs[2:]
     else:

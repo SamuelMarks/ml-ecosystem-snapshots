@@ -7,6 +7,7 @@ generate GhostRefs for activations, losses, and optimizers.
 from __future__ import annotations
 
 import inspect
+import logging
 import types
 import typing
 
@@ -14,8 +15,13 @@ from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.frameworks.optax import OptaxScanner
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    LivePythonTarget,
+    get_member_dict,
+)
 from ml_ecosystem_snapshots.utils import get_all_members
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @typing.runtime_checkable
@@ -79,7 +85,18 @@ try:
     import jax as _jax
 
     jax = _jax
-except Exception:
+except (
+    ImportError,
+    AttributeError,
+    TypeError,
+    ValueError,
+    OSError,
+    RuntimeError,
+    LookupError,
+    SyntaxError,
+    AssertionError,
+):
+    _LOGGER.debug("Optional jax module unavailable", exc_info=True)
     jax = None
 
 
@@ -104,8 +121,18 @@ def _scan_jax_activations(include_nonpublic: bool) -> list[GhostRef]:
                 continue
             if inspect.isfunction(obj):
                 found.append(GhostInspector.inspect(obj, f"jax.nn.{name}"))
-    except Exception as exc:
-        del exc
+    except (
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        LookupError,
+        SyntaxError,
+        AssertionError,
+    ):
+        _LOGGER.debug("Failed to scan jax.nn activations", exc_info=True)
     return found
 
 
@@ -130,12 +157,22 @@ def _scan_jax_initializers(include_nonpublic: bool) -> list[GhostRef]:
                 continue
             if inspect.isfunction(obj):
                 found.append(GhostInspector.inspect(obj, f"jax.nn.initializers.{name}"))
-    except Exception as exc:
-        del exc
+    except (
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        LookupError,
+        SyntaxError,
+        AssertionError,
+    ):
+        _LOGGER.debug("Failed to scan jax.nn.initializers", exc_info=True)
     return found
 
 
-def _attach_jax_static_arg_metadata(ref: GhostRef, obj: InspectableTarget) -> GhostRef:
+def attach_jax_static_arg_metadata(ref: GhostRef, obj: LivePythonTarget) -> GhostRef:
     """Attach static argument numbers and names from JIT-compiled functions as metadata.
 
     Args:
@@ -172,6 +209,9 @@ def _attach_jax_static_arg_metadata(ref: GhostRef, obj: InspectableTarget) -> Gh
     return ref
 
 
+_attach_jax_static_arg_metadata = attach_jax_static_arg_metadata
+
+
 def _collect_jax_namespace(
     ns_obj: types.ModuleType | type,
     api_prefix: str,
@@ -197,8 +237,18 @@ def _collect_jax_namespace(
                 if attach_static_args:
                     ref = _attach_jax_static_arg_metadata(ref, obj)
                 collected.append(ref)
-            except Exception as exc:
-                del exc
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                OSError,
+                RuntimeError,
+                LookupError,
+                SyntaxError,
+                AssertionError,
+            ):
+                _LOGGER.debug("Failed to inspect JAX callable %s.%s", api_prefix, name, exc_info=True)
     return collected
 
 
@@ -235,7 +285,7 @@ def _collect_jax_member_callables(
         List of inspected `GhostRef` items.
     """
     collected: list[GhostRef] = []
-    for name, obj in inspect.getmembers(target):
+    for name, obj in get_member_dict(target).items():
         if not include_nonpublic and name.startswith("_"):
             continue
         if callable(obj) and (not exclude_classes or not inspect.isclass(obj)):
@@ -300,7 +350,7 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
             )
 
         # 4. Transformations (jax.jit, jax.grad, jax.vmap, jax.pmap, jax.checkpoint)
-        jax_members: dict[str, InspectableTarget] = dict(inspect.getmembers(jax))
+        jax_members: dict[str, LivePythonTarget] = get_member_dict(jax)
         for transform_name in ("jit", "grad", "vmap", "pmap", "checkpoint"):
             obj = jax_members.get(transform_name)
             if obj and callable(obj):
@@ -309,7 +359,7 @@ def _scan_array_api(include_nonpublic: bool) -> list[GhostRef]:
                 except _JAX_INSPECT_ERRORS:
                     pass
 
-        jnp_members: dict[str, InspectableTarget] = dict(inspect.getmembers(jnp))
+        jnp_members: dict[str, LivePythonTarget] = get_member_dict(jnp)
         obj = jnp_members.get("transpose")
         if obj and not any(r.name == "transpose" for r in found):
             found.append(GhostInspector.inspect(obj, "jnp.transpose"))

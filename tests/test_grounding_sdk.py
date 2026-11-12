@@ -256,7 +256,10 @@ def test_validate_sass_instruction() -> None:
         operands=["R1", "R2"],
     )
     assert not report_invalid_mnem.is_grounded
-    assert any(d.field == "mnemonic" and d.suggested_fix == "FFMA" for d in report_invalid_mnem.diagnostics)
+    assert any(
+        isinstance(d, GroundingDiagnostic) and d.field == "mnemonic" and d.suggested_fix == "FFMA"
+        for d in report_invalid_mnem.diagnostics
+    )
 
     # Test invalid architecture
     report_bad_arch = validate_sass_instruction(
@@ -265,7 +268,7 @@ def test_validate_sass_instruction() -> None:
         operands=["R1", "R2", "R3", "R4"],
     )
     assert not report_bad_arch.is_grounded
-    assert any(d.field == "architecture" for d in report_bad_arch.diagnostics)
+    assert any(isinstance(d, GroundingDiagnostic) and d.field == "architecture" for d in report_bad_arch.diagnostics)
 
     # Test unrecognized modifier
     report_bad_mod = validate_sass_instruction(
@@ -274,7 +277,7 @@ def test_validate_sass_instruction() -> None:
         operands=["R1", "R2", "R3", "R4"],
         modifiers=[".NONEXISTENT_MODIFIER"],
     )
-    assert any(d.field == "modifiers" for d in report_bad_mod.diagnostics)
+    assert any(isinstance(d, GroundingDiagnostic) and d.field == "modifiers" for d in report_bad_mod.diagnostics)
 
     # Test operand count mismatch
     report_bad_ops = validate_sass_instruction(
@@ -283,7 +286,7 @@ def test_validate_sass_instruction() -> None:
         operands=["R1"],
     )
     assert not report_bad_ops.is_grounded
-    assert any(d.field == "operands" for d in report_bad_ops.diagnostics)
+    assert any(isinstance(d, GroundingDiagnostic) and d.field == "operands" for d in report_bad_ops.diagnostics)
 
 
 def test_validate_rdna_instruction() -> None:
@@ -303,7 +306,7 @@ def test_validate_rdna_instruction() -> None:
         operands=["v0", "v1"],
     )
     assert not report_typo.is_grounded
-    assert any(d.field == "mnemonic" for d in report_typo.diagnostics)
+    assert any(isinstance(d, GroundingDiagnostic) and d.field == "mnemonic" for d in report_typo.diagnostics)
 
     # Test odd-aligned 64-bit register pair violation
     report_odd_reg = validate_rdna_instruction(
@@ -312,7 +315,10 @@ def test_validate_rdna_instruction() -> None:
         operands=["v[1:2]", "v[2:3]"],
     )
     assert not report_odd_reg.is_grounded
-    assert any("operands[0]" in d.field and "even-aligned" in d.message for d in report_odd_reg.diagnostics)
+    assert any(
+        isinstance(d, GroundingDiagnostic) and "operands[0]" in d.field and "even-aligned" in d.message
+        for d in report_odd_reg.diagnostics
+    )
 
 
 def test_validate_stablehlo_op() -> None:
@@ -332,7 +338,10 @@ def test_validate_stablehlo_op() -> None:
         attributes={},
     )
     assert not report_dot_missing.is_grounded
-    assert any(d.field == "attributes.dot_dimension_numbers" for d in report_dot_missing.diagnostics)
+    assert any(
+        isinstance(d, GroundingDiagnostic) and d.field == "attributes.dot_dimension_numbers"
+        for d in report_dot_missing.diagnostics
+    )
 
     # Test convolution missing dimension_numbers
     report_conv_missing = validate_stablehlo_op(
@@ -341,7 +350,10 @@ def test_validate_stablehlo_op() -> None:
         attributes={},
     )
     assert not report_conv_missing.is_grounded
-    assert any(d.field == "attributes.dimension_numbers" for d in report_conv_missing.diagnostics)
+    assert any(
+        isinstance(d, GroundingDiagnostic) and d.field == "attributes.dimension_numbers"
+        for d in report_conv_missing.diagnostics
+    )
 
     # Test unrecognized op with suggestion
     report_typo = validate_stablehlo_op(
@@ -350,7 +362,7 @@ def test_validate_stablehlo_op() -> None:
         attributes={},
     )
     assert not report_typo.is_grounded
-    assert any(d.field == "operation" for d in report_typo.diagnostics)
+    assert any(isinstance(d, GroundingDiagnostic) and d.field == "operation" for d in report_typo.diagnostics)
 
     # Test operand count mismatch
     report_op_count = validate_stablehlo_op(
@@ -359,7 +371,7 @@ def test_validate_stablehlo_op() -> None:
         attributes={},
     )
     assert not report_op_count.is_grounded
-    assert any(d.field == "operands" for d in report_op_count.diagnostics)
+    assert any(isinstance(d, GroundingDiagnostic) and d.field == "operands" for d in report_op_count.diagnostics)
 
 
 def test_validate_mlir_op() -> None:
@@ -390,7 +402,7 @@ def test_validate_mlir_op() -> None:
         attributes={},
     )
     assert not report_count.is_grounded
-    assert any(d.field == "operand_count" for d in report_count.diagnostics)
+    assert any(isinstance(d, GroundingDiagnostic) and d.field == "operand_count" for d in report_count.diagnostics)
 
 
 def test_validate_python_call(tmp_path: Path) -> None:
@@ -460,7 +472,10 @@ def test_validate_python_call(tmp_path: Path) -> None:
         engine=engine,
     )
     assert not res_unrec.is_grounded
-    assert any(d.field == "api_path" and d.suggested_fix == "torch.sum" for d in res_unrec.diagnostics)
+    assert any(
+        isinstance(d, GroundingDiagnostic) and d.field == "api_path" and d.suggested_fix == "torch.sum"
+        for d in res_unrec.diagnostics
+    )
 
     # Hallucinated axis kwarg on torch -> suggests dim
     res_halluc_axis = validate_python_call(
@@ -471,7 +486,10 @@ def test_validate_python_call(tmp_path: Path) -> None:
         engine=engine,
     )
     assert not res_halluc_axis.is_grounded
-    assert any(d.field == "kwargs.axis" and d.suggested_fix == "dim" for d in res_halluc_axis.diagnostics)
+    assert any(
+        isinstance(d, GroundingDiagnostic) and d.field == "kwargs.axis" and d.suggested_fix == "dim"
+        for d in res_halluc_axis.diagnostics
+    )
 
     # Hallucinated dim kwarg on numpy -> suggests axis
     res_halluc_dim = validate_python_call(
@@ -482,7 +500,10 @@ def test_validate_python_call(tmp_path: Path) -> None:
         engine=engine,
     )
     assert not res_halluc_dim.is_grounded
-    assert any(d.field == "kwargs.dim" and d.suggested_fix == "axis" for d in res_halluc_dim.diagnostics)
+    assert any(
+        isinstance(d, GroundingDiagnostic) and d.field == "kwargs.dim" and d.suggested_fix == "axis"
+        for d in res_halluc_dim.diagnostics
+    )
 
     # Hallucinated arbitrary kwarg
     res_rand_kw = validate_python_call(
@@ -503,28 +524,30 @@ def test_validate_python_call(tmp_path: Path) -> None:
         engine=engine,
     )
     assert not res_too_many_args.is_grounded
-    assert any(d.field == "args" for d in res_too_many_args.diagnostics)
+    assert any(isinstance(d, GroundingDiagnostic) and d.field == "args" for d in res_too_many_args.diagnostics)
 
     # Overloads (dict & object) and accepted_kwargs coverage
     from ml_switcheroo_ir.schema.ghost import ParameterKind
 
     from ml_ecosystem_snapshots.models import ExtendedGhostRef, GhostParam, GhostRef
 
-    mock_ref = ExtendedGhostRef(
-        name="fn",
-        api_path="mock.fn",
-        kind="function",
-        params=[GhostParam(name="a", kind=ParameterKind.POSITIONAL_OR_KEYWORD)],
-        overloads=[
-            {"params": [{"name": "b"}, {"name": ""}]},
-            GhostRef(
-                name="fn",
-                api_path="mock.fn",
-                kind="function",
-                params=[GhostParam(name="c", kind=ParameterKind.KEYWORD_ONLY)],
-            ),
-        ],
-        accepted_kwargs=["extra_kw"],
+    mock_ref = ExtendedGhostRef.model_validate(
+        {
+            "name": "fn",
+            "api_path": "mock.fn",
+            "kind": "function",
+            "params": [GhostParam(name="a", kind=ParameterKind.POSITIONAL_OR_KEYWORD)],
+            "overloads": [
+                {"params": [{"name": "b"}, {"name": ""}]},
+                GhostRef(
+                    name="fn",
+                    api_path="mock.fn",
+                    kind="function",
+                    params=[GhostParam(name="c", kind=ParameterKind.KEYWORD_ONLY)],
+                ),
+            ],
+            "accepted_kwargs": ["extra_kw"],
+        }
     )
 
     engine._target_cache["mock"] = {"mock.fn": mock_ref}
@@ -910,10 +933,21 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
     Args:
         tmp_path: Pytest temporary directory fixture.
     """
-    from ml_ecosystem_snapshots.grounding.python_fw import _normalize_candidate_dict
+    from ml_ecosystem_snapshots.grounding.python_fw import verify_python_call
     from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository
 
-    assert _normalize_candidate_dict({"name": "raw"}) == {"name": "raw"}
+    res_cand = verify_python_call(
+        framework="torch",
+        api_path="torch.add",
+        sig={
+            "name": "add",
+            "params": [{"name": "x", "kind": "POSITIONAL_OR_KEYWORD"}],
+            "overloads": [{"name": "add", "params": [{"name": "x", "kind": "POSITIONAL_OR_KEYWORD"}]}],
+        },
+        snapshot_source="bundled_package",
+        args_count=1,
+    )
+    assert res_cand.is_hallucinated is False
 
     # 1. GroundingEngine with SnapshotRepository fallback
     repo = SnapshotRepository()
@@ -953,7 +987,7 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
         arg_dtypes=["int32"],
     )
     assert not py_dt_err.is_grounded
-    assert any(d.field == "arguments" for d in py_dt_err.diagnostics)
+    assert any(isinstance(d, GroundingDiagnostic) and d.field == "arguments" for d in py_dt_err.diagnostics)
 
     # Python secondary overload positional arity acceptance
     ov_dir = str(tmp_path / "ov_dir")
@@ -1007,7 +1041,7 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
         control_codes={"stall_count": 99},
     )
     assert not sass_err_rep.is_grounded
-    fields = {d.field for d in sass_err_rep.diagnostics}
+    fields = {d.field for d in sass_err_rep.diagnostics if isinstance(d, GroundingDiagnostic)}
     assert "modifiers" in fields
     assert "operands[1]" in fields
     assert "operands" in fields
@@ -1023,7 +1057,7 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
         wave_size=64,
     )
     assert not rdna_err_rep.is_grounded
-    rdna_fields = {d.field for d in rdna_err_rep.diagnostics}
+    rdna_fields = {d.field for d in rdna_err_rep.diagnostics if isinstance(d, GroundingDiagnostic)}
     assert "gfx_arch" in rdna_fields
     assert "encoding" in rdna_fields
     assert "modifiers" in rdna_fields
@@ -1130,7 +1164,7 @@ def test_unified_grounding_ir_and_keepdim_branches(tmp_path: Path) -> None:
         result_types=["tensor<4xf32>"],
     )
     assert not shlo_err.is_grounded
-    shlo_fields = {d.field for d in shlo_err.diagnostics}
+    shlo_fields = {d.field for d in shlo_err.diagnostics if isinstance(d, GroundingDiagnostic)}
     assert "traits" in shlo_fields
     assert "attributes" in shlo_fields
 
@@ -1140,7 +1174,7 @@ def test_unified_grounding_ir_and_keepdim_branches(tmp_path: Path) -> None:
         attributes={},
         regions={"body": {"block_arguments": ["tensor<f32>"], "yield_types": []}},
     )
-    assert any(d.field == "regions.body" for d in shlo_reg_err.diagnostics)
+    assert any(isinstance(d, GroundingDiagnostic) and d.field == "regions.body" for d in shlo_reg_err.diagnostics)
 
     # RDNA empty gfx_arch branch
     rdna_no_arch = validate_rdna_instruction(
@@ -1215,7 +1249,7 @@ def test_unified_grounding_ir_and_keepdim_branches(tmp_path: Path) -> None:
         attributes={},
         engine=eng_mlir,
     )
-    assert any(d.field == "operands[0]" for d in shlo_type_err.diagnostics)
+    assert any(isinstance(d, GroundingDiagnostic) and d.field == "operands[0]" for d in shlo_type_err.diagnostics)
 
     mlir_type_err = validate_mlir_op(
         dialect="arith",
@@ -1227,7 +1261,7 @@ def test_unified_grounding_ir_and_keepdim_branches(tmp_path: Path) -> None:
         result_types=["f64"],
     )
     assert not mlir_type_err.is_grounded
-    mlir_fields = {d.field for d in mlir_type_err.diagnostics}
+    mlir_fields = {d.field for d in mlir_type_err.diagnostics if isinstance(d, GroundingDiagnostic)}
     assert "operands[0]" in mlir_fields
     assert "attributes" in mlir_fields
 
@@ -1239,7 +1273,7 @@ def test_unified_grounding_ir_and_keepdim_branches(tmp_path: Path) -> None:
         operand_types=["tensor<4xf32>", "tensor<8xf32>"],
         result_types=["tensor<4xf32>"],
     )
-    assert any(d.field == "traits" for d in mlir_trait_err.diagnostics)
+    assert any(isinstance(d, GroundingDiagnostic) and d.field == "traits" for d in mlir_trait_err.diagnostics)
 
 
 def test_grounding_models_cross_repo_identity() -> None:
@@ -1254,3 +1288,149 @@ def test_grounding_models_cross_repo_identity() -> None:
     assert snap_models.GroundingDiagnostic is ir_grounding.GroundingDiagnostic
     assert snap_models.GroundingReport is ir_grounding.GroundingReport
     assert snap_engine.compute_levenshtein is ir_core.compute_levenshtein
+
+
+def test_domain_validators_honor_engine_snapshots_dir_and_variadic_mlir(tmp_path: Path) -> None:
+    """Verify all domain `validate_*_op` verifiers honor `GroundingEngine.snapshots_dir` and variadic MLIR ops.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
+    from ml_ecosystem_snapshots.grounding import (
+        validate_array_api_op,
+        validate_aten_op,
+        validate_chex_op,
+        validate_cpp_op,
+        validate_domain_op,
+        validate_flash_attn_op,
+        validate_grain_op,
+        validate_metal_op,
+        validate_mlir_op,
+        validate_nccl_op,
+        validate_optax_op,
+        validate_orbax_op,
+        validate_safetensors_op,
+        validate_scipy_op,
+        validate_torchaudio_op,
+        validate_torchvision_op,
+    )
+
+    scipy_snap = tmp_path / "scipy_v1.14.0.json"
+    scipy_snap.write_text(
+        json.dumps(
+            {
+                "target": "scipy",
+                "version": "1.14.0",
+                "categories": {
+                    "special": [
+                        {
+                            "name": "custom_bessel",
+                            "api_path": "scipy.special.custom_bessel",
+                            "kind": "function",
+                            "params": [
+                                {"name": "v", "kind": "POSITIONAL_ONLY"},
+                                {"name": "z", "kind": "POSITIONAL_OR_KEYWORD"},
+                                {"name": "scale", "kind": "POSITIONAL_OR_KEYWORD", "default": "1.0"},
+                                {"name": "out", "kind": "KEYWORD_ONLY", "default": "None"},
+                                {"name": "extra", "kind": "VAR_POSITIONAL"},
+                            ],
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    metal_snap = tmp_path / "metal_v3.2.json"
+    metal_snap.write_text(
+        json.dumps(
+            {
+                "target": "metal",
+                "version": "3.2",
+                "categories": {
+                    "ops": [
+                        {
+                            "name": "custom_simd_sum",
+                            "api_path": "metal.custom_simd_sum",
+                            "kind": "operation",
+                            "domain_metadata": {"address_space": "threadgroup"},
+                            "params": [
+                                {"name": "val", "kind": "POSITIONAL_ONLY", "role": "OPERAND"},
+                                {"name": "lane", "kind": "POSITIONAL_ONLY", "role": "ATTRIBUTE"},
+                                {"name": "rest", "kind": "VAR_POSITIONAL"},
+                            ],
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    mlir_snap = tmp_path / "mlir_exhaustive.json"
+    mlir_snap.write_text(
+        json.dumps(
+            {
+                "target": "mlir",
+                "version": "19.1.0",
+                "operations": [
+                    {
+                        "name": "arith.variadic_sum",
+                        "api_path": "arith.variadic_sum",
+                        "kind": "function",
+                        "has_varargs": True,
+                        "params": [
+                            {"name": "inputs", "kind": "POSITIONAL_ONLY", "annotation": "tensor<*xf32>"},
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    eng = GroundingEngine(snapshots_dir=str(tmp_path))
+    assert eng.snapshots_dir == str(tmp_path)
+
+    # Custom scipy op resolved from `eng.snapshots_dir`
+    ok_scipy = validate_scipy_op("custom_bessel", inputs_count=2, attributes=["scale", "out"], engine=eng)
+    assert ok_scipy.is_grounded
+    bad_scipy = validate_scipy_op("custom_bessel", inputs_count=1, attributes=["bad_kw"], engine=eng)
+    assert bad_scipy.has_errors
+
+    # Custom metal op resolved from `eng.snapshots_dir` with address_space metadata
+    ok_metal = validate_metal_op(
+        "custom_simd_sum",
+        inputs_count=1,
+        attributes=["lane"],
+        address_space="threadgroup",
+        engine=eng,
+    )
+    assert ok_metal.is_grounded
+    bad_metal = validate_metal_op("custom_simd_sum", address_space="device", engine=eng)
+    assert bad_metal.has_errors
+
+    # Fallback to canonical catalog when symbol is not overridden in custom snapshots_dir
+    fallback_optax = validate_optax_op("adam", engine=eng)
+    assert fallback_optax.is_grounded
+    missing_optax = validate_optax_op("nonexistent_custom_op", engine=eng)
+    assert missing_optax.has_errors
+
+    # Exercise all remaining domain validators
+    assert validate_cpp_op("clamp").is_grounded
+    assert validate_array_api_op("sum").is_grounded
+    assert validate_torchvision_op("nms").is_grounded
+    assert validate_torchaudio_op("Spectrogram").is_grounded
+    assert validate_safetensors_op("save_file").is_grounded
+    assert validate_aten_op("aten.add").is_grounded
+    assert validate_nccl_op("all_reduce").is_grounded
+    assert validate_flash_attn_op("flash_attn_func").is_grounded
+    assert validate_chex_op("assert_shape").is_grounded
+    assert validate_grain_op("DataLoader").is_grounded
+    assert validate_orbax_op("PyTreeCheckpointer").is_grounded
+    assert validate_domain_op("optax", "adamw").is_grounded
+
+    # Variadic MLIR operation in GroundingEngine (`has_varargs=True`)
+    var_ok = validate_mlir_op("arith", "variadic_sum", operand_count=3, attributes={}, engine=eng)
+    assert var_ok.is_grounded

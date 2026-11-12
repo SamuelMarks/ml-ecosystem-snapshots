@@ -30,6 +30,7 @@ BANNED_CALL_NAMES: frozenset[str] = frozenset(
         "eval",
         "exec",
         "compile",
+        "__import__",
         "cast",
         "attrgetter",
         "itemgetter",
@@ -58,19 +59,24 @@ BANNED_TYPE_NAMES: frozenset[str] = frozenset({"Any", "object", "FunctionType"})
 
 BANNED_IMPORT_NAMES: frozenset[str] = BANNED_CALL_NAMES | BANNED_TYPE_NAMES
 
-BANNED_MODULE_NAMES: frozenset[str] = frozenset({"builtins", "typing", "typing_extensions", "operator", "inspect", "types", "core_schema"})
+BANNED_MODULE_NAMES: frozenset[str] = frozenset(
+    {"builtins", "typing", "typing_extensions", "operator", "inspect", "types", "core_schema"}
+)
 
 
-def _is_dunder_name(name: str) -> bool:
+def is_dunder_name(name: str) -> bool:
     """Return whether `name` is a double-underscore dunder identifier (`__foo__`).
 
     Args:
         name: Identifier string to check.
 
     Returns:
-        True if `name` starts and ends with `'__'` and has length > 4.
+        True if `name` starts and ends with `__` and has length greater than 4.
     """
     return len(name) > 4 and name.startswith("__") and name.endswith("__")
+
+
+_is_dunder_name = is_dunder_name
 
 
 BANNED_DISGUISED_CASTS: frozenset[str] = frozenset(
@@ -122,6 +128,11 @@ def _is_disguised_cast_name(name: str) -> bool:
     return name.lstrip("_") in BANNED_DISGUISED_CASTS
 
 
+BANNED_INSPECT_ATTRS_OUTSIDE_BOUNDARY: frozenset[str] = frozenset(
+    {"getmembers", "getattr_static", "signature", "getsource"}
+)
+
+
 def _check_call_node(node: ast.Call, filepath: str) -> list[str]:
     """Inspect an `ast.Call` node for banned builtin/reflection calls and dunder invocations.
 
@@ -137,13 +148,27 @@ def _check_call_node(node: ast.Call, filepath: str) -> list[str]:
         if node.func.id in BANNED_CALL_NAMES:
             errors.append(f"{filepath}:{node.lineno}:{node.col_offset}: banned call '{node.func.id}(...)'")
         elif _is_disguised_cast_name(node.func.id):
-            errors.append(f"{filepath}:{node.lineno}:{node.col_offset}: banned disguised cast call '{node.func.id}(...)'")
+            errors.append(
+                f"{filepath}:{node.lineno}:{node.col_offset}: banned disguised cast call '{node.func.id}(...)'"
+            )
     elif isinstance(node.func, ast.Attribute):
         attr = node.func.attr
-        if attr in BANNED_CALL_NAMES and isinstance(node.func.value, ast.Name) and node.func.value.id in BANNED_MODULE_NAMES:
+        if (
+            attr in BANNED_CALL_NAMES
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id in BANNED_MODULE_NAMES
+        ):
             errors.append(f"{filepath}:{node.lineno}:{node.col_offset}: banned attribute call '.{attr}(...)'")
+        elif attr in BANNED_INSPECT_ATTRS_OUTSIDE_BOUNDARY and not filepath.replace("\\", "/").endswith(
+            "introspection/runtime_boundary.py"
+        ):
+            errors.append(
+                f"{filepath}:{node.lineno}:{node.col_offset}: banned reflection call '.{attr}(...)' outside runtime_boundary.py"
+            )
         elif _is_dunder_name(attr):
-            errors.append(f"{filepath}:{node.lineno}:{node.col_offset}: banned direct dunder method call '.{attr}(...)'")
+            errors.append(
+                f"{filepath}:{node.lineno}:{node.col_offset}: banned direct dunder method call '.{attr}(...)'"
+            )
     return errors
 
 
@@ -174,7 +199,31 @@ def _check_import_from_node(node: ast.ImportFrom, filepath: str) -> list[str]:
     Returns:
         List of formatted violation messages.
     """
-    return [f"{filepath}:{node.lineno}:{node.col_offset}: banned import of '{alias.name}'" for alias in node.names if alias.name in BANNED_IMPORT_NAMES]
+    return [
+        f"{filepath}:{node.lineno}:{node.col_offset}: banned import of '{alias.name}'"
+        for alias in node.names
+        if alias.name in BANNED_IMPORT_NAMES
+    ]
+
+
+BANNED_CLASS_DUNDERS: frozenset[str] = frozenset(
+    {
+        "__getitem__",
+        "__setitem__",
+        "__contains__",
+        "__getattr__",
+        "__getattribute__",
+        "__setattr__",
+        "__dir__",
+        "__call__",
+    }
+)
+
+WHITELISTED_CONTAINER_DUNDERS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("CExtensionSignature", "__getitem__"),
+    }
+)
 
 
 def _is_protocol_base(base: ast.expr) -> bool:
@@ -186,11 +235,40 @@ def _is_protocol_base(base: ast.expr) -> bool:
     Returns:
         True if the expression references `Protocol`.
     """
-    return (isinstance(base, ast.Name) and base.id == "Protocol") or (isinstance(base, ast.Attribute) and base.attr == "Protocol")
+    return (isinstance(base, ast.Name) and base.id == "Protocol") or (
+        isinstance(base, ast.Attribute) and base.attr == "Protocol"
+    )
+
+
+def _is_type_checking_test(test: ast.expr) -> bool:
+    """Return whether an `if` condition tests `TYPE_CHECKING` or `<module>.TYPE_CHECKING`.
+
+    Args:
+        test: AST expression from an `ast.If` node.
+
+    Returns:
+        True if `test` references `TYPE_CHECKING`.
+    """
+    return (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or (
+        isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+    )
+
+
+def _is_src_path(filepath: str) -> bool:
+    """Return whether `filepath` resides under `src/`.
+
+    Args:
+        filepath: File path string to classify.
+
+    Returns:
+        True if `filepath` is inside `src/`.
+    """
+    norm_path = filepath.replace("\\", "/")
+    return norm_path.startswith("src/") or "/src/" in norm_path
 
 
 def _check_class_node(node: ast.ClassDef, filepath: str) -> list[str]:
-    """Inspect an `ast.ClassDef` node for empty marker `Protocol` definitions.
+    """Inspect an `ast.ClassDef` node for empty `Protocol`s, phantom `if TYPE_CHECKING:` bodies, and non-protocol dunders.
 
     Args:
         node: AST ClassDef node.
@@ -199,12 +277,35 @@ def _check_class_node(node: ast.ClassDef, filepath: str) -> list[str]:
     Returns:
         List of formatted violation messages.
     """
-    if not any(_is_protocol_base(b) for b in node.bases):
-        return []
-    non_doc_stmts = [stmt for stmt in node.body if not isinstance(stmt, ast.Pass) and not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant))]
-    if not non_doc_stmts:
-        return [f"{filepath}:{node.lineno}:{node.col_offset}: banned empty Protocol class '{node.name}'"]
-    return []
+    errors: list[str] = []
+    is_protocol = any(_is_protocol_base(b) for b in node.bases)
+
+    for stmt in node.body:
+        if isinstance(stmt, ast.If) and _is_type_checking_test(stmt.test):
+            errors.append(
+                f"{filepath}:{stmt.lineno}:{stmt.col_offset}: banned phantom 'if TYPE_CHECKING:' block inside class '{node.name}'"
+            )
+        if (
+            not is_protocol
+            and _is_src_path(filepath)
+            and isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and stmt.name in BANNED_CLASS_DUNDERS
+            and (node.name, stmt.name) not in WHITELISTED_CONTAINER_DUNDERS
+        ):
+            errors.append(
+                f"{filepath}:{stmt.lineno}:{stmt.col_offset}: banned non-protocol dunder method '{stmt.name}' on class '{node.name}'"
+            )
+
+    if is_protocol:
+        non_doc_stmts = [
+            stmt
+            for stmt in node.body
+            if not isinstance(stmt, ast.Pass)
+            and not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant))
+        ]
+        if not non_doc_stmts:
+            errors.append(f"{filepath}:{node.lineno}:{node.col_offset}: banned empty Protocol class '{node.name}'")
+    return errors
 
 
 def _is_typeguard_return(returns: ast.expr | None) -> bool:
@@ -219,7 +320,9 @@ def _is_typeguard_return(returns: ast.expr | None) -> bool:
     if not isinstance(returns, ast.Subscript):
         return False
     val = returns.value
-    return (isinstance(val, ast.Name) and val.id in {"TypeGuard", "TypeIs"}) or (isinstance(val, ast.Attribute) and val.attr in {"TypeGuard", "TypeIs"})
+    return (isinstance(val, ast.Name) and val.id in {"TypeGuard", "TypeIs"}) or (
+        isinstance(val, ast.Attribute) and val.attr in {"TypeGuard", "TypeIs"}
+    )
 
 
 def _is_trivial_non_none_compare(expr: ast.expr) -> bool:
@@ -231,11 +334,42 @@ def _is_trivial_non_none_compare(expr: ast.expr) -> bool:
     Returns:
         True if `expr` is `<name> is not None`.
     """
-    return isinstance(expr, ast.Compare) and len(expr.ops) == 1 and isinstance(expr.ops[0], ast.IsNot) and len(expr.comparators) == 1 and isinstance(expr.comparators[0], ast.Constant) and expr.comparators[0].value is None
+    return (
+        isinstance(expr, ast.Compare)
+        and len(expr.ops) == 1
+        and isinstance(expr.ops[0], ast.IsNot)
+        and len(expr.comparators) == 1
+        and isinstance(expr.comparators[0], ast.Constant)
+        and expr.comparators[0].value is None
+    )
+
+
+def _references_first_param_cleanly(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Return whether `node` has a first parameter loaded in its body without `del <param>`.
+
+    Args:
+        node: AST FunctionDef or AsyncFunctionDef node.
+
+    Returns:
+        True if the first parameter exists, is never deleted, and is referenced in a `Load` context.
+    """
+    all_args = [*node.args.posonlyargs, *node.args.args]
+    if not all_args:
+        return False
+    target_name = all_args[0].arg
+    has_load = False
+    for child in ast.walk(node):
+        if isinstance(child, ast.Delete):
+            for del_target in child.targets:
+                if isinstance(del_target, ast.Name) and del_target.id == target_name:
+                    return False
+        elif isinstance(child, ast.Name) and child.id == target_name and isinstance(child.ctx, ast.Load):
+            has_load = True
+    return has_load
 
 
 def _check_function_node(node: ast.FunctionDef | ast.AsyncFunctionDef, filepath: str) -> list[str]:
-    """Inspect a function definition for disguised `as_*` casts or tautological `TypeGuard` bodies.
+    """Inspect a function definition for disguised `as_*` casts or unsound/tautological `TypeGuard` bodies.
 
     Args:
         node: AST FunctionDef or AsyncFunctionDef node.
@@ -248,12 +382,20 @@ def _check_function_node(node: ast.FunctionDef | ast.AsyncFunctionDef, filepath:
     if node.name in BANNED_CALL_NAMES or _is_disguised_cast_name(node.name):
         errors.append(f"{filepath}:{node.lineno}:{node.col_offset}: banned wrapper function definition '{node.name}'")
     if _is_typeguard_return(node.returns):
+        if not _references_first_param_cleanly(node):
+            errors.append(
+                f"{filepath}:{node.lineno}:{node.col_offset}: banned unsound TypeGuard '{node.name}' ignoring or deleting its narrowed parameter"
+            )
         for stmt in node.body:
             if isinstance(stmt, ast.Return) and stmt.value is not None:
                 if isinstance(stmt.value, ast.Constant) and stmt.value.value is True:
-                    errors.append(f"{filepath}:{node.lineno}:{node.col_offset}: banned tautological TypeGuard '{node.name}' returning True")
+                    errors.append(
+                        f"{filepath}:{node.lineno}:{node.col_offset}: banned tautological TypeGuard '{node.name}' returning True"
+                    )
                 elif _is_trivial_non_none_compare(stmt.value):
-                    errors.append(f"{filepath}:{node.lineno}:{node.col_offset}: banned tautological TypeGuard '{node.name}' returning 'is not None'")
+                    errors.append(
+                        f"{filepath}:{node.lineno}:{node.col_offset}: banned tautological TypeGuard '{node.name}' returning 'is not None'"
+                    )
     return errors
 
 
@@ -267,14 +409,13 @@ def _check_if_node(node: ast.If, filepath: str) -> list[str]:
     Returns:
         List of formatted violation messages.
     """
-    is_tc = (isinstance(node.test, ast.Name) and node.test.id == "TYPE_CHECKING") or (isinstance(node.test, ast.Attribute) and node.test.attr == "TYPE_CHECKING")
-    if is_tc and node.orelse:
+    if _is_type_checking_test(node.test) and node.orelse:
         return [f"{filepath}:{node.lineno}:{node.col_offset}: banned 'if TYPE_CHECKING: ... else:' block"]
     return []
 
 
 def _check_except_handler_node(node: ast.ExceptHandler, filepath: str) -> list[str]:
-    """Inspect an `ast.ExceptHandler` node for bare `except Exception: pass` silent swallowing.
+    """Inspect an `ast.ExceptHandler` node for bare `except:`, `BaseException`, or silent `pass` / `del exc`.
 
     Args:
         node: AST ExceptHandler node.
@@ -283,14 +424,29 @@ def _check_except_handler_node(node: ast.ExceptHandler, filepath: str) -> list[s
     Returns:
         List of formatted violation messages.
     """
-    is_broad_exc = node.type is None or (isinstance(node.type, ast.Name) and node.type.id in {"Exception", "BaseException"})
-    if is_broad_exc and len(node.body) == 1 and isinstance(node.body[0], ast.Pass):
-        return [f"{filepath}:{node.lineno}:{node.col_offset}: banned silent 'except Exception: pass' block"]
+    if node.type is None:
+        return [f"{filepath}:{node.lineno}:{node.col_offset}: banned bare 'except:' handler"]
+    if isinstance(node.type, ast.Name) and node.type.id == "BaseException":
+        has_reraise = any(isinstance(n, ast.Raise) for n in ast.walk(node))
+        if not has_reraise:
+            return [f"{filepath}:{node.lineno}:{node.col_offset}: banned 'except BaseException:' without re-raise"]
+    is_broad_exc = isinstance(node.type, ast.Name) and node.type.id in {"Exception", "BaseException"}
+    if is_broad_exc:
+        if len(node.body) == 1 and isinstance(node.body[0], ast.Pass):
+            return [f"{filepath}:{node.lineno}:{node.col_offset}: banned silent 'except Exception: pass' block"]
+        if any(isinstance(stmt, ast.Delete) for stmt in node.body):
+            return [
+                f"{filepath}:{node.lineno}:{node.col_offset}: banned linter-evading 'except Exception: del exc' block"
+            ]
+        if isinstance(node.type, ast.Name) and node.type.id == "Exception" and _is_prod_or_script_path(filepath):
+            return [
+                f"{filepath}:{node.lineno}:{node.col_offset}: banned broad 'except Exception:' handler in production/script code"
+            ]
     return []
 
 
 def _check_comments(source: str, filepath: str) -> list[str]:
-    """Inspect source tokens for type-ignore comments.
+    """Inspect source tokens for type-ignore, noqa, and pragma-no-cover comments.
 
     Args:
         source: Raw Python source text.
@@ -302,9 +458,66 @@ def _check_comments(source: str, filepath: str) -> list[str]:
     errors: list[str] = []
     tokens = tokenize.generate_tokens(io.StringIO(source).readline)
     for tok_type, tok_str, (lineno, col), _, _ in tokens:
-        if tok_type == tokenize.COMMENT and "type:" in tok_str and "ignore" in tok_str:
-            errors.append(f"{filepath}:{lineno}:{col}: banned type-ignore comment")
+        if tok_type == tokenize.COMMENT:
+            if "type:" in tok_str and "ignore" in tok_str:
+                errors.append(f"{filepath}:{lineno}:{col}: banned type-ignore comment")
+            if "noqa" in tok_str:
+                errors.append(f"{filepath}:{lineno}:{col}: banned noqa suppression comment")
+            if "pragma:" in tok_str and "no cover" in tok_str:
+                errors.append(f"{filepath}:{lineno}:{col}: banned pragma: no cover comment")
     return errors
+
+
+def _is_prod_or_script_path(filepath: str) -> bool:
+    """Return whether `filepath` resides under `src/` or `scripts/`.
+
+    Args:
+        filepath: File path string to classify.
+
+    Returns:
+        True if `filepath` is inside `src/` or `scripts/`.
+    """
+    norm_path = filepath.replace("\\", "/")
+    return (
+        norm_path.startswith("src/")
+        or norm_path.startswith("scripts/")
+        or "/src/" in norm_path
+        or "/scripts/" in norm_path
+    )
+
+
+def _check_single_ast_node(node: ast.AST, filepath: str) -> list[str]:
+    """Dispatch AST violation checks for a single visited AST node.
+
+    Args:
+        node: Visited AST node.
+        filepath: Source file path for error reporting.
+
+    Returns:
+        List of formatted violation messages for `node`.
+    """
+    result: list[str] = []
+    if isinstance(node, ast.Call):
+        result = _check_call_node(node, filepath)
+    elif isinstance(node, ast.Attribute):
+        result = _check_attribute_node(node, filepath)
+    elif isinstance(node, ast.Name) and node.id in BANNED_TYPE_NAMES:
+        result = [f"{filepath}:{node.lineno}:{node.col_offset}: banned '{node.id}' usage"]
+    elif isinstance(node, ast.ImportFrom):
+        result = _check_import_from_node(node, filepath)
+    elif isinstance(node, ast.ClassDef):
+        result = _check_class_node(node, filepath)
+    elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        result = _check_function_node(node, filepath)
+    elif isinstance(node, ast.If):
+        result = _check_if_node(node, filepath)
+    elif isinstance(node, ast.ExceptHandler):
+        result = _check_except_handler_node(node, filepath)
+    elif isinstance(node, ast.Assert) and _is_prod_or_script_path(filepath):
+        result = [
+            f"{filepath}:{node.lineno}:{node.col_offset}: banned runtime 'assert' statement in production/script code"
+        ]
+    return result
 
 
 def check_file(filepath: str) -> list[str]:
@@ -321,25 +534,8 @@ def check_file(filepath: str) -> list[str]:
 
     tree = ast.parse(source, filename=filepath)
     violations: list[str] = _check_comments(source, filepath)
-
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            violations.extend(_check_call_node(node, filepath))
-        elif isinstance(node, ast.Attribute):
-            violations.extend(_check_attribute_node(node, filepath))
-        elif isinstance(node, ast.Name) and node.id in BANNED_TYPE_NAMES:
-            violations.append(f"{filepath}:{node.lineno}:{node.col_offset}: banned '{node.id}' usage")
-        elif isinstance(node, ast.ImportFrom):
-            violations.extend(_check_import_from_node(node, filepath))
-        elif isinstance(node, ast.ClassDef):
-            violations.extend(_check_class_node(node, filepath))
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            violations.extend(_check_function_node(node, filepath))
-        elif isinstance(node, ast.If):
-            violations.extend(_check_if_node(node, filepath))
-        elif isinstance(node, ast.ExceptHandler):
-            violations.extend(_check_except_handler_node(node, filepath))
-
+        violations.extend(_check_single_ast_node(node, filepath))
     return violations
 
 

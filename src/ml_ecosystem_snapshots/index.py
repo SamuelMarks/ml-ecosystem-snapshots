@@ -11,6 +11,7 @@ import contextlib
 import gzip
 import hashlib
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -19,9 +20,11 @@ import typing
 
 import pydantic
 
-from .exceptions import SnapshotSchemaError
-from .models import JsonValue
+from .exceptions import SnapshotError, SnapshotSchemaError
+from .models import JsonValue, ensure_json_dict
 from .network_env import get_custom_snapshots_paths
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class IndexedSymbolRecord(pydantic.BaseModel):
@@ -56,29 +59,6 @@ class IndexedSymbolRecord(pydantic.BaseModel):
             category=category,
             data=dict(raw),
         )
-
-    def __getitem__(self, key: str) -> JsonValue:
-        """Retrieve a symbol data field by dictionary key.
-
-        Args:
-            key: Field name inside `self.data`.
-
-        Returns:
-            Field value.
-        """
-        return self.data[key]
-
-    def get(self, key: str, default: JsonValue = None) -> JsonValue:
-        """Retrieve a symbol data field by key with an optional default.
-
-        Args:
-            key: Field name inside `self.data`.
-            default: Default value when absent.
-
-        Returns:
-            Field value or `default`.
-        """
-        return self.data.get(key, default)
 
 
 def get_cache_dir() -> str:
@@ -324,7 +304,9 @@ def _load_snapshot_json_payload(
     if not isinstance(data, (dict, list)):
         type_repr = repr(type(data))
         type_label = type_repr[8:-2] if type_repr.startswith("<class '") and type_repr.endswith("'>") else type_repr
-        raise SnapshotSchemaError(f"Snapshot payload in '{json_path}' must be a JSON object or array, got {type_label}.")
+        raise SnapshotSchemaError(
+            f"Snapshot payload in '{json_path}' must be a JSON object or array, got {type_label}."
+        )
 
     return data
 
@@ -343,8 +325,7 @@ def _extract_snapshot_symbol_items(
     if isinstance(data, list):
         items: list[dict[str, JsonValue]] = []
         for raw_elem in data:
-            assert isinstance(raw_elem, dict)
-            items.append(dict(raw_elem))
+            items.append(dict(ensure_json_dict(raw_elem)))
         return items
 
     raw_cats = data.get("categories")
@@ -507,8 +488,8 @@ def ensure_index(db_path: str | None = None) -> sqlite3.Connection:
     for sfile in snapshot_files:
         try:
             index_snapshot_file(sfile, conn)
-        except Exception as exc:
-            del exc
+        except (SnapshotError, OSError, sqlite3.Error, ValueError, TypeError) as exc:
+            _LOGGER.debug("Skipping unreadable snapshot file %s during indexing: %s", sfile, exc)
     return conn
 
 
@@ -570,11 +551,11 @@ def search_index(
         results: list[IndexedSymbolRecord] = []
         for r in rows:
             try:
-                parsed: JsonValue = json.loads(r["json_data"])
-                assert isinstance(parsed, dict)
+                raw_parsed: JsonValue = json.loads(r["json_data"])
+                parsed = ensure_json_dict(raw_parsed)
                 results.append(IndexedSymbolRecord.from_raw_dict(parsed, framework=str(r["framework"] or "")))
-            except Exception as exc:
-                del exc
+            except (json.JSONDecodeError, ValueError, TypeError, LookupError, sqlite3.Error, SnapshotError) as exc:
+                _LOGGER.debug("Skipping malformed indexed symbol row: %s", exc)
         return results
 
 
@@ -617,8 +598,8 @@ def lookup_symbol(
         cur.execute(sql, params)
         row = cur.fetchone()
         if row:
-            parsed_sym: JsonValue = json.loads(row["json_data"])
-            assert isinstance(parsed_sym, dict)
+            raw_sym: JsonValue = json.loads(row["json_data"])
+            parsed_sym = ensure_json_dict(raw_sym)
             return IndexedSymbolRecord.from_raw_dict(parsed_sym, framework=str(row["framework"] or clean_fw))
         return None
 

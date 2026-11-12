@@ -9,7 +9,10 @@ import typing
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    LivePythonTarget,
+    get_member_dict,
+)
 
 
 @typing.runtime_checkable
@@ -35,7 +38,9 @@ except ImportError:
     np = None
 
 
-def _collect_numpy_callables(mod: types.ModuleType, prefix: str, target_names: list[str] | None = None) -> list[GhostRef]:
+def _collect_numpy_callables(
+    mod: types.ModuleType, prefix: str, target_names: list[str] | None = None
+) -> list[GhostRef]:
     """Collect public callable functions from a NumPy module or submodule.
 
     Args:
@@ -47,7 +52,7 @@ def _collect_numpy_callables(mod: types.ModuleType, prefix: str, target_names: l
         List of inspected `GhostRef` items.
     """
     results: list[GhostRef] = []
-    members: dict[str, InspectableTarget] = dict(inspect.getmembers(mod))
+    members: dict[str, LivePythonTarget] = get_member_dict(mod)
     names = target_names if target_names is not None else sorted(members.keys())
     for name in names:
         if name.startswith("_") or name not in members:

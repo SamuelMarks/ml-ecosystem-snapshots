@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from ml_ecosystem_snapshots.exceptions import SnapshotError
+
 DEFAULT_MATRIX = {
     "torch": ["1.13.1", "2.0.1", "2.3.0"],
     "tensorflow": ["2.13.0", "2.16.1"],
@@ -107,7 +109,17 @@ def upload_to_s3(directory: Path, bucket: str) -> None:
                     s3.upload_file(local_path, bucket, s3_key)
     except ImportError:
         print("boto3 not installed. Skipping S3 upload.")
-    except Exception as e:
+    except (
+        SnapshotError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        LookupError,
+        OSError,
+        RuntimeError,
+        SyntaxError,
+        subprocess.SubprocessError,
+    ) as e:
         print(f"Failed to upload to S3: {e}")
 
 

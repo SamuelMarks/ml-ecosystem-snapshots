@@ -1,4 +1,4 @@
-"""Compiler IR grounding verifiers for StableHLO and MLIR core dialects."""
+"""Unified compiler IR grounding verifiers for MLIR and StableHLO dialects."""
 
 from __future__ import annotations
 
@@ -12,24 +12,27 @@ from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
 )
 
+from ml_ecosystem_snapshots.grounding.compiler_attrs import (
+    _check_mlir_operand_types,
+    _check_mlir_regions,
+    _extract_mlir_operands_and_attrs,
+    _extract_tensor_rank,
+    _find_mlir_op_record,
+    _infer_implicit_mlir_traits,
+    _validate_mlir_structured_attributes,
+)
+from ml_ecosystem_snapshots.grounding.domain_ops import (
+    validate_metal_op,
+    validate_onnx_op,
+    validate_wasm_op,
+    validate_webgl_op,
+    validate_wgsl_op,
+)
 from ml_ecosystem_snapshots.grounding.engine import GroundingEngine
 from ml_ecosystem_snapshots.grounding.models import (
     DiagnosticSeverity,
     GroundingReport,
-)
-from ml_ecosystem_snapshots.mcp.models import DomainOpCheckResult
-from ml_ecosystem_snapshots.mcp.tools.domain_ops import (
-    check_metal_op,
-    check_onnx_op,
-    check_wasm_instruction,
-    check_webgl_op,
-    check_wgsl_op,
-)
-from ml_ecosystem_snapshots.mcp.tools.ir import (
-    _extract_mlir_operands_and_attrs,
-    _extract_tensor_rank,
-    _infer_implicit_mlir_traits,
-    _validate_mlir_structured_attributes,
+    IrCheckResult,
 )
 from ml_ecosystem_snapshots.models import JsonValue
 
@@ -39,128 +42,278 @@ infer_implicit_mlir_traits = _infer_implicit_mlir_traits
 validate_mlir_structured_attributes = _validate_mlir_structured_attributes
 
 
-def _extract_ref_expected_operands(
-    ref: ExtendedGhostRef,
-) -> list[GhostParam]:
-    """Extract expected non-attribute, non-region operands from an IR `ExtendedGhostRef`.
+def _ref_to_op_dict(ref: ExtendedGhostRef) -> dict[str, JsonValue]:
+    """Convert an `ExtendedGhostRef` into a normalized dialect operation dictionary.
 
     Args:
         ref: Hydrated `ExtendedGhostRef` operation specification.
 
     Returns:
-        List of operand `GhostParam` specifications.
+        Normalized operation dictionary with `operands`, `attributes`, and `traits`.
     """
+    dumped: dict[str, JsonValue] = ref.model_dump()
     raw_operands = ref.operands if isinstance(ref, (GhostMlirRef, GhostOperationRef)) else None
-    return list(raw_operands) if raw_operands is not None else [p for p in ref.params if "ATTRIBUTE" not in str(p.role if isinstance(p, ExtendedGhostParam) else "") and p.annotation != "Region"]
+    source_params: list[GhostParam] = (
+        list(raw_operands)
+        if raw_operands is not None
+        else [
+            p
+            for p in ref.params
+            if "ATTRIBUTE" not in str(p.role if isinstance(p, ExtendedGhostParam) else "") and p.annotation != "Region"
+        ]
+    )
+    op_list: list[dict[str, JsonValue]] = [{"name": p.name, "type": str(p.annotation or "")} for p in source_params]
+    if ref.has_varargs and op_list:
+        op_list[0]["type"] = f"variadic<{op_list[0].get('type', '')}>"
+    dumped["operands"] = list(op_list)
+    return dumped
 
 
-def _extract_operand_type_constraint(
-    op_info: GhostParam,
-) -> str:
-    """Extract the type constraint string from an operand specification.
+def _check_required_stablehlo_dim_attrs(
+    full_op_name: str,
+    structured_attributes: typing.Mapping[str, JsonValue] | None,
+) -> list[tuple[str, str, str]]:
+    """Check mandatory dimension_numbers attributes for StableHLO dot_general and convolution.
 
     Args:
-        op_info: `GhostParam` operand specification.
+        full_op_name: Qualified StableHLO operation name.
+        structured_attributes: Mapping of attribute names to values.
 
     Returns:
-        Type constraint string.
+        List of `(field, message, suggested_fix)` diagnostic tuples.
     """
-    return str(op_info.annotation or "")
-
-
-def _check_stablehlo_required_attributes(
-    full_op_name: str,
-    attributes: typing.Mapping[str, JsonValue],
-    report: GroundingReport,
-) -> None:
-    """Verify mandatory dimension number attributes for StableHLO dot and convolution ops.
-
-    Args:
-        full_op_name: Canonical StableHLO operation name (e.g., 'stablehlo.dot_general').
-        attributes: Mapping of operation attribute names to values.
-        report: Mutable `GroundingReport` to record diagnostics on.
-    """
+    attrs = structured_attributes or {}
+    diags: list[tuple[str, str, str]] = []
     if full_op_name == "stablehlo.dot_general":
-        if "dot_dimension_numbers" not in attributes and "dimension_numbers" not in attributes:
-            report.add_diagnostic(
-                field="attributes.dot_dimension_numbers",
-                message="Operation 'stablehlo.dot_general' requires 'dot_dimension_numbers' attribute.",
-                severity=DiagnosticSeverity.ERROR,
-                suggested_fix="dot_dimension_numbers",
+        if "dot_dimension_numbers" not in attrs and "dimension_numbers" not in attrs:
+            diags.append(
+                (
+                    "attributes.dot_dimension_numbers",
+                    "Operation 'stablehlo.dot_general' requires 'dot_dimension_numbers' attribute.",
+                    "dot_dimension_numbers",
+                )
             )
-
     if full_op_name == "stablehlo.convolution":
-        if "dimension_numbers" not in attributes and "conv_dimension_numbers" not in attributes:
-            report.add_diagnostic(
-                field="attributes.dimension_numbers",
-                message="Operation 'stablehlo.convolution' requires 'dimension_numbers' attribute.",
-                severity=DiagnosticSeverity.ERROR,
-                suggested_fix="dimension_numbers",
+        if "dimension_numbers" not in attrs and "conv_dimension_numbers" not in attrs:
+            diags.append(
+                (
+                    "attributes.dimension_numbers",
+                    "Operation 'stablehlo.convolution' requires 'dimension_numbers' attribute.",
+                    "dimension_numbers",
+                )
             )
+    return diags
 
 
-def _check_stablehlo_operands(
-    full_op_name: str,
-    ref: ExtendedGhostRef,
-    operand_types: list[str],
-    report: GroundingReport,
-) -> None:
-    """Validate StableHLO operand counts and SSA type constraints against the operation spec.
+def _check_dialect_operands(
+    target_op: str,
+    operands: list[str | dict[str, JsonValue]],
+    has_variadic: bool,
+    operands_count: int | None,
+    operand_types: list[str] | None,
+    check_suffix_dtypes: bool,
+) -> list[tuple[str, str, str | None]]:
+    """Validate dialect operand counts and SSA type constraints.
 
     Args:
-        full_op_name: Canonical StableHLO operation name.
-        ref: Hydrated `ExtendedGhostRef` operation specification.
-        operand_types: List of SSA input operand type strings.
-        report: Mutable `GroundingReport` to record diagnostics on.
+        target_op: Qualified operation name.
+        operands: Expected operand specifications.
+        has_variadic: Whether the operation accepts variadic operands.
+        operands_count: Optional passed operand count.
+        operand_types: Optional passed SSA operand type strings.
+        check_suffix_dtypes: Whether to apply arithmetic suffix dtype checks.
+
+    Returns:
+        List of `(field, message, suggested_fix)` diagnostic tuples.
     """
     from ml_ecosystem_snapshots.frameworks.mlir import validate_mlir_type
 
-    expected_operands = _extract_ref_expected_operands(ref)
-    if expected_operands:
-        is_variadic = bool(ref.has_varargs) or any("variadic" in _extract_operand_type_constraint(o).lower() for o in expected_operands)
-        if not is_variadic and len(operand_types) != len(expected_operands):
-            report.add_diagnostic(
-                field="operands",
-                message=(f"Operation '{full_op_name}' expects {len(expected_operands)} operands, but received {len(operand_types)}."),
-                severity=DiagnosticSeverity.ERROR,
+    diags: list[tuple[str, str, str | None]] = []
+    if operands_count is not None and operands and len(operands) != operands_count and not has_variadic:
+        diags.append(
+            (
+                "operand_count",
+                f"Operand count mismatch for '{target_op}': expected {len(operands)}, got {operands_count}",
+                None,
             )
+        )
+    if operand_types is None:
+        return diags
+    if check_suffix_dtypes:
+        for op_err in _check_mlir_operand_types(target_op, operands, operand_types):
+            fld = (
+                f"operands[{op_err.split()[1]}]"
+                if op_err.startswith("Operand ") and op_err.split()[1].isdigit()
+                else "operands"
+            )
+            diags.append((fld, op_err, None))
+        return diags
+    if operands and not has_variadic and len(operand_types) != len(operands):
+        diags.append(
+            (
+                "operands",
+                f"Operation '{target_op}' expects {len(operands)} operands, but received {len(operand_types)}.",
+                None,
+            )
+        )
+    for i in range(min(len(operands), len(operand_types))):
+        op_info = operands[i]
+        constraint = str(op_info.get("type", "") if isinstance(op_info, dict) else str(op_info))
+        for te in validate_mlir_type(operand_types[i], constraint=constraint):
+            diags.append((f"operands[{i}]", f"Operand {i} for '{target_op}': {te}", None))
+    return diags
 
-        for i, (op_info, actual_type) in enumerate(zip(expected_operands, operand_types)):
-            constraint = _extract_operand_type_constraint(op_info)
-            for te in validate_mlir_type(actual_type, constraint=constraint):
-                report.add_diagnostic(
-                    field=f"operands[{i}]",
-                    message=f"Operand {i} for '{full_op_name}': {te}",
-                    severity=DiagnosticSeverity.ERROR,
-                )
 
-
-def _check_stablehlo_regions(
-    full_op_name: str,
-    regions: typing.Mapping[str, JsonValue],
-    report: GroundingReport,
-) -> None:
-    """Validate StableHLO region block arguments and yield types.
+def _validate_dialect_operation(
+    target_op: str,
+    inst: dict[str, JsonValue],
+    *,
+    operands_count: int | None = None,
+    attributes: list[str] | None = None,
+    ssa_types: tuple[list[str] | None, list[str] | None] = (None, None),
+    structured_attributes: typing.Mapping[str, JsonValue] | None = None,
+    regions: typing.Mapping[str, JsonValue] | None = None,
+    flags: tuple[bool, bool] = (False, True),
+) -> tuple[
+    list[str | dict[str, JsonValue]],
+    list[str],
+    list[tuple[str, str, str | None]],
+]:
+    """Shared dialect operation validator powering `validate_stablehlo_op`, `validate_mlir_op`, and `verify_mlir_op`.
 
     Args:
-        full_op_name: Canonical StableHLO operation name.
-        regions: Mapping of region names to region specification dictionaries.
-        report: Mutable `GroundingReport` to record diagnostics on.
-    """
-    from ml_ecosystem_snapshots.frameworks.stablehlo import validate_stablehlo_region
+        target_op: Qualified operation name (e.g. `arith.addf` or `stablehlo.dot_general`).
+        inst: Normalized operation dictionary from snapshot or `ExtendedGhostRef`.
+        operands_count: Optional explicit operand count to check.
+        attributes: Optional list of attribute names to check against `exp_attrs`.
+        ssa_types: Tuple of `(operand_types, result_types)`.
+        structured_attributes: Optional mapping of structured attribute values.
+        regions: Optional mapping of region names to block_arguments and yield_types.
+        flags: Tuple of `(enforce_stablehlo_req_attrs, check_suffix_dtypes)`.
 
-    for reg_name, reg_spec in regions.items():
-        assert isinstance(reg_spec, dict)
-        raw_b_args = reg_spec.get("block_arguments") or reg_spec.get("block_args")
-        b_args = [str(a) for a in raw_b_args] if isinstance(raw_b_args, list) else []
-        raw_y_types = reg_spec.get("yield_types")
-        y_types = [str(t) for t in raw_y_types] if isinstance(raw_y_types, list) else []
-        for reg_err in validate_stablehlo_region(full_op_name, reg_name, b_args, y_types):
-            report.add_diagnostic(
-                field=f"regions.{reg_name}",
-                message=reg_err,
-                severity=DiagnosticSeverity.ERROR,
+    Returns:
+        Tuple of `(expected_operands, expected_attributes, list_of_(field, message, suggested_fix))`.
+    """
+    from ml_ecosystem_snapshots.frameworks.mlir import validate_mlir_traits
+
+    operand_types, result_types = ssa_types
+    enforce_stablehlo_req_attrs, check_suffix_dtypes = flags
+    diags: list[tuple[str, str, str | None]] = []
+    operands, exp_attrs = _extract_mlir_operands_and_attrs(inst)
+    has_variadic = any("variadic" in str(o.get("type", "") if isinstance(o, dict) else "").lower() for o in operands)
+
+    if enforce_stablehlo_req_attrs:
+        for fld, msg, fix in _check_required_stablehlo_dim_attrs(target_op, structured_attributes):
+            diags.append((fld, msg, fix))
+
+    diags.extend(
+        _check_dialect_operands(
+            target_op,
+            operands,
+            has_variadic,
+            operands_count,
+            operand_types,
+            check_suffix_dtypes,
+        )
+    )
+
+    for attr in attributes or []:
+        if attr not in exp_attrs:
+            diags.append(
+                (
+                    "attributes",
+                    f"Attribute '{attr}' not recognized for '{target_op}'. Expected attributes: {exp_attrs}",
+                    None,
+                )
             )
+
+    raw_meta = inst.get("domain_metadata")
+    meta = dict(raw_meta) if isinstance(raw_meta, dict) else {}
+    raw_traits = meta.get("traits") or inst.get("traits")
+    base_traits = [str(t) for t in raw_traits] if isinstance(raw_traits, list) else []
+    traits = _infer_implicit_mlir_traits(target_op, base_traits)
+    attr_names = (
+        attributes
+        if attributes is not None
+        else (list(structured_attributes.keys()) if structured_attributes else None)
+    )
+
+    for trait_err in validate_mlir_traits(
+        op_name=target_op,
+        traits=traits,
+        operand_types=operand_types if operand_types else None,
+        result_types=result_types,
+        attributes=attr_names,
+        structured_attributes=dict(structured_attributes) if structured_attributes else None,
+    ):
+        diags.append(("traits", trait_err, None))
+
+    if structured_attributes:
+        for attr_err in _validate_mlir_structured_attributes(
+            structured_attributes=structured_attributes,
+            operand_types=operand_types if operand_types else None,
+            result_types=result_types,
+        ):
+            diags.append(("attributes", attr_err, None))
+
+    for reg_name, reg_spec in (regions or {}).items():
+        for reg_err in _check_mlir_regions(target_op, {reg_name: reg_spec}):
+            diags.append((f"regions.{reg_name}", reg_err, None))
+
+    return operands, exp_attrs, diags
+
+
+def verify_mlir_op(
+    op_name: str,
+    snap: typing.Mapping[str, JsonValue],
+    operands_count: int | None = None,
+    attributes: list[str] | None = None,
+    operand_types: list[str] | None = None,
+    result_types: list[str] | None = None,
+    structured_attributes: typing.Mapping[str, JsonValue] | None = None,
+    regions: typing.Mapping[str, JsonValue] | None = None,
+) -> IrCheckResult:
+    """Verify an MLIR or StableHLO operation against a resolved dialect snapshot dictionary.
+
+    Args:
+        op_name: Qualified operation name (e.g. arith.addf or stablehlo.dot_general).
+        snap: Resolved dialect snapshot dictionary.
+        operands_count: Optional expected number of SSA operands.
+        attributes: Optional list of attribute names to verify.
+        operand_types: Optional list of SSA operand type strings.
+        result_types: Optional list of SSA result type strings.
+        structured_attributes: Optional dictionary of structured attribute values.
+        regions: Optional dictionary of regions mapping region name to block_arguments and yield_types.
+
+    Returns:
+        Structured `IrCheckResult` report.
+    """
+    target_op = op_name.strip()
+    inst = _find_mlir_op_record(dict(snap), target_op)
+    if not inst:
+        return IrCheckResult(
+            is_valid=False,
+            op_exists=False,
+            errors=[f"Operation '{target_op}' does not exist in dialect snapshot."],
+        )
+
+    operands, exp_attrs, diags = _validate_dialect_operation(
+        target_op=target_op,
+        inst=inst,
+        operands_count=operands_count,
+        attributes=attributes,
+        ssa_types=(operand_types, result_types),
+        structured_attributes=structured_attributes,
+        regions=regions,
+        flags=(False, True),
+    )
+    return IrCheckResult(
+        is_valid=len(diags) == 0,
+        op_exists=True,
+        expected_operands=operands,
+        expected_attributes=exp_attrs,
+        errors=[msg for _fld, msg, _fix in diags],
+    )
 
 
 def validate_stablehlo_op(
@@ -173,31 +326,20 @@ def validate_stablehlo_op(
 ) -> GroundingReport:
     """Verify a StableHLO operation against the official StableHLO specification.
 
-    Delegates trait verification, SSA type constraint validation, structured
-    dimension number checks, and region verification to the canonical IR
-    validators shared with `check_mlir_op`.
-
     Args:
-        op_name: Operation name (e.g., 'stablehlo.dot_general', 'dot_general', 'stablehlo.add').
-        operand_types: Types of SSA input operands (e.g., ['tensor<128x64xf32>', 'tensor<64x256xf32>']).
-        attributes: Dictionary of operation attributes (e.g., {'dot_dimension_numbers': {...}}).
-        engine: Optional GroundingEngine instance.
+        op_name: Operation name (e.g., stablehlo.dot_general, dot_general, stablehlo.add).
+        operand_types: Types of SSA input operands.
+        attributes: Dictionary of operation attributes.
+        engine: Optional `GroundingEngine` instance.
         result_types: Optional list of SSA result type strings.
         regions: Optional dictionary of regions mapping region name to block_arguments and yield_types.
 
     Returns:
-        GroundingReport containing diagnostic results and grounding status.
+        `GroundingReport` containing diagnostic results and grounding status.
     """
-    from ml_ecosystem_snapshots.frameworks.mlir import validate_mlir_traits
-
     eng = engine or GroundingEngine()
     full_op_name = op_name if op_name.startswith("stablehlo.") else f"stablehlo.{op_name}"
-
-    report = GroundingReport(
-        is_grounded=True,
-        target="stablehlo",
-        symbol=full_op_name,
-    )
+    report = GroundingReport(is_grounded=True, target="stablehlo", symbol=full_op_name)
 
     ref = eng.get_symbol("stablehlo", full_op_name)
     if not ref:
@@ -211,45 +353,16 @@ def validate_stablehlo_op(
         return report
 
     report.matched_ref = ref
-
-    _check_stablehlo_required_attributes(full_op_name, attributes, report)
-    _check_stablehlo_operands(full_op_name, ref, operand_types, report)
-
-    meta = ref.domain_metadata or {}
-    ref_traits = ref.traits if isinstance(ref, (GhostMlirRef, GhostOperationRef)) else None
-    raw_traits = meta.get("traits") or ref_traits or []
-    base_traits = [str(t) for t in raw_traits] if isinstance(raw_traits, list) else []
-    traits = _infer_implicit_mlir_traits(full_op_name, base_traits)
-    attr_dict = dict(attributes)
-    for trait_err in validate_mlir_traits(
-        op_name=full_op_name,
-        traits=traits,
-        operand_types=operand_types if operand_types else None,
-        result_types=result_types,
-        attributes=list(attr_dict.keys()) if attr_dict else None,
-        structured_attributes=attr_dict if attr_dict else None,
-    ):
-        report.add_diagnostic(
-            field="traits",
-            message=trait_err,
-            severity=DiagnosticSeverity.ERROR,
-        )
-
-    if attr_dict:
-        for attr_err in _validate_mlir_structured_attributes(
-            structured_attributes=attr_dict,
-            operand_types=operand_types if operand_types else None,
-            result_types=result_types,
-        ):
-            report.add_diagnostic(
-                field="attributes",
-                message=attr_err,
-                severity=DiagnosticSeverity.ERROR,
-            )
-
-    if regions:
-        _check_stablehlo_regions(full_op_name, regions, report)
-
+    _ops, _attrs, diags = _validate_dialect_operation(
+        target_op=full_op_name,
+        inst=_ref_to_op_dict(ref),
+        ssa_types=(operand_types, result_types),
+        structured_attributes=attributes,
+        regions=regions,
+        flags=(True, False),
+    )
+    for fld, msg, fix in diags:
+        report.add_diagnostic(field=fld, message=msg, severity=DiagnosticSeverity.ERROR, suggested_fix=fix)
     return report
 
 
@@ -264,34 +377,21 @@ def validate_mlir_op(
 ) -> GroundingReport:
     """Verify an MLIR operation against core MLIR TableGen definitions.
 
-    Delegates trait verification, SSA type constraint validation, and structured
-    attribute checks to the canonical IR validators shared with `check_mlir_op`.
-
     Args:
-        dialect: The MLIR dialect (e.g., 'arith', 'math', 'tensor', 'linalg', 'scf').
-        op_name: The operation name or mnemonic (e.g., 'addf', 'arith.addf', 'matmul').
+        dialect: The MLIR dialect (e.g., arith, math, tensor, linalg, scf).
+        op_name: The operation name or mnemonic (e.g., addf, arith.addf, matmul).
         operand_count: Number of SSA value operands passed to the operation.
         attributes: Dictionary of buildable MLIR attributes.
-        engine: Optional GroundingEngine instance.
+        engine: Optional `GroundingEngine` instance.
         operand_types: Optional list of SSA operand type strings.
         result_types: Optional list of SSA result type strings.
 
     Returns:
-        GroundingReport containing diagnostic results and grounding status.
+        `GroundingReport` containing diagnostic results and grounding status.
     """
-    from ml_ecosystem_snapshots.frameworks.mlir import (
-        validate_mlir_traits,
-        validate_mlir_type,
-    )
-
     eng = engine or GroundingEngine()
     full_path = op_name if op_name.startswith(f"{dialect}.") else f"{dialect}.{op_name}"
-
-    report = GroundingReport(
-        is_grounded=True,
-        target="mlir",
-        symbol=full_path,
-    )
+    report = GroundingReport(is_grounded=True, target="mlir", symbol=full_path)
 
     ref = eng.get_symbol("mlir", full_path)
     if not ref:
@@ -305,274 +405,21 @@ def validate_mlir_op(
         return report
 
     report.matched_ref = ref
-
-    expected_operands = _extract_ref_expected_operands(ref)
-    if expected_operands and operand_count != len(expected_operands):
-        is_variadic = bool(ref.has_varargs) or any("variadic" in _extract_operand_type_constraint(o).lower() for o in expected_operands)
-        if not is_variadic:
-            report.add_diagnostic(
-                field="operand_count",
-                message=(f"MLIR operation '{full_path}' expects {len(expected_operands)} operands, but received {operand_count}."),
-                severity=DiagnosticSeverity.ERROR,
-            )
-
-    if operand_types is not None:
-        for i, (op_info, actual_type) in enumerate(zip(expected_operands, operand_types)):
-            constraint = _extract_operand_type_constraint(op_info)
-            for te in validate_mlir_type(actual_type, constraint=constraint):
-                report.add_diagnostic(
-                    field=f"operands[{i}]",
-                    message=f"Operand {i} for '{full_path}': {te}",
-                    severity=DiagnosticSeverity.ERROR,
-                )
-
-    meta = ref.domain_metadata or {}
-    ref_traits = ref.traits if isinstance(ref, (GhostMlirRef, GhostOperationRef)) else None
-    raw_traits = meta.get("traits") or ref_traits or []
-    base_traits = [str(t) for t in raw_traits] if isinstance(raw_traits, list) else []
-    traits = _infer_implicit_mlir_traits(full_path, base_traits)
-    attr_dict = dict(attributes)
-    for trait_err in validate_mlir_traits(
-        op_name=full_path,
-        traits=traits,
-        operand_types=operand_types,
-        result_types=result_types,
-        attributes=list(attr_dict.keys()) if attr_dict else None,
-        structured_attributes=attr_dict if attr_dict else None,
-    ):
-        report.add_diagnostic(
-            field="traits",
-            message=trait_err,
-            severity=DiagnosticSeverity.ERROR,
-        )
-
-    if attr_dict:
-        for attr_err in _validate_mlir_structured_attributes(
-            structured_attributes=attr_dict,
-            operand_types=operand_types,
-            result_types=result_types,
-        ):
-            report.add_diagnostic(
-                field="attributes",
-                message=attr_err,
-                severity=DiagnosticSeverity.ERROR,
-            )
-
+    _ops, _attrs, diags = _validate_dialect_operation(
+        target_op=full_path,
+        inst=_ref_to_op_dict(ref),
+        operands_count=operand_count,
+        ssa_types=(operand_types, result_types),
+        structured_attributes=attributes,
+        flags=(False, False),
+    )
+    for fld, msg, fix in diags:
+        report.add_diagnostic(field=fld, message=msg, severity=DiagnosticSeverity.ERROR, suggested_fix=fix)
     return report
-
-
-def _validate_ssa_domain_op(
-    target_framework: str,
-    symbol_name: str,
-    res: DomainOpCheckResult | typing.Mapping[str, JsonValue],
-    unrecognized_label: str,
-    missing_field: str = "operation",
-    err_field: str = "operation",
-    engine: GroundingEngine | None = None,
-) -> GroundingReport:
-    """Build a GroundingReport from a domain operation verifier result.
-
-    Args:
-        target_framework: Framework identifier (e.g., 'wgsl', 'onnx', 'metal', 'wasm_simd', 'webgl').
-        symbol_name: Operation or opcode name checked.
-        res: Result model or dictionary from `check_*_op`.
-        unrecognized_label: Human-readable label for unrecognized symbol diagnostics.
-        missing_field: Diagnostic field name when symbol is missing.
-        err_field: Diagnostic field name for constraint errors.
-        engine: Optional `GroundingEngine` instance.
-
-    Returns:
-        Populated `GroundingReport` instance.
-    """
-    eng = engine or GroundingEngine()
-    report = GroundingReport(
-        is_grounded=True,
-        target=target_framework,
-        symbol=symbol_name,
-    )
-    op_exists = res.op_exists if isinstance(res, DomainOpCheckResult) else bool(res.get("op_exists"))
-    if not op_exists:
-        suggested = eng.suggest_closest_symbol(target_framework, symbol_name)
-        report.add_diagnostic(
-            field=missing_field,
-            message=f"Unrecognized {unrecognized_label} '{symbol_name}'.",
-            severity=DiagnosticSeverity.ERROR,
-            suggested_fix=suggested,
-        )
-        return report
-
-    raw_errs = res.errors if isinstance(res, DomainOpCheckResult) else res.get("errors", [])
-    assert isinstance(raw_errs, list)
-    for err in raw_errs:
-        report.add_diagnostic(
-            field=err_field,
-            message=str(err),
-            severity=DiagnosticSeverity.ERROR,
-        )
-    return report
-
-
-def validate_wgsl_op(
-    op_name: str,
-    operands_count: int | None = None,
-    attributes: list[str] | None = None,
-    engine: GroundingEngine | None = None,
-) -> GroundingReport:
-    """Verify a WebGPU WGSL builtin function or memory barrier against ground truth.
-
-    Args:
-        op_name: WGSL operation name (e.g., 'workgroupBarrier', 'storageStore').
-        operands_count: Optional number of passed arguments.
-        attributes: Optional list of operation attributes.
-        engine: Optional GroundingEngine instance.
-
-    Returns:
-        GroundingReport containing diagnostic results.
-    """
-    res = check_wgsl_op(
-        op_name=op_name,
-        inputs_count=operands_count,
-        attributes=attributes,
-    )
-    return _validate_ssa_domain_op(
-        target_framework="wgsl",
-        symbol_name=op_name,
-        res=res,
-        unrecognized_label="WGSL builtin",
-        engine=engine,
-    )
-
-
-def validate_onnx_op(
-    op_name: str,
-    inputs_count: int | None = None,
-    attributes: list[str] | None = None,
-    engine: GroundingEngine | None = None,
-) -> GroundingReport:
-    """Verify an ONNX operator specification against the standard schema.
-
-    Args:
-        op_name: ONNX operator name (e.g., 'MatMul', 'Conv', 'Relu').
-        inputs_count: Optional number of passed inputs.
-        attributes: Optional list of attributes.
-        engine: Optional GroundingEngine instance.
-
-    Returns:
-        GroundingReport containing diagnostic results.
-    """
-    res = check_onnx_op(
-        op_name=op_name,
-        inputs_count=inputs_count,
-        attributes=attributes,
-    )
-    return _validate_ssa_domain_op(
-        target_framework="onnx",
-        symbol_name=op_name,
-        res=res,
-        unrecognized_label="ONNX operator",
-        engine=engine,
-    )
-
-
-def validate_metal_op(
-    op_name: str,
-    address_space: str | None = None,
-    inputs_count: int | None = None,
-    attributes: list[str] | None = None,
-    engine: GroundingEngine | None = None,
-) -> GroundingReport:
-    """Verify an Apple Metal Shading Language compute builtin against specifications.
-
-    Args:
-        op_name: Metal builtin name (e.g., 'simdgroup_matrix', 'threadgroup_barrier').
-        address_space: Optional expected address space (e.g., 'device', 'threadgroup').
-        inputs_count: Optional number of passed arguments.
-        attributes: Optional list of attributes.
-        engine: Optional GroundingEngine instance.
-
-    Returns:
-        GroundingReport containing diagnostic results.
-    """
-    res = check_metal_op(
-        op_name=op_name,
-        address_space=address_space,
-        inputs_count=inputs_count,
-        attributes=attributes,
-    )
-    return _validate_ssa_domain_op(
-        target_framework="metal",
-        symbol_name=op_name,
-        res=res,
-        unrecognized_label="Metal builtin",
-        engine=engine,
-    )
-
-
-def validate_wasm_op(
-    mnemonic: str,
-    operands_count: int | None = None,
-    attributes: list[str] | None = None,
-    engine: GroundingEngine | None = None,
-) -> GroundingReport:
-    """Verify a W3C WebAssembly SIMD opcode mnemonic against standard specifications.
-
-    Args:
-        mnemonic: WASM opcode mnemonic (e.g., 'f32x4.add', 'v128.load').
-        operands_count: Optional number of passed operands.
-        attributes: Optional list of attributes.
-        engine: Optional GroundingEngine instance.
-
-    Returns:
-        GroundingReport containing diagnostic results.
-    """
-    res = check_wasm_instruction(
-        mnemonic=mnemonic,
-        operands_count=operands_count,
-        attributes=attributes,
-    )
-    return _validate_ssa_domain_op(
-        target_framework="wasm_simd",
-        symbol_name=mnemonic,
-        res=res,
-        unrecognized_label="WebAssembly SIMD opcode",
-        missing_field="mnemonic",
-        err_field="instruction",
-        engine=engine,
-    )
-
-
-def validate_webgl_op(
-    op_name: str,
-    inputs_count: int | None = None,
-    attributes: list[str] | None = None,
-    engine: GroundingEngine | None = None,
-) -> GroundingReport:
-    """Verify a WebGL 2.0 / GLSL ES 3.00 shader builtin against standard specifications.
-
-    Args:
-        op_name: GLSL builtin function name (e.g., 'texture', 'dFdx').
-        inputs_count: Optional number of passed arguments.
-        attributes: Optional list of attributes.
-        engine: Optional GroundingEngine instance.
-
-    Returns:
-        GroundingReport containing diagnostic results.
-    """
-    res = check_webgl_op(
-        op_name=op_name,
-        inputs_count=inputs_count,
-        attributes=attributes,
-    )
-    return _validate_ssa_domain_op(
-        target_framework="webgl",
-        symbol_name=op_name,
-        res=res,
-        unrecognized_label="WebGL / GLSL builtin",
-        engine=engine,
-    )
 
 
 __all__ = [
+    "_validate_dialect_operation",
     "extract_mlir_operands_and_attrs",
     "extract_tensor_rank",
     "infer_implicit_mlir_traits",
@@ -584,4 +431,5 @@ __all__ = [
     "validate_wasm_op",
     "validate_webgl_op",
     "validate_wgsl_op",
+    "verify_mlir_op",
 ]

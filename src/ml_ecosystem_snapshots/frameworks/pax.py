@@ -7,6 +7,7 @@ import types
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
+from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.utils import get_all_members
 
@@ -21,7 +22,17 @@ try:
     paxml = _paxml_mod
     praxis = _praxis_mod
     layers = _layers_mod
-except Exception:
+except (
+    SnapshotError,
+    ImportError,
+    AttributeError,
+    TypeError,
+    ValueError,
+    LookupError,
+    OSError,
+    RuntimeError,
+    SyntaxError,
+):
     paxml = None
     praxis = None
     layers = None

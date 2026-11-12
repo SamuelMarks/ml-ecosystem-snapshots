@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-# ruff: noqa: D205, D415, D207, D212
 import inspect
 from unittest.mock import patch
 
@@ -10,21 +9,36 @@ import pytest
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
-    InspectableTarget,
+    LivePythonTarget,
     get_runtime_signature,
 )
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
 
+def _set_raw_c_doc(fn: LivePythonTarget, raw_c_doc: str) -> None:
+    """Attach a raw C-extension or pybind11 docstring to a callable test fixture.
+
+    Args:
+        fn: Callable fixture whose runtime docstring should be replaced.
+        raw_c_doc: Raw C-extension signature docstring text.
+    """
+    pytest.MonkeyPatch().setattr(fn, "__doc__", raw_c_doc)
+
+
 def dummy_c_ext() -> None:
-    """dummy_c_ext(input: Tensor, *, out: Optional[Tensor] = None) -> Tensor"""  # noqa: D402, D415
+    """Represent a single-signature C-extension function fixture."""
     pass
 
+
+_set_raw_c_doc(
+    dummy_c_ext,
+    "dummy_c_ext(input: Tensor, *, out: Optional[Tensor] = None) -> Tensor",
+)
 
 original_sig = get_runtime_signature
 
 
-def patched_sig(target: InspectableTarget, *args: InspectableTarget, **kwargs: InspectableTarget) -> inspect.Signature:
+def patched_sig(target: LivePythonTarget, *args: LivePythonTarget, **kwargs: LivePythonTarget) -> inspect.Signature:
     """Raise ValueError for `dummy_c_ext` and delegate other targets to `inspect.signature`.
 
     Args:
@@ -57,14 +71,20 @@ def test_c_extension_signature_fallback() -> None:
         assert ref.params[1].annotation == "Tensor | None"
 
 
-def dummy_posonly(*args: InspectableTarget, **kwargs: InspectableTarget) -> None:  # noqa: D402
-    """dummy_posonly(a: int, /, b: str = 'x') -> None
+def dummy_posonly(*args: LivePythonTarget, **kwargs: LivePythonTarget) -> None:
+    """Represent a C-extension function fixture with positional-only parameters.
 
     Args:
         *args: Variadic positional arguments.
         **kwargs: Variadic keyword arguments.
-    """  # noqa: D402, D415
+    """
     pass
+
+
+_set_raw_c_doc(
+    dummy_posonly,
+    "dummy_posonly(a: int, /, b: str = 'x') -> None\n\nArgs:\n    *args: Variadic positional arguments.\n    **kwargs: Variadic keyword arguments.",
+)
 
 
 def test_c_extension_posonlyargs() -> None:
@@ -101,33 +121,44 @@ def test_c_extension_inexact_signature_fallback() -> None:
 
 
 def dummy_torch_add() -> None:
-    """add(input, other, *, out=None) -> Tensor
-    add(input, other, *, alpha=1, out=None) -> Tensor
-
-    Adds other scaled by alpha to input.
-    """
+    """Represent a multi-overload PyTorch add C-extension function fixture."""
     pass
+
+
+_set_raw_c_doc(
+    dummy_torch_add,
+    "add(input, other, *, out=None) -> Tensor\n"
+    "add(input, other, *, alpha=1, out=None) -> Tensor\n\n"
+    "Adds other scaled by alpha to input.\n",
+)
 
 
 def dummy_torch_clamp() -> None:
-    """clamp(input, min=None, max=None, *, out=None) -> Tensor
-    clamp(input, *, min=None, max=None, out=None) -> Tensor
-    clamp(input, min: Tensor, max: Tensor, *, out=None) -> Tensor
-
-    Clamps all elements in input into the range [min, max].
-    """
+    """Represent a three-overload PyTorch clamp C-extension function fixture."""
     pass
+
+
+_set_raw_c_doc(
+    dummy_torch_clamp,
+    "clamp(input, min=None, max=None, *, out=None) -> Tensor\n"
+    "clamp(input, *, min=None, max=None, out=None) -> Tensor\n"
+    "clamp(input, min: Tensor, max: Tensor, *, out=None) -> Tensor\n\n"
+    "Clamps all elements in input into the range [min, max].\n",
+)
 
 
 def dummy_pybind11_overload() -> None:
-    """process(*args, **kwargs)
-    Overloaded function.
-
-    1. process(input: Tensor, factor: float) -> Tensor
-
-    2. process(input: Tensor, matrix: Tensor) -> Tensor
-    """
+    """Represent a numbered pybind11 overloaded C-extension function fixture."""
     pass
+
+
+_set_raw_c_doc(
+    dummy_pybind11_overload,
+    "process(*args, **kwargs)\n"
+    "Overloaded function.\n\n"
+    "1. process(input: Tensor, factor: float) -> Tensor\n\n"
+    "2. process(input: Tensor, matrix: Tensor) -> Tensor\n",
+)
 
 
 def test_c_extension_multi_signature_torch_add() -> None:
@@ -202,11 +233,14 @@ def test_c_extension_multi_signature_pybind11() -> None:
 
 
 def dummy_overloaded_header() -> None:
-    """foo(a: int) -> int
-    Overloaded function.
-    foo(b: str) -> str
-    """
+    """Represent a C-extension fixture with an inline Overloaded function header."""
     pass
+
+
+_set_raw_c_doc(
+    dummy_overloaded_header,
+    "foo(a: int) -> int\nOverloaded function.\nfoo(b: str) -> str\n",
+)
 
 
 def test_c_extension_overloaded_header_branch() -> None:
@@ -224,25 +258,33 @@ def test_c_extension_overloaded_header_branch() -> None:
 
 
 def dummy_leading_overload_header() -> None:
-    """Overloaded function.
-
-    1. bar(x: int) -> int
-
-    2. bar(y: str) -> str
-    """
+    """Represent a C-extension fixture starting with Overloaded function header."""
     pass
+
+
+_set_raw_c_doc(
+    dummy_leading_overload_header,
+    "Overloaded function.\n\n1. bar(x: int) -> int\n\n2. bar(y: str) -> str\n",
+)
 
 
 def dummy_overload_vararg() -> None:
-    """baz(x: int) -> int
-    baz(*args) -> int
-    """
+    """Represent a C-extension fixture with variadic positional secondary overload."""
     pass
+
+
+_set_raw_c_doc(
+    dummy_overload_vararg,
+    "baz(x: int) -> int\nbaz(*args) -> int\n",
+)
 
 
 def dummy_no_ret_type() -> None:
-    """qux(x: int)"""
+    """Represent a C-extension fixture signature without an explicit return arrow."""
     pass
+
+
+_set_raw_c_doc(dummy_no_ret_type, "qux(x: int)")
 
 
 def test_c_extension_leading_header_and_vararg_overloads() -> None:
@@ -317,7 +359,6 @@ def test_c_extension_signature_sequence_operations() -> None:
     assert sig[0].kind == "POSITIONAL_OR_KEYWORD"
     assert sig[0].default is None
     assert sig[0].annotation == "Tensor"
-    assert sig[0][0] == "x"
     assert sig[0].as_tuple() == ("x", "POSITIONAL_OR_KEYWORD", None, "Tensor")
     assert sig[1].name == "y"
     assert sig[1].default == "1"

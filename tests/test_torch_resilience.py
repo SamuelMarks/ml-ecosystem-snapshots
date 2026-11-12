@@ -3,34 +3,28 @@
 from __future__ import annotations
 
 import importlib
+import sys
 import types
-from unittest.mock import patch
+import warnings
 
 import pytest
 import pytest_mock
+from ml_switcheroo_ir.schema.ghost import SemanticTier
 
-from ml_ecosystem_snapshots.frameworks.torch import (
-    _scan_array_api,
-    _scan_metrics,
-    get_aten_op_schema,
-    get_jit_schemas_for_op,
-)
-from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.frameworks import torch as torch_fw
 from ml_ecosystem_snapshots.models import GhostPythonRef
 
 
-def test_torch_module_import_reload() -> None:
+def test_torch_module_import_reload(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test torch module reload handling when importing torch.nn/optim/data fails.
 
-    Returns:
-        None.
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
     """
-    from torch_mock import ensure_torch
+    from torch_mock import build_mock_torch_modules
 
-    ensure_torch()
-    import sys
-
-    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
+    for mod_name, mod_obj in build_mock_torch_modules().items():
+        monkeypatch.setitem(sys.modules, mod_name, mod_obj)
 
     def _get_submods() -> tuple[types.ModuleType | None, types.ModuleType | None, types.ModuleType | None]:
         """Return current `(nn, optim, data)` references from `torch_fw`.
@@ -43,28 +37,26 @@ def test_torch_module_import_reload() -> None:
     importlib.reload(torch_fw)
     assert all(m is not None for m in _get_submods())
 
-    with patch.dict(
-        sys.modules,
-        {"torch.nn": None, "torch.optim": None, "torch.utils.data": None},
-    ):
+    with monkeypatch.context() as mp:
+        mp.setitem(sys.modules, "torch.nn", None)
+        mp.setitem(sys.modules, "torch.optim", None)
+        mp.setitem(sys.modules, "torch.utils.data", None)
         importlib.reload(torch_fw)
         assert _get_submods() == (None, None, None)
 
-    # Restore clean reload
     importlib.reload(torch_fw)
     assert _get_submods()[0] is not None
 
 
 def test_torch_scan_metrics_inspect_exception(
+    monkeypatch: pytest.MonkeyPatch,
     mocker: pytest_mock.MockerFixture,
 ) -> None:
-    """Test _scan_metrics catches exceptions during GhostInspector.inspect.
+    """Test `collect_api(SemanticTier.METRIC)` catches exceptions during `GhostInspector.inspect`.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
-
-    Returns:
-        None.
     """
 
     class DummyMetric:
@@ -73,67 +65,55 @@ def test_torch_scan_metrics_inspect_exception(
         pass
 
     fake_metrics = types.ModuleType("torchmetrics")
-    pytest.MonkeyPatch().setattr(fake_metrics, "DummyMetric", DummyMetric, raising=False)
-
-    with patch.dict("sys.modules", {"torchmetrics": fake_metrics}):
-        mocker.patch.object(
-            GhostInspector,
-            "inspect",
-            side_effect=RuntimeError("simulated inspect failure"),
-        )
-        refs = _scan_metrics(include_nonpublic=False)
-        assert refs == []
+    monkeypatch.setattr(fake_metrics, "DummyMetric", DummyMetric, raising=False)
+    monkeypatch.setitem(sys.modules, "torchmetrics", fake_metrics)
+    mocker.patch(
+        "ml_ecosystem_snapshots.frameworks.torch.GhostInspector.inspect",
+        side_effect=RuntimeError("simulated inspect failure"),
+    )
+    refs = torch_fw.collect_api(SemanticTier.METRIC, include_nonpublic=False)
+    assert refs == []
 
 
 def test_torch_scan_array_api_inspect_exceptions(
+    monkeypatch: pytest.MonkeyPatch,
     mocker: pytest_mock.MockerFixture,
 ) -> None:
-    """Test _scan_array_api catches exceptions across all submodules and ops.
+    """Test `collect_api(SemanticTier.ARRAY_API)` catches exceptions across all submodules and ops.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
-
-    Returns:
-        None.
     """
     fake_torch = types.ModuleType("torch")
+    monkeypatch.setattr(fake_torch, "dummy_op", lambda x: x, raising=False)
 
-    # 1. Top-level callable
-    pytest.MonkeyPatch().setattr(fake_torch, "dummy_op", lambda x: x, raising=False)
-
-    # 2. linalg callable
     linalg_mod = types.ModuleType("torch.linalg")
-    pytest.MonkeyPatch().setattr(linalg_mod, "norm", lambda x: x, raising=False)
-    pytest.MonkeyPatch().setattr(fake_torch, "linalg", linalg_mod, raising=False)
+    monkeypatch.setattr(linalg_mod, "norm", lambda x: x, raising=False)
+    monkeypatch.setattr(fake_torch, "linalg", linalg_mod, raising=False)
 
-    # 3. special callable
     special_mod = types.ModuleType("torch.special")
-    pytest.MonkeyPatch().setattr(special_mod, "erf", lambda x: x, raising=False)
-    pytest.MonkeyPatch().setattr(fake_torch, "special", special_mod, raising=False)
+    monkeypatch.setattr(special_mod, "erf", lambda x: x, raising=False)
+    monkeypatch.setattr(fake_torch, "special", special_mod, raising=False)
 
-    # 4. fft callable
     fft_mod = types.ModuleType("torch.fft")
-    pytest.MonkeyPatch().setattr(fft_mod, "fft", lambda x: x, raising=False)
-    pytest.MonkeyPatch().setattr(fake_torch, "fft", fft_mod, raising=False)
+    monkeypatch.setattr(fft_mod, "fft", lambda x: x, raising=False)
+    monkeypatch.setattr(fake_torch, "fft", fft_mod, raising=False)
 
-    # 5. nn.functional callable
     nn_mod = types.ModuleType("torch.nn")
     functional_mod = types.ModuleType("torch.nn.functional")
-    pytest.MonkeyPatch().setattr(functional_mod, "relu", lambda x: x, raising=False)
-    pytest.MonkeyPatch().setattr(nn_mod, "functional", functional_mod, raising=False)
-    pytest.MonkeyPatch().setattr(fake_torch, "nn", nn_mod, raising=False)
+    monkeypatch.setattr(functional_mod, "relu", lambda x: x, raising=False)
+    monkeypatch.setattr(nn_mod, "functional", functional_mod, raising=False)
+    monkeypatch.setattr(fake_torch, "nn", nn_mod, raising=False)
 
-    # 6. autograd callable
     autograd_mod = types.ModuleType("torch.autograd")
-    pytest.MonkeyPatch().setattr(autograd_mod, "grad", lambda x: x, raising=False)
-    pytest.MonkeyPatch().setattr(fake_torch, "autograd", autograd_mod, raising=False)
+    monkeypatch.setattr(autograd_mod, "grad", lambda x: x, raising=False)
+    monkeypatch.setattr(fake_torch, "autograd", autograd_mod, raising=False)
 
-    # 7. distributed callable
     dist_mod = types.ModuleType("torch.distributed")
-    pytest.MonkeyPatch().setattr(dist_mod, "all_reduce", lambda x: x, raising=False)
-    pytest.MonkeyPatch().setattr(fake_torch, "distributed", dist_mod, raising=False)
+    monkeypatch.setattr(dist_mod, "all_reduce", lambda x: x, raising=False)
+    monkeypatch.setattr(fake_torch, "distributed", dist_mod, raising=False)
 
-    # 8. Tensor instance method
     class MockTensor:
         """Mock Tensor class."""
 
@@ -148,9 +128,8 @@ def test_torch_scan_array_api_inspect_exceptions(
             """
             return self
 
-    pytest.MonkeyPatch().setattr(fake_torch, "Tensor", MockTensor, raising=False)
+    monkeypatch.setattr(fake_torch, "Tensor", MockTensor, raising=False)
 
-    # 9. torch.ops.aten callable
     class MockOps:
         """Mock ops container."""
 
@@ -162,28 +141,25 @@ def test_torch_scan_array_api_inspect_exceptions(
 
         aten = MockAten()
 
-    pytest.MonkeyPatch().setattr(fake_torch, "ops", MockOps(), raising=False)
-
-    with patch.dict("sys.modules", {"torch": fake_torch}):
-        mocker.patch.object(
-            GhostInspector,
-            "inspect",
-            side_effect=ValueError("simulated inspection failure"),
-        )
-        refs = _scan_array_api(include_nonpublic=True)
-        assert refs == []
+    monkeypatch.setattr(fake_torch, "ops", MockOps(), raising=False)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    mocker.patch(
+        "ml_ecosystem_snapshots.frameworks.torch.GhostInspector.inspect",
+        side_effect=ValueError("simulated inspection failure"),
+    )
+    refs = torch_fw.collect_api(SemanticTier.ARRAY_API, include_nonpublic=True)
+    assert refs == []
 
 
 def test_torch_scan_array_api_tensor_inplace_tags_none(
+    monkeypatch: pytest.MonkeyPatch,
     mocker: pytest_mock.MockerFixture,
 ) -> None:
-    """Test _scan_array_api populates environment_tags when initial tags are None.
+    """Test `collect_api(SemanticTier.ARRAY_API)` populates `environment_tags` when initial tags are None.
 
     Args:
+        monkeypatch: Pytest monkeypatch fixture.
         mocker: Pytest mocker fixture.
-
-    Returns:
-        None.
     """
     fake_torch = types.ModuleType("torch")
 
@@ -201,7 +177,8 @@ def test_torch_scan_array_api_tensor_inplace_tags_none(
             """
             return self
 
-    pytest.MonkeyPatch().setattr(fake_torch, "Tensor", MockTensor, raising=False)
+    monkeypatch.setattr(fake_torch, "Tensor", MockTensor, raising=False)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
 
     mock_ref = GhostPythonRef(
         name="add_",
@@ -210,53 +187,45 @@ def test_torch_scan_array_api_tensor_inplace_tags_none(
         domain_metadata=None,
         environment_tags=None,
     )
-
-    with patch.dict("sys.modules", {"torch": fake_torch}):
-        mocker.patch.object(
-            GhostInspector,
-            "inspect",
-            return_value=mock_ref,
-        )
-        refs = _scan_array_api(include_nonpublic=False)
-        assert len(refs) == 1
-        assert isinstance(refs[0], GhostPythonRef)
-        assert refs[0].domain_metadata == {"is_in_place": True}
-        assert refs[0].environment_tags == ["in_place_mutation"]
+    mocker.patch(
+        "ml_ecosystem_snapshots.frameworks.torch.GhostInspector.inspect",
+        return_value=mock_ref,
+    )
+    refs = torch_fw.collect_api(SemanticTier.ARRAY_API, include_nonpublic=False)
+    assert len(refs) == 1
+    assert isinstance(refs[0], GhostPythonRef)
+    assert refs[0].domain_metadata == {"is_in_place": True}
+    assert refs[0].environment_tags == ["in_place_mutation"]
 
 
-def test_get_jit_schemas_for_op_import_exception() -> None:
-    """Test get_jit_schemas_for_op handles exception during torch import.
+def test_get_jit_schemas_for_op_import_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test `get_jit_schemas_for_op` handles exception during torch import.
 
-    Returns:
-        None.
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
     """
-    with patch.dict("sys.modules", {"torch": None}):
-        res = get_jit_schemas_for_op("add")
-        assert res == []
+    monkeypatch.setitem(sys.modules, "torch", None)
+    res = torch_fw.get_jit_schemas_for_op("add")
+    assert res == []
 
 
-def test_get_aten_op_schema_import_error() -> None:
-    """Test get_aten_op_schema handles ImportError on torch import.
+def test_get_aten_op_schema_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test `get_aten_op_schema` handles `ImportError` on torch import.
 
-    Returns:
-        None.
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
     """
-    with patch.dict("sys.modules", {"torch": None}):
-        res = get_aten_op_schema("add")
-        assert res is None
+    monkeypatch.setitem(sys.modules, "torch", None)
+    res = torch_fw.get_aten_op_schema("add")
+    assert res is None
 
 
 def test_torch_numpy_warning_ignored() -> None:
-    """Test that Failed to initialize NumPy UserWarning is filtered out.
-
-    Returns:
-        None.
-    """
-    import importlib
-    import warnings
-
-    from ml_ecosystem_snapshots.frameworks import torch as torch_fw
-
+    """Test that Failed to initialize NumPy UserWarning is filtered out."""
     importlib.reload(torch_fw)
-    matching = [f for f in warnings.filters if f[0] == "ignore" and f[2] is UserWarning and "Failed to initialize NumPy" in str(f[1])]
+    matching = [
+        f
+        for f in warnings.filters
+        if f[0] == "ignore" and f[2] is UserWarning and "Failed to initialize NumPy" in str(f[1])
+    ]
     assert len(matching) > 0

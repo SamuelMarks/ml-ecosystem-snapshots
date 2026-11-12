@@ -9,13 +9,13 @@ import threading
 from ml_switcheroo_ir.validation.core import compute_levenshtein
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.mcp.cache import SnapshotRepository
 from ml_ecosystem_snapshots.models import (
     ExtendedGhostRef,
     JsonValue,
     SnapshotEnvelope,
 )
 from ml_ecosystem_snapshots.network_env import load_json_data
+from ml_ecosystem_snapshots.serialization.repository import SnapshotRepository
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,10 +39,16 @@ def _extract_raw_items(
             for cat_items in raw_data["categories"].values():
                 if isinstance(cat_items, list):
                     raw_items.extend(dict(i) for i in cat_items if isinstance(i, dict))
-        elif "items" in raw_data and isinstance(raw_data["items"], list):
-            raw_items = [dict(i) for i in raw_data["items"] if isinstance(i, dict)]
         else:
-            raw_items = [dict(raw_data)]
+            matched_list = False
+            for list_key in ("items", "operations", "instructions"):
+                list_val = raw_data.get(list_key)
+                if isinstance(list_val, list):
+                    raw_items = [dict(i) for i in list_val if isinstance(i, dict)]
+                    matched_list = True
+                    break
+            if not matched_list:
+                raw_items = [dict(raw_data)]
     return raw_items
 
 
@@ -53,25 +59,38 @@ class GroundingEngine:
         self,
         base_dirs: list[str] | None = None,
         repository: SnapshotRepository | None = None,
+        snapshots_dir: str | None = None,
     ) -> None:
         """Initialize the GroundingEngine.
 
         Args:
             base_dirs: Optional explicit directory paths to search for snapshots.
-            repository: Optional shared `SnapshotRepository` instance for MCP cache integration.
+            repository: Optional shared `SnapshotRepository` instance for cache integration.
+            snapshots_dir: Optional single snapshots directory path override.
         """
         default_frameworks = os.path.join(os.path.dirname(__file__), "..", "frameworks")
         default_snapshots = os.path.join(os.path.dirname(__file__), "..", "snapshots")
 
-        self._has_custom_dirs = base_dirs is not None
-        self.search_dirs: list[str] = base_dirs or [
+        explicit_dirs = base_dirs if base_dirs is not None else ([snapshots_dir] if snapshots_dir is not None else None)
+        self._has_custom_dirs = explicit_dirs is not None
+        self.search_dirs: list[str] = explicit_dirs or [
             os.path.abspath(default_frameworks),
             os.path.abspath(default_snapshots),
         ]
+        self._snapshots_dir: str | None = snapshots_dir or (explicit_dirs[0] if explicit_dirs else None)
         self._repository = repository
         self._lock = threading.RLock()
         self._target_cache: dict[str, dict[str, ExtendedGhostRef]] = {}
         self._short_name_cache: dict[str, dict[str, ExtendedGhostRef]] = {}
+
+    @property
+    def snapshots_dir(self) -> str | None:
+        """Return the configured custom snapshots directory if set.
+
+        Returns:
+            Custom snapshots directory path or `None`.
+        """
+        return self._snapshots_dir
 
     def get_loaded_targets(self) -> list[str]:
         """Retrieve the names of all currently loaded targets.

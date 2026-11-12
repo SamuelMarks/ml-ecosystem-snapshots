@@ -7,10 +7,12 @@ framework collector modules.
 
 from __future__ import annotations
 
-import inspect
+import enum
+import logging
 import types
 import typing
 
+import griffe
 import pydantic
 import typing_extensions
 from ml_switcheroo_ir.schema.ghost import (
@@ -27,50 +29,79 @@ from ml_switcheroo_ir.schema.ghost import (
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
-    InspectableTarget,
+    STATIC_GRIFFE_TYPES,
+    LivePythonTarget,
+    StaticGriffeNode,
+    get_member_dict,
 )
 from ml_ecosystem_snapshots.introspection.static_parsers import (
     load_griffe_module_safely,
 )
-from ml_ecosystem_snapshots.models import JsonValue, ScalarValue
+from ml_ecosystem_snapshots.models import JsonValue, ScalarValue, SymbolKind
 from ml_ecosystem_snapshots.network_env import is_offline_mode
 
+_LOGGER = logging.getLogger(__name__)
 
-@typing.runtime_checkable
-class GriffeMemberProtocol(typing.Protocol):
-    """Structural protocol for a Griffe AST member node (`Function`, `Class`, `Attribute`, `Alias`)."""
 
-    @property
-    def is_class(self) -> bool:
-        """Return whether the member node represents a class.
+class CollectorDomain(str, enum.Enum):
+    """Domain classification for snapshot collectors across Python, compiler IR, hardware ISA, C++, and DSL targets."""
 
-        Returns:
-            True if the member node is a class.
-        """
-        ...
-
-    @property
-    def is_function(self) -> bool:
-        """Return whether the member node represents a function.
-
-        Returns:
-            True if the member node is a function.
-        """
-        ...
+    PYTHON_FRAMEWORK = "python_framework"
+    COMPILER_IR = "compiler_ir"
+    HARDWARE_ISA = "hardware_isa"
+    CPP_RUNTIME = "cpp_runtime"
+    DOCUMENT_DSL = "document_dsl"
 
 
 @typing.runtime_checkable
-class GriffeModuleMembersProtocol(typing.Protocol):
-    """Structural protocol for a Griffe `Module` or `Class` node exposing a `members` mapping."""
+class DomainSnapshotCollector(typing.Protocol):
+    """Protocol for non-Python domain collectors (`COMPILER_IR`, `HARDWARE_ISA`, `CPP_RUNTIME`, `DOCUMENT_DSL`)."""
 
-    @property
-    def members(self) -> typing.Mapping[str, GriffeMemberProtocol]:
-        """Return mapping of member names to Griffe AST member nodes.
+    collector_domain: CollectorDomain
+    category_key: str
+
+    def collect_domain(self, include_nonpublic: bool = False) -> list[GhostRef]:
+        """Collect domain-native `GhostRef` symbols without `SemanticTier` shoehorning.
+
+        Args:
+            include_nonpublic: Whether to include non-public symbols.
 
         Returns:
-            Mapping from member name to Griffe member node.
+            List of collected domain `GhostRef` items.
         """
         ...
+
+
+class DomainCollectorAdapter:
+    """Concrete `DomainSnapshotCollector` wrapping a domain-native collection callable."""
+
+    def __init__(
+        self,
+        collector_domain: CollectorDomain,
+        category_key: str,
+        collect_fn: typing.Callable[[bool], list[GhostRef]],
+    ) -> None:
+        """Initialize the domain collector adapter.
+
+        Args:
+            collector_domain: Target `CollectorDomain` classification.
+            category_key: Snapshot category key emitted for this domain (e.g. `'operations'`, `'instructions'`).
+            collect_fn: Callable accepting `include_nonpublic` and returning `list[GhostRef]`.
+        """
+        self.collector_domain = collector_domain
+        self.category_key = category_key
+        self._collect_fn = collect_fn
+
+    def collect_domain(self, include_nonpublic: bool = False) -> list[GhostRef]:
+        """Execute domain-native symbol collection.
+
+        Args:
+            include_nonpublic: Whether to include non-public symbols.
+
+        Returns:
+            List of collected `GhostRef` items.
+        """
+        return self._collect_fn(include_nonpublic)
 
 
 class CanonicalParamSpec(pydantic.BaseModel):
@@ -93,45 +124,6 @@ class CanonicalPythonOpSpec(pydantic.BaseModel):
     kind: str = "function"
     params: list[CanonicalParamSpec] = pydantic.Field(default_factory=list)
     docstring: str | None = None
-
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["name", "api_path", "kind"]) -> str: ...
-
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["params"]) -> list[CanonicalParamSpec]: ...
-
-    @typing.overload
-    def __getitem__(self, key: str) -> str | list[CanonicalParamSpec] | JsonValue: ...
-
-    def __getitem__(self, key: str) -> str | list[CanonicalParamSpec] | JsonValue:
-        """Retrieve a canonical operation field by dictionary key.
-
-        Args:
-            key: Field name.
-
-        Returns:
-            Field value.
-        """
-        dumped: dict[str, str | list[CanonicalParamSpec] | JsonValue] = self.model_dump()
-        return dumped[key]
-
-    def get(
-        self,
-        key: str,
-        default: str | list[CanonicalParamSpec] | None = None,
-    ) -> str | list[CanonicalParamSpec] | None:
-        """Retrieve a canonical operation field by key with default.
-
-        Args:
-            key: Field name.
-            default: Default value when absent.
-
-        Returns:
-            Field value or `default`.
-        """
-        dumped: dict[str, str | list[CanonicalParamSpec] | None] = self.model_dump()
-        val = dumped.get(key, default)
-        return val if val is not None else default
 
 
 class CanonicalSubmoduleOpSpec(CanonicalPythonOpSpec):
@@ -204,18 +196,6 @@ class CanonicalSsaAttrSpec(pydantic.BaseModel):
     description: str | None = None
     options: list[ScalarValue] | None = None
 
-    def __getitem__(self, key: str) -> JsonValue:
-        """Retrieve an SSA attribute field by dictionary key.
-
-        Args:
-            key: Field name.
-
-        Returns:
-            Field value.
-        """
-        dumped: dict[str, JsonValue] = self.model_dump()
-        return dumped[key]
-
 
 class CanonicalSsaOpSpec(pydantic.BaseModel):
     """Pydantic specification for a canonical SSA / hardware operation entry."""
@@ -232,83 +212,6 @@ class CanonicalSsaOpSpec(pydantic.BaseModel):
     outputs: list[str] = pydantic.Field(default_factory=list)
     attributes: list[CanonicalSsaAttrSpec] = pydantic.Field(default_factory=list)
     description: str = ""
-
-    @typing.overload
-    def __getitem__(
-        self,
-        key: typing.Literal["name", "mnemonic", "domain", "category", "address_space", "description"],
-    ) -> str: ...
-
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["inputs", "outputs"]) -> list[str]: ...
-
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["attributes"]) -> list[CanonicalSsaAttrSpec]: ...
-
-    @typing.overload
-    def __getitem__(self, key: str) -> str | list[str] | list[CanonicalSsaAttrSpec] | JsonValue: ...
-
-    def __getitem__(self, key: str) -> str | list[str] | list[CanonicalSsaAttrSpec] | JsonValue:
-        """Retrieve an SSA operation field by dictionary key.
-
-        Args:
-            key: Field name.
-
-        Returns:
-            Field value.
-        """
-        if key == "attributes":
-            return self.attributes
-        dumped: dict[str, str | list[str] | list[CanonicalSsaAttrSpec] | JsonValue] = self.model_dump()
-        return dumped[key]
-
-    @typing.overload
-    def get(
-        self,
-        key: typing.Literal["name", "mnemonic", "domain", "category", "address_space", "description"],
-        default: str | None = None,
-    ) -> str: ...
-
-    @typing.overload
-    def get(
-        self,
-        key: typing.Literal["inputs", "outputs"],
-        default: list[str] | None = None,
-    ) -> list[str]: ...
-
-    @typing.overload
-    def get(
-        self,
-        key: typing.Literal["attributes"],
-        default: list[CanonicalSsaAttrSpec] | None = None,
-    ) -> list[CanonicalSsaAttrSpec]: ...
-
-    @typing.overload
-    def get(
-        self,
-        key: str,
-        default: list[str] | list[CanonicalSsaAttrSpec] | JsonValue = None,
-    ) -> list[str] | list[CanonicalSsaAttrSpec] | JsonValue: ...
-
-    def get(
-        self,
-        key: str,
-        default: list[str] | list[CanonicalSsaAttrSpec] | JsonValue = None,
-    ) -> list[str] | list[CanonicalSsaAttrSpec] | JsonValue:
-        """Retrieve an SSA operation field by key with an optional default.
-
-        Args:
-            key: Field name.
-            default: Default value if field is empty/None.
-
-        Returns:
-            Field value or `default`.
-        """
-        if key == "attributes":
-            return self.attributes
-        dumped: dict[str, list[str] | list[CanonicalSsaAttrSpec] | JsonValue] = self.model_dump()
-        val = dumped.get(key, default)
-        return val if val is not None else default
 
 
 def _coerce_python_op(
@@ -390,12 +293,34 @@ def build_canonical_python_ref(
     )
 
 
+class StaticInspectorCallable(typing.Protocol):
+    """Protocol for static Griffe node or live symbol inspection functions."""
+
+    def __call__(
+        self,
+        obj: StaticGriffeNode,
+        api_path: str,
+        is_public: bool | None = None,
+    ) -> GhostRef:
+        """Inspect a static Griffe AST node into a `GhostRef`.
+
+        Args:
+            obj: Static Griffe AST node to inspect.
+            api_path: Qualified API path string.
+            is_public: Optional public visibility override.
+
+        Returns:
+            Extracted `GhostRef` instance.
+        """
+        ...
+
+
 class InspectorCallable(typing.Protocol):
     """Protocol for callable symbol inspection functions."""
 
     def __call__(
         self,
-        obj: InspectableTarget,
+        obj: LivePythonTarget,
         api_path: str,
         is_public: bool | None = None,
     ) -> GhostRef:
@@ -447,16 +372,27 @@ def collect_from_canonical_or_live(
 
     inspect_callable = inspector_fn or GhostInspector.inspect
     results: list[GhostRef] = []
-    live_members: dict[str, InspectableTarget] = dict(inspect.getmembers(live_module))
+    live_members: dict[str, LivePythonTarget] = get_member_dict(live_module)
     for name in target_names:
         if name in live_members:
-            obj: InspectableTarget = live_members[name]
+            obj: LivePythonTarget = live_members[name]
             try:
                 ref = inspect_callable(obj, f"{module_prefix}.{name}", is_public=True)
                 ref.environment_tags = list(ref.environment_tags or ()) + list(environment_tags)
                 results.append(ref)
-            except Exception as exc:
-                del exc
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                OSError,
+                RuntimeError,
+                LookupError,
+                SyntaxError,
+                AssertionError,
+                griffe.GriffeError,
+            ):
+                _LOGGER.debug("Failed to inspect live member %s.%s", module_prefix, name, exc_info=True)
     return results
 
 
@@ -504,9 +440,9 @@ def collect_from_submodules_or_canonical(
         sub = spec.submodule or default_submodule
         if sub in loaded_submods:
             mod = loaded_submods[sub]
-            mod_members: dict[str, InspectableTarget] = dict(inspect.getmembers(mod))
+            mod_members: dict[str, LivePythonTarget] = get_member_dict(mod)
             if spec.name in mod_members:
-                obj: InspectableTarget = mod_members[spec.name]
+                obj: LivePythonTarget = mod_members[spec.name]
                 try:
                     ref = inspect_callable(obj, spec.api_path, is_public=True)
                     ref.environment_tags = list(ref.environment_tags or ()) + [
@@ -515,8 +451,19 @@ def collect_from_submodules_or_canonical(
                     ]
                     results.append(ref)
                     seen.add(spec.api_path)
-                except Exception as exc:
-                    del exc
+                except (
+                    ImportError,
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    OSError,
+                    RuntimeError,
+                    LookupError,
+                    SyntaxError,
+                    AssertionError,
+                    griffe.GriffeError,
+                ):
+                    _LOGGER.debug("Failed to inspect submodule member %s", spec.api_path, exc_info=True)
 
     for spec in specs:
         if spec.api_path not in seen:
@@ -633,7 +580,7 @@ def build_ssa_operation_refs(
             GhostOperationRef(
                 name=op_name,
                 api_path=api_path,
-                kind="function",
+                kind=SymbolKind.OPERATION.value,
                 params=params_list,
                 operands=[p for p in params if p.role == IRParameterRole.OPERAND],
                 returns=returns,
@@ -666,15 +613,26 @@ def collect_dir_callables(
     """
     inspect_callable = inspector_fn or GhostInspector.inspect
     results: list[GhostRef] = []
-    for name, obj in inspect.getmembers(mod_obj):
+    for name, obj in get_member_dict(mod_obj).items():
         if not include_nonpublic and name.startswith("_"):
             continue
         if callable(obj):
             try:
                 res = inspect_callable(obj, f"{api_prefix}.{name}", is_public=not name.startswith("_"))
                 results.append(res)
-            except Exception as exc:
-                del exc
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                OSError,
+                RuntimeError,
+                LookupError,
+                SyntaxError,
+                AssertionError,
+                griffe.GriffeError,
+            ):
+                _LOGGER.debug("Failed to inspect callable member %s.%s", api_prefix, name, exc_info=True)
     return results
 
 
@@ -686,7 +644,7 @@ def scan_griffe_module_members(
     block_list: set[str] | None = None,
     environment_tags: tuple[str, ...] = ("cpu",),
     framework_name: str | None = None,
-    inspector_fn: InspectorCallable | None = None,
+    inspector_fn: StaticInspectorCallable | None = None,
 ) -> list[GhostRef]:
     """Statically scan a module via the custom Griffe fork and extract `GhostRef` items.
 
@@ -704,7 +662,7 @@ def scan_griffe_module_members(
         List of statically extracted `GhostRef` records.
     """
     loaded = load_griffe_module_safely(module_path, framework_name=framework_name)
-    if not isinstance(loaded, GriffeModuleMembersProtocol):
+    if not isinstance(loaded, STATIC_GRIFFE_TYPES):
         return []
 
     blocked = block_list if block_list is not None else set()
@@ -717,7 +675,19 @@ def scan_griffe_module_members(
         try:
             is_cls = bool(member.is_class)
             is_fn = bool(member.is_function)
-        except Exception:
+        except (
+            ImportError,
+            AttributeError,
+            TypeError,
+            ValueError,
+            OSError,
+            RuntimeError,
+            LookupError,
+            SyntaxError,
+            AssertionError,
+            griffe.GriffeError,
+        ):
+            _LOGGER.debug("Failed to read Griffe member kind for %s.%s", module_path, name, exc_info=True)
             continue
 
         if ("class" in allowed_kinds and is_cls) or ("function" in allowed_kinds and is_fn):
@@ -727,10 +697,23 @@ def scan_griffe_module_members(
                     f"{api_prefix}.{name}",
                     is_public=not name.startswith("_"),
                 )
-                ref.environment_tags = list(ref.environment_tags or ()) + [t for t in environment_tags if t not in (ref.environment_tags or ())]
+                ref.environment_tags = list(ref.environment_tags or ()) + [
+                    t for t in environment_tags if t not in (ref.environment_tags or ())
+                ]
                 results.append(ref)
-            except Exception as exc:
-                del exc
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                OSError,
+                RuntimeError,
+                LookupError,
+                SyntaxError,
+                AssertionError,
+                griffe.GriffeError,
+            ):
+                _LOGGER.debug("Failed to inspect Griffe member %s.%s", api_prefix, name, exc_info=True)
 
     return results
 
@@ -772,7 +755,9 @@ def collect_hybrid_framework_api(config: HybridFrameworkConfig) -> list[GhostRef
         if ref.api_path in seen_paths:
             return
         if merge_env:
-            ref.environment_tags = list(ref.environment_tags or ()) + [t for t in env_tags if t not in (ref.environment_tags or ())]
+            ref.environment_tags = list(ref.environment_tags or ()) + [
+                t for t in env_tags if t not in (ref.environment_tags or ())
+            ]
         if config.postprocess_fn is not None:
             config.postprocess_fn(ref)
         results.append(ref)
@@ -795,3 +780,28 @@ def collect_hybrid_framework_api(config: HybridFrameworkConfig) -> list[GhostRef
             _record(fallback_ref, merge_env=False)
 
     return results
+
+
+__all__ = [
+    "CanonicalParamSpec",
+    "CanonicalParamTuple",
+    "CanonicalPythonOpSpec",
+    "CanonicalPythonOpTuple",
+    "CanonicalSsaAttrSpec",
+    "CanonicalSsaOpSpec",
+    "CanonicalSubmoduleOpSpec",
+    "CanonicalSubmoduleOpTuple",
+    "CollectorDomain",
+    "DomainCollectorAdapter",
+    "DomainSnapshotCollector",
+    "HybridFrameworkConfig",
+    "InspectorCallable",
+    "StaticInspectorCallable",
+    "SymbolKind",
+    "build_canonical_python_ops",
+    "build_canonical_python_ref",
+    "build_canonical_submodule_ops",
+    "build_ssa_operation_refs",
+    "collect_hybrid_framework_api",
+    "scan_griffe_module_members",
+]

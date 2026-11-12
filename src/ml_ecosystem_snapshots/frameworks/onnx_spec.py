@@ -6,6 +6,7 @@ and type signatures from the ONNX operator specification definitions.
 
 from __future__ import annotations
 
+import logging
 import types
 import typing
 
@@ -20,6 +21,8 @@ from ml_ecosystem_snapshots.frameworks._base import (
     CanonicalSsaAttrSpec,
     CanonicalSsaOpSpec,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 CANONICAL_ONNX_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(list[CanonicalSsaOpSpec]).validate_python(
     [
@@ -262,7 +265,18 @@ def _get_onnx_defs() -> _OnnxDefsModuleProtocol | types.ModuleType | None:
 
         defs: types.ModuleType = onnx.defs
         return defs
-    except Exception:
+    except (
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        LookupError,
+        SyntaxError,
+        AssertionError,
+    ):
+        _LOGGER.debug("Failed to import onnx.defs", exc_info=True)
         return None
 
 
@@ -273,11 +287,10 @@ def _load_onnx_ops() -> list[CanonicalSsaOpSpec]:
         List of ONNX operator specifications.
     """
     defs = _get_onnx_defs()
-    if defs is None:
+    if not isinstance(defs, _OnnxDefsModuleProtocol):
         return CANONICAL_ONNX_OPS
 
     try:
-        assert isinstance(defs, _OnnxDefsModuleProtocol)
         schemas: typing.Sequence[_OnnxOpSchemaProto] = defs.get_all_schemas_with_history()
         latest_map: dict[tuple[str, str], _OnnxOpSchemaProto] = {}
         for s in schemas:
@@ -291,9 +304,7 @@ def _load_onnx_ops() -> list[CanonicalSsaOpSpec]:
             inputs = [str(inp.name) for inp in s.inputs]
             outputs = [str(out.name) for out in s.outputs]
             attributes: list[CanonicalSsaAttrSpec] = []
-            raw_attrs = s.attributes
-            assert isinstance(raw_attrs, dict)
-            for attr_name, attr in raw_attrs.items():
+            for attr_name, attr in s.attributes.items():
                 desc_str = str(attr.description or "") if isinstance(attr, _OnnxAttrDescriptionProtocol) else ""
                 attributes.append(
                     CanonicalSsaAttrSpec(
@@ -317,13 +328,25 @@ def _load_onnx_ops() -> list[CanonicalSsaOpSpec]:
             )
         if ops:
             return ops
-    except Exception as exc:
-        del exc
+    except (
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        LookupError,
+        SyntaxError,
+        AssertionError,
+    ):
+        _LOGGER.debug("Failed to load ONNX operator schemas from onnx.defs", exc_info=True)
 
     return CANONICAL_ONNX_OPS
 
 
 _get_canonical_onnx_ops = _load_onnx_ops
+get_onnx_defs = _get_onnx_defs
+load_onnx_ops = _load_onnx_ops
 
 
 def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
@@ -346,7 +369,9 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         return []
 
     ops = _load_onnx_ops()
-    filtered_ops = [op for op in ops if include_nonpublic or ("preview" not in str(op.get("domain", "")) and "internal" not in str(op.get("domain", "")))]
+    filtered_ops = [
+        op for op in ops if include_nonpublic or ("preview" not in op.domain and "internal" not in op.domain)
+    ]
 
     return build_ssa_operation_refs(
         ops=filtered_ops,
@@ -360,10 +385,10 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         empty_return_type="None",
         provenance_fn=lambda op: {
             "source_type": "onnx_spec",
-            "upstream_version": str(op.get("since_version", "1.0")),
-            "domain": str(op.get("domain") or "ai.onnx"),
+            "upstream_version": str(op.since_version if op.since_version is not None else "1.0"),
+            "domain": op.domain or "ai.onnx",
         },
         default_doc_fn=lambda op_name: f"ONNX {op_name} operator.",
         environment_tags=("onnx",),
-        api_path_fn=lambda op, op_name: f"onnx.{op['domain']}.{op_name}" if op.get("domain") else f"onnx.{op_name}",
+        api_path_fn=lambda op, op_name: f"onnx.{op.domain}.{op_name}" if op.domain else f"onnx.{op_name}",
     )

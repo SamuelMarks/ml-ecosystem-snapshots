@@ -23,7 +23,13 @@ def _load_dataset_or_canonical(fw_dir: str, filename: str) -> list[dict[str, Jso
         with open(fpath, encoding="utf-8") as f:
             raw = json.load(f)
         if isinstance(raw, dict):
-            return list(raw.get("categories", {}).get("UTIL") or raw.get("instructions") or raw.get("operations") or raw.get("items") or [])
+            return list(
+                raw.get("categories", {}).get("UTIL")
+                or raw.get("instructions")
+                or raw.get("operations")
+                or raw.get("items")
+                or []
+            )
         return list(raw)
 
     from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier

@@ -13,11 +13,10 @@ from ml_switcheroo_ir.schema.ghost import (
 
 from ml_ecosystem_snapshots.frameworks.numba import (
     CANONICAL_NUMBA_OPS,
-    _get_numba,
     collect_api,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
 
@@ -32,7 +31,7 @@ def test_collect_api_numba_live(monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock Numba module."""
 
         @staticmethod
-        def njit(func: InspectableTarget) -> InspectableTarget:
+        def njit(func: LivePythonTarget) -> LivePythonTarget:
             """Mock njit decorator.
 
             Args:
@@ -44,7 +43,7 @@ def test_collect_api_numba_live(monkeypatch: pytest.MonkeyPatch) -> None:
             return func
 
         @staticmethod
-        def vectorize(func: InspectableTarget) -> InspectableTarget:
+        def vectorize(func: LivePythonTarget) -> LivePythonTarget:
             """Mock vectorize decorator.
 
             Args:
@@ -71,7 +70,7 @@ def test_collect_api_numba_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
     real_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: InspectableTarget, name: str, is_public: bool = True) -> ExtendedGhostRef:
+    def mock_inspect(obj: LivePythonTarget, name: str, is_public: bool = True) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -81,6 +80,9 @@ def test_collect_api_numba_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
         Returns:
             A mocked GhostRef.
+
+        Raises:
+            RuntimeError: When `name` contains `prange`.
         """
         if "prange" in name:
             raise RuntimeError("Simulated inspection failure")
@@ -117,24 +119,24 @@ def test_collect_api_numba_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_get_numba_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_numba returns module when import succeeds.
+    """Verify `collect_api` resolves live `numba` module from `sys.modules` when present.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
     fake_mod = types.ModuleType("numba")
     monkeypatch.setitem(sys.modules, "numba", fake_mod)
-    assert _get_numba() is fake_mod
+    assert collect_api(SemanticTier.ARRAY_API) == []
 
 
 def test_get_numba_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_numba handles ImportError gracefully.
+    """Verify `collect_api` falls back to canonical ops when `numba` import raises `ImportError`.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
     monkeypatch.setitem(sys.modules, "numba", None)
-    assert _get_numba() is None
+    assert len(collect_api(SemanticTier.ARRAY_API)) == len(CANONICAL_NUMBA_OPS)
 
 
 def test_collect_api_numba_inspection_exception(
@@ -153,7 +155,7 @@ def test_collect_api_numba_inspection_exception(
 
     monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.numba._get_numba", lambda: FlakyNumba())
 
-    def mock_inspect(*args: InspectableTarget, **kwargs: InspectableTarget) -> None:
+    def mock_inspect(*args: LivePythonTarget, **kwargs: LivePythonTarget) -> None:
         """Mock inspect raising RuntimeError.
 
         Args:

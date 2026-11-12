@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pydantic
 
-from ml_ecosystem_snapshots.mcp.tools.domain_ops import build_domain_op_tool_schemas
+from ml_ecosystem_snapshots.grounding.domain_ops import build_domain_op_tool_schemas
 from ml_ecosystem_snapshots.models import JsonValue
 
 

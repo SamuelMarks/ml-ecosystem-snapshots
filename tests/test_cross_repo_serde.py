@@ -14,6 +14,7 @@ from ml_ecosystem_snapshots.models import (
     GhostMlirRef,
     GhostResult,
     IRParameterRole,
+    JsonValue,
     OperandDirection,
     SnapshotEnvelope,
 )
@@ -36,13 +37,15 @@ def test_ghost_protocol_v2_models_instantiation() -> None:
     assert param.direction == OperandDirection.READ
     assert param.role == IRParameterRole.OPERAND
 
-    isa_ref = GhostIsaRef(
-        name="FFMA",
-        api_path="isa.inst.FFMA",
-        kind="function",
-        params=[param],
-        predicate_guards=["@P0", "@!P1"],
-        instruction_modifiers=[".F32", ".FTZ"],
+    isa_ref = GhostIsaRef.model_validate(
+        {
+            "name": "FFMA",
+            "api_path": "isa.inst.FFMA",
+            "kind": "function",
+            "params": [param],
+            "predicate_guards": ["@P0", "@!P1"],
+            "instruction_modifiers": [".F32", ".FTZ"],
+        }
     )
     assert isa_ref.domain_type in ("isa", "instruction")
     assert isa_ref.predicate_guards == ["@P0", "@!P1"]
@@ -68,8 +71,6 @@ def test_ghost_protocol_v2_models_instantiation() -> None:
 
 def test_hydrate_ghost_ref_v2_roundtrip() -> None:
     """Verify hydrate_ghost_ref validates v2.0.0 structures with zero information loss."""
-    from ml_ecosystem_snapshots.models import JsonValue
-
     v2_dict: dict[str, JsonValue] = {
         "name": "relu",
         "api_path": "torch.nn.functional.relu",
@@ -109,13 +110,36 @@ def test_hydrate_ghost_ref_v2_roundtrip() -> None:
     }
     hydrated_legacy = hydrate_ghost_ref(legacy_op_dict)
     assert hydrated_legacy.returns is not None
-    assert hydrated_legacy.returns[0].type == "Any"
+    assert hydrated_legacy.returns[0].type == "Value"
     assert hydrated_legacy.returns[1].type == "f32"
     dumped_legacy = hydrated_legacy.model_dump()
-    assert dumped_legacy["operands"][0]["constraint"] == "Any"
+    assert dumped_legacy["operands"][0]["constraint"] == "Tensor"
     assert dumped_legacy["operands"][1]["constraint"] == "f32"
-    assert dumped_legacy["attributes"][0]["type"] == "Any"
+    assert dumped_legacy["attributes"][0]["type"] == "Attribute"
     assert dumped_legacy["attributes"][1]["type"] == "i32"
+
+
+def _extract_exhaustive_records(raw_data: JsonValue) -> JsonValue:
+    """Extract the record list from an exhaustive snapshot JSON envelope or raw list.
+
+    Args:
+        raw_data: Parsed JSON payload from an exhaustive snapshot file.
+
+    Returns:
+        Extracted list of symbol records.
+    """
+    if not isinstance(raw_data, dict):
+        return raw_data
+    for key in ("operations", "instructions", "ops"):
+        if key in raw_data:
+            return raw_data[key]
+    if "categories" in raw_data and isinstance(raw_data["categories"], dict):
+        records: list[JsonValue] = []
+        for cat in raw_data["categories"].values():
+            if isinstance(cat, list):
+                records.extend(cat)
+        return records
+    return [raw_data]
 
 
 def test_exhaustive_snapshot_loading_serde() -> None:
@@ -135,27 +159,15 @@ def test_exhaustive_snapshot_loading_serde() -> None:
             continue
 
         with open(fpath, encoding="utf-8") as f:
-            raw_data = json.load(f)
+            raw_data: JsonValue = json.load(f)
 
-        if isinstance(raw_data, dict):
-            if "operations" in raw_data:
-                records = raw_data["operations"]
-            elif "ops" in raw_data:
-                records = raw_data["ops"]
-            elif "categories" in raw_data:
-                records = []
-                for cat in raw_data["categories"].values():
-                    if isinstance(cat, list):
-                        records.extend(cat)
-            else:
-                records = [raw_data]
-        else:
-            records = raw_data
+        records = _extract_exhaustive_records(raw_data)
 
         assert isinstance(records, list)
         assert len(records) > 0, f"Snapshot {fname} is empty"
 
         for raw_item in records[:10]:
+            assert isinstance(raw_item, dict)
             ref = hydrate_ghost_ref(raw_item)
             mnemonic_extra = ref.model_extra.get("mnemonic") if ref.model_extra else None
             assert bool(ref.name or mnemonic_extra)
@@ -203,8 +215,6 @@ def test_hydrate_ghost_ref_minimal_custom_op_default_kind() -> None:
     assert hydrated.name == "FlashAttention"
     assert hydrated.api_path == "ml.switcheroo.custom.FlashAttention"
     assert hydrated.kind == "function"
-
-    from ml_ecosystem_snapshots.models import JsonValue
 
     ptx_entry: dict[str, JsonValue] = {
         "mnemonic": "add",

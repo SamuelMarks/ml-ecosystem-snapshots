@@ -152,7 +152,7 @@ def test_score_compliance_empty() -> None:
     """Test compliance scoring with empty reference."""
     ref_snap: dict[str, JsonValue] = {"categories": {}}
     res = score_compliance(ref_snap, [])
-    assert res["score_percentage"] == 0.0
+    assert res.score_percentage == 0.0
 
 
 def test_score_compliance_matches() -> None:
@@ -209,10 +209,10 @@ def test_score_compliance_matches() -> None:
     ]
 
     res = score_compliance(ref_snap, target_refs)
-    assert res["total_endpoints"] == 2
-    assert res["score_percentage"] == 50.0
-    assert "reference.func1" in res["matched"]
-    assert "reference.func2" in res["missing"]
+    assert res.total_endpoints == 2
+    assert res.score_percentage == 50.0
+    assert "reference.func1" in res.matched
+    assert "reference.func2" in res.missing
 
 
 def test_score_compliance_mismatch() -> None:
@@ -287,15 +287,15 @@ def test_score_compliance_mismatch() -> None:
     ]
 
     res = score_compliance(ref_snap, target_refs)
-    assert res["total_endpoints"] == 2
-    assert "reference.func1" not in res["matched"]
-    assert "reference.func2" in res["matched"]  # because varargs fallback
-    assert len(res["mismatched"]) == 1
-    assert res["mismatched"][0]["api_path"] == "reference.func1"
+    assert res.total_endpoints == 2
+    assert "reference.func1" not in res.matched
+    assert "reference.func2" in res.matched  # because varargs fallback
+    assert len(res.mismatched) == 1
+    assert res.mismatched[0].api_path == "reference.func1"
 
 
 def test_extract_target_refs_import_error(tmp_path: Path) -> None:
-    """Test extracting target refs skips bad imports.
+    """Test static extraction extracts defined functions while skipping unresolved imports without executing module code.
 
     Args:
         tmp_path: Temporary directory path fixture.
@@ -304,13 +304,12 @@ def test_extract_target_refs_import_error(tmp_path: Path) -> None:
     pkg_dir.mkdir()
     Path(os.path.join(pkg_dir, "__init__.py")).touch()
     sub_mod = Path(os.path.join(pkg_dir, "api.py"))
-    # missing_module doesn't exist
-    sub_mod.write_text("import missing_module\ndef my_func(): pass")
+    sub_mod.write_text(
+        "import missing_module\nraise RuntimeError('must never execute at import time')\ndef my_func(x: int) -> int:\n    return x\n"
+    )
 
     refs = extract_target_refs(str(sub_mod), "bad_pkg.api", "reference")
-    # Actually Griffe might still parse it, but dynamic import will fail.
-    # It should silently skip.
-    assert len(refs) == 0
+    assert [r.api_path for r in refs] == ["reference.my_func"]
 
 
 def test_extract_target_refs_aliases(tmp_path: Path) -> None:
@@ -350,8 +349,8 @@ def test_extract_target_refs_aliases(tmp_path: Path) -> None:
     ]
 
     res = score_compliance(ref_snap, target_refs)
-    assert res["total_endpoints"] == 1
-    assert res["score_percentage"] == 100.0
+    assert res.total_endpoints == 1
+    assert res.score_percentage == 100.0
 
 
 def test_extract_target_refs_skip_private(tmp_path: Path) -> None:
@@ -388,10 +387,9 @@ def test_extract_target_refs_nested_import_error(tmp_path: Path) -> None:
     # Actually just a normal failure that is caught in `except Exception:` block:
     # We can mock this by trying to extract a fake file
     sub_mod.write_text("import sys\nsys.modules['nested_pkg.api.broken'] = None\ndef broken(): pass")
-    refs = extract_target_refs(str(sub_mod), "nested_pkg.api", "reference")
+    refs = extract_target_refs([str(sub_mod), str(sub_mod)], "nested_pkg.api", "reference")
 
-    # We only care that it doesn't crash and returns the parsed sys import
-    assert any(r.name == "sys" for r in refs)
+    assert [r.name for r in refs] == ["broken"]
 
 
 def test_extract_target_refs_sys_path(tmp_path: Path) -> None:
@@ -466,11 +464,18 @@ def test_extract_target_refs_catch_inner_exception(tmp_path: Path) -> None:
     sub_mod.write_text("class Outer:\n    class Inner:\n        pass\n")
 
     import ml_ecosystem_snapshots.introspection.inspector
-    from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+    from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+        LivePythonTarget,
+        StaticGriffeNode,
+    )
 
     orig_inspect = ml_ecosystem_snapshots.introspection.inspector.GhostInspector.inspect
 
-    def mock_inspect(obj: InspectableTarget, api_path: str, is_public: bool | None = None) -> ExtendedGhostRef:
+    def mock_inspect(
+        obj: LivePythonTarget | StaticGriffeNode,
+        api_path: str,
+        is_public: bool | None = None,
+    ) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -480,6 +485,9 @@ def test_extract_target_refs_catch_inner_exception(tmp_path: Path) -> None:
 
         Returns:
             A mocked GhostRef.
+
+        Raises:
+            RuntimeError: When `api_path` references `Inner`.
         """
         if "Inner" in api_path:
             raise RuntimeError("inner broken")
@@ -592,9 +600,18 @@ def test_derive_base_path_src(tmp_path: Path) -> None:
 
 def test_map_target_to_reference_path_extra() -> None:
     """Verify map target to reference path extra behavior."""
+    from ml_ecosystem_snapshots.cli.commands.verify_compliance import ZERO_ECOSYSTEM_ALIGNMENT_RULE
     from ml_ecosystem_snapshots.compliance import align_namespace
 
-    assert align_namespace("zero_torch.jax.numpy.array", "zero_torch", "torch") == "jax.numpy.array"
-    assert align_namespace("zero_torch.optax.adam", "zero_torch", "torch") == "optax.adam"
-    assert align_namespace("zero_torch", "zero_torch", "torch") == "torch"
+    assert (
+        align_namespace(
+            "zero_torch.jax.numpy.array", "zero_torch", "torch", alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE
+        )
+        == "jax.numpy.array"
+    )
+    assert (
+        align_namespace("zero_torch.optax.adam", "zero_torch", "torch", alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE)
+        == "optax.adam"
+    )
+    assert align_namespace("zero_torch", "zero_torch", "torch", alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE) == "torch"
     assert align_namespace("zero.array", "zero", "np") == "np.array"

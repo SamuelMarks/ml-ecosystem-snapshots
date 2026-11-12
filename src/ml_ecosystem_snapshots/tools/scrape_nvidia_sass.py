@@ -9,7 +9,11 @@ import re
 import typing
 from collections import defaultdict
 
-from ml_ecosystem_snapshots.models import IsaInstructionRecordModel, JsonValue
+from ml_ecosystem_snapshots.models import (
+    IsaInstructionRecordModel,
+    JsonValue,
+    ensure_json_dict,
+)
 
 
 def resolve_instruction_architectures(mnemonic: str) -> list[str]:
@@ -111,13 +115,11 @@ def _build_sorted_sass_records(
     for mnemonic in sorted(inst_ops.keys()):
         result.append(
             IsaInstructionRecordModel(
-                {
-                    "mnemonic": mnemonic,
-                    "architecture": list(resolve_instruction_architectures(mnemonic)),
-                    "description": f"NVIDIA SASS {mnemonic} instruction.",
-                    "modifiers": list(sorted(list(inst_mods[mnemonic]))),
-                    "operands": inst_ops[mnemonic],
-                }
+                mnemonic=mnemonic,
+                architecture=list(resolve_instruction_architectures(mnemonic)),
+                description=f"NVIDIA SASS {mnemonic} instruction.",
+                modifiers=list(sorted(list(inst_mods[mnemonic]))),
+                operands=list(inst_ops[mnemonic]),
             )
         )
     return result
@@ -209,10 +211,9 @@ def parse_cuda_binary_utilities(
     inst_mods: dict[str, set[str]] = defaultdict(set)
     inst_ops: dict[str, list[JsonValue]] = defaultdict(list)
 
-    for _key, val in data.items():
-        assert isinstance(val, dict)
-        parsed = val.get("parsed", {})
-        assert isinstance(parsed, dict)
+    for _key, raw_val in data.items():
+        val = ensure_json_dict(raw_val, "SASS instruction entry")
+        parsed = ensure_json_dict(val.get("parsed", {}), "SASS parsed instruction")
         raw_base = parsed.get("base_name")
         if isinstance(raw_base, str) and raw_base:
             base_name = raw_base
@@ -221,8 +222,8 @@ def parse_cuda_binary_utilities(
 
             sig: list[JsonValue] = []
             raw_pops = parsed.get("operands", [])
-            for op in raw_pops if isinstance(raw_pops, list) else []:
-                assert isinstance(op, dict)
+            for raw_op in raw_pops if isinstance(raw_pops, list) else []:
+                op = ensure_json_dict(raw_op, "SASS operand")
                 sig.append(_classify_cuda_utility_operand(op))
 
             if sig not in inst_ops[base_name]:
@@ -525,15 +526,15 @@ def _append_sass_catalog_entry(
     """
     if mnemonic not in seen:
         seen.add(mnemonic)
+        mod_list = [str(m) for m in modifiers] if isinstance(modifiers, list) else []
+        op_list = list(operands) if isinstance(operands, list) else []
         catalog.append(
             IsaInstructionRecordModel(
-                {
-                    "mnemonic": mnemonic,
-                    "architecture": list(resolve_instruction_architectures(mnemonic)),
-                    "description": description,
-                    "modifiers": modifiers,
-                    "operands": operands,
-                }
+                mnemonic=mnemonic,
+                architecture=list(resolve_instruction_architectures(mnemonic)),
+                description=str(description or f"NVIDIA SASS {mnemonic} instruction."),
+                modifiers=mod_list,
+                operands=op_list,
             )
         )
 
@@ -623,7 +624,7 @@ def _expand_sass_math_cvt_and_uniform_ops(
 
 
 def build_expanded_sass_catalog(
-    base_instructions: typing.Sequence[typing.Mapping[str, JsonValue]],
+    base_instructions: typing.Sequence[IsaInstructionRecordModel | typing.Mapping[str, JsonValue]],
 ) -> list[IsaInstructionRecordModel]:
     """Expand baseline SASS instructions into 1000+ operations covering Tensor Core, TMA, and control ops.
 
@@ -631,22 +632,24 @@ def build_expanded_sass_catalog(
         base_instructions: The baseline scraped instructions.
 
     Returns:
-        Exhaustive list of 1000+ SASS instruction dictionaries.
+        Exhaustive list of 1000+ SASS instruction records.
     """
     catalog: list[IsaInstructionRecordModel] = []
     seen: set[str] = set()
-    default_operands: JsonValue = [["R", "R"]]
+    default_operands: list[JsonValue] = [["R", "R"]]
 
     for item in base_instructions:
-        m = str(item["mnemonic"])
-        _append_sass_catalog_entry(
-            catalog,
-            seen,
-            m,
-            item.get("description", f"NVIDIA SASS {m} instruction."),
-            item.get("modifiers") or [],
-            item.get("operands") or default_operands,
-        )
+        if isinstance(item, IsaInstructionRecordModel):
+            m = item.mnemonic
+            desc: JsonValue = item.description or f"NVIDIA SASS {m} instruction."
+            mods_val: JsonValue = [str(mod) for mod in item.modifiers]
+            ops_val: JsonValue = list(item.operands) if item.operands else default_operands
+        else:
+            m = str(item["mnemonic"])
+            desc = item.get("description", f"NVIDIA SASS {m} instruction.")
+            mods_val = item.get("modifiers") or []
+            ops_val = item.get("operands") or default_operands
+        _append_sass_catalog_entry(catalog, seen, m, desc, mods_val, ops_val)
 
     for op, opsigs, mods, desc in _SPECIFIC_SASS_OPS:
         _append_sass_catalog_entry(
@@ -679,6 +682,9 @@ def scrape_sass(
 
     Returns:
         List of scraped instruction definitions.
+
+    Raises:
+        ValueError: If neither `input_path` nor `NVIDIA_SASS_INPUT_PATH` is provided.
     """
     resolved_input = input_path or os.environ.get("NVIDIA_SASS_INPUT_PATH")
     if not resolved_input:
@@ -724,7 +730,7 @@ def scrape_sass(
             "sm_90",
             "sm_100",
         ],
-        "instructions": [dict(r) for r in final_records],
+        "instructions": [r.model_dump(exclude_none=True) for r in final_records],
     }
 
     with open(resolved_output, "w", encoding="utf-8", newline="\n") as f:
@@ -767,7 +773,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     args, _ = parser.parse_known_args(argv)
 
-    expand = args.expand_catalog if args.expand_catalog is not None else (os.environ.get("NVIDIA_SASS_EXPAND_CATALOG", "0") == "1")
+    expand = (
+        args.expand_catalog
+        if args.expand_catalog is not None
+        else (os.environ.get("NVIDIA_SASS_EXPAND_CATALOG", "0") == "1")
+    )
     scrape_sass(
         input_path=args.input_path,
         output_path=args.output_path,

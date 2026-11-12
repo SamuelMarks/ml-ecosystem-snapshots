@@ -16,9 +16,9 @@ from ml_switcheroo_ir.schema.ghost import (
 from ml_ecosystem_snapshots.cli import cmd_check_onnx
 from ml_ecosystem_snapshots.frameworks.onnx_spec import (
     CANONICAL_ONNX_OPS,
-    _get_onnx_defs,
-    _load_onnx_ops,
     collect_api,
+    get_onnx_defs,
+    load_onnx_ops,
 )
 from ml_ecosystem_snapshots.mcp_server import check_onnx_op
 
@@ -61,7 +61,9 @@ def test_onnx_op_properties_and_roles() -> None:
 
     assert "Conv" in op_map
     conv_ref = op_map["Conv"]
-    attr_params = [p for p in conv_ref.params if isinstance(p, ExtendedGhostParam) and p.role == IRParameterRole.ATTRIBUTE]
+    attr_params = [
+        p for p in conv_ref.params if isinstance(p, ExtendedGhostParam) and p.role == IRParameterRole.ATTRIBUTE
+    ]
     assert len(attr_params) > 0
 
 
@@ -69,29 +71,29 @@ def test_check_onnx_op_validation() -> None:
     """Test check_onnx_op validating existence, operands count, and attributes."""
     # 1. Valid Add
     res_valid = check_onnx_op("Add", inputs_count=2)
-    assert res_valid["is_valid"] is True
-    assert res_valid["op_exists"] is True
-    assert len(res_valid["errors"]) == 0
+    assert res_valid.is_valid is True
+    assert res_valid.op_exists is True
+    assert len(res_valid.errors) == 0
 
     # 2. Input count mismatch
     res_mismatch = check_onnx_op("Add", inputs_count=5)
-    assert res_mismatch["is_valid"] is False
-    assert any("expects 2 inputs, but got 5" in e for e in res_mismatch["errors"])
+    assert res_mismatch.is_valid is False
+    assert any("expects 2 inputs, but got 5" in e for e in res_mismatch.errors)
 
     # 3. Valid attributes
     res_attrs = check_onnx_op("Conv", attributes=["kernel_shape", "strides"])
-    assert res_attrs["is_valid"] is True
+    assert res_attrs.is_valid is True
 
     # 4. Invalid attribute
     res_bad_attr = check_onnx_op("Conv", attributes=["nonexistent_attr"])
-    assert res_bad_attr["is_valid"] is False
-    assert any("Attribute 'nonexistent_attr' is not valid" in e for e in res_bad_attr["errors"])
+    assert res_bad_attr.is_valid is False
+    assert any("Attribute 'nonexistent_attr' is not valid" in e for e in res_bad_attr.errors)
 
     # 5. Non-existent operator
     res_nonexistent = check_onnx_op("NonExistentOp")
-    assert res_nonexistent["is_valid"] is False
-    assert res_nonexistent["op_exists"] is False
-    assert any("Unknown ONNX operation" in e for e in res_nonexistent["errors"])
+    assert res_nonexistent.is_valid is False
+    assert res_nonexistent.op_exists is False
+    assert any("Unknown ONNX operation" in e for e in res_nonexistent.errors)
 
     # 6. Domain fallback when domain="" matches op from another domain
     with pytest.MonkeyPatch.context() as mp:
@@ -111,8 +113,8 @@ def test_check_onnx_op_validation() -> None:
             lambda: dummy_domain_op,
         )
         res_domain_fallback = check_onnx_op("CustomClassifier", domain="")
-        assert res_domain_fallback["is_valid"] is True
-        assert res_domain_fallback["op_exists"] is True
+        assert res_domain_fallback.is_valid is True
+        assert res_domain_fallback.op_exists is True
 
 
 def test_cmd_check_onnx_cli(capsys: pytest.CaptureFixture[str]) -> None:
@@ -168,7 +170,7 @@ def test_load_onnx_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         "ml_ecosystem_snapshots.frameworks.onnx_spec._get_onnx_defs",
         lambda: None,
     )
-    ops_fallback = _load_onnx_ops()
+    ops_fallback = load_onnx_ops()
     assert ops_fallback == CANONICAL_ONNX_OPS
 
     # 2. Fallback when onnx.defs raises Exception
@@ -180,6 +182,9 @@ def test_load_onnx_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
 
             Returns:
                 Never returns.
+
+            Raises:
+                RuntimeError: Always raised to simulate corrupt schema definitions.
             """
             raise RuntimeError("Corrupt schema defs")
 
@@ -187,7 +192,7 @@ def test_load_onnx_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         "ml_ecosystem_snapshots.frameworks.onnx_spec._get_onnx_defs",
         lambda: BrokenDefs(),
     )
-    ops_err = _load_onnx_ops()
+    ops_err = load_onnx_ops()
     assert ops_err == CANONICAL_ONNX_OPS
 
 
@@ -198,7 +203,7 @@ def test_get_onnx_defs_exception(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch: Pytest monkeypatch fixture.
     """
     monkeypatch.setitem(sys.modules, "onnx", None)
-    assert _get_onnx_defs() is None
+    assert get_onnx_defs() is None
 
 
 def test_get_onnx_defs_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -212,7 +217,7 @@ def test_get_onnx_defs_success(monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.MonkeyPatch().setattr(fake_onnx, "defs", fake_defs, raising=False)
     monkeypatch.setitem(sys.modules, "onnx", fake_onnx)
     monkeypatch.setitem(sys.modules, "onnx.defs", fake_defs)
-    assert _get_onnx_defs() is fake_defs
+    assert get_onnx_defs() is fake_defs
 
 
 def test_onnx_schema_attributes_with_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -268,12 +273,12 @@ def test_onnx_schema_attributes_with_defaults(monkeypatch: pytest.MonkeyPatch) -
         "ml_ecosystem_snapshots.frameworks.onnx_spec._get_onnx_defs",
         lambda: MockDefsWithAttrs(),
     )
-    ops = _load_onnx_ops()
+    ops = load_onnx_ops()
     assert len(ops) == 1
-    assert len(ops[0]["attributes"]) == 2
-    attr_map = {a["name"]: a for a in ops[0]["attributes"]}
-    assert attr_map["alpha"]["default"] == "1.5"
-    assert attr_map["beta"]["default"] is None
+    assert len(ops[0].attributes) == 2
+    attr_map = {a.name: a for a in ops[0].attributes}
+    assert attr_map["alpha"].default == "1.5"
+    assert attr_map["beta"].default is None
 
 
 def test_onnx_collect_no_outputs_no_attrs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -282,16 +287,18 @@ def test_onnx_collect_no_outputs_no_attrs(monkeypatch: pytest.MonkeyPatch) -> No
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
+    from ml_ecosystem_snapshots.frameworks._base import CanonicalSsaOpSpec
+
     dummy_ops = [
-        {
-            "name": "SinkOp",
-            "domain": "",
-            "since_version": 1,
-            "inputs": ["in_data"],
-            "outputs": [],
-            "attributes": [],
-            "description": "Sink operation with no outputs",
-        }
+        CanonicalSsaOpSpec(
+            name="SinkOp",
+            domain="",
+            since_version=1,
+            inputs=["in_data"],
+            outputs=[],
+            attributes=[],
+            description="Sink operation with no outputs",
+        )
     ]
     monkeypatch.setattr(
         "ml_ecosystem_snapshots.frameworks.onnx_spec._load_onnx_ops",
@@ -310,16 +317,18 @@ def test_onnx_filter_preview_domain(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
+    from ml_ecosystem_snapshots.frameworks._base import CanonicalSsaOpSpec
+
     preview_ops = [
-        {
-            "name": "PreviewOp",
-            "domain": "ai.onnx.preview.training",
-            "since_version": 1,
-            "inputs": ["x"],
-            "outputs": ["y"],
-            "attributes": [],
-            "description": "Preview operation",
-        }
+        CanonicalSsaOpSpec(
+            name="PreviewOp",
+            domain="ai.onnx.preview.training",
+            since_version=1,
+            inputs=["x"],
+            outputs=["y"],
+            attributes=[],
+            description="Preview operation",
+        )
     ]
     monkeypatch.setattr(
         "ml_ecosystem_snapshots.frameworks.onnx_spec._load_onnx_ops",
@@ -375,9 +384,9 @@ def test_onnx_schema_older_version_skipped(monkeypatch: pytest.MonkeyPatch) -> N
         "ml_ecosystem_snapshots.frameworks.onnx_spec._get_onnx_defs",
         lambda: MockDefs(),
     )
-    ops = _load_onnx_ops()
+    ops = load_onnx_ops()
     assert len(ops) == 1
-    assert ops[0]["since_version"] == 10
+    assert ops[0].since_version == 10
 
 
 def test_onnx_load_empty_schemas(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -402,7 +411,7 @@ def test_onnx_load_empty_schemas(monkeypatch: pytest.MonkeyPatch) -> None:
         "ml_ecosystem_snapshots.frameworks.onnx_spec._get_onnx_defs",
         lambda: EmptyDefs(),
     )
-    ops = _load_onnx_ops()
+    ops = load_onnx_ops()
     assert ops == CANONICAL_ONNX_OPS
 
 

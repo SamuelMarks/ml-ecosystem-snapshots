@@ -39,7 +39,9 @@ DTYPE_BITWIDTHS: dict[str, int] = {
 }
 
 
-def validate_broadcast_shapes(shape_a: typing.Sequence[int | str], shape_b: typing.Sequence[int | str]) -> tuple[bool, list[int] | None, str | None]:
+def validate_broadcast_shapes(
+    shape_a: typing.Sequence[int | str], shape_b: typing.Sequence[int | str]
+) -> tuple[bool, list[int] | None, str | None]:
     """Validate NumPy/PyTorch broadcasting compatibility between two tensor shapes.
 
     Rules:
@@ -234,7 +236,7 @@ def get_dtype_bitwidth(dtype_name: str) -> int:
     Returns:
         Bitwidth in bits (e.g. 8 for qint8, 4 for qint4/int4, 2 for int2, 32 for float32).
     """
-    from ml_ecosystem_snapshots.mcp_server import normalize_dtype_name
+    from ml_ecosystem_snapshots.grounding.dtypes import normalize_dtype_name
 
     clean = normalize_dtype_name(dtype_name)
     return DTYPE_BITWIDTHS.get(clean, 32)
@@ -269,7 +271,7 @@ def validate_dtype_for_op(op_name: str, dtype_name: str) -> tuple[bool, str | No
     Returns:
         A tuple of (is_valid, error_message_or_None).
     """
-    from ml_ecosystem_snapshots.mcp_server import normalize_dtype_name
+    from ml_ecosystem_snapshots.grounding.dtypes import normalize_dtype_name
 
     clean_op = op_name.split(".")[-1].lower()
     clean_dt = normalize_dtype_name(dtype_name)
@@ -300,7 +302,9 @@ def validate_dtype_for_op(op_name: str, dtype_name: str) -> tuple[bool, str | No
             "object",
         )
         if any(clean_dt.startswith(p) for p in non_float_prefixes):
-            return False, (f"Data type '{dtype_name}' is not supported for transcendental operation '{op_name}'. Floating-point or complex dtype required.")
+            return False, (
+                f"Data type '{dtype_name}' is not supported for transcendental operation '{op_name}'. Floating-point or complex dtype required."
+            )
 
     return True, None
 

@@ -16,16 +16,13 @@ import sys
 import typing
 from pathlib import Path
 
-_src_dir = str(Path(__file__).resolve().parent.parent.parent)
-if _src_dir not in sys.path:
-    sys.path.insert(0, _src_dir)
-
-from ml_ecosystem_snapshots.models import TableGenRecordModel  # noqa: E402
-from ml_ecosystem_snapshots.network_env import fetch_url  # noqa: E402
-from ml_ecosystem_snapshots.tools.build_stablehlo_snapshot import (  # noqa: E402
+from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
+from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel
+from ml_ecosystem_snapshots.network_env import fetch_url
+from ml_ecosystem_snapshots.tools.build_stablehlo_snapshot import (
     extract_ops,
 )
-from ml_ecosystem_snapshots.tools.mlir_tablegen import (  # noqa: E402
+from ml_ecosystem_snapshots.tools.mlir_tablegen import (
     TableGenASTParser,
     dump_ast_via_llvm_tooling,
     parse_llvm_tblgen_json,
@@ -36,9 +33,13 @@ from ml_ecosystem_snapshots.tools.mlir_tablegen import (  # noqa: E402
     strip_tablegen_comments,
     validate_dialect_ops_ods,
 )
-from ml_ecosystem_snapshots.utils import (  # noqa: E402
+from ml_ecosystem_snapshots.utils import (
     extract_tablegen_traits,
 )
+
+_src_dir = str(Path(__file__).resolve().parent.parent.parent)
+if _src_dir not in sys.path:
+    sys.path.insert(0, _src_dir)
 
 MLIR_DOCS_URL = "https://mlir.llvm.org/docs/Dialects/"
 CORE_MLIR_DIALECTS: list[str] = [
@@ -81,19 +82,21 @@ def inspect_mlir_python_module(
     for dialect in target_dialects:
         try:
             mod = importlib.import_module(f"mlir.dialects.{dialect}")
-            for attr_name, cls in inspect.getmembers(mod):
+            for attr_name, cls in get_member_dict(mod).items():
                 if attr_name.endswith("Op") and not attr_name.startswith("_"):
-                    op_mnemonic = cls.OPERATION_NAME if isinstance(cls, _MlirOpClassProtocol) else f"{dialect}.{attr_name[:-2].lower()}"
+                    op_mnemonic = (
+                        cls.OPERATION_NAME
+                        if isinstance(cls, _MlirOpClassProtocol)
+                        else f"{dialect}.{attr_name[:-2].lower()}"
+                    )
                     ops.append(
                         TableGenRecordModel(
-                            {
-                                "api_path": str(op_mnemonic),
-                                "dialect": dialect,
-                                "class_name": attr_name,
-                                "operands": [],
-                                "attributes": [],
-                                "description": inspect.getdoc(cls) or f"MLIR {attr_name} operation.",
-                            }
+                            api_path=str(op_mnemonic),
+                            dialect=dialect,
+                            class_name=attr_name,
+                            operands=[],
+                            attributes=[],
+                            description=inspect.getdoc(cls) or f"MLIR {attr_name} operation.",
                         )
                     )
         except ImportError:
@@ -115,7 +118,7 @@ def _append_unique_ops(
         seen_paths: Set of `api_path` strings already added to `all_ops`.
     """
     for op in ops:
-        api_p = str(op.get("api_path", ""))
+        api_p = op.api_path
         if api_p not in seen_paths:
             seen_paths.add(api_p)
             all_ops.append(op)
@@ -152,7 +155,11 @@ def _fetch_upstream_dialect_ops(
             url = f"https://raw.githubusercontent.com/llvm/llvm-project/{tag_ref}/mlir/include/mlir/Dialect/{subpath}/{td_file}"
             td_content = fetch_url(url)
             if td_content:
-                parsed = parse_llvm_tblgen_json(td_content, dialect_name) if td_content.strip().startswith("{") else parse_mlir_tablegen(td_content, dialect_name)
+                parsed = (
+                    parse_llvm_tblgen_json(td_content, dialect_name)
+                    if td_content.strip().startswith("{")
+                    else parse_mlir_tablegen(td_content, dialect_name)
+                )
                 _append_unique_ops(parsed, all_ops, seen_paths)
 
 
@@ -184,7 +191,9 @@ def main(argv: list[str] | None = None) -> None:
     )
     args, _ = parser.parse_known_args(argv)
 
-    output_path = args.output_path or os.path.join(os.path.dirname(__file__), "..", "frameworks", "mlir_exhaustive.json")
+    output_path = args.output_path or os.path.join(
+        os.path.dirname(__file__), "..", "frameworks", "mlir_exhaustive.json"
+    )
 
     all_ops: list[TableGenRecordModel] = []
     seen_paths: set[str] = set()
@@ -198,14 +207,14 @@ def main(argv: list[str] | None = None) -> None:
         stablehlo_ops = []
     _append_unique_ops(stablehlo_ops, all_ops, seen_paths)
 
-    exhaustive_data = {
+    exhaustive_data: dict[str, JsonValue] = {
         "schema_version": "2.0.0",
         "target": "mlir",
         "version": args.version,
         "upstream_commit": args.tag,
         "upstream_version": args.version,
         "source_type": "tablegen",
-        "operations": all_ops,
+        "operations": [r.model_dump(exclude_none=True) for r in all_ops],
     }
 
     with open(output_path, "w", encoding="utf-8", newline=nl) as f:

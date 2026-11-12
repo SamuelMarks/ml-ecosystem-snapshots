@@ -181,18 +181,23 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         ops=ops,
         api_prefix="metal",
         name_key="name",
-        operand_annotation_fn=lambda op, inp: f"{op.get('address_space', 'thread')} T*",
-        operand_description_fn=lambda op, inp: f"MSL operand {inp} in {op.get('address_space', 'thread')} address space",
-        operand_direction_fn=lambda op, inp: OperandDirection.WRITE if "store" in op["name"] and inp in ("ptr", "dest") else OperandDirection.READ,
+        operand_annotation_fn=lambda op, _inp: f"{op.address_space or 'thread'} T*",
+        operand_description_fn=lambda op, inp: f"MSL operand {inp} in {op.address_space or 'thread'} address space",
+        operand_direction_fn=lambda op, inp: (
+            OperandDirection.WRITE if "store" in op.name and inp in ("ptr", "dest") else OperandDirection.READ
+        ),
         attr_description_prefix="MSL attribute",
         result_type="T",
         empty_return_type="None",
         provenance_fn=lambda op: {
             "source_type": "metal_spec",
             "upstream_version": "3.2",
-            "address_space": op.get("address_space", "thread"),
-            "category": op.get("category", "compute"),
+            "address_space": op.address_space or "thread",
+            "category": op.category or "compute",
         },
         default_doc_fn=lambda op_name: f"Apple Metal {op_name} operation.",
         environment_tags=("metal", "msl"),
     )
+
+
+load_metal_ops = _load_metal_ops

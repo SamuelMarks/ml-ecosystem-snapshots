@@ -26,7 +26,7 @@ def test_nvidia_sass_collect_api_util() -> None:
     # Check structure of the first few refs
     for ref in refs:
         assert isinstance(ref, GhostRef)
-        assert ref.kind == "function"
+        assert ref.kind == "instruction"
         assert ref.api_path.startswith("nvidia_sass.inst.")
         assert ref.name in ref.api_path
 
@@ -34,11 +34,11 @@ def test_nvidia_sass_collect_api_util() -> None:
         assert isinstance(ref.docstring, str)
         assert len(ref.docstring) > 0
 
-        # Params should be structural positional_only
+        # Params should be structural positional_only with semantic operand role names
         for param in ref.params:
             assert isinstance(param, GhostParam)
             assert param.kind == "POSITIONAL_ONLY"
-            assert param.name.startswith("op")
+            assert param.name == "dst" or param.name.startswith("src")
             assert param.annotation is not None
 
 
@@ -68,7 +68,9 @@ def test_nvidia_sass_specific_instruction() -> None:
 
 def test_build_structured_sass_operands() -> None:
     """Test building structured operand records with roles, register classes, and immediates."""
-    structured = nvidia_sass.build_structured_sass_operands(["R0", "1.5", "0x20", "UR4", "P1", "c[0][4]", "UP0", "B1"], "FADD")
+    structured = nvidia_sass.build_structured_sass_operands(
+        ["R0", "1.5", "0x20", "UR4", "P1", "c[0][4]", "UP0", "B1"], "FADD"
+    )
     assert len(structured) == 8
     assert structured[0]["role"] == "dest"
     assert isinstance(structured[0]["register_classes"], list)
@@ -388,13 +390,20 @@ def test_validate_sass_control_code() -> None:
     # Barrier masks
     assert nvidia_sass.validate_sass_control_code("FADD", {"read_barrier_mask": 0}) == []
     assert nvidia_sass.validate_sass_control_code("FADD", {"read_barrier_mask": 5}) == []
-    assert any("out of valid range" in e for e in nvidia_sass.validate_sass_control_code("FADD", {"read_barrier_mask": 6}))
+    assert any(
+        "out of valid range" in e for e in nvidia_sass.validate_sass_control_code("FADD", {"read_barrier_mask": 6})
+    )
     assert nvidia_sass.validate_sass_control_code("FADD", {"write_barrier_mask": 0}) == []
-    assert any("out of valid range" in e for e in nvidia_sass.validate_sass_control_code("FADD", {"write_barrier_mask": -1}))
+    assert any(
+        "out of valid range" in e for e in nvidia_sass.validate_sass_control_code("FADD", {"write_barrier_mask": -1})
+    )
 
     # Latency ticks
     assert nvidia_sass.validate_sass_control_code("FADD", {"latency_ticks": 4}, sm_arch="sm_80") == []
-    assert any("out of bounds" in e for e in nvidia_sass.validate_sass_control_code("FADD", {"latency_ticks": 20}, sm_arch="sm_80"))
+    assert any(
+        "out of bounds" in e
+        for e in nvidia_sass.validate_sass_control_code("FADD", {"latency_ticks": 20}, sm_arch="sm_80")
+    )
 
 
 def test_check_sass_instruction_extended() -> None:
@@ -409,7 +418,7 @@ def test_check_sass_instruction_extended() -> None:
         sm_arch="sm_80",
         control_codes={"stall_count": 2, "latency_ticks": 5},
     )
-    assert res_valid["is_valid"] is True
+    assert res_valid.is_valid is True
 
     # 2. Register alignment violation (R1:R2 pair)
     res_align = check_sass_instruction(
@@ -417,8 +426,8 @@ def test_check_sass_instruction_extended() -> None:
         operands=["R1:R2", "R4:R5", "R6:R7"],
         sm_arch="sm_80",
     )
-    assert res_align["is_valid"] is False
-    assert any("must start on an even register index" in e for e in res_align["errors"])
+    assert res_align.is_valid is False
+    assert any("must start on an even register index" in e for e in res_align.errors)
 
     # 3. Invalid operand directionality (constant bank memory in dst)
     res_dir = check_sass_instruction(
@@ -426,8 +435,8 @@ def test_check_sass_instruction_extended() -> None:
         operands=["c[0][0]", "R1", "R2"],
         sm_arch="sm_80",
     )
-    assert res_dir["is_valid"] is False
-    assert any("cannot be constant bank memory" in e for e in res_dir["errors"])
+    assert res_dir.is_valid is False
+    assert any("cannot be constant bank memory" in e for e in res_dir.errors)
 
     # 4. Conflicting modifiers
     res_mods = check_sass_instruction(
@@ -435,20 +444,20 @@ def test_check_sass_instruction_extended() -> None:
         modifiers=[".RN", ".RZ"],
         sm_arch="sm_80",
     )
-    assert res_mods["is_valid"] is False
-    assert any("Conflicting rounding mode" in e for e in res_mods["errors"])
+    assert res_mods.is_valid is False
+    assert any("Conflicting rounding mode" in e for e in res_mods.errors)
 
     # 5. FP4 / microscopic scaling instruction gating on sm_100
     res_fp4_sm90 = check_sass_instruction(
         "BMMA",
         sm_arch="sm_90",
     )
-    assert res_fp4_sm90["is_valid"] is True
+    assert res_fp4_sm90.is_valid is True
     res_fp4_explicit = check_sass_instruction(
         "FADD",
         sm_arch="sm_90",
     )
-    assert res_fp4_explicit["is_valid"] is True
+    assert res_fp4_explicit.is_valid is True
 
 
 def test_cli_check_sass(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
@@ -550,7 +559,9 @@ def test_validate_sass_control_code_extended() -> None:
     err_rf_malformed = nvidia_sass.validate_sass_control_code("FADD", {"register_reuse_flags": ["R0"]}, sm_arch="sm_80")
     assert any("Malformed register reuse flag" in e for e in err_rf_malformed)
 
-    err_rf_reg = nvidia_sass.validate_sass_control_code("FADD", {"register_reuse_flags": ["R300.reuse"]}, sm_arch="sm_80")
+    err_rf_reg = nvidia_sass.validate_sass_control_code(
+        "FADD", {"register_reuse_flags": ["R300.reuse"]}, sm_arch="sm_80"
+    )
     assert any("out of range" in e for e in err_rf_reg)
 
     # Dual-issue restrictions on TENSOR and BARRIER
@@ -586,7 +597,7 @@ def test_load_exhaustive_sass_variants() -> None:
         with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_envelope))):
             ops = nvidia_sass._load_exhaustive_sass()
             assert len(ops) == 1
-            assert ops[0]["mnemonic"] == "FADD"
+            assert ops[0].mnemonic == "FADD"
 
         mock_inst_dict = {
             "instructions": [{"mnemonic": "FMUL"}],
@@ -594,13 +605,13 @@ def test_load_exhaustive_sass_variants() -> None:
         with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_inst_dict))):
             ops = nvidia_sass._load_exhaustive_sass()
             assert len(ops) == 1
-            assert ops[0]["mnemonic"] == "FMUL"
+            assert ops[0].mnemonic == "FMUL"
 
         mock_raw_list = [{"mnemonic": "FFMA"}]
         with mock.patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_raw_list))):
             ops = nvidia_sass._load_exhaustive_sass()
             assert len(ops) == 1
-            assert ops[0]["mnemonic"] == "FFMA"
+            assert ops[0].mnemonic == "FFMA"
 
     assert nvidia_sass.validate_sass_control_code("FADD", {"dual_issue": True}) == []
     assert nvidia_sass.validate_sass_control_code("WGMMA", {}) == []
@@ -625,8 +636,8 @@ def test_tokenize_sass_line_and_code_block() -> None:
 
     # Direct check_sass_instruction with dot-separated mnemonic
     res_direct = check_sass_instruction("FADD.FTZ.RN", operands=["R0", "R1", "R2"], sm_arch="sm_80")
-    assert res_direct["is_valid"] is True
-    assert res_direct["mnemonic_exists"] is True
+    assert res_direct.is_valid is True
+    assert res_direct.mnemonic_exists is True
 
     # check_code_block with SASS
     sass_code = """
@@ -635,12 +646,12 @@ def test_tokenize_sass_line_and_code_block() -> None:
     FFMA.SAT R0, R1, R2, R3;
     """
     block_res = check_code_block(sass_code, framework="nvidia_sass", sm_arch="sm_80")
-    assert block_res["is_valid"] is True
-    assert block_res["hallucinations_detected"] == 0
-    assert block_res["total_analyzed"] == 2
+    assert block_res.is_valid is True
+    assert block_res.hallucinations_detected == 0
+    assert block_res.total_analyzed == 2
 
     # Hallucinated instruction in code block
     bad_code = "NONEXISTENT_SASS_OP.RN R0, R1;"
     bad_res = check_code_block(bad_code, framework="nvidia_sass")
-    assert bad_res["is_valid"] is False
-    assert bad_res["hallucinations_detected"] == 1
+    assert bad_res.is_valid is False
+    assert bad_res.hallucinations_detected == 1

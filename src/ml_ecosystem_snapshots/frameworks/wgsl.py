@@ -6,6 +6,7 @@ Extracts built-in functions, compute shader intrinsics, and operations from the 
 from __future__ import annotations
 
 import json
+import logging
 
 import pydantic
 from ml_switcheroo_ir.schema.ghost import (
@@ -16,6 +17,8 @@ from ml_switcheroo_ir.schema.ghost import (
 
 from ml_ecosystem_snapshots.frameworks._base import CanonicalSsaOpSpec
 from ml_ecosystem_snapshots.models import JsonValue
+
+_LOGGER = logging.getLogger(__name__)
 
 CANONICAL_WGSL_OPS: list[CanonicalSsaOpSpec] = pydantic.TypeAdapter(list[CanonicalSsaOpSpec]).validate_python(
     [
@@ -125,8 +128,18 @@ def _load_wgsl_ops() -> list[CanonicalSsaOpSpec]:
             data: JsonValue = json.load(f)
             if isinstance(data, dict) and isinstance(data.get("ops"), list) and data["ops"]:
                 return pydantic.TypeAdapter(list[CanonicalSsaOpSpec]).validate_python(data["ops"])
-    except Exception as exc:
-        del exc
+    except (
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        LookupError,
+        SyntaxError,
+        AssertionError,
+    ):
+        _LOGGER.debug("Failed to load wgsl_ops.json, falling back to canonical WGSL ops", exc_info=True)
     return CANONICAL_WGSL_OPS
 
 
@@ -156,15 +169,20 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         name_key="name",
         operand_annotation_fn=lambda _op, _inp: "Value",
         operand_description_fn=lambda _op, inp: f"WGSL operand {inp}",
-        operand_direction_fn=lambda op, inp: OperandDirection.WRITE if "store" in str(op["name"]).lower() and inp == "value" else OperandDirection.READ,
+        operand_direction_fn=lambda op, inp: (
+            OperandDirection.WRITE if "store" in op.name.lower() and inp == "value" else OperandDirection.READ
+        ),
         attr_description_prefix="WGSL attribute",
         result_type="Value",
         empty_return_type="None",
         provenance_fn=lambda op: {
             "source_type": "wgsl_spec",
             "upstream_version": "draft-2024",
-            "domain": op.get("domain", "wgsl"),
+            "domain": op.domain or "wgsl",
         },
         default_doc_fn=lambda op_name: f"WebGPU WGSL {op_name} operation.",
         environment_tags=("webgpu",),
     )
+
+
+load_wgsl_ops = _load_wgsl_ops

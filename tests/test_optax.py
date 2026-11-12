@@ -13,7 +13,7 @@ from ml_ecosystem_snapshots.api import extract_snapshot, get_pkg_version
 from ml_ecosystem_snapshots.cli.commands.check import cmd_check_optax
 from ml_ecosystem_snapshots.frameworks import optax as optax_fw
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 from ml_ecosystem_snapshots.mcp.registry import dispatch_tool_call
 from ml_ecosystem_snapshots.mcp.tools.domain_ops import check_optax_op
 from ml_ecosystem_snapshots.mcp.tools.hallucination import (
@@ -34,7 +34,7 @@ def test_optax_docstring_parser_and_version_fallback() -> None:
             side_effect=RuntimeError("not installed"),
         ),
         patch(
-            "ml_ecosystem_snapshots.api._extract_version_with_griffe",
+            "ml_ecosystem_snapshots.api.extract_version_with_griffe",
             return_value=None,
         ),
     ):
@@ -180,7 +180,7 @@ def test_optax_scan_array_api_live_and_griffe_branches(
     real_inspect = GhostInspector.inspect
 
     def selective_inspect(
-        obj: InspectableTarget,
+        obj: LivePythonTarget,
         api_path: str,
         is_public: bool = True,
     ) -> GhostRef:
@@ -193,6 +193,9 @@ def test_optax_scan_array_api_live_and_griffe_branches(
 
         Returns:
             Inspected `GhostRef`.
+
+        Raises:
+            ValueError: When `api_path` ends with `global_norm` or `projection_box`.
         """
         if api_path.endswith(("global_norm", "projection_box")):
             raise ValueError("inspect error")
@@ -261,35 +264,35 @@ def test_check_optax_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
         inputs_count=8,
         attributes=["b1", "b2", "weight_decay"],
     )
-    assert res_valid["is_valid"] is True
+    assert res_valid.is_valid is True
 
     res_loss = check_optax_op(
         "optax.losses.softmax_cross_entropy",
         inputs_count=2,
     )
-    assert res_loss["is_valid"] is True
+    assert res_loss.is_valid is True
 
     res_sched = check_optax_op(
         "optax.schedules.warmup_cosine_decay_schedule",
         inputs_count=6,
     )
-    assert res_sched["is_valid"] is True
+    assert res_sched.is_valid is True
 
     res_util = check_optax_op(
         "optax.apply_updates",
         inputs_count=2,
     )
-    assert res_util["is_valid"] is True
+    assert res_util.is_valid is True
 
     res_bad = check_optax_op("optax.non_existent_optimizer")
-    assert res_bad["is_valid"] is False
+    assert res_bad.is_valid is False
 
     rpc_res = dispatch_tool_call(
         1,
         "check_optax_op",
         {"op_name": "adam", "attributes": ["learning_rate", "b1", "b2"]},
     )
-    assert "result" in rpc_res
+    assert rpc_res.result is not None
 
     args_ok = argparse.Namespace(
         op_name="adam",
@@ -304,12 +307,12 @@ def test_check_optax_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
         cmd_check_optax(args_fail)
 
     anti_lr = explain_anti_pattern("optax", "optax.adam", "lr")
-    assert anti_lr["is_known_anti_pattern"] is True
-    assert anti_lr["canonical_argument"] == "learning_rate"
+    assert anti_lr.is_known_anti_pattern is True
+    assert anti_lr.canonical_argument == "learning_rate"
 
     anti_betas = explain_anti_pattern("optax", "optax.adam", "betas")
-    assert anti_betas["is_known_anti_pattern"] is True
-    assert anti_betas["canonical_argument"] == "b1, b2"
+    assert anti_betas.is_known_anti_pattern is True
+    assert anti_betas.canonical_argument == "b1, b2"
 
     trans = translate_concept_arguments(
         "adam_optimizer",
@@ -317,7 +320,7 @@ def test_check_optax_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
         "optax",
         {"lr": 1e-3, "eps": 1e-8, "weight_decay": 0.01},
     )
-    assert trans["translated_kwargs"] == {
+    assert trans.translated_kwargs == {
         "learning_rate": 1e-3,
         "eps": 1e-8,
         "weight_decay": 0.01,
@@ -327,7 +330,7 @@ def test_check_optax_op_mcp_and_cli(capsys: pytest.CaptureFixture[str]) -> None:
         """import optax
 tx = optax.adam(lr=1e-3)"""
     )
-    assert block_res["total_analyzed"] == 1
+    assert block_res.total_analyzed == 1
 
 
 def test_extract_snapshot_optax(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -345,3 +348,33 @@ def test_extract_snapshot_optax(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "loss" in cats
     assert "scheduler" in cats
     assert "array" in cats
+
+
+def test_optax_live_import_helper_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify `optax` module initialization handles offline flag, missing module, and present module.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    import importlib
+    import sys
+    import types
+
+    from ml_ecosystem_snapshots.frameworks import optax as optax_fw
+    from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
+
+    with monkeypatch.context() as mp:
+        mp.setenv("ML_SNAPSHOTS_OFFLINE", "1")
+        importlib.reload(optax_fw)
+        assert get_member_dict(optax_fw).get("optax") is None
+
+        mp.setenv("ML_SNAPSHOTS_OFFLINE", "0")
+        mp.setitem(sys.modules, "optax", None)
+        importlib.reload(optax_fw)
+        assert get_member_dict(optax_fw).get("optax") is None
+
+        fake_optax = types.ModuleType("optax")
+        mp.setitem(sys.modules, "optax", fake_optax)
+        importlib.reload(optax_fw)
+        assert get_member_dict(optax_fw).get("optax") is fake_optax
+    importlib.reload(optax_fw)

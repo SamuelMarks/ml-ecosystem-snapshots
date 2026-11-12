@@ -13,11 +13,10 @@ from ml_switcheroo_ir.schema.ghost import (
 
 from ml_ecosystem_snapshots.frameworks.sparse import (
     CANONICAL_SPARSE_OPS,
-    _get_sparse,
     collect_api,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
 
@@ -34,7 +33,7 @@ def test_collect_api_sparse_live(monkeypatch: pytest.MonkeyPatch) -> None:
         class COO:
             """Mock COO format array."""
 
-            def __init__(self, data: InspectableTarget) -> None:
+            def __init__(self, data: LivePythonTarget) -> None:
                 """Initialize mock COO.
 
                 Args:
@@ -43,7 +42,7 @@ def test_collect_api_sparse_live(monkeypatch: pytest.MonkeyPatch) -> None:
                 self.data = data
 
         @staticmethod
-        def dot(a: InspectableTarget, b: InspectableTarget) -> InspectableTarget:
+        def dot(a: LivePythonTarget, b: LivePythonTarget) -> LivePythonTarget:
             """Mock dot operator.
 
             Args:
@@ -56,7 +55,7 @@ def test_collect_api_sparse_live(monkeypatch: pytest.MonkeyPatch) -> None:
             return a
 
         @staticmethod
-        def matmul(a: InspectableTarget, b: InspectableTarget) -> InspectableTarget:
+        def matmul(a: LivePythonTarget, b: LivePythonTarget) -> LivePythonTarget:
             """Mock matmul operator.
 
             Args:
@@ -75,7 +74,7 @@ def test_collect_api_sparse_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
     real_inspect = GhostInspector.inspect
 
-    def mock_inspect(obj: InspectableTarget, name: str, is_public: bool = True) -> ExtendedGhostRef:
+    def mock_inspect(obj: LivePythonTarget, name: str, is_public: bool = True) -> ExtendedGhostRef:
         """Mock inspect function.
 
         Args:
@@ -85,6 +84,9 @@ def test_collect_api_sparse_live(monkeypatch: pytest.MonkeyPatch) -> None:
 
         Returns:
             A mocked GhostRef.
+
+        Raises:
+            RuntimeError: When `name` contains `matmul`.
         """
         if "matmul" in name:
             raise RuntimeError("Simulated inspection failure")
@@ -124,24 +126,24 @@ def test_collect_api_sparse_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_get_sparse_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_sparse returns module when import succeeds.
+    """Verify `collect_api` resolves live `sparse` module from `sys.modules` when present.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
     fake_mod = types.ModuleType("sparse")
     monkeypatch.setitem(sys.modules, "sparse", fake_mod)
-    assert _get_sparse() is fake_mod
+    assert collect_api(SemanticTier.ARRAY_API) == []
 
 
 def test_get_sparse_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify _get_sparse handles ImportError gracefully.
+    """Verify `collect_api` falls back to canonical ops when `sparse` import raises `ImportError`.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
     monkeypatch.setitem(sys.modules, "sparse", None)
-    assert _get_sparse() is None
+    assert len(collect_api(SemanticTier.ARRAY_API)) == len(CANONICAL_SPARSE_OPS)
 
 
 def test_collect_api_sparse_inspection_exception(
@@ -160,7 +162,7 @@ def test_collect_api_sparse_inspection_exception(
 
     monkeypatch.setattr("ml_ecosystem_snapshots.frameworks.sparse._get_sparse", lambda: FlakySparse())
 
-    def mock_inspect(*args: InspectableTarget, **kwargs: InspectableTarget) -> None:
+    def mock_inspect(*args: LivePythonTarget, **kwargs: LivePythonTarget) -> None:
         """Mock inspect raising RuntimeError.
 
         Args:

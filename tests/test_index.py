@@ -439,14 +439,16 @@ def test_ensure_index_and_search_index(tmp_path: Path, monkeypatch: pytest.Monke
     # Query matching sum
     results = search_index("sum", framework="torch", version="2.2.0", db_path=db_file)
     assert len(results) == 1
-    assert results[0]["api_path"] == "torch.sum"
+    assert results[0].api_path == "torch.sum"
 
     # Query without framework or version
     all_res = search_index("torch.add", db_path=db_file)
-    assert any(r.get("api_path") == "torch.add" for r in all_res)
+    assert any(r.api_path == "torch.add" for r in all_res)
 
     # Test corrupted json_data handling in search_index
-    conn.execute("INSERT INTO symbols (file_path, framework, version, api_path, name, kind, docstring, json_data) VALUES ('f', 'fw', '1', 'corrupt_unique_token.api', 'corrupt_unique_token', 'fn', 'corrupt_unique_token doc', '{corrupt json')")
+    conn.execute(
+        "INSERT INTO symbols (file_path, framework, version, api_path, name, kind, docstring, json_data) VALUES ('f', 'fw', '1', 'corrupt_unique_token.api', 'corrupt_unique_token', 'fn', 'corrupt_unique_token doc', '{corrupt json')"
+    )
     sym_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.execute(
         "INSERT INTO symbols_fts (rowid, api_path, name, docstring) VALUES (?, 'corrupt_unique_token.api', 'corrupt_unique_token', 'corrupt_unique_token doc')",
@@ -502,12 +504,12 @@ def test_lookup_symbol(tmp_path: Path) -> None:
     # 1. Exact match by api_path
     res1 = lookup_symbol("torch", "torch.nn.Linear", version="2.0.0", db_path=db_file)
     assert res1 is not None
-    assert res1["name"] == "Linear"
+    assert res1.data["name"] == "Linear"
 
     # 2. Match by name without version
     res2 = lookup_symbol("torch", "Linear", db_path=db_file)
     assert res2 is not None
-    assert res2["api_path"] == "torch.nn.Linear"
+    assert res2.api_path == "torch.nn.Linear"
 
     # 3. Not found
     assert lookup_symbol("torch", "torch.nonexistent", db_path=db_file) is None
@@ -616,6 +618,9 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Path) -> None:
 
         Returns:
             A sqlite3.Connection instance.
+
+        Raises:
+            sqlite3.OperationalError: When opening the database with `mode=ro`.
         """
         if "mode=ro" in str(database):
             raise sqlite3.OperationalError("Readonly open failed")
@@ -651,6 +656,9 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Path) -> None:
 
             Returns:
                 MagicMock cursor.
+
+            Raises:
+                sqlite3.OperationalError: When `sql` configures `journal_mode=WAL`.
             """
             if "PRAGMA journal_mode=WAL" in sql:
                 raise sqlite3.OperationalError("WAL not supported")
@@ -699,7 +707,7 @@ def test_index_snapshot_file_with_target_and_version(tmp_path: Path) -> None:
 
     res = lookup_symbol("custom_ml", "custom_ml.custom_op", version="3.2.1", db_path=db_file)
     assert res is not None
-    assert res["name"] == "custom_op"
+    assert res.data["name"] == "custom_op"
 
 
 def test_discover_local_snapshots_filtering(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

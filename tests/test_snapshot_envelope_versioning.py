@@ -12,11 +12,11 @@ from ml_ecosystem_snapshots.api import (
     get_pkg_version,
     validate_snapshot_envelope,
 )
-from ml_ecosystem_snapshots.frameworks.amd_rdna import _load_exhaustive_rdna
-from ml_ecosystem_snapshots.frameworks.mlir import _load_mlir_exhaustive
-from ml_ecosystem_snapshots.frameworks.nvidia_ptx import _load_exhaustive_ptx
-from ml_ecosystem_snapshots.frameworks.nvidia_sass import _load_exhaustive_sass
-from ml_ecosystem_snapshots.frameworks.stablehlo import _load_stablehlo_exhaustive
+from ml_ecosystem_snapshots.frameworks.amd_rdna import load_exhaustive_rdna
+from ml_ecosystem_snapshots.frameworks.mlir import load_mlir_exhaustive
+from ml_ecosystem_snapshots.frameworks.nvidia_ptx import load_exhaustive_ptx
+from ml_ecosystem_snapshots.frameworks.nvidia_sass import load_exhaustive_sass
+from ml_ecosystem_snapshots.frameworks.stablehlo import load_stablehlo_exhaustive
 from ml_ecosystem_snapshots.index import (
     extract_framework_and_version,
     index_snapshot_file,
@@ -71,7 +71,7 @@ def test_framework_loaders_dual_format_support() -> None:
             "builtins.open",
             mock.mock_open(read_data=json.dumps({"operations": [dummy_op]})),
         ):
-            res = _load_stablehlo_exhaustive()
+            res = load_stablehlo_exhaustive()
             assert len(res) == 1
             assert res[0].name == "TestOp"
 
@@ -80,7 +80,7 @@ def test_framework_loaders_dual_format_support() -> None:
             "builtins.open",
             mock.mock_open(read_data=json.dumps([dummy_op])),
         ):
-            res = _load_stablehlo_exhaustive()
+            res = load_stablehlo_exhaustive()
             assert len(res) == 1
             assert res[0].name == "TestOp"
 
@@ -90,7 +90,7 @@ def test_framework_loaders_dual_format_support() -> None:
             "builtins.open",
             mock.mock_open(read_data=json.dumps({"operations": [dummy_op]})),
         ):
-            res = _load_mlir_exhaustive()
+            res = load_mlir_exhaustive()
             assert len(res) == 1
             assert res[0].name == "TestOp"
 
@@ -98,7 +98,7 @@ def test_framework_loaders_dual_format_support() -> None:
             "builtins.open",
             mock.mock_open(read_data=json.dumps([dummy_op])),
         ):
-            res = _load_mlir_exhaustive()
+            res = load_mlir_exhaustive()
             assert len(res) == 1
             assert res[0].name == "TestOp"
 
@@ -108,7 +108,7 @@ def test_framework_loaders_dual_format_support() -> None:
             "builtins.open",
             mock.mock_open(read_data=json.dumps({"instructions": [dummy_instr]})),
         ):
-            res_ptx = _load_exhaustive_ptx()
+            res_ptx = load_exhaustive_ptx()
             assert len(res_ptx) == 1
             assert res_ptx[0]["mnemonic"] == "test_instr"
 
@@ -116,7 +116,7 @@ def test_framework_loaders_dual_format_support() -> None:
             "builtins.open",
             mock.mock_open(read_data=json.dumps([dummy_instr])),
         ):
-            res_ptx = _load_exhaustive_ptx()
+            res_ptx = load_exhaustive_ptx()
             assert len(res_ptx) == 1
 
     # NVIDIA SASS
@@ -125,9 +125,9 @@ def test_framework_loaders_dual_format_support() -> None:
             "builtins.open",
             mock.mock_open(read_data=json.dumps({"instructions": [dummy_instr]})),
         ):
-            res_sass = _load_exhaustive_sass()
+            res_sass = load_exhaustive_sass()
             assert len(res_sass) == 1
-            assert res_sass[0]["mnemonic"] == "test_instr"
+            assert res_sass[0].mnemonic == "test_instr"
 
     # AMD RDNA
     with mock.patch("os.path.exists", return_value=True):
@@ -135,7 +135,7 @@ def test_framework_loaders_dual_format_support() -> None:
             "builtins.open",
             mock.mock_open(read_data=json.dumps({"instructions": [dummy_instr]})),
         ):
-            res_rdna = _load_exhaustive_rdna()
+            res_rdna = load_exhaustive_rdna()
             assert len(res_rdna) == 1
             assert res_rdna[0]["mnemonic"] == "test_instr"
 
@@ -175,8 +175,10 @@ def test_extract_snapshot_provenance_metadata() -> None:
 
         # Hardware targets must have supported_microarchitectures
         if target in ("nvidia_ptx", "nvidia_sass", "amd_rdna"):
+            from ml_ecosystem_snapshots.models import ensure_json_list
+
             assert "supported_microarchitectures" in snap
-            assert len(snap["supported_microarchitectures"]) > 0
+            assert len(ensure_json_list(snap["supported_microarchitectures"])) > 0
 
         # Validate against schema
         envelope = validate_snapshot_envelope(snap)
@@ -185,13 +187,15 @@ def test_extract_snapshot_provenance_metadata() -> None:
 
 def test_scraper_cli_arguments_and_envelope_emission() -> None:
     """Test scraper CLI tools with custom version and tag parameters."""
+    from ml_ecosystem_snapshots.models import TableGenRecordModel
+
     with tempfile.TemporaryDirectory() as tmpdir:
         # StableHLO
         out_snap = os.path.join(tmpdir, "stablehlo_v2.0.0.json")
         out_exh = os.path.join(tmpdir, "stablehlo_exh.json")
         with mock.patch(
             "ml_ecosystem_snapshots.tools.build_stablehlo_snapshot.extract_ops",
-            return_value=[{"name": "custom.op"}],
+            return_value=[TableGenRecordModel(name="custom.op", api_path="custom.op")],
         ):
             stablehlo_main(
                 [

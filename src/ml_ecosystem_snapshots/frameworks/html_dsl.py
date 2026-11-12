@@ -12,6 +12,12 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
 )
 
+from ml_ecosystem_snapshots.frameworks._base import (
+    CollectorDomain,
+    DomainCollectorAdapter,
+    SymbolKind,
+)
+
 _HTML_TAGS = [
     "div",
     "span",
@@ -64,20 +70,17 @@ _HTML_TAGS = [
 ]
 
 
-def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
-    """Entrypoint to collect the HTML DSL API signature.
+def collect_domain(include_nonpublic: bool = False) -> list[GhostRef]:
+    """Collect HTML DSL element signatures without `SemanticTier` shoehorning.
 
     Args:
-        category: The category of API to collect.
-        include_nonpublic: Whether to include non-public APIs.
+        include_nonpublic: Whether to include non-public elements.
 
     Returns:
-        A list of GhostRef items discovered.
+        List of `GhostRef` items representing HTML DSL elements.
     """
-    if category != SemanticTier.UTIL:
-        return []
-
-    refs = []
+    del include_nonpublic
+    refs: list[GhostRef] = []
     for tag in _HTML_TAGS:
         params = [
             GhostParam(name="children", kind=ParameterKind.POSITIONAL_OR_KEYWORD),
@@ -91,9 +94,27 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
             GhostRef(
                 name=tag,
                 api_path=f"html.{tag}",
-                kind="CLASS",
+                kind=SymbolKind.ELEMENT.value,
                 params=params,
                 docstring=f"HTML <{tag}> element.",
             )
         )
     return refs
+
+
+DOMAIN_COLLECTOR = DomainCollectorAdapter(CollectorDomain.DOCUMENT_DSL, "elements", collect_domain)
+
+
+def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list[GhostRef]:
+    """Entrypoint to collect the HTML DSL API signature.
+
+    Args:
+        category: The category of API to collect.
+        include_nonpublic: Whether to include non-public APIs.
+
+    Returns:
+        A list of GhostRef items discovered.
+    """
+    if category != SemanticTier.UTIL:
+        return []
+    return collect_domain(include_nonpublic)

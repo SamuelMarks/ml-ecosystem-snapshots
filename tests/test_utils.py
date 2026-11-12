@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 
 from ml_ecosystem_snapshots.c_extension_sig import (
-    _normalize_c_sig_args,
-    _parse_c_extension_sig_str,
     extract_c_extension_signature,
+    normalize_c_sig_args,
+    parse_c_extension_sig_str,
 )
 from ml_ecosystem_snapshots.network_env import (
     get_custom_snapshots_paths,
@@ -101,13 +101,13 @@ def test_extract_c_extension_signatures(monkeypatch: pytest.MonkeyPatch) -> None
     )
     sig = extract_c_extension_signature(string_def, "func")
     assert sig is not None
-    names = [s[0] for s in sig]
+    names = [s.name for s in sig]
     assert "a" in names
     assert "args" in names
     assert "c" in names
     assert "kwargs" in names
-    assert sig[0][2] == "'hello'"  # a='hello'
-    assert sig[1][2] == "None"  # b=None
+    assert sig[0].default == "'hello'"  # a='hello'
+    assert sig[1].default == "None"  # b=None
 
     def func_with_self() -> None:
         """func(self, x=torch.float32)."""
@@ -116,8 +116,8 @@ def test_extract_c_extension_signatures(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(func_with_self, "__doc__", "func(self, x=torch.float32)")
     sig2 = extract_c_extension_signature(func_with_self, "func")
     assert sig2 is not None
-    assert sig2[0][0] == "x"
-    assert sig2[0][2] == "torch.float32"  # value error fallback
+    assert sig2[0].name == "x"
+    assert sig2[0].default == "torch.float32"  # value error fallback
 
 
 def test_extract_c_extension_signature_overloads(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -188,7 +188,7 @@ def test_utils_branches(monkeypatch: pytest.MonkeyPatch) -> None:
     """
 
     class Dummy:
-        """Mock or helper class Dummy for unit testing."""
+        """Placeholder class whose `__doc__` is patched with whitespace."""
 
         pass
 
@@ -199,14 +199,14 @@ def test_utils_branches(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_normalize_c_sig_args_and_unparse_branches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test branches in _normalize_c_sig_args, _parse_c_extension_sig_str, and docstring usage scanning.
+    """Test branches in normalize_c_sig_args, parse_c_extension_sig_str, and docstring usage scanning.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
     # Test with trailing comma, keyword-only marker '*', slash '/', varargs, varkwargs, colon, C++ type with default, and plain arg
     raw = "Tensor a, *, /, *args, **kwargs, c: int, const Tensor& d = None, plain_arg, "
-    normalized = _normalize_c_sig_args(raw)
+    normalized = normalize_c_sig_args(raw)
     assert 'a: "Tensor"' in normalized
     assert "*" in normalized
     assert "/" in normalized
@@ -217,21 +217,21 @@ def test_normalize_c_sig_args_and_unparse_branches(
     assert "plain_arg" in normalized
 
     # Test unparse_anno when node is None (unannotated parameter)
-    parsed = _parse_c_extension_sig_str("func(unannotated_arg)")
+    parsed = parse_c_extension_sig_str("func(unannotated_arg)")
     assert parsed is not None
-    assert parsed[1][0][3] is None  # annotation is None
+    assert parsed[1][0].annotation is None
 
     # Test C++ style signature where first ast.parse raises SyntaxError and normalized parse succeeds (lines 162-163)
-    parsed_cpp = _parse_c_extension_sig_str("func(Tensor self, bool inplace=False) -> Tensor")
+    parsed_cpp = parse_c_extension_sig_str("func(Tensor self, bool inplace=False) -> Tensor")
     assert parsed_cpp is not None
-    assert parsed_cpp[1][0][0] == "inplace"
+    assert parsed_cpp[1][0].name == "inplace"
 
     # Test invalid syntax after normalization to hit inner SyntaxError handler
-    assert _parse_c_extension_sig_str("func(a b c)") is None
+    assert parse_c_extension_sig_str("func(a b c)") is None
 
-    # Test _normalize_c_sig_args with empty string and bracket ending
-    assert _normalize_c_sig_args("") == ""
-    assert _normalize_c_sig_args("std::vector<int>") == "std::vector<int>"
+    # Test normalize_c_sig_args with empty string and bracket ending
+    assert normalize_c_sig_args("") == ""
+    assert normalize_c_sig_args("std::vector<int>") == "std::vector<int>"
 
     # Test fallback scanning lines where candidate parse fails first, then succeeds
     def usage_func() -> None:
@@ -245,7 +245,7 @@ def test_normalize_c_sig_args_and_unparse_branches(
     )
     sig_usage = extract_c_extension_signature(usage_func, "usage_func")
     assert sig_usage is not None
-    assert sig_usage[0][0] == "valid_arg"
+    assert sig_usage[0].name == "valid_arg"
 
 
 def test_tablegen_list_and_traits() -> None:
@@ -329,13 +329,13 @@ def test_resolve_griffe_parser_setattr_failure() -> None:
     """Test resolve_griffe_parser when setting fallback _missing_ raises an exception."""
     from unittest import mock
 
-    from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+    from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
     from ml_ecosystem_snapshots.utils import resolve_griffe_parser
 
     orig_hasattr = hasattr
     orig_setattr = setattr
 
-    def mock_hasattr(obj: InspectableTarget, attr: str) -> bool:
+    def mock_hasattr(obj: LivePythonTarget, attr: str) -> bool:
         """Mock hasattr to report missing 'rest' on griffe.Parser.
 
         Args:
@@ -349,7 +349,7 @@ def test_resolve_griffe_parser_setattr_failure() -> None:
             return False
         return orig_hasattr(obj, attr)
 
-    def mock_setattr(obj: InspectableTarget, attr: str, val: InspectableTarget) -> None:
+    def mock_setattr(obj: LivePythonTarget, attr: str, val: LivePythonTarget) -> None:
         """Mock setattr to raise an exception when setting _missing_.
 
         Args:
@@ -373,23 +373,29 @@ def test_resolve_griffe_parser_setattr_failure() -> None:
         assert res.value in ("rest", "sphinx")
 
 
-def test_parse_docstring_with_griffe_import_error() -> None:
-    """Test parse_docstring_with_griffe returns empty list when griffe cannot be imported."""
+def test_parse_docstring_with_griffe_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test parse_docstring_with_griffe returns empty list when griffe cannot be imported.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     import sys
-    from unittest.mock import patch
 
     from ml_ecosystem_snapshots.utils import parse_docstring_with_griffe
 
-    with patch.dict(sys.modules, {"griffe": None}):
-        sections = parse_docstring_with_griffe("Some docstring")
-        assert sections == []
+    monkeypatch.setitem(sys.modules, "griffe", None)
+    sections = parse_docstring_with_griffe("Some docstring")
+    assert sections == []
 
 
-def test_resolve_griffe_parser_has_rest() -> None:
-    """Test resolve_griffe_parser when griffe.Parser already has rest attribute."""
+def test_resolve_griffe_parser_has_rest(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test resolve_griffe_parser when griffe.Parser already has rest attribute.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     import sys
     import types
-    from unittest.mock import patch
 
     from ml_ecosystem_snapshots.utils import resolve_griffe_parser
 
@@ -400,11 +406,10 @@ def test_resolve_griffe_parser_has_rest() -> None:
         sphinx = "custom_sphinx_parser"
 
     mock_griffe = types.ModuleType("griffe")
-    pytest.MonkeyPatch().setattr(mock_griffe, "Parser", MockParser, raising=False)
-
-    with patch.dict(sys.modules, {"griffe": mock_griffe}):
-        res = resolve_griffe_parser("rest")
-        assert res == "custom_rest_parser"
+    monkeypatch.setattr(mock_griffe, "Parser", MockParser, raising=False)
+    monkeypatch.setitem(sys.modules, "griffe", mock_griffe)
+    res = resolve_griffe_parser("rest")
+    assert res == "custom_rest_parser"
 
 
 def test_parse_docstring_with_griffe_parse_exception() -> None:
@@ -416,6 +421,40 @@ def test_parse_docstring_with_griffe_parse_exception() -> None:
     with patch("griffe.parse", side_effect=ValueError("simulated parse error")):
         res = parse_docstring_with_griffe("some docstring text")
         assert res == []
+
+
+def test_extract_griffe_sections_skip_non_protocol_items(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify `extract_griffe_docstring_metadata` skips items not implementing section item protocols.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    from ml_ecosystem_snapshots.utils import extract_griffe_docstring_metadata
+
+    class FakeSection:
+        """Minimal section stub returning non-protocol items."""
+
+        def __init__(self, kind: str) -> None:
+            """Initialize fake section with `kind`.
+
+            Args:
+                kind: Section kind string.
+            """
+            self.kind = kind
+            self.value = ["invalid_item"]
+
+    monkeypatch.setattr(
+        "ml_ecosystem_snapshots.utils.parse_docstring_with_griffe",
+        lambda *_a, **_kw: [
+            FakeSection("parameters"),
+            FakeSection("returns"),
+            FakeSection("raises"),
+        ],
+    )
+    meta = extract_griffe_docstring_metadata("synthetic docstring")
+    assert meta.params == {}
+    assert meta.returns is None
+    assert meta.raises == []
 
 
 def test_is_offline_mode_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -435,8 +474,8 @@ def test_is_offline_mode_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ML_SNAPSHOTS_OFFLINE", raising=False)
 
 
-def test_docstring_metadata_getitem_and_get() -> None:
-    """Test __getitem__ and get methods on DocstringParamMeta, DocstringReturnMeta, and DocstringMetadata."""
+def test_docstring_metadata_typed_attributes() -> None:
+    """Test typed attributes and defaults on DocstringParamMeta, DocstringReturnMeta, and DocstringMetadata."""
     from ml_ecosystem_snapshots.utils import (
         DocstringMetadata,
         DocstringParamMeta,
@@ -444,26 +483,24 @@ def test_docstring_metadata_getitem_and_get() -> None:
     )
 
     p_meta = DocstringParamMeta(doc="param doc", typ="int", default="0")
-    assert p_meta["doc"] == "param doc"
-    assert p_meta["typ"] == "int"
-    assert p_meta["default"] == "0"
+    assert p_meta.doc == "param doc"
+    assert p_meta.typ == "int"
+    assert p_meta.default == "0"
 
     r_meta = DocstringReturnMeta(doc="ret doc", typ="bool")
-    assert r_meta["doc"] == "ret doc"
-    assert r_meta["typ"] == "bool"
+    assert r_meta.doc == "ret doc"
+    assert r_meta.typ == "bool"
 
     d_meta = DocstringMetadata(
         params={"x": p_meta},
         returns=r_meta,
         raises=["ValueError"],
     )
-    assert d_meta["params"] == {"x": p_meta}
-    assert d_meta["returns"] == r_meta
-    assert d_meta["raises"] == ["ValueError"]
-    assert d_meta.get("params") == {"x": p_meta}
-    assert d_meta.get("returns") == r_meta
-    assert d_meta.get("raises") == ["ValueError"]
-    assert d_meta.get("nonexistent_key", []) == []
+    assert d_meta.params == {"x": p_meta}
+    assert d_meta.returns == r_meta
+    assert d_meta.raises == ["ValueError"]
 
-    d_meta_none_ret = DocstringMetadata(params={}, returns=None, raises=[])
-    assert d_meta_none_ret.get("returns", r_meta) == r_meta
+    d_meta_none_ret = DocstringMetadata()
+    assert d_meta_none_ret.params == {}
+    assert d_meta_none_ret.returns is None
+    assert d_meta_none_ret.raises == []

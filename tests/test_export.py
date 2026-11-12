@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
-import pytest_mock
 from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
 from ml_ecosystem_snapshots.export import (
-    _ghost_to_cdd_ir,
     export_llm_prompt_context,
     export_mlir_prompt_context,
     export_sass_prompt_context,
     export_scoped_prompt_context,
+    ghost_to_cdd_ir,
     to_json_schema,
     to_openapi,
     to_protobuf,
@@ -24,10 +21,10 @@ from ml_ecosystem_snapshots.models import JsonValue
 
 @pytest.fixture
 def sample_ghost_ref() -> GhostRef:
-    """Execute helper sample ghost ref.
+    """Build a representative `torch.nn.Linear` `GhostRef` fixture.
 
     Returns:
-        Computed result.
+        Sample `GhostRef` populated with positional, keyword, and variadic parameters.
     """
     return GhostRef(
         name="Linear",
@@ -71,13 +68,13 @@ def test_ghost_to_cdd_ir(sample_ghost_ref: GhostRef) -> None:
     Args:
         sample_ghost_ref: Sample GhostRef fixture for export testing.
     """
-    ir = _ghost_to_cdd_ir(sample_ghost_ref)
+    ir = ghost_to_cdd_ir(sample_ghost_ref)
 
-    assert ir["name"] == "Linear"
-    assert ir["type"] == "class"
-    assert ir["doc"] == "Applies a linear transformation to the incoming data."
+    assert ir.name == "Linear"
+    assert ir.type == "class"
+    assert ir.doc == "Applies a linear transformation to the incoming data."
 
-    params = ir["params"]
+    params = ir.params
     assert "in_features" in params
     assert params["in_features"]["typ"] == "int"
     assert params["in_features"]["doc"] == "size of each input sample"
@@ -89,7 +86,7 @@ def test_ghost_to_cdd_ir(sample_ghost_ref: GhostRef) -> None:
     assert params["bias"]["typ"] == "bool"
     assert params["bias"]["default"] == "True"
 
-    returns = ir["returns"]
+    returns = ir.returns
     assert returns is not None
     assert "return_type" in returns
     assert returns["return_type"]["typ"] == "torch.Tensor"
@@ -151,7 +148,10 @@ def test_to_pydantic(sample_ghost_ref: GhostRef) -> None:
     assert 'model_config = pydantic.ConfigDict(extra="forbid")' in code
     assert 'in_features: int = pydantic.Field(..., description="size of each input sample")' in code
     assert 'out_features: int = pydantic.Field(..., description="size of each output sample")' in code
-    assert "bias: bool = pydantic.Field(default=True, description=\"If set to 'False', the layer will not learn an additive bias.\")" in code
+    assert (
+        "bias: bool = pydantic.Field(default=True, description=\"If set to 'False', the layer will not learn an additive bias.\")"
+        in code
+    )
     assert "args" not in code  # VAR_POSITIONAL skipped
 
 
@@ -223,14 +223,14 @@ def test_to_protobuf_types() -> None:
 def test_export_branches() -> None:
     """Verify export branches behavior."""
     from ml_ecosystem_snapshots.export import (
-        _ghost_to_cdd_ir,
-        _py_type_to_proto,
+        ghost_to_cdd_ir,
+        py_type_to_proto,
         to_json_schema,
         to_pydantic,
     )
 
-    assert _py_type_to_proto(None) == "string"
-    assert _py_type_to_proto("") == "string"
+    assert py_type_to_proto(None) == "string"
+    assert py_type_to_proto("") == "string"
 
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
@@ -268,15 +268,15 @@ def test_export_branches() -> None:
         params=[GhostParam(name="p_empty", kind=ParameterKind.KEYWORD_ONLY)],
         returns_type="str",
     )  # No returns_description
-    ir_empty = _ghost_to_cdd_ir(r_empty_anno)
-    assert "p_empty" in ir_empty["params"]
-    assert ir_empty["returns"] is not None
-    assert ir_empty["returns"]["return_type"]["typ"] == "str"
+    ir_empty = ghost_to_cdd_ir(r_empty_anno)
+    assert "p_empty" in ir_empty.params
+    assert ir_empty.returns is not None
+    assert ir_empty.returns["return_type"]["typ"] == "str"
 
     r_ret_desc = GhostRef(name="Z", api_path="Z", kind="function", params=[], returns_description="desc")
-    ir_desc = _ghost_to_cdd_ir(r_ret_desc)
-    assert ir_desc["returns"] is not None
-    assert ir_desc["returns"]["return_type"]["doc"] == "desc"
+    ir_desc = ghost_to_cdd_ir(r_ret_desc)
+    assert ir_desc.returns is not None
+    assert ir_desc.returns["return_type"]["doc"] == "desc"
 
 
 def test_export_branches_more() -> None:
@@ -509,12 +509,10 @@ def test_export_mlir_prompt_context() -> None:
     assert "%res = gpu.barrier() : none" in context_min
 
 
-def test_export_scoped_prompt_context(mocker: pytest_mock.MockerFixture) -> None:
-    """Test export_scoped_prompt_context with hierarchical indexing and scoping across domains.
+def test_export_scoped_prompt_context() -> None:
+    """Test export_scoped_prompt_context with hierarchical indexing and scoping across domains."""
+    from ml_ecosystem_snapshots.serialization.repository import SnapshotRepository
 
-    Args:
-        mocker: Pytest mocker fixture.
-    """
     mock_torch_snap: dict[str, JsonValue] = {
         "categories": {
             "nn": [
@@ -528,31 +526,15 @@ def test_export_scoped_prompt_context(mocker: pytest_mock.MockerFixture) -> None
             ]
         }
     }
-    from ml_ecosystem_snapshots import mcp_server
-
-    orig_get_snap = mcp_server.get_framework_snapshot
-
-    def mock_get_snap(framework: str, version: str | None = None) -> dict[str, JsonValue]:
-        """Mock framework snapshot getter returning mock torch snapshot.
-
-        Args:
-            framework: Framework identifier.
-            version: Optional version identifier.
-
-        Returns:
-            Snapshot dictionary or original snapshot result.
-        """
-        if framework == "torch":
-            return mock_torch_snap
-        return orig_get_snap(framework, version=version)
-
-    mocker.patch(
-        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
-        side_effect=mock_get_snap,
-    )
+    repo = SnapshotRepository(backing_store={"torch": mock_torch_snap})
 
     # 1. Scoped torch context with module prefix
-    torch_ctx = export_scoped_prompt_context("torch", module_prefix="torch.nn", max_symbols=3)
+    torch_ctx = export_scoped_prompt_context(
+        "torch",
+        module_prefix="torch.nn",
+        max_symbols=3,
+        repository=repo,
+    )
     assert "# Framework Grounding Context: `torch`" in torch_ctx
     assert "## Index of Available Operations" in torch_ctx
     assert "## Detailed Operation Signatures" in torch_ctx
@@ -570,7 +552,7 @@ def test_export_scoped_prompt_context(mocker: pytest_mock.MockerFixture) -> None
     assert "- **Syntax**:" in stablehlo_ctx
 
     # 4. Scoped context when total_matching <= max_symbols and with corrupt item
-    mock_snap = {
+    mock_snap: dict[str, JsonValue] = {
         "categories": {
             "test": [
                 {"name": "op1", "api_path": "test.op1", "kind": "function"},
@@ -579,13 +561,10 @@ def test_export_scoped_prompt_context(mocker: pytest_mock.MockerFixture) -> None
             ]
         }
     }
-    with patch(
-        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
-        return_value=mock_snap,
-    ):
-        ctx = export_scoped_prompt_context("test_fw", max_symbols=50)
-        assert "# Framework Grounding Context: `test_fw`" in ctx
-        assert "*(Showing" not in ctx
+    repo_corrupt = SnapshotRepository(backing_store={"test_fw": mock_snap})
+    ctx = export_scoped_prompt_context("test_fw", max_symbols=50, repository=repo_corrupt)
+    assert "# Framework Grounding Context: `test_fw`" in ctx
+    assert "*(Showing" not in ctx
 
 
 def test_export_extended_prompt_contexts_and_headers() -> None:
@@ -722,9 +701,9 @@ def test_export_coverage_hardening() -> None:
     from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
     from ml_ecosystem_snapshots.export import (
-        _py_type_to_proto,
         export_ptx_prompt_context,
         export_rdna_prompt_context,
+        py_type_to_proto,
         to_protobuf,
         to_pydantic,
     )
@@ -776,20 +755,20 @@ def test_export_coverage_hardening() -> None:
     assert "FnWithVarsVariant1" in pyd_code
     assert "FnWithVars = FnWithVarsVariant0 | FnWithVarsVariant1" in pyd_code
 
-    # 2. _py_type_to_proto edge cases
-    assert _py_type_to_proto(None) == "string"
-    assert _py_type_to_proto("tensor") == "TensorProto"
-    assert _py_type_to_proto("int", param_name="shape") == "repeated int64"
-    assert _py_type_to_proto("tuple[int, ...]", param_name="other") == "repeated int64"
-    assert _py_type_to_proto("int", param_name="reduction") == "ReductionType"
-    assert _py_type_to_proto("int", param_name="padding") == "PaddingMode"
-    assert _py_type_to_proto("int", param_name="layout") == "LayoutMode"
-    assert _py_type_to_proto("interpolation_mode", param_name="mode") == "InterpolationMode"
-    assert _py_type_to_proto("dict[str, int]") == "map<string, string>"
-    assert _py_type_to_proto("bool") == "bool"
-    assert _py_type_to_proto("str") == "string"
-    assert _py_type_to_proto("bytes") == "string"
-    assert _py_type_to_proto("complex") == "string"
+    # 2. py_type_to_proto edge cases
+    assert py_type_to_proto(None) == "string"
+    assert py_type_to_proto("tensor") == "TensorProto"
+    assert py_type_to_proto("int", param_name="shape") == "repeated int64"
+    assert py_type_to_proto("tuple[int, ...]", param_name="other") == "repeated int64"
+    assert py_type_to_proto("int", param_name="reduction") == "ReductionType"
+    assert py_type_to_proto("int", param_name="padding") == "PaddingMode"
+    assert py_type_to_proto("int", param_name="layout") == "LayoutMode"
+    assert py_type_to_proto("interpolation_mode", param_name="mode") == "InterpolationMode"
+    assert py_type_to_proto("dict[str, int]") == "map<string, string>"
+    assert py_type_to_proto("bool") == "bool"
+    assert py_type_to_proto("str") == "string"
+    assert py_type_to_proto("bytes") == "string"
+    assert py_type_to_proto("complex") == "string"
 
     # to_protobuf with package
     proto_def = to_protobuf(main_ref, package="custom_pkg")
@@ -861,7 +840,7 @@ def test_export_scoped_and_constrained_prompt_context() -> None:
     from ml_ecosystem_snapshots.models import ExtendedGhostParam
 
     # 5. export_scoped_prompt_context with module_prefix and non-dict items
-    mock_mixed_snap = {
+    mock_mixed_snap: dict[str, JsonValue] = {
         "categories": {
             "nn": [
                 {
@@ -888,14 +867,17 @@ def test_export_scoped_and_constrained_prompt_context() -> None:
             ],
         }
     }
-    with patch(
-        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
-        return_value=mock_mixed_snap,
-    ):
-        scoped_nn = export_scoped_prompt_context("torch", module_prefix="torch.nn")
-        assert "Linear" in scoped_nn
-        assert "Conv2d" in scoped_nn
-        assert "SGD" not in scoped_nn
+    from ml_ecosystem_snapshots.serialization.repository import SnapshotRepository
+
+    mixed_repo = SnapshotRepository(backing_store={"torch": mock_mixed_snap})
+    scoped_nn = export_scoped_prompt_context(
+        "torch",
+        module_prefix="torch.nn",
+        repository=mixed_repo,
+    )
+    assert "Linear" in scoped_nn
+    assert "Conv2d" in scoped_nn
+    assert "SGD" not in scoped_nn
 
     # 6. export_llm_prompt_context constraints branch and no-docstring headers
     constrained_param = ExtendedGhostParam(

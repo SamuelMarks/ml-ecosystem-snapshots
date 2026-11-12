@@ -29,8 +29,8 @@ def get_test_coverage() -> str:
             match = re.search(r"TOTAL\s+.*\s+(\d+)%", result.stdout)
             if match:
                 return match.group(1)
-        except Exception as exc:
-            del exc
+        except (OSError, subprocess.SubprocessError):
+            pass
 
     result = subprocess.run(
         [
@@ -106,7 +106,9 @@ def main() -> None:
     with open("README.md") as f:
         content = f.read()
 
-    test_badge = f"[![Test Coverage](https://img.shields.io/badge/test%20coverage-{test_cov}%25-{get_color(test_cov)}.svg)]()"
+    test_badge = (
+        f"[![Test Coverage](https://img.shields.io/badge/test%20coverage-{test_cov}%25-{get_color(test_cov)}.svg)]()"
+    )
     doc_badge = f"[![Docs](https://img.shields.io/badge/docs-{doc_cov}%25-{get_color(doc_cov)}.svg)]()"
 
     if re.search(r"\[\!\[(?:Test Coverage|Tests)\]", content):

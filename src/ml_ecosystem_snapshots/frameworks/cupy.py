@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
-import inspect
 import types
 
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    LivePythonTarget,
+    get_member_dict,
+)
 
 cp: types.ModuleType | None = None
 try:
     import cupy as _cp
 
     cp = _cp
-except Exception:
+except (ImportError, AttributeError, TypeError, ValueError, OSError, RuntimeError):
     cp = None
 
 
@@ -34,10 +36,10 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         return results
 
     if category == SemanticTier.ACTIVATION:
-        cp_members: dict[str, InspectableTarget] = dict(inspect.getmembers(cp))
+        cp_members: dict[str, LivePythonTarget] = get_member_dict(cp)
         for name in ["tanh", "exp", "maximum", "minimum"]:
             if name in cp_members:
-                obj: InspectableTarget = cp_members[name]
+                obj: LivePythonTarget = cp_members[name]
                 if callable(obj):
                     try:
                         res = GhostInspector.inspect(obj, f"cupy.{name}", is_public=True)

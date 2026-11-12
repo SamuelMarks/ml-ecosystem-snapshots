@@ -54,7 +54,7 @@ def test_parse_nvptx_td_content() -> None:
     def SOME_OTHER_DEF : OtherClass;
     """
     records = scrape_nvidia_ptx.parse_nvptx_td_content(mock_content)
-    mnemonics = [r["mnemonic"] for r in records]
+    mnemonics = [r.mnemonic for r in records]
     assert "add" in mnemonics
     assert "sub" in mnemonics
     assert len(records) == 2
@@ -73,9 +73,9 @@ def test_scrape_ptx_end_to_end(tmp_path: os.PathLike[str]) -> None:
     ):
         catalog = scrape_nvidia_ptx.scrape_ptx(output_path=out_file)
         assert os.path.isfile(out_file)
-        assert any(op["mnemonic"] == "custom_ptx_op" for op in catalog)
-        assert any(op["mnemonic"] == "cp.async" for op in catalog)
-        assert any(op["mnemonic"] == "wgmma.mma_async" for op in catalog)
+        assert any(op.mnemonic == "custom_ptx_op" for op in catalog)
+        assert any(op.mnemonic == "cp.async" for op in catalog)
+        assert any(op.mnemonic == "wgmma.mma_async" for op in catalog)
 
         with open(out_file, encoding="utf-8") as f:
             saved = json.load(f)
@@ -106,7 +106,7 @@ def test_build_exhaustive_ptx_catalog_edge_cases() -> None:
         {"mnemonic": "add", "description": "Duplicate add"},
     ]
     catalog = scrape_nvidia_ptx.build_exhaustive_ptx_catalog(base_insts)
-    assert any(op["mnemonic"] == "add" for op in catalog)
+    assert any(op.mnemonic == "add" for op in catalog)
 
 
 def test_scrape_ptx_with_empty_fetch(tmp_path: os.PathLike[str]) -> None:
@@ -122,11 +122,14 @@ def test_scrape_ptx_with_empty_fetch(tmp_path: os.PathLike[str]) -> None:
     ):
         catalog = scrape_nvidia_ptx.scrape_ptx(output_path=out_file)
         assert len(catalog) > 0
-        by_mnem = {str(op.get("mnemonic")): op for op in catalog}
+        by_mnem = {str(op.mnemonic): op for op in catalog}
         assert "add" in by_mnem
         assert "mma.sync" in by_mnem
-        assert by_mnem["add"].get("category") is not None
+        assert by_mnem["add"].category != ""
         assert os.path.isfile(out_file)
+
+    dict_seeded = scrape_nvidia_ptx.build_exhaustive_ptx_catalog([{"mnemonic": "custom.ptx.op", "category": "custom"}])
+    assert any(r.mnemonic == "custom.ptx.op" for r in dict_seeded)
 
 
 def test_main_invocation() -> None:

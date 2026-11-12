@@ -8,7 +8,8 @@ import shutil
 import subprocess
 import typing
 
-from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel
+from ml_ecosystem_snapshots.exceptions import SnapshotError
+from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel, ensure_json_dict
 from ml_ecosystem_snapshots.utils import extract_tablegen_traits
 
 
@@ -404,8 +405,12 @@ def _extract_tablegen_classes(
         term = m.group(3)
         body, _ = _extract_brace_block(clean_content, m.end()) if term == "{" else ("", m.end())
 
-        args_m = re.search(r"let\s+arguments\s*=\s*\(ins(.*?)\);", body, re.DOTALL) or re.search(r"Arguments<\s*\(ins(.*?)\)>", supers_raw, re.DOTALL)
-        res_m = re.search(r"let\s+results\s*=\s*\(outs(.*?)\);", body, re.DOTALL) or re.search(r"Results<\s*\(outs(.*?)\)>", supers_raw, re.DOTALL)
+        args_m = re.search(r"let\s+arguments\s*=\s*\(ins(.*?)\);", body, re.DOTALL) or re.search(
+            r"Arguments<\s*\(ins(.*?)\)>", supers_raw, re.DOTALL
+        )
+        res_m = re.search(r"let\s+results\s*=\s*\(outs(.*?)\);", body, re.DOTALL) or re.search(
+            r"Results<\s*\(outs(.*?)\)>", supers_raw, re.DOTALL
+        )
         reg_m = re.search(r"let\s+regions\s*=\s*\(region(.*?)\);", body, re.DOTALL)
 
         supers = [s.split("<")[0].strip() for s in re.split(r",", supers_raw) if s.strip()]
@@ -485,7 +490,9 @@ def _resolve_mlir_args_str(
     Returns:
         Resolved `(ins ...)` inner string or None.
     """
-    args_match = re.search(r"let\s+arguments\s*=\s*\(ins(.*?)\);", body, re.DOTALL) or re.search(r"Arguments<\s*\(ins(.*?)\)>", extra_supers, re.DOTALL)
+    args_match = re.search(r"let\s+arguments\s*=\s*\(ins(.*?)\);", body, re.DOTALL) or re.search(
+        r"Arguments<\s*\(ins(.*?)\)>", extra_supers, re.DOTALL
+    )
     args_str = args_match.group(1).strip() if args_match else _resolve_inherited_class_field(classes, base_cls, "args")
     if not args_str:
         combined = f"{base_cls} {raw_class}"
@@ -513,8 +520,12 @@ def _resolve_mlir_results_str(
     Returns:
         Resolved `(outs ...)` inner string or None.
     """
-    results_match = re.search(r"let\s+results\s*=\s*\(outs(.*?)\);", body, re.DOTALL) or re.search(r"Results<\s*\(outs(.*?)\)>", extra_supers, re.DOTALL)
-    res_str = results_match.group(1).strip() if results_match else _resolve_inherited_class_field(classes, base_cls, "res")
+    results_match = re.search(r"let\s+results\s*=\s*\(outs(.*?)\);", body, re.DOTALL) or re.search(
+        r"Results<\s*\(outs(.*?)\)>", extra_supers, re.DOTALL
+    )
+    res_str = (
+        results_match.group(1).strip() if results_match else _resolve_inherited_class_field(classes, base_cls, "res")
+    )
     if not res_str and any(k in base_cls for k in ("Binary", "Unary", "Cast")):
         return "Type:$result"
     return res_str
@@ -596,28 +607,34 @@ def parse_mlir_tablegen(content: str, dialect_name: str) -> list[TableGenRecordM
         results = parse_tablegen_results(res_str)
 
         regions_match = re.search(r"let\s+regions\s*=\s*\(region(.*?)\);", body, re.DOTALL)
-        reg_str = regions_match.group(1).strip() if regions_match else _resolve_inherited_class_field(classes, base_cls, "reg")
+        reg_str = (
+            regions_match.group(1).strip()
+            if regions_match
+            else _resolve_inherited_class_field(classes, base_cls, "reg")
+        )
         regions = parse_tablegen_regions(reg_str)
 
         summary_match = re.search(r'let\s+summary\s*=\s*"([^"]*)";', body)
         description = summary_match.group(1) if summary_match else None
 
-        _apply_segment_trait("AttrSizedOperandSegments", "operand_segment_sizes", traits, attributes, base_cls, extra_supers)
-        _apply_segment_trait("AttrSizedResultSegments", "result_segment_sizes", traits, attributes, base_cls, extra_supers)
+        _apply_segment_trait(
+            "AttrSizedOperandSegments", "operand_segment_sizes", traits, attributes, base_cls, extra_supers
+        )
+        _apply_segment_trait(
+            "AttrSizedResultSegments", "result_segment_sizes", traits, attributes, base_cls, extra_supers
+        )
 
         ops.append(
             TableGenRecordModel(
-                {
-                    "api_path": f"{dialect_name}.{op_name}",
-                    "dialect": dialect_name,
-                    "class_name": class_name,
-                    "operands": [dict(o) for o in operands],
-                    "attributes": [dict(a) for a in attributes],
-                    "results": [dict(r) for r in results],
-                    "regions": list(regions),
-                    "traits": list(traits),
-                    "description": description,
-                }
+                api_path=f"{dialect_name}.{op_name}",
+                dialect=dialect_name,
+                class_name=class_name,
+                operands=[dict(o) for o in operands],
+                attributes=[dict(a) for a in attributes],
+                results=[dict(r) for r in results],
+                regions=list(regions),
+                traits=list(traits),
+                description=description,
             )
         )
 
@@ -719,7 +736,9 @@ def _extract_tblgen_json_traits(raw_traits: JsonValue) -> list[JsonValue]:
     return traits
 
 
-def parse_llvm_tblgen_json(json_data: str | typing.Mapping[str, JsonValue], dialect_name: str) -> list[TableGenRecordModel]:
+def parse_llvm_tblgen_json(
+    json_data: str | typing.Mapping[str, JsonValue], dialect_name: str
+) -> list[TableGenRecordModel]:
     """Parse JSON dump from llvm-tblgen -dump-json into structured MLIR operations.
 
     Args:
@@ -742,13 +761,21 @@ def parse_llvm_tblgen_json(json_data: str | typing.Mapping[str, JsonValue], dial
 
         raw_supers = rec.get("!superclasses", [])
         superclasses = [str(s) for s in (raw_supers if isinstance(raw_supers, list) else [])]
-        is_op = rec_name in op_def_names or "Op" in superclasses or any(s.endswith("_Op") or s == "Op" for s in superclasses) or rec_name.endswith("Op") or "mnemonic" in rec
+        is_op = (
+            rec_name in op_def_names
+            or "Op" in superclasses
+            or any(s.endswith("_Op") or s == "Op" for s in superclasses)
+            or rec_name.endswith("Op")
+            or "mnemonic" in rec
+        )
         if not is_op:
             continue
 
         clean_class = rec_name.split("_")[-1]
         class_name = clean_class if clean_class.endswith("Op") else f"{clean_class}Op"
-        mnemonic = rec.get("mnemonic") or (clean_class[:-2].lower() if clean_class.endswith("Op") else clean_class.lower())
+        mnemonic = rec.get("mnemonic") or (
+            clean_class[:-2].lower() if clean_class.endswith("Op") else clean_class.lower()
+        )
 
         operands, attributes = _extract_tblgen_json_args(rec.get("arguments"))
         results = _extract_tblgen_json_results(rec.get("results"))
@@ -759,24 +786,24 @@ def parse_llvm_tblgen_json(json_data: str | typing.Mapping[str, JsonValue], dial
 
         ops.append(
             TableGenRecordModel(
-                {
-                    "api_path": f"{dialect_name}.{mnemonic}",
-                    "dialect": dialect_name,
-                    "class_name": class_name,
-                    "operands": operands,
-                    "attributes": attributes,
-                    "results": results,
-                    "regions": regions,
-                    "traits": traits,
-                    "description": str(description) if description is not None else None,
-                }
+                api_path=f"{dialect_name}.{mnemonic}",
+                dialect=dialect_name,
+                class_name=class_name,
+                operands=[ensure_json_dict(o) for o in operands],
+                attributes=[ensure_json_dict(a) for a in attributes],
+                results=[ensure_json_dict(r) for r in results],
+                regions=[ensure_json_dict(rg) if isinstance(rg, dict) else str(rg) for rg in regions],
+                traits=[str(t) for t in traits],
+                description=str(description) if description is not None else None,
             )
         )
 
     return ops
 
 
-def dump_ast_via_llvm_tooling(td_path: str, dialect_name: str, tool_binary: str | None = None) -> list[TableGenRecordModel] | None:
+def dump_ast_via_llvm_tooling(
+    td_path: str, dialect_name: str, tool_binary: str | None = None
+) -> list[TableGenRecordModel] | None:
     """Dump AST using host llvm-tblgen or mlir-tblgen binary when available.
 
     Args:
@@ -801,7 +828,18 @@ def dump_ast_via_llvm_tooling(td_path: str, dialect_name: str, tool_binary: str 
         )
         if proc.returncode == 0 and proc.stdout.strip():
             return parse_llvm_tblgen_json(proc.stdout, dialect_name)
-    except Exception as e:
+    except (
+        SnapshotError,
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        LookupError,
+        OSError,
+        RuntimeError,
+        SyntaxError,
+        subprocess.SubprocessError,
+    ) as e:
         print(f"Error running TableGen binary {binary}: {e}")
     return None
 

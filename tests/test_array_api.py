@@ -106,32 +106,37 @@ def test_check_array_api_op_mcp() -> None:
     """Verify MCP validator check_array_api_op behavior across valid and invalid inputs."""
     # Valid call
     valid_res = check_array_api_op("add", inputs_count=2)
-    assert valid_res["is_valid"] is True
-    assert valid_res["op_exists"] is True
+    assert valid_res.is_valid is True
+    assert valid_res.op_exists is True
 
     # Valid with prefix
     prefix_res = check_array_api_op("array_api.matmul", inputs_count=2)
-    assert prefix_res["is_valid"] is True
+    assert prefix_res.is_valid is True
 
     # Unknown operation
     unknown_res = check_array_api_op("non_existent_op")
-    assert unknown_res["is_valid"] is False
-    assert unknown_res["op_exists"] is False
-    assert len(unknown_res["errors"]) > 0
+    assert unknown_res.is_valid is False
+    assert unknown_res.op_exists is False
+    assert len(unknown_res.errors) > 0
 
     # Wrong inputs count
     wrong_inputs = check_array_api_op("add", inputs_count=5)
-    assert wrong_inputs["is_valid"] is False
-    assert "expects 2 positional inputs" in wrong_inputs["errors"][0]
+    assert wrong_inputs.is_valid is False
+    assert "expects 2 positional inputs" in wrong_inputs.errors[0]
 
     # Valid keyword arguments
     valid_kw = check_array_api_op("sum", attributes=["axis", "keepdims"])
-    assert valid_kw["is_valid"] is True
+    assert valid_kw.is_valid is True
 
     # Invalid keyword arguments
     invalid_kw = check_array_api_op("sum", attributes=["invalid_kwarg"])
-    assert invalid_kw["is_valid"] is False
-    assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw["errors"][0]
+    assert invalid_kw.is_valid is False
+    assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw.errors[0]
+
+    from ml_ecosystem_snapshots.mcp.tools.domain_ops import DOMAIN_OP_CONFIGS, check_domain_op_generic
+
+    dom_kw = check_domain_op_generic(DOMAIN_OP_CONFIGS["array_api"], "sum", domain="")
+    assert dom_kw.is_valid is True
 
 
 def test_cmd_check_array_api_cli_valid(capsys: pytest.CaptureFixture[str]) -> None:

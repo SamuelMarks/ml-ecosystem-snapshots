@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import inspect
 import os
 import sqlite3
+
+from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
 
 
 def _is_clear_requested(args: argparse.Namespace) -> bool:
@@ -18,7 +19,7 @@ def _is_clear_requested(args: argparse.Namespace) -> bool:
     Returns:
         True if `args.clear` exists and is truthy.
     """
-    return bool(dict(inspect.getmembers(args)).get("clear"))
+    return bool(get_member_dict(args).get("clear"))
 
 
 def cmd_index(args: argparse.Namespace) -> None:

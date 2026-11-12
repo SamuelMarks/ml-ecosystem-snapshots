@@ -12,7 +12,12 @@ import pydantic
 from ml_switcheroo_ir.schema.ghost import SnapshotEnvelope
 
 from ml_ecosystem_snapshots.compliance import ParamSignatureTuple
-from ml_ecosystem_snapshots.models import JsonValue, ScalarValue
+from ml_ecosystem_snapshots.models import (
+    JsonValue,
+    ScalarValue,
+    ensure_json_dict,
+    ensure_json_list,
+)
 
 
 class DiffResult(pydantic.BaseModel):
@@ -22,7 +27,9 @@ class DiffResult(pydantic.BaseModel):
 
     added: list[str] = pydantic.Field(default_factory=list, description="List of added api_paths.")
     removed: list[str] = pydantic.Field(default_factory=list, description="List of removed api_paths.")
-    signature_changed: list[str] = pydantic.Field(default_factory=list, description="List of api_paths with changed signatures.")
+    signature_changed: list[str] = pydantic.Field(
+        default_factory=list, description="List of api_paths with changed signatures."
+    )
     breaking_signature_changed: list[str] = pydantic.Field(
         default_factory=list,
         description="List of api_paths with breaking signature changes.",
@@ -87,7 +94,7 @@ def _has_breaking_metadata_or_return_change(
             return True
 
     if ret1 is not None and ret2 is not None and ret1 != ret2:
-        if str(ret1).strip() not in ("", "Any", "None"):
+        if str(ret1).strip() not in ("", "Any", "untyped", "Incomplete", "None"):
             return True
 
     return bool(ov1 is not None and ov2 is not None and len(ov1) > len(ov2))
@@ -195,7 +202,12 @@ def _is_breaking_change(
 
 
 def _flatten_snapshot(
-    snap: (SnapshotEnvelope | typing.Mapping[str, JsonValue] | typing.Sequence[typing.Mapping[str, JsonValue]] | ScalarValue),
+    snap: (
+        SnapshotEnvelope
+        | typing.Mapping[str, JsonValue]
+        | typing.Sequence[typing.Mapping[str, JsonValue]]
+        | ScalarValue
+    ),
 ) -> dict[str, dict[str, JsonValue]]:
     """Flatten a snapshot dictionary or list into a mapping of API paths to items.
 
@@ -210,11 +222,11 @@ def _flatten_snapshot(
     if isinstance(snap, list):
         categories_dict = {"all": [dict(x) for x in snap if isinstance(x, dict)]}
     elif isinstance(snap, dict):
-        raw_cats = snap.get("categories", {})
-        assert isinstance(raw_cats, dict)
+        raw_cats = ensure_json_dict(snap.get("categories", {}), "snapshot categories")
         for cat_k, cat_v in raw_cats.items():
-            assert isinstance(cat_v, list)
-            categories_dict[str(cat_k)] = [dict(x) for x in cat_v if isinstance(x, dict)]
+            categories_dict[str(cat_k)] = [
+                dict(x) for x in ensure_json_list(cat_v, "category items") if isinstance(x, dict)
+            ]
 
     for items in categories_dict.values():
         for item in items:
@@ -299,13 +311,27 @@ def _compare_existing_symbol(
 
     if is_sig_diff or is_meta_diff or is_ret_diff or is_ov_diff:
         signature_changed.append(display_path)
-        target_list = breaking_signature_changed if _is_breaking_change(p1, p2, meta1, meta2, ret1, ret2, ov1, ov2) else non_breaking_signature_changed
+        target_list = (
+            breaking_signature_changed
+            if _is_breaking_change(p1, p2, meta1, meta2, ret1, ret2, ov1, ov2)
+            else non_breaking_signature_changed
+        )
         target_list.append(display_path)
 
 
 def _diff_envelope_metadata(
-    snap1: (SnapshotEnvelope | typing.Mapping[str, JsonValue] | typing.Sequence[typing.Mapping[str, JsonValue]] | ScalarValue),
-    snap2: (SnapshotEnvelope | typing.Mapping[str, JsonValue] | typing.Sequence[typing.Mapping[str, JsonValue]] | ScalarValue),
+    snap1: (
+        SnapshotEnvelope
+        | typing.Mapping[str, JsonValue]
+        | typing.Sequence[typing.Mapping[str, JsonValue]]
+        | ScalarValue
+    ),
+    snap2: (
+        SnapshotEnvelope
+        | typing.Mapping[str, JsonValue]
+        | typing.Sequence[typing.Mapping[str, JsonValue]]
+        | ScalarValue
+    ),
 ) -> tuple[dict[str, tuple[str | None, str | None]], list[str]]:
     """Compare top-level metadata fields and environment capability tags between two snapshots.
 
@@ -345,8 +371,18 @@ def _diff_envelope_metadata(
 
 
 def diff_snapshots(
-    snap1: (SnapshotEnvelope | typing.Mapping[str, JsonValue] | typing.Sequence[typing.Mapping[str, JsonValue]] | ScalarValue),
-    snap2: (SnapshotEnvelope | typing.Mapping[str, JsonValue] | typing.Sequence[typing.Mapping[str, JsonValue]] | ScalarValue),
+    snap1: (
+        SnapshotEnvelope
+        | typing.Mapping[str, JsonValue]
+        | typing.Sequence[typing.Mapping[str, JsonValue]]
+        | ScalarValue
+    ),
+    snap2: (
+        SnapshotEnvelope
+        | typing.Mapping[str, JsonValue]
+        | typing.Sequence[typing.Mapping[str, JsonValue]]
+        | ScalarValue
+    ),
 ) -> DiffResult:
     """Diff two snapshots to find changes.
 
@@ -427,7 +463,14 @@ def generate_changelog(diff: DiffResult) -> str:
     """
     lines = ["# Changelog Report", ""]
 
-    has_changes = bool(diff.added or diff.removed or diff.signature_changed or diff.metadata_changed or diff.deprecated_capabilities or diff.overloads_changed)
+    has_changes = bool(
+        diff.added
+        or diff.removed
+        or diff.signature_changed
+        or diff.metadata_changed
+        or diff.deprecated_capabilities
+        or diff.overloads_changed
+    )
     if not has_changes:
         lines.append("No changes detected.")
         return "\n".join(lines)

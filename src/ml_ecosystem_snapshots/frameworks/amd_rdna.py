@@ -19,6 +19,8 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
 )
 
+from ml_ecosystem_snapshots.frameworks._base import CollectorDomain, DomainCollectorAdapter
+
 from ..models import (
     ExtendedGhostParam,
     ExtendedGhostRef,
@@ -118,13 +120,19 @@ def _validate_rdna_slice_register(operand: str, slice_match: re.Match[str]) -> l
 
     align = _RDNA_SLICE_ALIGNMENTS.get(span)
     if align is None:
-        return [f"Invalid register span in '{operand}': expected pair (span 1), quad (span 3), oct (span 7), or hex (span 15), got span {span}."]
+        return [
+            f"Invalid register span in '{operand}': expected pair (span 1), quad (span 3), oct (span 7), or hex (span 15), got span {span}."
+        ]
 
     if start_idx % align != 0:
         if span == 1:
-            return [f"Register alignment error: 64-bit register pair '{operand}' must start on an even register index (got {start_idx})."]
+            return [
+                f"Register alignment error: 64-bit register pair '{operand}' must start on an even register index (got {start_idx})."
+            ]
         bits = (span + 1) * 32
-        return [f"Register alignment error: {bits}-bit register '{operand}' must start on a modulo-{align} register index (got {start_idx})."]
+        return [
+            f"Register alignment error: {bits}-bit register '{operand}' must start on a modulo-{align} register index (got {start_idx})."
+        ]
     return []
 
 
@@ -229,14 +237,20 @@ def validate_rdna_constant_bus(
         for op in src_ops:
             cleaned = op.strip().lower()
             # SGPR scalar register
-            is_sgpr = bool(re.match(r"^s\d+$", cleaned) or re.match(r"^s\[.*?\]$", cleaned) or cleaned in ("sgpr", "sgpr_32", "sreg_64"))
+            is_sgpr = bool(
+                re.match(r"^s\d+$", cleaned)
+                or re.match(r"^s\[.*?\]$", cleaned)
+                or cleaned in ("sgpr", "sgpr_32", "sreg_64")
+            )
             # Literal constant / immediate
             is_imm = bool(re.match(r"^-?(0x[0-9a-fA-F]+|\d+(\.\d+)?)$", cleaned) or cleaned in ("imm32", "simm16"))
             if is_sgpr or is_imm:
                 constant_bus_reads += 1
 
         if constant_bus_reads > 1:
-            errors.append(f"Constant bus limitation violation on '{gfx_arch}': vector instructions cannot read more than one SGPR or literal constant across vector source operands (found {constant_bus_reads}).")
+            errors.append(
+                f"Constant bus limitation violation on '{gfx_arch}': vector instructions cannot read more than one SGPR or literal constant across vector source operands (found {constant_bus_reads})."
+            )
 
     return errors
 
@@ -315,12 +329,16 @@ def validate_rdna_modifiers(modifiers: list[str], encoding: str | None = None) -
         # Source modifiers: -src, |src|, clamp, op_sel, neg_lo, neg_hi
         if clean_mod in RDNA_SOURCE_MODIFIERS:
             if enc not in ("VOP3", "VOP3P", "VOPD"):
-                errors.append(f"Source modifier '{mod}' is only valid on VOP3/VOP3P encodings, but instruction encoding is '{encoding}'.")
+                errors.append(
+                    f"Source modifier '{mod}' is only valid on VOP3/VOP3P encodings, but instruction encoding is '{encoding}'."
+                )
 
         # Output modifiers: omod:2, omod:4, omod:div2
         if clean_mod in RDNA_OUTPUT_MODIFIERS:
             if enc != "VOP3":
-                errors.append(f"Output modifier '{mod}' is only valid on VOP3 encodings, but instruction encoding is '{encoding}'.")
+                errors.append(
+                    f"Output modifier '{mod}' is only valid on VOP3 encodings, but instruction encoding is '{encoding}'."
+                )
 
     return errors
 
@@ -346,14 +364,18 @@ def validate_rdna_microarchitecture(
     # Guard dual-issue instructions strictly to GFX11/RDNA3 and GFX12/RDNA4
     if m.startswith("v_dual_"):
         if gfx_arch and ("GFX9" in gfx_arch or "GFX10" in gfx_arch):
-            errors.append(f"Dual-issue instruction '{mnemonic}' is strictly supported on GFX11+ (RDNA3/RDNA4), not '{gfx_arch}'.")
+            errors.append(
+                f"Dual-issue instruction '{mnemonic}' is strictly supported on GFX11+ (RDNA3/RDNA4), not '{gfx_arch}'."
+            )
         if wave_size == 64:
             errors.append(f"Dual-issue instruction '{mnemonic}' strictly requires Wave32 execution mode.")
 
     # Guard matrix accumulator instructions strictly to GFX9/CDNA
     if m.startswith("v_mfma_") or m.startswith("v_smfmac_"):
         if gfx_arch and "CDNA" not in gfx_arch and "GFX9" not in gfx_arch:
-            errors.append(f"Matrix accumulator instruction '{mnemonic}' is strictly supported on GFX9/CDNA architectures, not '{gfx_arch}'.")
+            errors.append(
+                f"Matrix accumulator instruction '{mnemonic}' is strictly supported on GFX9/CDNA architectures, not '{gfx_arch}'."
+            )
 
     # Guard wave-size mode per architecture
     if wave_size is not None and gfx_arch:
@@ -668,7 +690,7 @@ def _build_rdna_operand_params(sig: list[str]) -> list[GhostParam]:
 
         params.append(
             ExtendedGhostParam(
-                name=f"op{i}",
+                name=role if role not in ("condition", "exec_mask") or i == 0 else f"{role}_{i}",
                 kind=ParameterKind.POSITIONAL_ONLY,
                 annotation=op_type,
                 standardized_name=role,
@@ -708,7 +730,11 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         docstring = f"AMD RDNA {mnemonic} instruction.\nEncoding: {encoding}\nDescription: {base_desc}\nModifiers: {', '.join(modifiers) if modifiers else 'None'}\nTarget Architectures: {', '.join(valid_archs)}"
 
         raw_operands = inst_data.get("operands", [])
-        operands_list: list[list[str]] = [[str(op) for op in sig] for sig in (raw_operands if isinstance(raw_operands, list) else []) if isinstance(sig, list)]
+        operands_list: list[list[str]] = [
+            [str(op) for op in sig]
+            for sig in (raw_operands if isinstance(raw_operands, list) else [])
+            if isinstance(sig, list)
+        ]
 
         max_sig: list[str] = max(operands_list, key=len, default=[])
         params = _build_rdna_operand_params(max_sig)
@@ -725,7 +751,7 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
             ExtendedGhostRef(
                 name=mnemonic,
                 api_path=f"amd_rdna.inst.{mnemonic}",
-                kind="function",
+                kind="instruction",
                 params=_build_rdna_operand_params(sig),
                 docstring=f"Overload {sig_idx} for {mnemonic}: {', '.join(sig)}",
                 environment_tags=env_tags,
@@ -735,18 +761,37 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         ]
 
         refs.append(
-            GhostIsaRef(
-                name=mnemonic,
-                api_path=f"amd_rdna.inst.{mnemonic}",
-                kind="function",
-                params=params,
-                docstring=docstring,
-                environment_tags=env_tags,
-                overloads=overloads,
-                domain_metadata=domain_metadata,
-                instruction_modifiers=modifiers,
-                supported_architectures=valid_archs,
+            GhostIsaRef.model_validate(
+                {
+                    "name": mnemonic,
+                    "api_path": f"amd_rdna.inst.{mnemonic}",
+                    "kind": "instruction",
+                    "params": params,
+                    "docstring": docstring,
+                    "environment_tags": env_tags,
+                    "overloads": overloads,
+                    "domain_metadata": domain_metadata,
+                    "instruction_modifiers": modifiers,
+                    "supported_architectures": valid_archs,
+                }
             )
         )
 
     return refs
+
+
+def collect_domain(include_nonpublic: bool = False) -> list[GhostRef]:
+    """Collect AMD RDNA hardware instruction schemas without `SemanticTier` shoehorning.
+
+    Args:
+        include_nonpublic: Whether to include non-public instructions.
+
+    Returns:
+        List of `GhostIsaRef` items.
+    """
+    return collect_api(SemanticTier.UTIL, include_nonpublic)
+
+
+DOMAIN_COLLECTOR = DomainCollectorAdapter(CollectorDomain.HARDWARE_ISA, "instructions", collect_domain)
+get_canonical_fallback_rdna = _get_canonical_fallback_rdna
+load_exhaustive_rdna = _load_exhaustive_rdna

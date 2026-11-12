@@ -22,30 +22,6 @@ class CddIrModel(pydantic.BaseModel):
     params: dict[str, dict[str, str]] = pydantic.Field(default_factory=dict)
     returns: dict[str, dict[str, str]] | None = None
 
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["name", "type", "doc"]) -> str: ...
-
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["params"]) -> dict[str, dict[str, str]]: ...
-
-    @typing.overload
-    def __getitem__(self, key: typing.Literal["returns"]) -> dict[str, dict[str, str]] | None: ...
-
-    @typing.overload
-    def __getitem__(self, key: str) -> str | dict[str, dict[str, str]] | JsonValue: ...
-
-    def __getitem__(self, key: str) -> str | dict[str, dict[str, str]] | JsonValue:
-        """Retrieve a CDD IR field by dictionary key.
-
-        Args:
-            key: Field name ('name', 'type', 'doc', 'params', or 'returns').
-
-        Returns:
-            Field value.
-        """
-        dumped: dict[str, str | dict[str, dict[str, str]] | JsonValue] = self.model_dump()
-        return dumped[key]
-
     def to_cdd_dict(self) -> dict[str, JsonValue]:
         """Convert to a mutable dictionary with `OrderedDict` params/returns for `cdd-python`.
 
@@ -53,7 +29,9 @@ class CddIrModel(pydantic.BaseModel):
             Dictionary suitable for `cdd-python` emitters.
         """
         params_od: dict[str, JsonValue] = OrderedDict((k, dict(v)) for k, v in self.params.items())
-        returns_od: dict[str, JsonValue] | None = OrderedDict((k, dict(v)) for k, v in self.returns.items()) if self.returns is not None else None
+        returns_od: dict[str, JsonValue] | None = (
+            OrderedDict((k, dict(v)) for k, v in self.returns.items()) if self.returns is not None else None
+        )
         return {
             "name": self.name,
             "type": self.type,
@@ -63,7 +41,7 @@ class CddIrModel(pydantic.BaseModel):
         }
 
 
-def _ghost_to_cdd_ir(ref: GhostRef) -> CddIrModel:
+def ghost_to_cdd_ir(ref: GhostRef) -> CddIrModel:
     """Convert a GhostRef to cdd-python Intermediate Representation (IR).
 
     Args:
@@ -149,8 +127,12 @@ def to_openapi(refs: typing.Sequence[GhostRef]) -> dict[str, JsonValue]:
     return spec
 
 
+_ghost_to_cdd_ir = ghost_to_cdd_ir
+
+
 __all__ = [
     "CddIrModel",
+    "ghost_to_cdd_ir",
     "to_json_schema",
     "to_openapi",
 ]

@@ -18,6 +18,8 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
 )
 
+from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
+
 maxtext: types.ModuleType | None = None
 try:
     import maxtext as _maxtext
@@ -70,7 +72,7 @@ def _parse_maxtext_classes(dir_path: str, module_prefix: str) -> list[GhostRef]:
                         GhostRef(
                             name=node.name,
                             api_path=f"{module_prefix}.{node.name}",
-                            kind="CLASS",
+                            kind="class",
                             params=params,
                             docstring=docstring,
                         )
@@ -100,9 +102,7 @@ def _get_package_search_dir(mod: types.ModuleType) -> str | None:
     Returns:
         First package directory path or None.
     """
-    import inspect
-
-    members = dict(inspect.getmembers(mod))
+    members = get_member_dict(mod)
     raw_path = members.get("__path__")
     if isinstance(raw_path, list) and raw_path:
         return str(raw_path[0])

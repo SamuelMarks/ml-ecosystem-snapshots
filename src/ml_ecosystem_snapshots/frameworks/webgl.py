@@ -167,8 +167,11 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         provenance_fn=lambda op: {
             "source_type": "webgl_spec",
             "upstream_version": "2.0",
-            "category": op.get("category", "compute"),
+            "category": op.category or "compute",
         },
         default_doc_fn=lambda op_name: f"WebGL {op_name} operation.",
         environment_tags=("webgl", "glsl", "webgl2"),
     )
+
+
+load_webgl_ops = _load_webgl_ops

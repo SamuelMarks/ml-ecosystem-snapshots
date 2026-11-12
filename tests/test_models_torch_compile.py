@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 from ml_ecosystem_snapshots.models import JsonValue
 
 
-def torch_compile_mock(func: InspectableTarget) -> InspectableTarget:
+def torch_compile_mock(func: LivePythonTarget) -> LivePythonTarget:
     """Mock decorator simulating torch.compile wrapper.
 
     Args:
@@ -20,7 +20,7 @@ def torch_compile_mock(func: InspectableTarget) -> InspectableTarget:
     class Compiled:
         """Mock container for compiled function."""
 
-        def __init__(self, f: InspectableTarget) -> None:
+        def __init__(self, f: LivePythonTarget) -> None:
             """Initialize with original function.
 
             Args:

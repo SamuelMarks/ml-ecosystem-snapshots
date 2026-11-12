@@ -7,7 +7,7 @@ cache indexing layouts, and attention attributes matching `custom_ops.json`.
 from __future__ import annotations
 
 import importlib
-import inspect
+import logging
 import types
 
 from ml_switcheroo_ir.schema.ghost import (
@@ -22,7 +22,12 @@ from ml_ecosystem_snapshots.frameworks._base import (
     build_canonical_python_ref,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    LivePythonTarget,
+    get_member_dict,
+)
+
+_LOGGER = logging.getLogger(__name__)
 
 _FLASH_ATTN_OP_DEFS: list[CanonicalPythonOpTuple] = [
     (
@@ -84,18 +89,56 @@ _FLASH_ATTN_OP_DEFS: list[CanonicalPythonOpTuple] = [
         "ragged_paged_attention",
         "ml_switcheroo_compiler.ops.ragged_paged_attention",
         "function",
-        [("query", "POSITIONAL_ONLY", None), ("key_cache", "POSITIONAL_ONLY", None), ("value_cache", "POSITIONAL_ONLY", None), ("block_tables", "POSITIONAL_ONLY", None), ("context_lens", "POSITIONAL_ONLY", None), ("block_size", "POSITIONAL_ONLY", None)],
+        [
+            ("query", "POSITIONAL_ONLY", None),
+            ("key_cache", "POSITIONAL_ONLY", None),
+            ("value_cache", "POSITIONAL_ONLY", None),
+            ("block_tables", "POSITIONAL_ONLY", None),
+            ("context_lens", "POSITIONAL_ONLY", None),
+            ("block_size", "POSITIONAL_ONLY", None),
+        ],
         "Ragged PagedAttention kernel execution on non-rectangular tokens.",
     ),
-    ("FlashAttention", "ml.switcheroo.custom.FlashAttention", "function", [("Q", "POSITIONAL_ONLY", None), ("K", "POSITIONAL_ONLY", None), ("V", "POSITIONAL_ONLY", None), ("causal", "KEYWORD_ONLY", "False"), ("scale", "KEYWORD_ONLY", "None")], "Custom FlashAttention specification."),
+    (
+        "FlashAttention",
+        "ml.switcheroo.custom.FlashAttention",
+        "function",
+        [
+            ("Q", "POSITIONAL_ONLY", None),
+            ("K", "POSITIONAL_ONLY", None),
+            ("V", "POSITIONAL_ONLY", None),
+            ("causal", "KEYWORD_ONLY", "False"),
+            ("scale", "KEYWORD_ONLY", "None"),
+        ],
+        "Custom FlashAttention specification.",
+    ),
     (
         "ScaledDotProductAttention",
         "ml.switcheroo.custom.ScaledDotProductAttention",
         "function",
-        [("query", "POSITIONAL_ONLY", None), ("key", "POSITIONAL_ONLY", None), ("value", "POSITIONAL_ONLY", None), ("attn_mask", "KEYWORD_ONLY", "None"), ("scale", "KEYWORD_ONLY", "None"), ("dropout_p", "KEYWORD_ONLY", "0.0"), ("is_causal", "KEYWORD_ONLY", "False")],
+        [
+            ("query", "POSITIONAL_ONLY", None),
+            ("key", "POSITIONAL_ONLY", None),
+            ("value", "POSITIONAL_ONLY", None),
+            ("attn_mask", "KEYWORD_ONLY", "None"),
+            ("scale", "KEYWORD_ONLY", "None"),
+            ("dropout_p", "KEYWORD_ONLY", "0.0"),
+            ("is_causal", "KEYWORD_ONLY", "False"),
+        ],
         "Scaled Dot-Product Attention operator.",
     ),
-    ("RoPE", "ml.switcheroo.custom.RoPE", "function", [("X", "POSITIONAL_ONLY", None), ("cos", "POSITIONAL_ONLY", None), ("sin", "POSITIONAL_ONLY", None), ("dim", "KEYWORD_ONLY", "-1")], "Rotary Positional Embedding (RoPE) operator."),
+    (
+        "RoPE",
+        "ml.switcheroo.custom.RoPE",
+        "function",
+        [
+            ("X", "POSITIONAL_ONLY", None),
+            ("cos", "POSITIONAL_ONLY", None),
+            ("sin", "POSITIONAL_ONLY", None),
+            ("dim", "KEYWORD_ONLY", "-1"),
+        ],
+        "Rotary Positional Embedding (RoPE) operator.",
+    ),
 ]
 
 CANONICAL_FLASH_ATTN_OPS: list[CanonicalPythonOpSpec] = build_canonical_python_ops(_FLASH_ATTN_OP_DEFS)
@@ -110,8 +153,18 @@ def _discover_flash_attn_module() -> types.ModuleType | None:
     for mod_name in ("flash_attn", "vllm"):
         try:
             return importlib.import_module(mod_name)
-        except Exception as exc:
-            del exc
+        except (
+            ImportError,
+            AttributeError,
+            TypeError,
+            ValueError,
+            OSError,
+            RuntimeError,
+            LookupError,
+            SyntaxError,
+            AssertionError,
+        ):
+            _LOGGER.debug("Optional attention module %s unavailable", mod_name, exc_info=True)
     return None
 
 
@@ -147,12 +200,12 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
 
     results: list[GhostRef] = []
     seen: set[str] = set()
-    mod_members: dict[str, InspectableTarget] = dict(inspect.getmembers(mod))
+    mod_members: dict[str, LivePythonTarget] = get_member_dict(mod)
 
     for op in CANONICAL_FLASH_ATTN_OPS:
         name = op.name
         if name in mod_members:
-            obj: InspectableTarget = mod_members[name]
+            obj: LivePythonTarget = mod_members[name]
             try:
                 ref = GhostInspector.inspect(obj, op.api_path, is_public=True)
                 ref.environment_tags = list(ref.environment_tags or ()) + [
@@ -161,8 +214,18 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
                 ]
                 results.append(ref)
                 seen.add(op.api_path)
-            except Exception as exc:
-                del exc
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                OSError,
+                RuntimeError,
+                LookupError,
+                SyntaxError,
+                AssertionError,
+            ):
+                _LOGGER.debug("Failed to inspect live attention member %s", op.api_path, exc_info=True)
 
     for op in CANONICAL_FLASH_ATTN_OPS:
         if op.api_path not in seen:

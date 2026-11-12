@@ -16,10 +16,12 @@ from ml_ecosystem_snapshots.introspection.ast_kwargs import (
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
+    STATIC_GRIFFE_TYPES,
     DefaultValueInput,
     DescriptorProtocol,
     InspectableCallableProtocol,
-    InspectableTarget,
+    LivePythonTarget,
+    StaticGriffeNode,
     WrappedTargetProtocol,
     get_member_dict,
     get_runtime_signature,
@@ -30,6 +32,7 @@ from ml_ecosystem_snapshots.introspection.sanitize import (
     sanitize_type_str,
 )
 from ml_ecosystem_snapshots.introspection.static_parsers import (
+    clear_griffe_cache,
     load_griffe_module_safely,
     preload_griffe_cache,
 )
@@ -41,8 +44,11 @@ __all__ = [
     "DescriptorProtocol",
     "GhostInspector",
     "InspectableCallableProtocol",
-    "InspectableTarget",
+    "LivePythonTarget",
+    "STATIC_GRIFFE_TYPES",
+    "StaticGriffeNode",
     "WrappedTargetProtocol",
+    "clear_griffe_cache",
     "extract_accepted_kwargs_from_ast",
     "extract_c_extension_signature",
     "get_member_dict",

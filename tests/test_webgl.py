@@ -13,8 +13,8 @@ from ml_switcheroo_ir.schema.ghost import (
 from ml_ecosystem_snapshots.cli import cmd_check_webgl
 from ml_ecosystem_snapshots.frameworks.webgl import (
     CANONICAL_WEBGL_OPS,
-    _load_webgl_ops,
     collect_api,
+    load_webgl_ops,
 )
 from ml_ecosystem_snapshots.mcp_server import check_webgl_op
 
@@ -55,33 +55,33 @@ def test_check_webgl_op_validation() -> None:
     """Test check_webgl_op validating existence, operands count, and attributes."""
     # 1. Valid operation
     res_valid = check_webgl_op("texelFetch", inputs_count=3)
-    assert res_valid["is_valid"] is True
-    assert res_valid["op_exists"] is True
-    assert len(res_valid["errors"]) == 0
+    assert res_valid.is_valid is True
+    assert res_valid.op_exists is True
+    assert len(res_valid.errors) == 0
 
     # 2. Prefix stripping (webgl.texelFetch)
     res_prefix = check_webgl_op("webgl.texelFetch", inputs_count=3)
-    assert res_prefix["is_valid"] is True
+    assert res_prefix.is_valid is True
 
     # 3. Operands count mismatch
     res_count_err = check_webgl_op("texelFetch", inputs_count=1)
-    assert res_count_err["is_valid"] is False
-    assert any("expects 3 inputs, but got 1" in e for e in res_count_err["errors"])
+    assert res_count_err.is_valid is False
+    assert any("expects 3 inputs, but got 1" in e for e in res_count_err.errors)
 
     # 4. Valid attributes
     res_attr = check_webgl_op("texelFetch", attributes=["sampler_type"])
-    assert res_attr["is_valid"] is True
+    assert res_attr.is_valid is True
 
     # 5. Invalid attribute
     res_bad_attr = check_webgl_op("texelFetch", attributes=["bad_attr"])
-    assert res_bad_attr["is_valid"] is False
-    assert any("Attribute 'bad_attr' is not valid" in e for e in res_bad_attr["errors"])
+    assert res_bad_attr.is_valid is False
+    assert any("Attribute 'bad_attr' is not valid" in e for e in res_bad_attr.errors)
 
     # 6. Non-existent operator
     res_nonexistent = check_webgl_op("nonexistent_glsl_op")
-    assert res_nonexistent["is_valid"] is False
-    assert res_nonexistent["op_exists"] is False
-    assert any("Unknown WebGL operation" in e for e in res_nonexistent["errors"])
+    assert res_nonexistent.is_valid is False
+    assert res_nonexistent.op_exists is False
+    assert any("Unknown WebGL operation" in e for e in res_nonexistent.errors)
 
 
 def test_cmd_check_webgl_cli(capsys: pytest.CaptureFixture[str]) -> None:
@@ -139,5 +139,5 @@ def test_webgl_roundtrip_serialization() -> None:
 
 def test_load_webgl_ops_catalog() -> None:
     """Verify _load_webgl_ops catalog returns standard canonical definitions."""
-    ops = _load_webgl_ops()
+    ops = load_webgl_ops()
     assert ops == CANONICAL_WEBGL_OPS

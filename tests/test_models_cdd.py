@@ -26,12 +26,13 @@ class SomeClass:
     """Sample class with Sphinx-style docstring for CDD class inspection."""
 
     def __init__(self, x: float, y: int = 5) -> None:
-        """:param x: The x coordinate.
+        """Initialize SomeClass.
 
+        :param x: The x coordinate.
         :type x: float
         :param y: The y count.
         :type y: int
-        """  # noqa: D417
+        """
         pass
 
 

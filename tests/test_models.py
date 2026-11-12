@@ -9,7 +9,7 @@ import pytest_mock
 from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 from ml_ecosystem_snapshots.models import (
     ExtendedGhostParam,
     GhostIsaRef,
@@ -44,33 +44,36 @@ def test_ghost_ref_has_arg() -> None:
     assert ref.has_arg("y") is False
 
 
-def dummy_func(a: int, b: int = 2, *args: InspectableTarget, **kwargs: InspectableTarget) -> None:
-    """Docstring for dummy_func. a: int, b: int, args: tuple, kwargs: dict.
+def dummy_func(a: int, b: int = 2, *args: LivePythonTarget, **kwargs: LivePythonTarget) -> None:
+    """Docstring for dummy_func.
 
-    # noqa: DAR101
+    Args:
+        a: Primary integer input.
+        b: Optional integer input with default value.
+        args: Variadic positional arguments.
+        kwargs: Variadic keyword arguments.
     """
     pass
 
 
 class DummyClass:
-    """Mock or helper class DummyClass for unit testing."""
+    """Sample class fixture with a default constructor argument."""
 
     def __init__(self, c: str = "test") -> None:
-        """Execute helper init  . c.
-
-        # noqa: DAR101
+        """Initialize DummyClass with an optional string value.
 
         Args:
-            c: Third parameter value.
+            c: Constructor string parameter.
         """
         pass
 
 
-def dummy_c_extension(*args: InspectableTarget, **kwargs: InspectableTarget) -> None:
-    """Execute helper dummy c extension without docstring args for C-ext fallback.
+def dummy_c_extension(*args: LivePythonTarget, **kwargs: LivePythonTarget) -> None:
+    """Simulate a C-extension callable whose Python signature lookup fails.
 
-    *args: Variadic positional arguments.
-    **kwargs: Variadic keyword arguments.
+    Args:
+        *args: Variadic positional arguments.
+        **kwargs: Variadic keyword arguments.
     """
     # simulate something that inspect.signature fails on
     pass
@@ -86,7 +89,9 @@ def test_ghost_inspector_function() -> None:
     assert "Docstring for dummy_func." in ref.docstring
     assert ref.has_varargs is True
 
-    assert len(ref.params) == 4  # a, b (args/kwargs aren't counted explicitly as params here? Wait, *args is VAR_POSITIONAL)
+    assert (
+        len(ref.params) == 4
+    )  # a, b (args/kwargs aren't counted explicitly as params here? Wait, *args is VAR_POSITIONAL)
     assert ref.has_arg("a")
     assert ref.has_arg("b")
 
@@ -161,23 +166,23 @@ def test_unrepresentable_default() -> None:
     """Verify unrepresentable default behavior."""
 
     class Unrepresentable:
-        """Mock or helper class Unrepresentable for unit testing."""
+        """Sentinel default value whose repr raises a generic Exception."""
 
         def __repr__(self) -> str:
-            """Execute helper repr  .
+            """Fail intentionally when formatting representation.
 
             Raises:
-                Exception: Exception.
+                RuntimeError: Always raised to simulate an unrepresentable object.
 
             Returns:
                 Never returns.
             """
-            raise Exception("no")
+            raise RuntimeError("no")
 
     default_unrep = Unrepresentable()
 
     def f(a: Unrepresentable = default_unrep) -> None:
-        """Execute helper f. a.
+        """Accept an unrepresentable default value.
 
         Args:
             a: First positional operand.
@@ -192,14 +197,14 @@ def test_memory_address_default() -> None:
     """Verify memory address default behavior."""
 
     class MemoryDefault:
-        """Mock or helper class MemoryDefault for unit testing."""
+        """Object whose default repr embeds a runtime memory address."""
 
         pass
 
     default_mem = MemoryDefault()
 
     def f(a: MemoryDefault = default_mem) -> None:
-        """Execute helper f. a.
+        """Accept an object default carrying a memory address repr.
 
         Args:
             a: First positional operand.
@@ -214,11 +219,11 @@ def test_callable_default() -> None:
     """Verify callable default behavior."""
 
     def my_default() -> None:
-        """Execute helper my default."""
+        """Act as a no-op callable default factory."""
         pass
 
     def f(a: typing.Callable[[], None] = my_default) -> None:
-        """Execute helper f. a.
+        """Accept a callable default parameter.
 
         Args:
             a: First positional operand.
@@ -233,31 +238,31 @@ def test_ghost_inspector_str_throws() -> None:
     """Verify ghost inspector str throws behavior."""
 
     class StrThrows:
-        """Mock or helper class StrThrows for unit testing."""
+        """Default value stub with valid repr but raising str conversion."""
 
         def __repr__(self) -> str:
-            """Execute helper repr  .
+            """Return a benign representation string.
 
             Returns:
-                Computed result.
+                Constant representation string `'fine'`.
             """
             return "fine"
 
         def __str__(self) -> str:
-            """Execute helper str  .
+            """Raise an error when converted to str.
 
             Raises:
-                Exception: Exception.
+                RuntimeError: Always raised during string conversion.
 
             Returns:
                 Never returns.
             """
-            raise Exception("no")
+            raise RuntimeError("no")
 
     default_str_throws = StrThrows()
 
     def f(a: StrThrows = default_str_throws) -> None:
-        """Execute helper f. a.
+        """Accept a default object whose str conversion fails.
 
         Args:
             a: First positional operand.
@@ -277,7 +282,7 @@ def test_ghost_inspector_c_extension_class(mocker: pytest_mock.MockerFixture) ->
     mocker.patch("inspect.signature", side_effect=ValueError)
 
     class DummyCClass:
-        """Mock or helper class DummyCClass for unit testing."""
+        """Class stub simulating an uninspectable C-extension type."""
 
         pass
 
@@ -292,28 +297,28 @@ def test_ghost_inspector_str_has_address() -> None:
     """Verify ghost inspector str has address behavior."""
 
     class StrAddr:
-        """Mock or helper class StrAddr for unit testing."""
+        """Default value stub whose str contains a hex memory address."""
 
         def __repr__(self) -> str:
-            """Execute helper repr  .
+            """Return a clean representation without a memory address.
 
             Returns:
-                Computed result.
+                Constant string `'fine'`.
             """
             return "fine"
 
         def __str__(self) -> str:
-            """Execute helper str  .
+            """Return a string containing a hexadecimal memory address.
 
             Returns:
-                Computed result.
+                String containing `'0x1234'`.
             """
             return "something at 0x1234"
 
     default_str_addr = StrAddr()
 
     def f(a: StrAddr = default_str_addr) -> None:
-        """Execute helper f. a.
+        """Accept a default object whose str embeds a memory address.
 
         Args:
             a: First positional operand.
@@ -349,30 +354,27 @@ def test_ghost_inspector_is_public(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
+    import griffe
+
     # test explicit override
     ref = GhostInspector.inspect(dummy_func, "tests.dummy_func", is_public=False)
     assert ref.is_public is False
 
     # test griffe is_public
-    class FakeGriffeNode:
-        """Mock or helper class FakeGriffeNode for unit testing."""
-
-        is_public = False
-
-    mocker.patch("griffe.load", return_value=FakeGriffeNode())
+    priv_mod = griffe.Module("tests")
+    priv_fn = griffe.Function("dummy_func")
+    priv_fn.public = False
+    priv_mod.set_member("dummy_func", priv_fn)
+    mocker.patch("griffe.load", return_value=priv_mod)
     ref2 = GhostInspector.inspect(dummy_func, "tests.dummy_func")
     assert ref2.is_public is False
 
-    # test griffe is_public missing attribute
-    class FakeGriffeNodeNoPub:
-        """Mock or helper class FakeGriffeNodeNoPub for unit testing."""
-
-        pass
-
-    mocker.patch("griffe.load", return_value=FakeGriffeNodeNoPub())
+    # test griffe node missing
+    empty_mod = griffe.Module("tests")
+    mocker.patch("griffe.load", return_value=empty_mod)
 
     def _private_dummy() -> None:
-        """Execute helper private dummy."""
+        """Represent a underscore-prefixed private helper function."""
         pass
 
     ref3 = GhostInspector.inspect(_private_dummy, "tests._private_dummy")
@@ -383,7 +385,7 @@ def test_ghost_inspector_annotation_str() -> None:
     """Verify ghost inspector annotation str behavior."""
 
     def f(a: str) -> None:
-        """Execute helper f. a.
+        """Accept a string-annotated parameter.
 
         Args:
             a: First positional operand.
@@ -398,15 +400,11 @@ def test_ghost_inspector_cdd_fallback() -> None:
     """Verify ghost inspector cdd fallback behavior."""
 
     # Test when p_anno is missing but cdd has it
-    def dummy_func_cdd(x: InspectableTarget) -> None:
+    def dummy_func_cdd(x: LivePythonTarget) -> None:
         """Dummy func.
 
-        # noqa: DAR101
-
         Args:
-        x (int): The value.
-
-            x: Input tensor or scalar operand.
+            x (int): The value.
         """
         pass
 
@@ -419,12 +417,12 @@ def test_ghost_inspector_annotation_name() -> None:
     """Verify ghost inspector annotation name behavior."""
 
     class MyType:
-        """Mock or helper class MyType for unit testing."""
+        """Custom local parameter annotation type."""
 
         pass
 
     def dummy_func_anno(x: MyType) -> None:
-        """Execute helper dummy func anno. x.
+        """Accept a parameter annotated with local class MyType.
 
         Args:
             x: Input tensor or scalar operand.
@@ -445,15 +443,15 @@ def test_ghost_inspector_annotation_name_mock(
         mocker: Pytest mocker fixture.
     """
     # Mock get_type_hints to raise an Exception so it falls back to raw annotations
-    mocker.patch("typing.get_type_hints", side_effect=Exception("Failed"))
+    mocker.patch("typing.get_type_hints", side_effect=RuntimeError("Failed"))
 
     class MyType:
-        """Mock or helper class MyType for unit testing."""
+        """Custom local type for raw annotation fallback inspection."""
 
         pass
 
     def dummy_func_anno(x: MyType) -> None:
-        """Execute helper dummy func anno. x.
+        """Accept a parameter resolved via raw runtime annotations.
 
         Args:
             x: Input tensor or scalar operand.
@@ -471,10 +469,10 @@ def test_ghost_inspector_annotation_str_mock(mocker: pytest_mock.MockerFixture) 
     Args:
         mocker: Pytest mocker fixture.
     """
-    mocker.patch("typing.get_type_hints", side_effect=Exception("Failed"))
+    mocker.patch("typing.get_type_hints", side_effect=RuntimeError("Failed"))
 
     def dummy_func_anno_str(x: str) -> None:
-        """Execute helper dummy func anno str. x.
+        """Accept a parameter carrying a string raw annotation.
 
         Args:
             x: Input tensor or scalar operand.
@@ -490,15 +488,11 @@ def test_ghost_inspector_cdd_anno_fallback() -> None:
     """Verify ghost inspector cdd anno fallback behavior."""
 
     # cdd_params gives 'typ' but inspect does not find it
-    def dummy_func_no_anno(x: InspectableTarget) -> None:
+    def dummy_func_no_anno(x: LivePythonTarget) -> None:
         """Dummy func.
 
-        # noqa: DAR101
-
         Args:
-        x (int): The value.
-
-            x: Input tensor or scalar operand.
+            x (int): The value.
         """
         pass
 
@@ -512,10 +506,10 @@ def test_ghost_inspector_return_type_hints() -> None:
     """Verify ghost inspector return type hints behavior."""
 
     def dummy_func_ret() -> int:
-        """Execute helper dummy func ret.
+        """Return zero with an explicit integer return annotation.
 
         Returns:
-            Computed result.
+            Zero integer constant.
         """
         return 0
 
@@ -529,56 +523,22 @@ def test_ghost_inspector_griffe_params(mocker: pytest_mock.MockerFixture) -> Non
     Args:
         mocker: Pytest mocker fixture.
     """
+    import griffe
 
-    class FakeKind:
-        """Mock or helper class FakeKind for unit testing."""
+    real_fn_node = griffe.Function(
+        "dummy_func_griffe",
+        parameters=griffe.Parameters(
+            griffe.Parameter("self", kind=None),
+            griffe.Parameter("x", kind=griffe.ParameterKind.var_positional, annotation="int"),
+            griffe.Parameter("y", kind=griffe.ParameterKind.positional_or_keyword, default="10"),
+            griffe.Parameter("z", kind=griffe.ParameterKind.positional_or_keyword, annotation="str"),
+        ),
+    )
 
-        def __init__(self, name: str) -> None:
-            """Execute helper init  . name.
-
-            Args:
-                name: Parameter or symbol identifier.
-            """
-            self.name = name
-
-    class FakeParam:
-        """Mock or helper class FakeParam for unit testing."""
-
-        def __init__(
-            self,
-            name: str,
-            kind_name: str | None,
-            default: str | None,
-            annotation: str | None,
-        ) -> None:
-            """Execute helper init  . name kind_name default annotation.
-
-            Args:
-                annotation: Parameter type annotation string.
-                default: Parameter default value string.
-                kind_name: Parameter kind identifier.
-                name: Parameter or symbol identifier.
-            """
-            self.name = name
-            self.kind = FakeKind(kind_name) if kind_name else None
-            self.default = default
-            self.annotation = annotation
-
-    class FakeGriffeNode:
-        """Mock or helper class FakeGriffeNode for unit testing."""
-
-        is_public = True
-        parameters = [
-            FakeParam("self", None, None, None),
-            FakeParam("x", "VAR_POSITIONAL", None, "int"),
-            FakeParam("y", "POSITIONAL_OR_KEYWORD", "10", None),
-            FakeParam("z", "POSITIONAL_OR_KEYWORD", None, "str"),
-        ]
-
-    mocker.patch("griffe.load", return_value=FakeGriffeNode())
+    mocker.patch("griffe.load", return_value=real_fn_node)
 
     def dummy_func_griffe(z: int) -> None:
-        """Execute helper dummy func griffe.
+        """Provide a live Python callable merged with Griffe parameter metadata.
 
         Args:
             z: Input parameter operand.
@@ -595,19 +555,22 @@ def test_ghost_inspector_griffe_params(mocker: pytest_mock.MockerFixture) -> Non
     assert ref.params[2].annotation == "int"
 
 
-def test_ghost_inspector_overloads_cdd() -> None:
-    """Verify GhostInspector handles overload inspection when griffe is unavailable."""
+def test_ghost_inspector_overloads_cdd(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify GhostInspector handles overload inspection when griffe is unavailable.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
     import sys
-    from unittest.mock import patch
 
-    with patch.dict(sys.modules, {"griffe": None}):
+    monkeypatch.setitem(sys.modules, "griffe", None)
 
-        def dummy_func_no_griffe() -> None:
-            """Execute dummy function with no Griffe backing."""
-            pass
+    def dummy_func_no_griffe() -> None:
+        """Execute dummy function with no Griffe backing."""
+        pass
 
-        ref = GhostInspector.inspect(dummy_func_no_griffe, "dummy_func_no_griffe")
-        assert ref.overloads is None or len(ref.overloads) == 0
+    ref = GhostInspector.inspect(dummy_func_no_griffe, "dummy_func_no_griffe")
+    assert ref.overloads is None or len(ref.overloads) == 0
 
 
 def test_ghost_inspector_griffe_overloads(mocker: pytest_mock.MockerFixture) -> None:
@@ -616,74 +579,23 @@ def test_ghost_inspector_griffe_overloads(mocker: pytest_mock.MockerFixture) -> 
     Args:
         mocker: Pytest mocker fixture.
     """
+    import griffe
 
-    class FakeParam:
-        """Mock or helper class FakeParam for unit testing."""
+    ov_fn = griffe.Function(
+        "dummy_func_griffe",
+        parameters=griffe.Parameters(
+            griffe.Parameter("self", kind=None),
+            griffe.Parameter("a", kind=griffe.ParameterKind.var_positional, default="1", annotation="int"),
+        ),
+        returns="int",
+    )
+    base_fn = griffe.Function("dummy_func_griffe", parameters=griffe.Parameters())
+    base_fn.overloads = [ov_fn]
 
-        def __init__(
-            self,
-            name: str,
-            kind_name: str | None,
-            default: str | None,
-            annotation: str | None,
-        ) -> None:
-            """Execute helper init  . name kind_name default annotation.
-
-            Args:
-                annotation: Parameter type annotation string.
-                default: Parameter default value string.
-                kind_name: Parameter kind identifier.
-                name: Parameter or symbol identifier.
-            """
-            self.name = name
-
-            class FakeKind:
-                """Mock or helper class FakeKind for unit testing."""
-
-                pass
-
-            self.kind = FakeKind()
-            pytest.MonkeyPatch().setattr(
-                self.kind,
-                "name",
-                kind_name if kind_name else "POSITIONAL_OR_KEYWORD",
-                raising=False,
-            )
-            self.default = default
-            self.annotation = annotation
-
-    class FakeOverload:
-        """Mock or helper class FakeOverload for unit testing."""
-
-        def __init__(self, parameters: list[FakeParam], returns: str) -> None:
-            """Execute helper init  . parameters returns.
-
-            Args:
-                parameters: List of Griffe parameter nodes.
-                returns: Return annotation string or node.
-            """
-            self.parameters = parameters
-            self.returns = returns
-
-    class FakeGriffeNode:
-        """Mock or helper class FakeGriffeNode for unit testing."""
-
-        is_public = True
-        parameters: list[FakeParam] = []
-        overloads = [
-            FakeOverload(
-                [
-                    FakeParam("self", None, None, None),
-                    FakeParam("a", "VAR_POSITIONAL", "1", "int"),
-                ],
-                "int",
-            )
-        ]
-
-    mocker.patch("griffe.load", return_value=FakeGriffeNode())
+    mocker.patch("griffe.load", return_value=base_fn)
 
     def dummy_func_griffe() -> None:
-        """Execute helper dummy func griffe."""
+        """Provide a base callable backed by synthetic Griffe overloads."""
         pass
 
     ref = GhostInspector.inspect(dummy_func_griffe, "dummy_func_griffe")
@@ -709,12 +621,12 @@ def test_models_branches() -> None:
 def test_preload_griffe_cache() -> None:
     """Test preloading griffe cache for specified and default frameworks."""
     from ml_ecosystem_snapshots.introspection.static_parsers import (
-        _GRIFFE_CACHE,
+        DEFAULT_GRIFFE_CACHE,
         preload_griffe_cache,
     )
 
     preload_griffe_cache(["ml_ecosystem_snapshots"])
-    assert "ml_ecosystem_snapshots" in _GRIFFE_CACHE
+    assert DEFAULT_GRIFFE_CACHE.contains("ml_ecosystem_snapshots")
 
     # Call again to hit the already cached branch
     preload_griffe_cache(["ml_ecosystem_snapshots"])
@@ -750,117 +662,37 @@ def test_ghost_inspector_griffe_class_init(mocker: pytest_mock.MockerFixture) ->
     Args:
         mocker: Pytest mocker fixture.
     """
-    mock_param = mocker.MagicMock()
-    mock_param.name = "val"
-    mock_param.kind.name = "POSITIONAL_OR_KEYWORD"
-    mock_param.default = None
-    mock_param.annotation = "int"
-    mock_param.description = "The value."
+    import griffe
 
-    mock_init = mocker.MagicMock()
-    mock_init.parameters = [mock_param]
-
-    mock_node = mocker.MagicMock(
-        spec=[
-            "name",
-            "is_class",
-            "is_function",
-            "parameters",
-            "members",
-            "docstring",
-            "is_public",
-            "overloads",
-            "returns",
-        ]
+    del mocker
+    cls_node = griffe.Class("DummyClass")
+    init_fn = griffe.Function(
+        "__init__",
+        parameters=griffe.Parameters(
+            griffe.Parameter("val", kind=griffe.ParameterKind.positional_or_keyword, annotation="int"),
+        ),
+        returns="int",
     )
-    mock_node.name = "DummyClass"
-    mock_node.docstring = None
-    mock_node.parameters = None
-    mock_node.is_class = True
-    mock_node.is_function = False
-    mock_node.members = {"__init__": mock_init}
-    mock_node.is_public = True
-    mock_node.overloads = None
-    mock_node.returns = "int"
+    cls_node.set_member("__init__", init_fn)
+    fn_with_ret = griffe.Function(
+        "DummyFn",
+        parameters=griffe.Parameters(
+            griffe.Parameter("val", kind=griffe.ParameterKind.positional_or_keyword, annotation="int"),
+        ),
+        returns="int",
+    )
 
-    ref = GhostInspector.inspect(mock_node, "DummyClass")
+    ref = GhostInspector.inspect(cls_node, "DummyClass")
     assert any(p.name == "val" for p in ref.params)
-    assert ref.returns_type == "int"
+    ref_fn = GhostInspector.inspect(fn_with_ret, "DummyFn")
+    assert ref_fn.returns_type == "int"
 
-    # Cover empty griffe_params (branch 531->533)
-    mock_node_empty = mocker.MagicMock(
-        spec=[
-            "name",
-            "is_class",
-            "is_function",
-            "parameters",
-            "members",
-            "docstring",
-            "is_public",
-            "overloads",
-            "returns",
-        ]
-    )
-    mock_node_empty.name = "EmptyClass"
-    mock_node_empty.docstring = None
-    mock_node_empty.parameters = []
-    mock_node_empty.is_class = True
-    mock_node_empty.is_function = False
-    mock_node_empty.members = {}
-    mock_node_empty.is_public = True
-    mock_node_empty.overloads = None
-    mock_node_empty.returns = None
-
-    ref_empty = GhostInspector.inspect(mock_node_empty, "EmptyClass")
+    cls_empty = griffe.Class("EmptyClass")
+    ref_empty = GhostInspector.inspect(cls_empty, "EmptyClass")
     assert ref_empty.name == "EmptyClass"
 
-    class RaisingGriffeNode:
-        """Griffe node raising AliasResolutionError-like RuntimeError on property access."""
-
-        name = "RaisingNode"
-        docstring = None
-        is_class = True
-        is_function = False
-        is_public = True
-        members: dict[str, str] = {}
-
-        @property
-        def parameters(self) -> list[str]:
-            """Raise RuntimeError on parameters access.
-
-            Raises:
-                RuntimeError: Always raised.
-
-            Returns:
-                Never returns.
-            """
-            raise RuntimeError("unresolved alias parameters")
-
-        @property
-        def overloads(self) -> list[str]:
-            """Raise RuntimeError on overloads access.
-
-            Raises:
-                RuntimeError: Always raised.
-
-            Returns:
-                Never returns.
-            """
-            raise RuntimeError("unresolved alias overloads")
-
-        @property
-        def returns(self) -> str:
-            """Raise RuntimeError on returns access.
-
-            Raises:
-                RuntimeError: Always raised.
-
-            Returns:
-                Never returns.
-            """
-            raise RuntimeError("unresolved alias returns")
-
-    ref_raising = GhostInspector.inspect(RaisingGriffeNode(), "RaisingNode")
+    raising_alias = griffe.Alias("RaisingNode", target="nonexistent_pkg.NonExistentClass")
+    ref_raising = GhostInspector.inspect(raising_alias, "RaisingNode")
     assert ref_raising.name == "RaisingNode"
 
 
@@ -904,44 +736,21 @@ def test_ghost_inspector_overloads_with_literal_and_standard_enum(
     Args:
         mocker: Pytest mocker fixture.
     """
-    mock_param_lit = mocker.MagicMock()
-    mock_param_lit.name = "mode"
-    mock_param_lit.kind.name = "KEYWORD_ONLY"
-    mock_param_lit.default = None
-    mock_param_lit.annotation = 'Literal["fast", "slow"]'
+    import griffe
 
-    mock_param_enum = mocker.MagicMock()
-    mock_param_enum.name = "reduction"
-    mock_param_enum.kind.name = "KEYWORD_ONLY"
-    mock_param_enum.default = None
-    mock_param_enum.annotation = "str"
-
-    mock_overload = mocker.MagicMock(spec=["parameters", "returns"])
-    mock_overload.parameters = [mock_param_lit, mock_param_enum]
-    mock_overload.returns = "int"
-
-    mock_node = mocker.MagicMock(
-        spec=[
-            "name",
-            "is_class",
-            "is_function",
-            "parameters",
-            "docstring",
-            "is_public",
-            "overloads",
-            "returns",
-        ]
+    del mocker
+    overload_fn = griffe.Function(
+        "func_with_ov",
+        parameters=griffe.Parameters(
+            griffe.Parameter("mode", kind=griffe.ParameterKind.keyword_only, annotation='Literal["fast", "slow"]'),
+            griffe.Parameter("reduction", kind=griffe.ParameterKind.keyword_only, annotation="str"),
+        ),
+        returns="int",
     )
-    mock_node.name = "func_with_ov"
-    mock_node.is_class = False
-    mock_node.is_function = True
-    mock_node.parameters = []
-    mock_node.docstring = None
-    mock_node.is_public = True
-    mock_node.overloads = [mock_overload]
-    mock_node.returns = "int"
+    fn_node = griffe.Function("func_with_ov", parameters=griffe.Parameters(), returns="int")
+    fn_node.overloads = [overload_fn]
 
-    ref = GhostInspector.inspect(mock_node, "tests.func_with_ov")
+    ref = GhostInspector.inspect(fn_node, "tests.func_with_ov")
     assert ref.overloads is not None
     assert len(ref.overloads) == 1
     ov0 = ref.overloads[0]
@@ -965,34 +774,28 @@ def test_ghost_inspector_c_ext_overloads_with_literal_and_standard_enum(
     """
     mocker.patch("inspect.signature", side_effect=ValueError)
 
-    from ml_ecosystem_snapshots.c_extension_sig import RawParamTuple
+    from ml_ecosystem_snapshots.c_extension_sig import CExtensionSignature, ParsedParamTuple
 
-    class MockOverloadList(list[RawParamTuple]):
-        """Mock overload list with returns_type."""
-
-        returns_type: str = "int"
-
-    class MockCExtSig(list[RawParamTuple]):
-        """Mock C-extension signature list with overloads."""
-
-        overloads: list[MockOverloadList] | None = None
-        returns_type: str = "int"
-
-    mock_c_sig = MockCExtSig([("x", "POSITIONAL_OR_KEYWORD", None, "int")])
-    mock_ov = MockOverloadList(
-        [
-            ("mode", "KEYWORD_ONLY", None, 'Literal["fast", "slow"]'),
-            ("reduction", "KEYWORD_ONLY", None, "str"),
-        ]
+    mock_ov = CExtensionSignature(
+        params=[
+            ParsedParamTuple(name="mode", kind="KEYWORD_ONLY", default=None, annotation='Literal["fast", "slow"]'),
+            ParsedParamTuple(name="reduction", kind="KEYWORD_ONLY", default=None, annotation="str"),
+        ],
+        returns_type="int",
+        overloads=[],
     )
-    mock_c_sig.overloads = [mock_ov]
+    mock_c_sig = CExtensionSignature(
+        params=[ParsedParamTuple(name="x", kind="POSITIONAL_OR_KEYWORD", default=None, annotation="int")],
+        returns_type="int",
+        overloads=[mock_ov],
+    )
 
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
         return_value=mock_c_sig,
     )
 
-    def dummy_fn(*args: InspectableTarget, **kwargs: InspectableTarget) -> None:
+    def dummy_fn(*args: LivePythonTarget, **kwargs: LivePythonTarget) -> None:
         """Dummy C function.
 
         Args:
@@ -1038,7 +841,7 @@ def test_extract_accepted_kwargs_from_ast() -> None:
         extract_accepted_kwargs_from_ast,
     )
 
-    def sample_kwargs_fn(**kwargs: InspectableTarget) -> None:
+    def sample_kwargs_fn(**kwargs: LivePythonTarget) -> None:
         """Sample function querying kwargs in various ways.
 
         Args:
@@ -1189,3 +992,22 @@ def test_ghost_inspector_griffe_param_not_in_cdd(
     p = next((p for p in ref.params if p.name == "extra_param"), None)
     assert p is not None
     assert p.description == "extra param doc"
+
+
+def test_ensure_json_dict_and_list() -> None:
+    """Verify `ensure_json_dict`, `ensure_json_list`, and `ensure_present` validate inputs and raise `SnapshotSchemaError`."""
+    from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
+    from ml_ecosystem_snapshots.models import ensure_json_dict, ensure_json_list, ensure_present
+
+    assert ensure_json_dict({"k": 1}) == {"k": 1}
+    assert ensure_json_list([1, "a"]) == [1, "a"]
+    assert ensure_present("ok") == "ok"
+
+    with pytest.raises(SnapshotSchemaError, match="dict"):
+        ensure_json_dict("not_a_dict")
+
+    with pytest.raises(SnapshotSchemaError, match="list"):
+        ensure_json_list({"not": "a_list"})
+
+    with pytest.raises(SnapshotSchemaError, match="non-None"):
+        ensure_present(None)

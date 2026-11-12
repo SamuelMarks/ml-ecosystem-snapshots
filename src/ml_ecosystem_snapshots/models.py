@@ -10,6 +10,7 @@ requiring heavy libraries (Torch/TensorFlow) to be installed.
 
 from __future__ import annotations
 
+import enum
 import typing
 
 import pydantic
@@ -60,6 +61,20 @@ from ml_switcheroo_ir.types import JsonScalar as ScalarValue
 
 JsonValue: typing_extensions.TypeAlias = pydantic.JsonValue
 
+SCHEMA_VERSION: typing.Final[str] = "2.0.0"
+
+
+class SymbolKind(str, enum.Enum):
+    """Canonical symbol kind enumeration for `GhostRef.kind` across Python, IR, ISA, runtime, and DSL domains."""
+
+    FUNCTION = "function"
+    CLASS = "class"
+    METHOD = "method"
+    OPERATION = "operation"
+    INSTRUCTION = "instruction"
+    COLLECTIVE = "collective"
+    ELEMENT = "element"
+
 
 class RawParamSpec(pydantic.BaseModel):
     """Typed specification for a raw canonical parameter entry."""
@@ -108,381 +123,126 @@ class CanonicalOpSpec(pydantic.BaseModel):
     address_space: str | None = None
 
 
-class IntSlice(typing.Protocol):
-    """Structural protocol representing a `slice` object with index bounds."""
+class SnapshotSymbolModel(ExtendedGhostRef):
+    """Runtime-validated snapshot symbol model extending `ExtendedGhostRef`."""
 
-    if typing.TYPE_CHECKING:
+    model_config = pydantic.ConfigDict(extra="allow")
 
-        @property
-        def start(self) -> typing.SupportsIndex | None:
-            """Return slice start index.
+    kwargs: list[str] = pydantic.Field(default_factory=list)
 
-            Returns:
-                Start index or None.
-            """
-            ...
 
-        @property
-        def stop(self) -> typing.SupportsIndex | None:
-            """Return slice stop index.
+class IsaInstructionRecordModel(pydantic.BaseModel):
+    """Runtime-validated hardware ISA instruction record (NVIDIA SASS, PTX, AMD RDNA)."""
 
-            Returns:
-                Stop index or None.
-            """
-            ...
+    model_config = pydantic.ConfigDict(extra="allow")
 
-        @property
-        def step(self) -> typing.SupportsIndex | None:
-            """Return slice step stride.
+    mnemonic: str = ""
+    category: str = ""
+    description: str = ""
+    encoding: str | None = None
+    architecture: str | list[str] | None = None
+    min_sm: str | None = None
+    modifiers: list[str] = pydantic.Field(default_factory=list)
+    operands: list[JsonValue] = pydantic.Field(default_factory=list)
+    supported_types: list[str] = pydantic.Field(default_factory=list)
+    vector_widths: list[str] = pydantic.Field(default_factory=list)
+    state_spaces: list[str] = pydantic.Field(default_factory=list)
+    scopes: list[str] = pydantic.Field(default_factory=list)
 
-            Returns:
-                Step stride or None.
-            """
-            ...
 
+class TableGenRecordModel(pydantic.BaseModel):
+    """Runtime-validated MLIR / StableHLO TableGen operation record."""
 
-class JsonStringDict(dict[str, JsonValue]):
-    """Dictionary subtype of `dict[str, JsonValue]` whose values are strings."""
+    model_config = pydantic.ConfigDict(extra="allow")
 
-    if typing.TYPE_CHECKING:
+    api_path: str = ""
+    name: str = ""
+    class_name: str = ""
+    dialect: str = ""
+    kind: str = "function"
+    is_public: bool = True
+    has_varargs: bool = False
+    environment_tags: list[str] = pydantic.Field(default_factory=list)
+    aliases: list[str] = pydantic.Field(default_factory=list)
+    overloads: list[dict[str, JsonValue]] = pydantic.Field(default_factory=list)
+    params: list[dict[str, JsonValue]] = pydantic.Field(default_factory=list)
+    operands: list[dict[str, JsonValue]] = pydantic.Field(default_factory=list)
+    attributes: list[dict[str, JsonValue]] = pydantic.Field(default_factory=list)
+    results: list[dict[str, JsonValue]] = pydantic.Field(default_factory=list)
+    returns_type: str | None = None
+    returns_description: str | None = None
+    raises: list[str] = pydantic.Field(default_factory=list)
+    docstring: str | None = None
+    description: str | None = None
+    summary: str | None = None
+    traits: list[str] = pydantic.Field(default_factory=list)
+    regions: list[dict[str, JsonValue] | str] = pydantic.Field(default_factory=list)
+    verification_rules: dict[str, JsonValue] = pydantic.Field(default_factory=dict)
+    region_signatures: dict[str, JsonValue] = pydantic.Field(default_factory=dict)
+    assembly_format: str | None = None
 
-        def __getitem__(self, key: str) -> str:
-            """Return string value for `key`.
 
-            Args:
-                key: Dictionary key.
+def ensure_json_dict(value: JsonValue, context: str = "JSON object") -> dict[str, JsonValue]:
+    """Validate at runtime that `value` is a JSON dictionary, surviving `python -O`.
 
-            Returns:
-                String value.
-            """
-            ...
+    Args:
+        value: Parsed JSON value to validate.
+        context: Human-readable context included in error diagnostics.
 
+    Returns:
+        Validated shallow dictionary mapping strings to `JsonValue`.
 
-class JsonStringDictList(list[JsonValue]):
-    """List subtype of `list[JsonValue]` whose elements are `JsonStringDict`."""
+    Raises:
+        SnapshotSchemaError: If `value` is not a `dict`.
+    """
+    from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
 
-    if typing.TYPE_CHECKING:
+    if not isinstance(value, dict):
+        raise SnapshotSchemaError(f"Expected {context} to be a dict, got {value!r}.")
+    return value
 
-        @typing.overload
-        def __getitem__(self, index: typing.SupportsIndex, /) -> JsonStringDict: ...
 
-        @typing.overload
-        def __getitem__(self, index: IntSlice, /) -> list[JsonValue]: ...
+def ensure_json_list(value: JsonValue, context: str = "JSON array") -> list[JsonValue]:
+    """Validate at runtime that `value` is a JSON list, surviving `python -O`.
 
-        def __getitem__(self, index: typing.SupportsIndex | IntSlice, /) -> JsonStringDict | list[JsonValue]:
-            """Return element or slice at `index`.
+    Args:
+        value: Parsed JSON value to validate.
+        context: Human-readable context included in error diagnostics.
 
-            Args:
-                index: Integer index or slice.
+    Returns:
+        Validated list of `JsonValue` items.
 
-            Returns:
-                `JsonStringDict` element or list slice.
-            """
-            ...
+    Raises:
+        SnapshotSchemaError: If `value` is not a `list`.
+    """
+    from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
 
-        def __iter__(self) -> typing.Iterator[JsonStringDict]:
-            """Iterate over `JsonStringDict` elements.
+    if not isinstance(value, list):
+        raise SnapshotSchemaError(f"Expected {context} to be a list, got {value!r}.")
+    return value
 
-            Yields:
-                `JsonStringDict` items.
-            """
-            ...
 
+_PresentT = typing.TypeVar("_PresentT")
 
-class JsonStringList(list[JsonValue]):
-    """List subtype of `list[JsonValue]` whose elements are strings."""
 
-    if typing.TYPE_CHECKING:
+def ensure_present(value: _PresentT | None, context: str = "required value") -> _PresentT:
+    """Validate at runtime that `value` is not `None`, surviving `python -O`.
 
-        @typing.overload
-        def __getitem__(self, index: typing.SupportsIndex, /) -> str: ...
+    Args:
+        value: Optional value expected to be populated.
+        context: Human-readable context included in error diagnostics.
 
-        @typing.overload
-        def __getitem__(self, index: IntSlice, /) -> list[JsonValue]: ...
+    Returns:
+        Non-`None` value of type `_PresentT`.
 
-        def __getitem__(self, index: typing.SupportsIndex | IntSlice, /) -> str | list[JsonValue]:
-            """Return string element or slice at `index`.
+    Raises:
+        SnapshotSchemaError: If `value` is `None`.
+    """
+    from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
 
-            Args:
-                index: Integer index or slice.
-
-            Returns:
-                String element or list slice.
-            """
-            ...
-
-        def __iter__(self) -> typing.Iterator[str]:
-            """Iterate over string elements.
-
-            Yields:
-                String items.
-            """
-            ...
-
-
-class JsonNestedStringList(list[JsonValue]):
-    """List subtype of `list[JsonValue]` whose elements are `JsonStringList`."""
-
-    if typing.TYPE_CHECKING:
-
-        @typing.overload
-        def __getitem__(self, index: typing.SupportsIndex, /) -> JsonStringList: ...
-
-        @typing.overload
-        def __getitem__(self, index: IntSlice, /) -> list[JsonValue]: ...
-
-        def __getitem__(self, index: typing.SupportsIndex | IntSlice, /) -> JsonStringList | list[JsonValue]:
-            """Return `JsonStringList` element or slice at `index`.
-
-            Args:
-                index: Integer index or slice.
-
-            Returns:
-                `JsonStringList` element or list slice.
-            """
-            ...
-
-        def __iter__(self) -> typing.Iterator[JsonStringList]:
-            """Iterate over `JsonStringList` elements.
-
-            Yields:
-                `JsonStringList` items.
-            """
-            ...
-
-
-class SnapshotSymbolDict(dict[str, JsonValue]):
-    """Typed dictionary representation of a serialized GhostRef or TableGen record."""
-
-    if typing.TYPE_CHECKING:
-
-        @typing.overload
-        def __getitem__(
-            self,
-            key: typing.Literal[
-                "name",
-                "api_path",
-                "kind",
-                "class_name",
-                "dialect",
-                "mnemonic",
-                "encoding",
-                "category",
-            ],
-        ) -> str: ...
-
-        @typing.overload
-        def __getitem__(
-            self,
-            key: typing.Literal[
-                "returns_type",
-                "returns_description",
-                "docstring",
-                "description",
-                "signature_completeness",
-            ],
-        ) -> str | None: ...
-
-        @typing.overload
-        def __getitem__(
-            self,
-            key: typing.Literal["is_public", "has_varargs", "is_c_extension"],
-        ) -> bool: ...
-
-        @typing.overload
-        def __getitem__(
-            self,
-            key: typing.Literal["params", "operands", "attributes", "results"],
-        ) -> JsonStringDictList: ...
-
-        @typing.overload
-        def __getitem__(
-            self,
-            key: typing.Literal[
-                "traits",
-                "regions",
-                "modifiers",
-                "aliases",
-                "kwargs",
-                "environment_tags",
-                "raises",
-                "accepted_kwargs",
-                "supported_types",
-                "vector_widths",
-                "state_spaces",
-                "scopes",
-            ],
-        ) -> JsonStringList: ...
-
-        @typing.overload
-        def __getitem__(
-            self,
-            key: typing.Literal["verification_rules", "region_signatures", "domain_metadata"],
-        ) -> dict[str, JsonValue]: ...
-
-        @typing.overload
-        def __getitem__(self, key: str) -> JsonValue: ...
-
-        def __getitem__(self, key: str) -> JsonValue:
-            """Retrieve a symbol record field by dictionary key.
-
-            Args:
-                key: Field name.
-
-            Returns:
-                Field value.
-            """
-            ...
-
-
-class IsaInstructionRecordModel(dict[str, JsonValue]):
-    """Typed dictionary representation of an ISA instruction record."""
-
-    if typing.TYPE_CHECKING:
-
-        @typing.overload
-        def __getitem__(
-            self,
-            key: typing.Literal["mnemonic", "encoding", "category", "min_sm"],
-        ) -> str: ...
-
-        @typing.overload
-        def __getitem__(
-            self,
-            key: typing.Literal["description"],
-        ) -> str | None: ...
-
-        @typing.overload
-        def __getitem__(
-            self,
-            key: typing.Literal[
-                "modifiers",
-                "supported_types",
-                "vector_widths",
-                "state_spaces",
-                "scopes",
-            ],
-        ) -> JsonStringList: ...
-
-        @typing.overload
-        def __getitem__(
-            self,
-            key: typing.Literal["operands"],
-        ) -> JsonNestedStringList: ...
-
-        @typing.overload
-        def __getitem__(
-            self,
-            key: typing.Literal["architecture"],
-        ) -> str | JsonStringList: ...
-
-        @typing.overload
-        def __getitem__(self, key: str) -> JsonValue: ...
-
-        def __getitem__(self, key: str) -> JsonValue:
-            """Retrieve an ISA instruction record field by dictionary key.
-
-            Args:
-                key: Field name.
-
-            Returns:
-                Field value.
-            """
-            ...
-
-
-TableGenRecordModel: typing_extensions.TypeAlias = SnapshotSymbolDict
-
-
-class JsonSymbolList(list[JsonValue]):
-    """List subtype of `list[JsonValue]` whose elements are `SnapshotSymbolDict`."""
-
-    if typing.TYPE_CHECKING:
-
-        @typing.overload
-        def __getitem__(self, index: typing.SupportsIndex, /) -> SnapshotSymbolDict: ...
-
-        @typing.overload
-        def __getitem__(self, index: IntSlice, /) -> list[JsonValue]: ...
-
-        def __getitem__(self, index: typing.SupportsIndex | IntSlice, /) -> SnapshotSymbolDict | list[JsonValue]:
-            """Return `SnapshotSymbolDict` element or slice at `index`.
-
-            Args:
-                index: Integer index or slice.
-
-            Returns:
-                `SnapshotSymbolDict` element or list slice.
-            """
-            ...
-
-        def __iter__(self) -> typing.Iterator[SnapshotSymbolDict]:
-            """Iterate over `SnapshotSymbolDict` elements.
-
-            Yields:
-                `SnapshotSymbolDict` items.
-            """
-            ...
-
-
-class JsonCategoriesDict(dict[str, JsonValue]):
-    """Dictionary subtype of `dict[str, JsonValue]` mapping category names to `JsonSymbolList`."""
-
-    if typing.TYPE_CHECKING:
-
-        def __getitem__(self, key: str) -> JsonSymbolList:
-            """Return `JsonSymbolList` for `key`.
-
-            Args:
-                key: Category name.
-
-            Returns:
-                `JsonSymbolList` for the category.
-            """
-            ...
-
-
-SnapshotCategoriesDict: typing_extensions.TypeAlias = dict[str, JsonSymbolList]
-
-
-class SnapshotEnvelopeDict(dict[str, JsonValue]):
-    """Typed dictionary representation of a serialized framework snapshot envelope."""
-
-    if typing.TYPE_CHECKING:
-
-        @typing.overload
-        def __getitem__(self, key: typing.Literal["categories"]) -> JsonCategoriesDict: ...
-
-        @typing.overload
-        def __getitem__(
-            self,
-            key: typing.Literal[
-                "schema_version",
-                "target",
-                "version",
-                "generated_at",
-                "source_type",
-                "upstream_commit",
-                "upstream_version",
-            ],
-        ) -> str: ...
-
-        @typing.overload
-        def __getitem__(self, key: typing.Literal["supported_microarchitectures"]) -> JsonStringList: ...
-
-        @typing.overload
-        def __getitem__(self, key: str) -> JsonValue: ...
-
-        def __getitem__(self, key: str) -> JsonValue:
-            """Retrieve a snapshot envelope field by dictionary key.
-
-            Args:
-                key: Field name.
-
-            Returns:
-                Field value.
-            """
-            ...
+    if value is None:
+        raise SnapshotSchemaError(f"Expected {context} to be non-None.")
+    return value
 
 
 __all__ = [
@@ -504,10 +264,13 @@ __all__ = [
     "OperandDirection",
     "ParameterKind",
     "RawParamSpec",
+    "SCHEMA_VERSION",
     "ScalarValue",
-    "SnapshotCategoriesDict",
     "SnapshotEnvelope",
-    "SnapshotEnvelopeDict",
-    "SnapshotSymbolDict",
+    "SnapshotSymbolModel",
+    "SymbolKind",
     "TableGenRecordModel",
+    "ensure_json_dict",
+    "ensure_json_list",
+    "ensure_present",
 ]

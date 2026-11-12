@@ -6,6 +6,7 @@ GhostRefs for layers, losses, optimizers, and activations.
 
 from __future__ import annotations
 
+import importlib
 import inspect
 import types
 import typing
@@ -13,6 +14,7 @@ import typing
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
 from ml_ecosystem_snapshots.utils import get_all_members
 
 
@@ -33,9 +35,10 @@ class _MlxWithCoreProtocol(typing.Protocol):
 mlx: types.ModuleType | None = None
 try:
     import mlx as _mlx
-    import mlx.core as _core  # noqa: F401
-    import mlx.nn as _nn  # noqa: F401
-    import mlx.optimizers as _optimizers  # noqa: F401
+
+    importlib.import_module("mlx.core")
+    importlib.import_module("mlx.nn")
+    importlib.import_module("mlx.optimizers")
 
     mlx = _mlx
 except ImportError:
@@ -74,7 +77,11 @@ def _collect_mlx_layers(nn_mod: types.ModuleType, include_nonpublic: bool) -> li
     Returns:
         List of `GhostRef` objects.
     """
-    return [GhostInspector.inspect(obj, f"mlx.nn.{name}") for name, obj in get_all_members(nn_mod) if (include_nonpublic or not name.startswith("_")) and inspect.isclass(obj) and name[0].isupper()]
+    return [
+        GhostInspector.inspect(obj, f"mlx.nn.{name}")
+        for name, obj in get_all_members(nn_mod)
+        if (include_nonpublic or not name.startswith("_")) and inspect.isclass(obj) and name[0].isupper()
+    ]
 
 
 def _collect_mlx_activations(nn_mod: types.ModuleType, include_nonpublic: bool) -> list[GhostRef]:
@@ -87,7 +94,11 @@ def _collect_mlx_activations(nn_mod: types.ModuleType, include_nonpublic: bool) 
     Returns:
         List of `GhostRef` objects.
     """
-    return [GhostInspector.inspect(obj, f"mlx.nn.{name}") for name, obj in get_all_members(nn_mod) if (include_nonpublic or not name.startswith("_")) and name.lower() in _MLX_ACTIVATION_NAMES]
+    return [
+        GhostInspector.inspect(obj, f"mlx.nn.{name}")
+        for name, obj in get_all_members(nn_mod)
+        if (include_nonpublic or not name.startswith("_")) and name.lower() in _MLX_ACTIVATION_NAMES
+    ]
 
 
 def _collect_mlx_losses(nn_mod: types.ModuleType, include_nonpublic: bool) -> list[GhostRef]:
@@ -100,11 +111,17 @@ def _collect_mlx_losses(nn_mod: types.ModuleType, include_nonpublic: bool) -> li
     Returns:
         List of `GhostRef` objects.
     """
-    nn_members: dict[str, types.ModuleType] = dict(inspect.getmembers(nn_mod))
+    nn_members = get_member_dict(nn_mod)
     losses_mod = nn_members.get("losses")
-    if losses_mod is None:
+    if not isinstance(losses_mod, types.ModuleType):
         return []
-    return [GhostInspector.inspect(obj, f"mlx.nn.losses.{name}") for name, obj in get_all_members(losses_mod) if (include_nonpublic or not name.startswith("_")) and (inspect.isfunction(obj) or inspect.isclass(obj)) and "loss" in name.lower()]
+    return [
+        GhostInspector.inspect(obj, f"mlx.nn.losses.{name}")
+        for name, obj in get_all_members(losses_mod)
+        if (include_nonpublic or not name.startswith("_"))
+        and (inspect.isfunction(obj) or inspect.isclass(obj))
+        and "loss" in name.lower()
+    ]
 
 
 def _collect_mlx_optimizers(opt_mod: types.ModuleType, include_nonpublic: bool) -> list[GhostRef]:
@@ -117,7 +134,11 @@ def _collect_mlx_optimizers(opt_mod: types.ModuleType, include_nonpublic: bool) 
     Returns:
         List of `GhostRef` objects.
     """
-    return [GhostInspector.inspect(obj, f"mlx.optimizers.{name}") for name, obj in get_all_members(opt_mod) if inspect.isclass(obj) and (include_nonpublic or not name.startswith("_")) and name[0].isupper()]
+    return [
+        GhostInspector.inspect(obj, f"mlx.optimizers.{name}")
+        for name, obj in get_all_members(opt_mod)
+        if inspect.isclass(obj) and (include_nonpublic or not name.startswith("_")) and name[0].isupper()
+    ]
 
 
 def _collect_mlx_array_api(mlx_mod: types.ModuleType, include_nonpublic: bool) -> list[GhostRef]:
@@ -130,17 +151,20 @@ def _collect_mlx_array_api(mlx_mod: types.ModuleType, include_nonpublic: bool) -
     Returns:
         List of `GhostRef` objects.
     """
-    mlx_members: dict[str, types.ModuleType] = dict(inspect.getmembers(mlx_mod))
+    mlx_members = get_member_dict(mlx_mod)
     core_mod = mlx_members.get("core")
-    if core_mod is None:
+    if not isinstance(core_mod, types.ModuleType):
         return []
     results: list[GhostRef] = []
-    core_members: dict[str, types.ModuleType] = dict(inspect.getmembers(core_mod))
+    core_members = get_member_dict(core_mod)
+    random_mod = core_members.get("random")
+    linalg_mod = core_members.get("linalg")
+    fft_mod = core_members.get("fft")
     submods: list[tuple[types.ModuleType | None, str]] = [
         (core_mod, "mlx.core"),
-        (core_members.get("random"), "mlx.core.random"),
-        (core_members.get("linalg"), "mlx.core.linalg"),
-        (core_members.get("fft"), "mlx.core.fft"),
+        (random_mod if isinstance(random_mod, types.ModuleType) else None, "mlx.core.random"),
+        (linalg_mod if isinstance(linalg_mod, types.ModuleType) else None, "mlx.core.linalg"),
+        (fft_mod if isinstance(fft_mod, types.ModuleType) else None, "mlx.core.fft"),
     ]
     for smod, prefix in submods:
         if not smod:

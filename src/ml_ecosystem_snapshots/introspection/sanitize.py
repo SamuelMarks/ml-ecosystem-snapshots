@@ -6,6 +6,7 @@ import ast
 import inspect
 import re
 
+from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     DefaultValueInput,
     get_member_dict,
@@ -89,7 +90,17 @@ def sanitize_param_default(
         if callable(val):
             return _sanitize_callable_default(val)
         return _sanitize_repr_default(val)
-    except Exception:
+    except (
+        SnapshotError,
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        LookupError,
+        OSError,
+        RuntimeError,
+        SyntaxError,
+    ):
         return ("<unrepresentable>", None, False)
 
 
@@ -183,7 +194,17 @@ def sanitize_type_str(typ_str: str | None) -> str | None:
         node = ast.parse(typ_str, mode="eval")
         node = _TypeHintSanitizer().visit(node)
         return ast.unparse(node)
-    except Exception:
+    except (
+        SnapshotError,
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        LookupError,
+        OSError,
+        RuntimeError,
+        SyntaxError,
+    ):
         return typ_str
 
 

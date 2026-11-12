@@ -19,10 +19,18 @@ from ml_ecosystem_snapshots.cli import cmd_check_torchvision
 from ml_ecosystem_snapshots.frameworks import torchvision
 from ml_ecosystem_snapshots.mcp_server import check_torchvision_op
 
-if "torchvision" not in sys.modules:
-    fake_tv = types.ModuleType("torchvision")
-    pytest.MonkeyPatch().setattr(fake_tv, "__version__", "0.23.0", raising=False)
-    sys.modules["torchvision"] = fake_tv
+
+@pytest.fixture(autouse=True)
+def _ensure_scoped_torchvision(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Install a scoped stub `torchvision` module when `torchvision` is absent from `sys.modules`.
+
+    Args:
+        monkeypatch: Pytest `MonkeyPatch` fixture restoring `sys.modules` on teardown.
+    """
+    if "torchvision" not in sys.modules:
+        fake_tv = types.ModuleType("torchvision")
+        monkeypatch.setattr(fake_tv, "__version__", "0.23.0", raising=False)
+        monkeypatch.setitem(sys.modules, "torchvision", fake_tv)
 
 
 def test_torchvision_version() -> None:
@@ -140,32 +148,32 @@ def test_check_torchvision_op_mcp() -> None:
     """Verify MCP validator check_torchvision_op behavior across valid and invalid inputs."""
     # Valid call
     valid_res = check_torchvision_op("nms", inputs_count=3)
-    assert valid_res["is_valid"] is True
-    assert valid_res["op_exists"] is True
+    assert valid_res.is_valid is True
+    assert valid_res.op_exists is True
 
     # Valid with prefix
     prefix_res = check_torchvision_op("torchvision.ops.box_iou", inputs_count=2)
-    assert prefix_res["is_valid"] is True
+    assert prefix_res.is_valid is True
 
     # Unknown operation
     unknown_res = check_torchvision_op("non_existent_op")
-    assert unknown_res["is_valid"] is False
-    assert unknown_res["op_exists"] is False
-    assert len(unknown_res["errors"]) > 0
+    assert unknown_res.is_valid is False
+    assert unknown_res.op_exists is False
+    assert len(unknown_res.errors) > 0
 
     # Wrong inputs count
     wrong_inputs = check_torchvision_op("nms", inputs_count=1)
-    assert wrong_inputs["is_valid"] is False
-    assert "expects 3 positional inputs" in wrong_inputs["errors"][0]
+    assert wrong_inputs.is_valid is False
+    assert "expects 3 positional inputs" in wrong_inputs.errors[0]
 
     # Valid keyword arguments
     valid_kw = check_torchvision_op("roi_align", attributes=["spatial_scale"])
-    assert valid_kw["is_valid"] is True
+    assert valid_kw.is_valid is True
 
     # Invalid keyword arguments
     invalid_kw = check_torchvision_op("nms", attributes=["invalid_kwarg"])
-    assert invalid_kw["is_valid"] is False
-    assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw["errors"][0]
+    assert invalid_kw.is_valid is False
+    assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw.errors[0]
 
 
 def test_cmd_check_torchvision_cli_valid(capsys: pytest.CaptureFixture[str]) -> None:

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
 import pytest_mock
 from ml_switcheroo_ir.schema.ghost import GhostRef
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.runtime_boundary import InspectableTarget
+from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget
 from ml_ecosystem_snapshots.models import ExtendedGhostParam
 
 
@@ -21,15 +22,13 @@ def dummy_func_with_docstring(x: int) -> str:
 
     Raises:
         ValueError: If x is bad.
-
-    # noqa: DAR202, DAR402
     """
     if x < 0:
         raise ValueError()
     return "test"
 
 
-def dummy_func_sphinx_docstring(y: InspectableTarget) -> None:
+def dummy_func_sphinx_docstring(y: LivePythonTarget) -> None:
     """Sphinx doc.
 
     :param y: The y value.
@@ -98,13 +97,13 @@ def test_inspect_annotation_fallback() -> None:
     """Verify inspect annotation fallback behavior."""
 
     class ForwardRefStr:
-        """Mock or helper class ForwardRefStr for unit testing."""
+        """Custom annotation stub without a runtime class name attribute."""
 
         # A class that lacks __name__ but is passed as annotation
         pass
 
-    def func_annotated(a: InspectableTarget) -> None:
-        """Execute helper func annotated.
+    def func_annotated(a: LivePythonTarget) -> None:
+        """Accept a single parameter carrying a non-type annotation object.
 
         Args:
             a: First positional operand.
@@ -125,10 +124,10 @@ def test_griffe_self_skip() -> None:
 
     # griffe self skipping
     class A:
-        """Mock or helper class A for unit testing."""
+        """Sample class defining an instance method with an explicit self parameter."""
 
-        def m(self, x: InspectableTarget) -> None:
-            """Execute helper m.
+        def m(self, x: LivePythonTarget) -> None:
+            """Accept an operand value on an instance method.
 
             Args:
                 x: Input operand value.
@@ -246,11 +245,11 @@ def test_ghost_inspector_aten_overload_and_factory_default(
     # Also test _build_extended_params when p_anno is None and cdd_ast_params supplies typ
     from ml_ecosystem_snapshots.introspection.inspector import (
         ExtractedParamRecord,
-        _build_extended_params,
+        build_extended_params,
     )
     from ml_ecosystem_snapshots.introspection.sanitize import sanitize_type_str
 
-    built_params = _build_extended_params(
+    built_params = build_extended_params(
         extracted_params=[("alpha", "POSITIONAL_OR_KEYWORD", None, None)],
         cdd_params={},
         cdd_ast_params={"alpha": ExtractedParamRecord(doc="alpha doc", typ="float", default=None)},
@@ -310,3 +309,94 @@ def test_ghost_inspector_hydrate_variations() -> None:
     assert hydrated.params[0].kind == ParameterKind.POSITIONAL_OR_KEYWORD
     assert hydrated.params[1].name == "y"
     assert hydrated.params[1].kind == ParameterKind.POSITIONAL_ONLY
+
+
+def test_inspector_helper_fallback_branches() -> None:
+    """Verify fallback branches across internal Griffe/CDD parameter and cache helpers."""
+    import types
+
+    import pytest
+
+    from ml_ecosystem_snapshots.introspection.inspector import (
+        DocstringIrResult,
+        coerce_param_record,
+        get_griffe_node_overloads,
+        get_griffe_node_params,
+        get_griffe_param_kind_name,
+        merge_griffe_return_meta,
+        resolve_griffe_node_from_cache,
+    )
+
+    assert coerce_param_record(42).doc is None
+
+    res = DocstringIrResult()
+    merge_griffe_return_meta("not_a_dict_or_meta", lambda s: s, res)
+    assert res.returns_type is None
+
+    import griffe
+
+    bare_param = griffe.Parameter(name="p", kind=None)
+    assert get_griffe_param_kind_name(bare_param, default="KEYWORD_ONLY") == "KEYWORD_ONLY"
+
+    no_load_mod = types.ModuleType("griffe_no_load")
+    assert resolve_griffe_node_from_cache("pkg.fn", "google", no_load_mod, {}) is None
+
+    root_with_leaf = griffe.Module("pkg")
+    root_with_leaf.set_member("sub", griffe.Attribute("sub"))
+    fake_griffe = types.ModuleType("griffe_leaf")
+    pytest.MonkeyPatch().setattr(fake_griffe, "load", lambda *_a, **_k: root_with_leaf, raising=False)
+    assert resolve_griffe_node_from_cache("pkg.sub.fn", "google", fake_griffe, {}) is None
+
+    bad_alias = griffe.Alias("bad_alias", target="missing_pkg.missing_cls")
+    assert get_griffe_node_params(bad_alias) is None
+    assert get_griffe_node_overloads(bad_alias) is None
+    assert get_griffe_node_params(None) is None
+    assert get_griffe_node_overloads(None) is None
+
+    empty_cls = griffe.Class("EmptyCls")
+    empty_cls.set_member("__init__", griffe.Function("__init__", parameters=griffe.Parameters()))
+    assert get_griffe_node_params(empty_cls) is None
+    assert get_griffe_node_overloads(empty_cls) is None
+
+
+def test_ghostref_from_obj_griffe_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify `GhostInspector.inspect` succeeds using runtime/CDD extraction when `griffe` is unavailable.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    import sys
+
+    monkeypatch.setitem(sys.modules, "griffe", None)
+
+    def dummy_fn(val: int = 3) -> int:
+        """Return input integer unchanged.
+
+        Args:
+            val: Input integer value.
+
+        Returns:
+            Same integer value.
+        """
+        return val
+
+    ref = GhostInspector.inspect(dummy_fn, "dummy_fn")
+    assert ref.name == "dummy_fn"
+    assert [p.name for p in ref.params] == ["val"]
+    assert ref.params[0].default == "3"
+
+
+def test_extended_ghost_ref_dict_with_non_string_default() -> None:
+    """Verify `GhostInspector.hydrate` coerces non-string numeric defaults into canonical strings."""
+    from ml_ecosystem_snapshots.models import JsonValue
+
+    data: dict[str, JsonValue] = {
+        "name": "foo",
+        "api_path": "foo",
+        "kind": "function",
+        "params": [{"name": "a", "default": 123, "kind": "POSITIONAL_OR_KEYWORD"}],
+    }
+    ref = GhostInspector.hydrate(data)
+    assert ref.name == "foo"
+    assert len(ref.params) == 1
+    assert ref.params[0].default == "123"

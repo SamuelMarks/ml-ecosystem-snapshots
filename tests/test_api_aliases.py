@@ -11,7 +11,7 @@ from ml_switcheroo_ir.schema.ghost import (
     SemanticTier,
 )
 
-from ml_ecosystem_snapshots.api import _consolidate_aliases, get_pkg_version
+from ml_ecosystem_snapshots.api import consolidate_aliases, get_pkg_version
 from ml_ecosystem_snapshots.frameworks.optax import collect_api
 
 
@@ -35,13 +35,13 @@ def test_consolidate_aliases() -> None:
     )
 
     # ref2 has shorter path
-    consolidated = _consolidate_aliases([ref1, ref2])
+    consolidated = consolidate_aliases([ref1, ref2])
     assert len(consolidated) == 1
     assert consolidated[0].api_path == "torch.relu"
     assert consolidated[0].aliases == ["torch.nn.functional.relu"]
 
     # ref1 has longer path, reverse order
-    consolidated = _consolidate_aliases([ref2, ref1])
+    consolidated = consolidate_aliases([ref2, ref1])
     assert len(consolidated) == 1
     assert consolidated[0].api_path == "torch.relu"
     assert consolidated[0].aliases == ["torch.nn.functional.relu"]
@@ -127,7 +127,7 @@ def test_consolidate_aliases_extended_params_and_metadata() -> None:
         ],
         docstring="Move instruction write",
     )
-    res = _consolidate_aliases([inst_write, inst_read])
+    res = consolidate_aliases([inst_write, inst_read])
     assert len(res) == 2
 
     # Two instructions differing only in domain_metadata (e.g. sm_80 vs sm_90)
@@ -151,7 +151,7 @@ def test_consolidate_aliases_extended_params_and_metadata() -> None:
         domain_metadata={"arch": "sm_90", "features": ["wgmma"], "tags": ["fast"]},
         docstring="MMA",
     )
-    res_arch = _consolidate_aliases([inst_sm80, inst_sm90])
+    res_arch = consolidate_aliases([inst_sm80, inst_sm90])
     assert len(res_arch) == 2
 
     # Operations differing only in returns
@@ -171,5 +171,5 @@ def test_consolidate_aliases_extended_params_and_metadata() -> None:
         returns=[GhostResult(name="res2", type="tensor<f64>")],
         docstring="add op",
     )
-    res_ops = _consolidate_aliases([op_res1, op_res2])
+    res_ops = consolidate_aliases([op_res1, op_res2])
     assert len(res_ops) == 2

@@ -19,10 +19,18 @@ from ml_ecosystem_snapshots.cli import cmd_check_torchaudio
 from ml_ecosystem_snapshots.frameworks import torchaudio
 from ml_ecosystem_snapshots.mcp_server import check_torchaudio_op
 
-if "torchaudio" not in sys.modules:
-    fake_ta = types.ModuleType("torchaudio")
-    pytest.MonkeyPatch().setattr(fake_ta, "__version__", "2.8.0", raising=False)
-    sys.modules["torchaudio"] = fake_ta
+
+@pytest.fixture(autouse=True)
+def _ensure_scoped_torchaudio(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Install a scoped stub `torchaudio` module when `torchaudio` is absent from `sys.modules`.
+
+    Args:
+        monkeypatch: Pytest `MonkeyPatch` fixture restoring `sys.modules` on teardown.
+    """
+    if "torchaudio" not in sys.modules:
+        fake_ta = types.ModuleType("torchaudio")
+        monkeypatch.setattr(fake_ta, "__version__", "2.8.0", raising=False)
+        monkeypatch.setitem(sys.modules, "torchaudio", fake_ta)
 
 
 def test_torchaudio_version() -> None:
@@ -58,9 +66,19 @@ def test_collect_api_fallback_mode() -> None:
         assert mel_ref.params[0].kind == ParameterKind.POSITIONAL_ONLY
 
 
-def test_collect_api_live_mode() -> None:
-    """Verify that collect_api works when torchaudio submodules are discovered."""
+def test_collect_api_live_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that collect_api works when torchaudio submodules are discovered.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    import sys
     import types
+
+    from ml_ecosystem_snapshots.introspection.static_parsers import clear_griffe_cache
+
+    clear_griffe_cache()
+    monkeypatch.setitem(sys.modules, "griffe", None)
 
     fake_func = types.SimpleNamespace(melscale_fbanks=lambda n_freqs, f_min, f_max, n_mels, sample_rate: n_freqs)
     fake_trans = types.SimpleNamespace(MFCC=lambda: None)
@@ -143,32 +161,32 @@ def test_check_torchaudio_op_mcp() -> None:
     """Verify MCP validator check_torchaudio_op behavior across valid and invalid inputs."""
     # Valid call
     valid_res = check_torchaudio_op("melscale_fbanks", inputs_count=5)
-    assert valid_res["is_valid"] is True
-    assert valid_res["op_exists"] is True
+    assert valid_res.is_valid is True
+    assert valid_res.op_exists is True
 
     # Valid with prefix
     prefix_res = check_torchaudio_op("torchaudio.functional.spectrogram", inputs_count=8)
-    assert prefix_res["is_valid"] is True
+    assert prefix_res.is_valid is True
 
     # Unknown operation
     unknown_res = check_torchaudio_op("non_existent_op")
-    assert unknown_res["is_valid"] is False
-    assert unknown_res["op_exists"] is False
-    assert len(unknown_res["errors"]) > 0
+    assert unknown_res.is_valid is False
+    assert unknown_res.op_exists is False
+    assert len(unknown_res.errors) > 0
 
     # Wrong inputs count
     wrong_inputs = check_torchaudio_op("melscale_fbanks", inputs_count=1)
-    assert wrong_inputs["is_valid"] is False
-    assert "expects 5 positional inputs" in wrong_inputs["errors"][0]
+    assert wrong_inputs.is_valid is False
+    assert "expects 5 positional inputs" in wrong_inputs.errors[0]
 
     # Valid keyword arguments
     valid_kw = check_torchaudio_op("melscale_fbanks", attributes=["norm", "mel_scale"])
-    assert valid_kw["is_valid"] is True
+    assert valid_kw.is_valid is True
 
     # Invalid keyword arguments
     invalid_kw = check_torchaudio_op("melscale_fbanks", attributes=["invalid_kwarg"])
-    assert invalid_kw["is_valid"] is False
-    assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw["errors"][0]
+    assert invalid_kw.is_valid is False
+    assert "does not accept keyword argument 'invalid_kwarg'" in invalid_kw.errors[0]
 
 
 def test_cmd_check_torchaudio_cli_valid(capsys: pytest.CaptureFixture[str]) -> None:

@@ -5,16 +5,18 @@ from __future__ import annotations
 import argparse
 import gzip
 import hashlib
-import inspect
 import json
 import logging
 import os
 import shutil
 import sys
+import urllib.error
 import urllib.request
 import warnings
 
 import pydantic
+
+from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
 
 
 def _is_args_offline(args: argparse.Namespace) -> bool:
@@ -26,7 +28,7 @@ def _is_args_offline(args: argparse.Namespace) -> bool:
     Returns:
         True if `args.offline` exists and is truthy.
     """
-    return bool(dict(inspect.getmembers(args)).get("offline"))
+    return bool(get_member_dict(args).get("offline"))
 
 
 def _get_args_cache_dir(args: argparse.Namespace) -> str | None:
@@ -38,7 +40,7 @@ def _get_args_cache_dir(args: argparse.Namespace) -> str | None:
     Returns:
         Cache directory path string or None.
     """
-    raw = dict(inspect.getmembers(args)).get("cache_dir")
+    raw = get_member_dict(args).get("cache_dir")
     return str(raw) if raw else None
 
 
@@ -175,7 +177,7 @@ def cmd_pull(args: argparse.Namespace) -> None:
     try:
         urllib.request.urlretrieve(url, dest_path)
         print(f"Saved snapshot to {dest_path}")
-    except Exception as e:
+    except (urllib.error.URLError, OSError, ValueError, RuntimeError) as e:
         print(f"Failed to download snapshot: {e}")
 
 
@@ -184,6 +186,9 @@ def cmd_download_all(args: argparse.Namespace) -> None:
 
     Args:
         args: Parsed command line arguments containing cache_dir and optional offline flag.
+
+    Raises:
+        SystemExit: Exits with status code `1` if offline mode is active.
     """
     from ml_ecosystem_snapshots.index import get_cache_dir
     from ml_ecosystem_snapshots.network_env import is_offline_mode
@@ -221,7 +226,7 @@ def cmd_download_all(args: argparse.Namespace) -> None:
             urllib.request.urlretrieve(url, dest_path)
             print(f"  + Downloaded {target} -> {dest_path}")
             success_count += 1
-        except Exception:
+        except (urllib.error.URLError, OSError, ValueError, RuntimeError):
             bundled_src = os.path.join(pkg_dir, "frameworks", fname)
             if os.path.exists(bundled_src):
                 shutil.copyfile(bundled_src, dest_path)
@@ -316,7 +321,7 @@ def cmd_verify_local_cache(args: argparse.Namespace) -> None:
         try:
             digest_prefix, size_kb, count = _verify_single_snapshot_file(fpath)
             print(f"  [OK] {fname:35s} {size_kb:6d} KB  sha256:{digest_prefix}...  ({count} entries)")
-        except Exception as e:
+        except (OSError, ValueError, TypeError, LookupError, RuntimeError) as e:
             has_errors = True
             print(f"  [FAIL] {fname:35s} Corrupted or invalid: {e}")
 

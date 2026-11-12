@@ -8,9 +8,7 @@ import typing
 
 import typing_extensions
 
-from ml_ecosystem_snapshots.introspection.runtime_boundary import (
-    GriffeNodeProtocol,
-)
+from ml_ecosystem_snapshots.introspection.runtime_boundary import StaticGriffeNode
 from ml_ecosystem_snapshots.network_env import is_offline_mode
 from ml_ecosystem_snapshots.utils import (
     get_framework_docstring_parser,
@@ -32,7 +30,7 @@ class GriffeLoaderProto(typing.Protocol):
         /,
         *,
         docstring_parser: griffe.Parser | None = None,
-    ) -> griffe.Module | griffe.Object | griffe.Alias | GriffeNodeProtocol:
+    ) -> StaticGriffeNode:
         """Load a Griffe module or object.
 
         Args:
@@ -40,12 +38,12 @@ class GriffeLoaderProto(typing.Protocol):
             docstring_parser: Optional Griffe docstring parser.
 
         Returns:
-            Loaded Griffe module, object, or alias.
+            Loaded concrete `StaticGriffeNode` (`Module`, `Class`, `Function`, `Attribute`, or `Alias`).
         """
         ...
 
 
-GriffeCacheEntry: typing_extensions.TypeAlias = "griffe.Module | griffe.Object | griffe.Alias | GriffeNodeProtocol | GriffeLoaderProto | None"
+GriffeCacheEntry: typing_extensions.TypeAlias = "StaticGriffeNode | GriffeLoaderProto | None"
 
 
 class GriffeModuleCache:
@@ -103,14 +101,28 @@ class GriffeModuleCache:
         with self._lock:
             self._store[key] = value
 
+    def pop(self, key: str, default: GriffeCacheEntry = None) -> GriffeCacheEntry:
+        """Remove and return a cached Griffe entry if present.
+
+        Args:
+            key: Module path or cache key.
+            default: Default value returned when `key` is absent.
+
+        Returns:
+            Removed `GriffeCacheEntry` or `default`.
+        """
+        with self._lock:
+            return self._store.pop(key, default)
+
     def clear(self) -> None:
         """Clear all entries from the Griffe module cache."""
         with self._lock:
             self._store.clear()
 
 
-_DEFAULT_GRIFFE_CACHE = GriffeModuleCache()
-_GRIFFE_CACHE: dict[str, GriffeCacheEntry] = _DEFAULT_GRIFFE_CACHE.store
+DEFAULT_GRIFFE_CACHE = GriffeModuleCache()
+_DEFAULT_GRIFFE_CACHE = DEFAULT_GRIFFE_CACHE
+_GRIFFE_CACHE: dict[str, GriffeCacheEntry] = DEFAULT_GRIFFE_CACHE.store
 
 logging.getLogger("griffe").setLevel(logging.CRITICAL)
 
@@ -123,8 +135,7 @@ def load_griffe_module_safely(module_path: str, framework_name: str | None = Non
         framework_name: Optional framework identifier used to select the Griffe docstring parser.
 
     Returns:
-        Loaded Griffe AST node (`Module`, `Object`, `Alias`, or `GriffeNodeProtocol`), or `None`
-        if offline mode is active or static loading fails.
+        Loaded `StaticGriffeNode`, or `None` if offline mode is active or static loading fails.
     """
     if is_offline_mode():
         return None
@@ -135,8 +146,7 @@ def load_griffe_module_safely(module_path: str, framework_name: str | None = Non
 
         fw_key = framework_name or module_path.split(".")[0]
         parser = resolve_griffe_parser(get_framework_docstring_parser(fw_key))
-        loaded = _griffe_mod.load(module_path, docstring_parser=parser)
-        assert isinstance(loaded, (_griffe_mod.Module, _griffe_mod.Object, _griffe_mod.Alias))
+        loaded: StaticGriffeNode = _griffe_mod.load(module_path, docstring_parser=parser)
         _GRIFFE_CACHE[module_path] = loaded
         return loaded
     except (ImportError, OSError, SyntaxError, ValueError, KeyError, RuntimeError, TypeError, AssertionError) as exc:
@@ -173,18 +183,33 @@ def preload_griffe_cache(frameworks: list[str] | None = None) -> None:
                 import griffe as _griffe_mod
 
                 parser = resolve_griffe_parser(get_framework_docstring_parser(target))
-                loaded = _griffe_mod.load(target, docstring_parser=parser)
-                assert isinstance(loaded, (_griffe_mod.Module, _griffe_mod.Object, _griffe_mod.Alias))
+                loaded: StaticGriffeNode = _griffe_mod.load(target, docstring_parser=parser)
                 _GRIFFE_CACHE[target] = loaded
-            except (ImportError, OSError, SyntaxError, ValueError, KeyError, RuntimeError, TypeError, AssertionError) as exc:
+            except (
+                ImportError,
+                OSError,
+                SyntaxError,
+                ValueError,
+                KeyError,
+                RuntimeError,
+                TypeError,
+                AssertionError,
+            ) as exc:
                 logger.debug("Failed to preload Griffe cache for '%s': %s", target, exc)
 
 
+def clear_griffe_cache() -> None:
+    """Clear all cached Griffe module AST entries from the in-memory static parser cache."""
+    _GRIFFE_CACHE.clear()
+
+
 __all__ = [
+    "DEFAULT_GRIFFE_CACHE",
     "GriffeCacheEntry",
     "GriffeLoaderProto",
     "GriffeModuleCache",
-    "GriffeNodeProtocol",
+    "StaticGriffeNode",
+    "clear_griffe_cache",
     "load_griffe_module_safely",
     "preload_griffe_cache",
 ]

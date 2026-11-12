@@ -15,12 +15,8 @@ import sys
 import typing
 from pathlib import Path
 
-_src_dir = str(Path(__file__).resolve().parent.parent.parent)
-if _src_dir not in sys.path:
-    sys.path.insert(0, _src_dir)
-
-from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel  # noqa: E402
-from ml_ecosystem_snapshots.tools.stablehlo_tablegen import (  # noqa: E402
+from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel, ensure_json_dict
+from ml_ecosystem_snapshots.tools.stablehlo_tablegen import (
     TableGenASTParser,
     build_verification_and_region_metadata,
     is_attribute,
@@ -28,7 +24,11 @@ from ml_ecosystem_snapshots.tools.stablehlo_tablegen import (  # noqa: E402
     parse_stablehlo_tablegen,
     strip_tablegen_comments,
 )
-from ml_ecosystem_snapshots.utils import extract_tablegen_traits  # noqa: E402
+from ml_ecosystem_snapshots.utils import extract_tablegen_traits
+
+_src_dir = str(Path(__file__).resolve().parent.parent.parent)
+if _src_dir not in sys.path:
+    sys.path.insert(0, _src_dir)
 
 SPEC_URL = "https://raw.githubusercontent.com/openxla/stablehlo/main/docs/spec.md"
 TABLEGEN_URL = "https://raw.githubusercontent.com/openxla/stablehlo/main/stablehlo/dialect/StablehloOps.td"
@@ -185,21 +185,19 @@ def _build_spec_op_record(
     docstring = nl.join(sem_list).strip()
 
     return TableGenRecordModel(
-        {
-            "api_path": f"stablehlo.{op_name}",
-            "name": op_name,
-            "kind": "function",
-            "is_public": True,
-            "has_varargs": False,
-            "environment_tags": [],
-            "aliases": [],
-            "overloads": [],
-            "params": params,
-            "returns_type": returns_type,
-            "returns_description": None,
-            "raises": [],
-            "docstring": docstring if docstring else None,
-        }
+        api_path=f"stablehlo.{op_name}",
+        name=op_name,
+        kind="function",
+        is_public=True,
+        has_varargs=False,
+        environment_tags=[],
+        aliases=[],
+        overloads=[],
+        params=[ensure_json_dict(p) for p in params],
+        returns_type=returns_type,
+        returns_description=None,
+        raises=[],
+        docstring=docstring if docstring else None,
     )
 
 
@@ -273,15 +271,16 @@ def main(argv: list[str] | None = None) -> None:
     args, _ = parser.parse_known_args(argv)
 
     ghost_refs = extract_ops()
+    serialized_refs: list[JsonValue] = [r.model_dump(exclude_none=True) for r in ghost_refs]
 
-    snapshot_data = {
+    snapshot_data: dict[str, JsonValue] = {
         "schema_version": "2.0.0",
         "target": "stablehlo",
         "version": args.version,
         "upstream_commit": args.tag,
         "upstream_version": args.version,
         "source_type": "tablegen",
-        "categories": {"stablehlo_op": ghost_refs},
+        "categories": {"stablehlo_op": list(serialized_refs)},
     }
 
     out_dir = args.out_dir or os.path.join(os.path.dirname(__file__), "..", "snapshots")
@@ -300,14 +299,14 @@ def main(argv: list[str] | None = None) -> None:
             "stablehlo_exhaustive.json",
         )
     )
-    exhaustive_data = {
+    exhaustive_data: dict[str, JsonValue] = {
         "schema_version": "2.0.0",
         "target": "stablehlo",
         "version": args.version,
         "upstream_commit": args.tag,
         "upstream_version": args.version,
         "source_type": "tablegen",
-        "operations": ghost_refs,
+        "operations": list(serialized_refs),
     }
     with open(exhaustive_path, "w", encoding="utf-8", newline=nl) as f:
         json.dump(exhaustive_data, f, indent=2, sort_keys=True)

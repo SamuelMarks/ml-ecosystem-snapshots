@@ -36,7 +36,7 @@ from ml_ecosystem_snapshots.mcp_server import (
     run_mcp_server,
     search_apis,
 )
-from ml_ecosystem_snapshots.models import ExtendedGhostRef, JsonValue
+from ml_ecosystem_snapshots.models import ExtendedGhostRef, JsonValue, ensure_present
 from ml_ecosystem_snapshots.stubs import validate_pyi_stub
 
 
@@ -74,9 +74,9 @@ def test_hallucination_argument_name_discrepancy() -> None:
     ]
 
     report = score_compliance(ref_snapshot, hallucinated_target)
-    mismatched_paths = [m["api_path"] for m in report.get("mismatched", [])]
+    mismatched_paths = [m.api_path for m in report.mismatched]
     assert "torch.sum" in mismatched_paths
-    assert report.get("score_percentage", 100.0) == 0.0
+    assert report.score_percentage == 0.0
 
 
 def test_hallucination_nonexistent_kwargs() -> None:
@@ -113,7 +113,7 @@ def test_hallucination_nonexistent_kwargs() -> None:
     ]
 
     report = score_compliance(ref_snapshot, hallucinated_cross_entropy)
-    mismatched_paths = [m["api_path"] for m in report.get("mismatched", [])]
+    mismatched_paths = [m.api_path for m in report.mismatched]
     assert "torch.nn.functional.cross_entropy" in mismatched_paths
 
     # Test MCP check_hallucination helper
@@ -123,7 +123,7 @@ def test_hallucination_nonexistent_kwargs() -> None:
         kwargs=["input", "target", "axis"],
     )
     # When snapshot is not cached or api not found
-    assert mcp_check["is_hallucinated"] is True
+    assert mcp_check.is_hallucinated is True
 
 
 def test_hallucination_deprecated_parameter_diff() -> None:
@@ -205,7 +205,7 @@ def test_hallucination_invalid_sass_instructions() -> None:
     ]
 
     report = score_compliance(sass_snapshot, hallucinated_insts)
-    mismatched_paths = [m["api_path"] for m in report.get("mismatched", [])]
+    mismatched_paths = [m.api_path for m in report.mismatched]
     assert "nvidia_sass.inst.FADD" in mismatched_paths
 
     # Verify diff_snapshots flags the added hallucinated instruction and changed signature
@@ -280,7 +280,7 @@ def test_hallucination_invalid_stablehlo_ops() -> None:
     ]
 
     report = score_compliance(stablehlo_snapshot, hallucinated_ops)
-    mismatched_paths = [m["api_path"] for m in report.get("mismatched", [])]
+    mismatched_paths = [m.api_path for m in report.mismatched]
     assert "stablehlo.add" in mismatched_paths
 
     # Verify diff_snapshots flags the hallucinated op and illegal operand count
@@ -371,8 +371,8 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
     # Test tools/list
     list_req: dict[str, JsonValue] = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
     list_resp = handle_mcp_message(list_req)
-    assert list_resp["id"] == 1
-    tools = list_resp["result"]["tools"]
+    assert list_resp.id == 1
+    tools = ensure_present(ensure_present(list_resp.result).tools)
     tool_names = [t["name"] for t in tools]
     assert "get_api_signature" in tool_names
     assert "search_apis" in tool_names
@@ -426,12 +426,12 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
 
     # Test check_hallucination on valid call
     valid_check = check_hallucination("torch", "torch.add", kwargs=["input", "other"])
-    assert valid_check["is_hallucinated"] is False
+    assert valid_check.is_hallucinated is False
 
     # Test check_hallucination on hallucinated kwarg
     invalid_check = check_hallucination("torch", "torch.add", kwargs=["input", "axis"])
-    assert invalid_check["is_hallucinated"] is True
-    assert "axis" in invalid_check["invalid_kwargs"]
+    assert invalid_check.is_hallucinated is True
+    assert "axis" in invalid_check.invalid_kwargs
 
     # Test tools/call JSON-RPC messages
     call_sig_req: dict[str, JsonValue] = {
@@ -444,8 +444,8 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
         },
     }
     call_sig_resp = handle_mcp_message(call_sig_req)
-    assert call_sig_resp["id"] == 2
-    assert "torch.add" in call_sig_resp["result"]["content"][0]["text"]
+    assert call_sig_resp.id == 2
+    assert "torch.add" in ensure_present(ensure_present(call_sig_resp.result).content)[0].text
 
     call_search_req: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
@@ -457,8 +457,8 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
         },
     }
     call_search_resp = handle_mcp_message(call_search_req)
-    assert call_search_resp["id"] == 3
-    assert "torch.add" in call_search_resp["result"]["content"][0]["text"]
+    assert call_search_resp.id == 3
+    assert "torch.add" in ensure_present(ensure_present(call_search_resp.result).content)[0].text
 
     call_check_req: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
@@ -474,8 +474,8 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
         },
     }
     call_check_resp = handle_mcp_message(call_check_req)
-    assert call_check_resp["id"] == 4
-    assert "axis" in call_check_resp["result"]["content"][0]["text"]
+    assert call_check_resp.id == 4
+    assert "axis" in ensure_present(ensure_present(call_check_resp.result).content)[0].text
 
     # Test unknown tool
     unknown_tool_req: dict[str, JsonValue] = {
@@ -485,7 +485,7 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
         "params": {"name": "nonexistent_tool"},
     }
     unknown_tool_resp = handle_mcp_message(unknown_tool_req)
-    assert "error" in unknown_tool_resp
+    assert unknown_tool_resp.error is not None
 
     # Test unknown method
     unknown_method_req: dict[str, JsonValue] = {
@@ -494,7 +494,7 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
         "method": "unknown/method",
     }
     unknown_method_resp = handle_mcp_message(unknown_method_req)
-    assert "error" in unknown_method_resp
+    assert unknown_method_resp.error is not None
 
 
 def test_run_mcp_server_stdio() -> None:
@@ -541,11 +541,11 @@ def test_mcp_server_branches(mocker: pytest_mock.MockerFixture) -> None:
     )
 
     from ml_ecosystem_snapshots.mcp_server import (
-        _SNAPSHOT_CACHE,
+        DEFAULT_SNAPSHOT_REPOSITORY,
         get_framework_snapshot,
     )
 
-    _SNAPSHOT_CACHE.clear()
+    DEFAULT_SNAPSHOT_REPOSITORY.clear()
 
     snap = get_framework_snapshot("torch")
     snap_categories = snap["categories"]
@@ -565,19 +565,19 @@ def test_mcp_server_branches(mocker: pytest_mock.MockerFixture) -> None:
 
     # Check hallucination with VAR_KEYWORD: strict_kwargs=True by default flags unconstrained kwargs
     var_check_strict = check_hallucination("torch", "test.op1", kwargs=["any_arg", "another_arg"])
-    assert var_check_strict["is_hallucinated"] is True
-    assert "any_arg" in var_check_strict["invalid_kwargs"]
+    assert var_check_strict.is_hallucinated is True
+    assert "any_arg" in var_check_strict.invalid_kwargs
 
     # When strict_kwargs=False is explicitly opted-in, unconstrained kwargs are permitted
     var_check_opt_in = check_hallucination("torch", "test.op1", kwargs=["any_arg", "another_arg"], strict_kwargs=False)
-    assert var_check_opt_in["is_hallucinated"] is False
-    assert var_check_opt_in["has_unconstrained_kwargs"] is True
+    assert var_check_opt_in.is_hallucinated is False
+    assert var_check_opt_in.has_unconstrained_kwargs is True
 
     # Offline snapshot disk loading test
-    _SNAPSHOT_CACHE.clear()
+    DEFAULT_SNAPSHOT_REPOSITORY.clear()
     rdna_snap = get_framework_snapshot("amd_rdna")
     assert "categories" in rdna_snap
-    _SNAPSHOT_CACHE.clear()
+    DEFAULT_SNAPSHOT_REPOSITORY.clear()
 
 
 def test_get_framework_snapshot_list_format(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -588,11 +588,11 @@ def test_get_framework_snapshot_list_format(tmp_path: Path, monkeypatch: pytest.
         monkeypatch: Monkeypatch fixture.
     """
     from ml_ecosystem_snapshots.mcp_server import (
-        _SNAPSHOT_CACHE,
+        DEFAULT_SNAPSHOT_REPOSITORY,
         get_framework_snapshot,
     )
 
-    _SNAPSHOT_CACHE.clear()
+    DEFAULT_SNAPSHOT_REPOSITORY.clear()
     snap_dir = tmp_path / "snapshots"
     snap_dir.mkdir(parents=True, exist_ok=True)
     (snap_dir / "customlist_ops.json").write_text(json.dumps([{"name": "op1"}]))
@@ -604,7 +604,7 @@ def test_get_framework_snapshot_list_format(tmp_path: Path, monkeypatch: pytest.
     snap_categories = snap["categories"]
     assert isinstance(snap_categories, dict)
     assert "UTIL" in snap_categories
-    _SNAPSHOT_CACHE.clear()
+    DEFAULT_SNAPSHOT_REPOSITORY.clear()
 
 
 def test_export_llm_prompt_context_minimal() -> None:
@@ -624,65 +624,65 @@ def test_check_sass_instruction() -> None:
     """Test validating NVIDIA SASS assembly instructions via check_sass_instruction."""
     # Valid FADD on sm_70
     res = check_sass_instruction("FADD", operands=["R", "R", "R"], sm_arch="sm_70", modifiers=[".SAT"])
-    assert res["is_valid"] is True
-    assert res["mnemonic_exists"] is True
+    assert res.is_valid is True
+    assert res.mnemonic_exists is True
 
     # WGMMA on sm_80 should fail (Hopper sm_90+ only)
     res_wgmma = check_sass_instruction("WGMMA", sm_arch="sm_80")
-    assert res_wgmma["is_valid"] is False
-    assert any("sm_80" in err for err in res_wgmma["errors"])
+    assert res_wgmma.is_valid is False
+    assert any("sm_80" in err for err in res_wgmma.errors)
 
     # Invalid modifier
     res_mod = check_sass_instruction("FADD", modifiers=[".BOGUS_MODIFIER"])
-    assert res_mod["is_valid"] is False
+    assert res_mod.is_valid is False
 
     # Invalid operand count
     res_ops = check_sass_instruction("FADD", operands=["R", "R", "R", "R", "R", "R"])
-    assert res_ops["is_valid"] is False
+    assert res_ops.is_valid is False
 
     # Nonexistent mnemonic
     res_none = check_sass_instruction("NOT_A_REAL_SASS_OP")
-    assert res_none["is_valid"] is False
-    assert res_none["mnemonic_exists"] is False
+    assert res_none.is_valid is False
+    assert res_none.mnemonic_exists is False
 
 
 def test_check_rdna_instruction() -> None:
     """Test validating AMD RDNA assembly instructions via check_rdna_instruction."""
     res = check_rdna_instruction("v_add_f32")
-    assert res["is_valid"] is True
-    assert res["mnemonic_exists"] is True
+    assert res.is_valid is True
+    assert res.mnemonic_exists is True
 
     # Encoding mismatch
     res_enc = check_rdna_instruction("v_add_f32", encoding="SMEM")
-    assert res_enc["is_valid"] is False
+    assert res_enc.is_valid is False
 
     # Nonexistent mnemonic
     res_none = check_rdna_instruction("not_a_real_rdna_op")
-    assert res_none["is_valid"] is False
+    assert res_none.is_valid is False
 
 
 def test_check_mlir_op() -> None:
     """Test validating MLIR and StableHLO operations via check_mlir_op."""
     # arith.addf
     res_addf = check_mlir_op("arith.addf", operands_count=2)
-    assert res_addf["is_valid"] is True
-    assert res_addf["op_exists"] is True
+    assert res_addf.is_valid is True
+    assert res_addf.op_exists is True
 
     # Operand count mismatch
     res_mismatch = check_mlir_op("arith.addf", operands_count=10)
-    assert res_mismatch["is_valid"] is False
+    assert res_mismatch.is_valid is False
 
     # stablehlo.dot_general with dot_dimension_numbers attribute
     res_dot_gen = check_mlir_op("stablehlo.dot_general", attributes=["dot_dimension_numbers"])
-    assert res_dot_gen["is_valid"] is True
+    assert res_dot_gen.is_valid is True
 
     # Invalid attribute
     res_bad_attr = check_mlir_op("stablehlo.dot_general", attributes=["hallucinated_attribute"])
-    assert res_bad_attr["is_valid"] is False
+    assert res_bad_attr.is_valid is False
 
     # Nonexistent op
     res_none = check_mlir_op("arith.completely_made_up_op")
-    assert res_none["is_valid"] is False
+    assert res_none.is_valid is False
 
 
 def test_check_hallucination_positional_and_strict(
@@ -726,11 +726,11 @@ def test_check_hallucination_positional_and_strict(
 
     # Missing required positional argument
     res_missing = check_hallucination("torch", "torch.sum", args_count=0)
-    assert res_missing["is_hallucinated"] is True
+    assert res_missing.is_hallucinated is True
 
     # Valid positional count
     res_ok = check_hallucination("torch", "torch.sum", args_count=1)
-    assert res_ok["is_hallucinated"] is False
+    assert res_ok.is_hallucinated is False
 
 
 def test_handle_mcp_message_new_tools() -> None:
@@ -746,8 +746,8 @@ def test_handle_mcp_message_new_tools() -> None:
         },
     }
     sass_resp = handle_mcp_message(sass_req)
-    assert "result" in sass_resp
-    assert sass_resp["id"] == 101
+    assert sass_resp.result is not None
+    assert sass_resp.id == 101
 
     # check_rdna_instruction call
     rdna_req: dict[str, JsonValue] = {
@@ -760,7 +760,7 @@ def test_handle_mcp_message_new_tools() -> None:
         },
     }
     rdna_resp = handle_mcp_message(rdna_req)
-    assert "result" in rdna_resp
+    assert rdna_resp.result is not None
 
     # check_mlir_op call
     mlir_req: dict[str, JsonValue] = {
@@ -773,7 +773,7 @@ def test_handle_mcp_message_new_tools() -> None:
         },
     }
     mlir_resp = handle_mcp_message(mlir_req)
-    assert "result" in mlir_resp
+    assert mlir_resp.result is not None
 
 
 def test_mcp_server_disk_loading_branches(mocker: pytest_mock.MockerFixture) -> None:
@@ -783,11 +783,11 @@ def test_mcp_server_disk_loading_branches(mocker: pytest_mock.MockerFixture) -> 
         mocker: Pytest mocker fixture.
     """
     from ml_ecosystem_snapshots.mcp_server import (
-        _SNAPSHOT_CACHE,
+        DEFAULT_SNAPSHOT_REPOSITORY,
         get_framework_snapshot,
     )
 
-    _SNAPSHOT_CACHE.clear()
+    DEFAULT_SNAPSHOT_REPOSITORY.clear()
 
     # 1. Candidate dir is not a dir (branch 45 -> 44)
     orig_isdir = os.path.isdir
@@ -808,7 +808,7 @@ def test_mcp_server_disk_loading_branches(mocker: pytest_mock.MockerFixture) -> 
     mocker.patch("os.path.isdir", side_effect=mock_isdir)
     snap = get_framework_snapshot("amd_rdna")
     assert "categories" in snap
-    _SNAPSHOT_CACHE.clear()
+    DEFAULT_SNAPSHOT_REPOSITORY.clear()
 
     # 2. JSON file content is a raw list (branch 60 -> 61)
     mocker.patch("os.path.isdir", return_value=True)
@@ -823,13 +823,13 @@ def test_mcp_server_disk_loading_branches(mocker: pytest_mock.MockerFixture) -> 
     first_util = util_items[0]
     assert isinstance(first_util, dict)
     assert first_util["name"] == "raw_op"
-    _SNAPSHOT_CACHE.clear()
+    DEFAULT_SNAPSHOT_REPOSITORY.clear()
 
     # 3. JSON file content is a dict without 'categories' (branch 60 -> 62)
     mocker.patch("builtins.open", mocker.mock_open(read_data='{"other_key": 42}'))
     snap_other = get_framework_snapshot("testlist")
     assert snap_other == {"categories": {}}
-    _SNAPSHOT_CACHE.clear()
+    DEFAULT_SNAPSHOT_REPOSITORY.clear()
 
 
 def test_mcp_server_search_without_path(mocker: pytest_mock.MockerFixture) -> None:
@@ -885,13 +885,13 @@ def test_check_hallucination_strict_and_max_args(
 
     # strict_kwargs=True with unrecognized kwargs (line 189)
     res_strict = check_hallucination("pkg", "pkg.calc", kwargs=["unknown_kw"], strict_kwargs=True)
-    assert res_strict["is_hallucinated"] is True
-    assert "unknown_kw" in res_strict["invalid_kwargs"]
+    assert res_strict.is_hallucinated is True
+    assert "unknown_kw" in res_strict.invalid_kwargs
 
     # args_count > max_pos when not has_varargs (line 210)
     res_excess = check_hallucination("pkg", "pkg.calc", args_count=3)
-    assert res_excess["is_hallucinated"] is True
-    assert "Too many positional arguments" in res_excess["reason"]
+    assert res_excess.is_hallucinated is True
+    assert "Too many positional arguments" in res_excess.reason
 
 
 def test_check_hallucination_pytorch_factory_strict_kwargs(
@@ -934,12 +934,12 @@ def test_check_hallucination_pytorch_factory_strict_kwargs(
 
     # Valid kwargs to torch.empty
     res_valid = check_hallucination("torch", "torch.empty", kwargs=["dtype", "device"])
-    assert res_valid["is_hallucinated"] is False
+    assert res_valid.is_hallucinated is False
 
     # Illegal kwarg passed to torch.empty (e.g. non_existent=1 or illegal_opt=True)
     res_illegal = check_hallucination("torch", "torch.empty", kwargs=["dtype", "non_existent_kw"])
-    assert res_illegal["is_hallucinated"] is True
-    assert "non_existent_kw" in res_illegal["invalid_kwargs"]
+    assert res_illegal.is_hallucinated is True
+    assert "non_existent_kw" in res_illegal.invalid_kwargs
 
     # Explicit opt-in with strict_kwargs=False allows non_existent_kw
     res_relaxed = check_hallucination(
@@ -948,8 +948,8 @@ def test_check_hallucination_pytorch_factory_strict_kwargs(
         kwargs=["dtype", "non_existent_kw"],
         strict_kwargs=False,
     )
-    assert res_relaxed["is_hallucinated"] is False
-    assert res_relaxed["has_unconstrained_kwargs"] is True
+    assert res_relaxed.is_hallucinated is False
+    assert res_relaxed.has_unconstrained_kwargs is True
 
 
 def test_get_api_signature_and_check_hallucination_overload_resolution(
@@ -1019,13 +1019,13 @@ def test_get_api_signature_and_check_hallucination_overload_resolution(
 
     # 2. check_hallucination with alpha resolves via overload
     res_alpha = check_hallucination("torch", "torch.add", kwargs=["alpha"])
-    assert res_alpha["is_hallucinated"] is False
-    assert "alpha" in res_alpha["canonical_params"]
+    assert res_alpha.is_hallucinated is False
+    assert "alpha" in res_alpha.canonical_params
 
     # 3. check_hallucination with invalid kwarg fails on all overloads
     res_invalid = check_hallucination("torch", "torch.add", kwargs=["nonexistent"])
-    assert res_invalid["is_hallucinated"] is True
-    assert "nonexistent" in res_invalid["invalid_kwargs"]
+    assert res_invalid.is_hallucinated is True
+    assert "nonexistent" in res_invalid.invalid_kwargs
 
 
 def test_check_sass_instruction_extra_branches(
@@ -1058,11 +1058,11 @@ def test_check_sass_instruction_extra_branches(
 
     # Modifier without leading dot (line 283)
     res = check_sass_instruction("NOP", modifiers=["SAT"])
-    assert res["is_valid"] is True
+    assert res.is_valid is True
 
     # Operands provided when op_sigs is empty (branch 292 -> 300)
     res_no_sigs = check_sass_instruction("NOP", operands=["R0"])
-    assert res_no_sigs["is_valid"] is True
+    assert res_no_sigs.is_valid is True
 
 
 def test_check_rdna_instruction_extra_branches(
@@ -1106,21 +1106,21 @@ def test_check_rdna_instruction_extra_branches(
 
     # Unsupported gfx arch (line 351)
     res_arch = check_rdna_instruction("v_test", gfx_arch="GFX9/Vega")
-    assert res_arch["is_valid"] is False
-    assert any("not supported on 'GFX9/Vega'" in err for err in res_arch["errors"])
+    assert res_arch.is_valid is False
+    assert any("not supported on 'GFX9/Vega'" in err for err in res_arch.errors)
 
     # Matching operands (lines 362-365)
     res_op_match = check_rdna_instruction("v_test", operands=["v0", "v1"])
-    assert res_op_match["is_valid"] is True
+    assert res_op_match.is_valid is True
 
     # Mismatched operands (lines 365-366)
     res_op_mismatch = check_rdna_instruction("v_test", operands=["v0"])
-    assert res_op_mismatch["is_valid"] is False
-    assert any("Operand count mismatch" in err for err in res_op_mismatch["errors"])
+    assert res_op_mismatch.is_valid is False
+    assert any("Operand count mismatch" in err for err in res_op_mismatch.errors)
 
     # Empty operand signatures with operands provided (branch 363 -> 371)
     res_empty_sigs = check_rdna_instruction("v_no_sig", operands=["v0"])
-    assert res_empty_sigs["is_valid"] is True
+    assert res_empty_sigs.is_valid is True
 
 
 def test_check_mlir_op_variadic_operands(mocker: pytest_mock.MockerFixture) -> None:
@@ -1148,8 +1148,8 @@ def test_check_mlir_op_variadic_operands(mocker: pytest_mock.MockerFixture) -> N
 
     # operands_count is 3 != len(operands) (which is 1), but has_variadic is True
     res = check_mlir_op("test.variadic_op", operands_count=3)
-    assert res["is_valid"] is True
-    assert res["errors"] == []
+    assert res.is_valid is True
+    assert res.errors == []
 
 
 def test_check_mlir_op_structured_attributes_and_type_constraints(
@@ -1200,17 +1200,17 @@ def test_check_mlir_op_structured_attributes_and_type_constraints(
     )
 
     # 1. Valid operand types for arith.addi
-    assert check_mlir_op("arith.addi", operand_types=["i32", "i32"])["is_valid"] is True
+    assert check_mlir_op("arith.addi", operand_types=["i32", "i32"]).is_valid is True
 
     # Invalid operand types: float passed to AnyInteger
     res_addi_invalid = check_mlir_op("arith.addi", operand_types=["f32", "f32"])
-    assert res_addi_invalid["is_valid"] is False
-    assert any("expected integer type" in err for err in res_addi_invalid["errors"])
+    assert res_addi_invalid.is_valid is False
+    assert any("expected integer type" in err for err in res_addi_invalid.errors)
 
     # Trait violation: SameTypeOperands mismatch
     res_addi_trait = check_mlir_op("arith.addi", operand_types=["i32", "i64"])
-    assert res_addi_trait["is_valid"] is False
-    assert any("SameTypeOperands requires all operand types to match" in err for err in res_addi_trait["errors"])
+    assert res_addi_trait.is_valid is False
+    assert any("SameTypeOperands requires all operand types to match" in err for err in res_addi_trait.errors)
 
     # 2. Valid and invalid DotDimensionNumbersAttr
     valid_dot_dims: dict[str, JsonValue] = {
@@ -1223,26 +1223,26 @@ def test_check_mlir_op_structured_attributes_and_type_constraints(
         check_mlir_op(
             "stablehlo.dot_general",
             structured_attributes={"dot_dimension_numbers": valid_dot_dims},
-        )["is_valid"]
+        ).is_valid
         is True
     )
     res_dot_invalid = check_mlir_op(
         "stablehlo.dot_general",
         structured_attributes={"dot_dimension_numbers": {"lhs_batch_dimensions": [0], "rhs_batch_dimensions": [0]}},
     )
-    assert res_dot_invalid["is_valid"] is False
-    assert any("DotDimensionNumbersAttr missing required fields" in err for err in res_dot_invalid["errors"])
+    assert res_dot_invalid.is_valid is False
+    assert any("DotDimensionNumbersAttr missing required fields" in err for err in res_dot_invalid.errors)
 
     # 3. ComparisonDirectionAttr and PrecisionAttr
-    assert check_mlir_op("stablehlo.compare", structured_attributes={"comparison_direction": "EQ"})["is_valid"] is True
+    assert check_mlir_op("stablehlo.compare", structured_attributes={"comparison_direction": "EQ"}).is_valid is True
     res_cmp_invalid = check_mlir_op("stablehlo.compare", structured_attributes={"comparison_direction": "INVALID_DIR"})
-    assert res_cmp_invalid["is_valid"] is False
-    assert any("Invalid ComparisonDirectionAttr" in err for err in res_cmp_invalid["errors"])
+    assert res_cmp_invalid.is_valid is False
+    assert any("Invalid ComparisonDirectionAttr" in err for err in res_cmp_invalid.errors)
 
-    assert check_mlir_op("stablehlo.compare", structured_attributes={"precision": "HIGH"})["is_valid"] is True
+    assert check_mlir_op("stablehlo.compare", structured_attributes={"precision": "HIGH"}).is_valid is True
     res_prec_invalid = check_mlir_op("stablehlo.compare", structured_attributes={"precision": "SUPER_PRECISION"})
-    assert res_prec_invalid["is_valid"] is False
-    assert any("Invalid PrecisionAttr" in err for err in res_prec_invalid["errors"])
+    assert res_prec_invalid.is_valid is False
+    assert any("Invalid PrecisionAttr" in err for err in res_prec_invalid.errors)
 
 
 def test_check_mlir_op_conv_scatter_gather_and_float_types(
@@ -1300,10 +1300,15 @@ def test_check_mlir_op_conv_scatter_gather_and_float_types(
         "output_feature_dimension": 1,
         "output_spatial_dimensions": [2, 3],
     }
-    assert check_mlir_op("stablehlo.compare", structured_attributes={"dimension_numbers": valid_conv_dims})["is_valid"] is True
-    res_conv_invalid = check_mlir_op("stablehlo.compare", structured_attributes={"dimension_numbers": {"input_batch_dimension": 0}})
-    assert res_conv_invalid["is_valid"] is False
-    assert any("ConvDimensionNumbersAttr missing required fields" in err for err in res_conv_invalid["errors"])
+    assert (
+        check_mlir_op("stablehlo.compare", structured_attributes={"dimension_numbers": valid_conv_dims}).is_valid
+        is True
+    )
+    res_conv_invalid = check_mlir_op(
+        "stablehlo.compare", structured_attributes={"dimension_numbers": {"input_batch_dimension": 0}}
+    )
+    assert res_conv_invalid.is_valid is False
+    assert any("ConvDimensionNumbersAttr missing required fields" in err for err in res_conv_invalid.errors)
 
     # 6. ScatterDimensionNumbersAttr and GatherDimensionNumbersAttr
     valid_scatter_dims: dict[str, JsonValue] = {
@@ -1312,8 +1317,13 @@ def test_check_mlir_op_conv_scatter_gather_and_float_types(
         "scatter_dims_to_operand_dims": [0],
         "index_vector_dim": 1,
     }
-    assert check_mlir_op("stablehlo.compare", structured_attributes={"scatter_dimension_numbers": valid_scatter_dims})["is_valid"] is True
-    assert check_mlir_op("stablehlo.compare", structured_attributes={"scatter_dimension_numbers": {}})["is_valid"] is False
+    assert (
+        check_mlir_op(
+            "stablehlo.compare", structured_attributes={"scatter_dimension_numbers": valid_scatter_dims}
+        ).is_valid
+        is True
+    )
+    assert check_mlir_op("stablehlo.compare", structured_attributes={"scatter_dimension_numbers": {}}).is_valid is False
 
     valid_gather_dims: dict[str, JsonValue] = {
         "offset_dims": [1],
@@ -1321,72 +1331,77 @@ def test_check_mlir_op_conv_scatter_gather_and_float_types(
         "start_index_map": [0],
         "index_vector_dim": 1,
     }
-    assert check_mlir_op("stablehlo.compare", structured_attributes={"gather_dimension_numbers": valid_gather_dims})["is_valid"] is True
-    assert check_mlir_op("stablehlo.compare", structured_attributes={"gather_dimension_numbers": {}})["is_valid"] is False
+    assert (
+        check_mlir_op(
+            "stablehlo.compare", structured_attributes={"gather_dimension_numbers": valid_gather_dims}
+        ).is_valid
+        is True
+    )
+    assert check_mlir_op("stablehlo.compare", structured_attributes={"gather_dimension_numbers": {}}).is_valid is False
 
     # 7. Non-dictionary structured attributes
     res_not_dict = check_mlir_op(
         "stablehlo.compare",
         structured_attributes={"dot_dimension_numbers": "not_a_dict", "conv_dimension_numbers": 123},
     )
-    assert res_not_dict["is_valid"] is False
+    assert res_not_dict.is_valid is False
 
     # 8. Extra type constraints (AnyFloat, AnyTensor, Index)
-    assert check_mlir_op("math.sin", operand_types=["f32"])["is_valid"] is True
+    assert check_mlir_op("math.sin", operand_types=["f32"]).is_valid is True
     res_sin_bad = check_mlir_op("math.sin", operand_types=["i32"])
-    assert res_sin_bad["is_valid"] is False
-    assert any("expected float type" in err for err in res_sin_bad["errors"])
+    assert res_sin_bad.is_valid is False
+    assert any("expected float type" in err for err in res_sin_bad.errors)
 
-    assert check_mlir_op("memref.dim", operand_types=["tensor<2xf32>", "index"])["is_valid"] is True
+    assert check_mlir_op("memref.dim", operand_types=["tensor<2xf32>", "index"]).is_valid is True
     res_dim_bad = check_mlir_op("memref.dim", operand_types=["i32", "f32"])
-    assert res_dim_bad["is_valid"] is False
-    assert any("expected tensor type" in err for err in res_dim_bad["errors"])
-    assert any("expected 'index'" in err for err in res_dim_bad["errors"])
+    assert res_dim_bad.is_valid is False
+    assert any("expected tensor type" in err for err in res_dim_bad.errors)
+    assert any("expected 'index'" in err for err in res_dim_bad.errors)
 
 
 def test_check_sass_instruction_architecture_and_ur_guards() -> None:
     """Test SASS architecture guards, UR operand restriction to sm_75+, and WGMMA restriction to sm_90+."""
     # 1. UR register on sm_70 is rejected
     res_ur_sm70 = check_sass_instruction("FADD", operands=["UR0", "UR1", "R0"], sm_arch="sm_70")
-    assert res_ur_sm70["is_valid"] is False
-    assert any("Uniform registers (UR) are only supported on sm_75+" in err for err in res_ur_sm70["errors"])
+    assert res_ur_sm70.is_valid is False
+    assert any("Uniform registers (UR) are only supported on sm_75+" in err for err in res_ur_sm70.errors)
 
     # UR register on sm_75 is allowed
     res_ur_sm75 = check_sass_instruction("FADD", operands=["UR0", "UR1", "R0"], sm_arch="sm_75")
-    assert not any("Uniform registers (UR) are only supported on sm_75+" in err for err in res_ur_sm75["errors"])
+    assert not any("Uniform registers (UR) are only supported on sm_75+" in err for err in res_ur_sm75.errors)
 
     # 2. WGMMA rejected on sm_80 or sm_70, allowed on sm_90
     res_wgmma_sm80 = check_sass_instruction("WGMMA", sm_arch="sm_80")
-    assert res_wgmma_sm80["is_valid"] is False
-    assert any("WGMMA instructions are strictly supported on sm_90+" in err for err in res_wgmma_sm80["errors"])
+    assert res_wgmma_sm80.is_valid is False
+    assert any("WGMMA instructions are strictly supported on sm_90+" in err for err in res_wgmma_sm80.errors)
 
     res_wgmma_sm90 = check_sass_instruction("WGMMA", sm_arch="sm_90")
-    assert res_wgmma_sm90["is_valid"] is True
+    assert res_wgmma_sm90.is_valid is True
 
 
 def test_check_rdna_instruction_register_alignment_and_microarch() -> None:
     """Test RDNA register alignment for 64-bit pairs, CDNA matrix accumulators, and dual-issue microarch."""
     # 1. 64-bit pair alignment: v[1:2] is unaligned (odd), v[0:1] is aligned (even)
     res_unaligned = check_rdna_instruction("v_add_f32", operands=["v[1:2]", "v0", "v1"])
-    assert res_unaligned["is_valid"] is False
-    assert any("Register alignment error: 64-bit register pair" in err for err in res_unaligned["errors"])
+    assert res_unaligned.is_valid is False
+    assert any("Register alignment error: 64-bit register pair" in err for err in res_unaligned.errors)
 
     res_aligned = check_rdna_instruction("v_add_f32", operands=["v[0:1]", "v0", "v1"])
-    assert not any("Register alignment error" in err for err in res_aligned["errors"])
+    assert not any("Register alignment error" in err for err in res_aligned.errors)
 
     # 2. CDNA matrix accumulator a[0:3] rejected on GFX11/RDNA3
     res_acc_rdna = check_rdna_instruction("v_add_f32", operands=["a[0:3]", "v0", "v1"], gfx_arch="GFX11/RDNA3")
-    assert res_acc_rdna["is_valid"] is False
-    assert any("Matrix accumulator operand" in err for err in res_acc_rdna["errors"])
+    assert res_acc_rdna.is_valid is False
+    assert any("Matrix accumulator operand" in err for err in res_acc_rdna.errors)
 
     # CDNA matrix accumulator allowed on GFX9/CDNA
     res_acc_cdna = check_rdna_instruction("v_add_f32", operands=["a[0:3]", "v0", "v1"], gfx_arch="GFX9/CDNA")
-    assert not any("Matrix accumulator operand" in err for err in res_acc_cdna["errors"])
+    assert not any("Matrix accumulator operand" in err for err in res_acc_cdna.errors)
 
     # 3. Dual-issue v_dual_* rejected on GFX9/CDNA
     res_dual_gfx9 = check_rdna_instruction("v_dual_add_f32", gfx_arch="GFX9/CDNA")
-    assert res_dual_gfx9["is_valid"] is False
-    assert any("Dual-issue instruction" in err for err in res_dual_gfx9["errors"])
+    assert res_dual_gfx9.is_valid is False
+    assert any("Dual-issue instruction" in err for err in res_dual_gfx9.errors)
 
 
 def test_search_apis_concept_alias_mapping() -> None:
@@ -1444,7 +1459,7 @@ def test_check_hallucination_string_enum_values(
         "torch.nn.functional.cross_entropy",
         kwarg_values={"reduction": "mean"},
     )
-    assert res_valid["is_hallucinated"] is False
+    assert res_valid.is_hallucinated is False
 
     # Hallucinated enum value (e.g. 'average' instead of 'mean')
     res_hallucinated = check_hallucination(
@@ -1452,8 +1467,8 @@ def test_check_hallucination_string_enum_values(
         "torch.nn.functional.cross_entropy",
         kwarg_values={"reduction": "average"},
     )
-    assert res_hallucinated["is_hallucinated"] is True
-    assert "Invalid enum value 'average' for parameter 'reduction'" in res_hallucinated["reason"]
+    assert res_hallucinated.is_hallucinated is True
+    assert "Invalid enum value 'average' for parameter 'reduction'" in res_hallucinated.reason
 
 
 def _build_api_and_sass_hallucination_cases() -> list[tuple[JsonValue, ...]]:
@@ -1598,35 +1613,35 @@ def _is_hallucination_case_detected(case: tuple[JsonValue, ...]) -> bool:
     if kind == "api_kwarg":
         _, fw, c_api, kw = case
         assert isinstance(fw, str) and isinstance(c_api, str) and isinstance(kw, list)
-        return bool(check_hallucination(fw, c_api, kwargs=[str(k) for k in kw], strict_kwargs=True).get("is_hallucinated"))
+        return check_hallucination(fw, c_api, kwargs=[str(k) for k in kw], strict_kwargs=True).is_hallucinated
     if kind == "sass":
         _, s_mnem, ops, s_arch = case
         assert isinstance(s_mnem, str) and (ops is None or isinstance(ops, list)) and isinstance(s_arch, str)
         sass_ops = [str(o) for o in ops] if ops is not None else None
-        return not bool(check_sass_instruction(s_mnem, operands=sass_ops, sm_arch=s_arch).get("is_valid"))
+        return not check_sass_instruction(s_mnem, operands=sass_ops, sm_arch=s_arch).is_valid
     if kind == "ptx":
         _, p_mnem, types, ops, state_space, p_arch = case
         assert isinstance(p_mnem, str) and isinstance(types, list) and isinstance(ops, list)
         assert (state_space is None or isinstance(state_space, str)) and isinstance(p_arch, str)
-        return not bool(
-            check_ptx_instruction(
-                p_mnem,
-                types=[str(t) for t in types],
-                operands=[str(o) for o in ops],
-                state_space=state_space,
-                sm_arch=p_arch,
-            ).get("is_valid")
-        )
+        return not check_ptx_instruction(
+            p_mnem,
+            types=[str(t) for t in types],
+            operands=[str(o) for o in ops],
+            state_space=state_space,
+            sm_arch=p_arch,
+        ).is_valid
     if kind == "mlir":
         _, op_name, op_types, struct_attrs = case
         assert isinstance(op_name, str) and (op_types is None or isinstance(op_types, list))
         assert struct_attrs is None or isinstance(struct_attrs, dict)
         mlir_op_types = [str(t) for t in op_types] if op_types is not None else None
-        return not bool(check_mlir_op(op_name, operand_types=mlir_op_types, structured_attributes=struct_attrs).get("is_valid"))
+        return not check_mlir_op(op_name, operand_types=mlir_op_types, structured_attributes=struct_attrs).is_valid
     _, r_mnem, ops, garch = case
-    assert isinstance(r_mnem, str) and (ops is None or isinstance(ops, list)) and (garch is None or isinstance(garch, str))
+    assert (
+        isinstance(r_mnem, str) and (ops is None or isinstance(ops, list)) and (garch is None or isinstance(garch, str))
+    )
     rdna_ops = [str(o) for o in ops] if ops is not None else None
-    return not bool(check_rdna_instruction(r_mnem, operands=rdna_ops, gfx_arch=garch).get("is_valid"))
+    return not check_rdna_instruction(r_mnem, operands=rdna_ops, gfx_arch=garch).is_valid
 
 
 def test_synthetic_hallucination_benchmark_suite(
@@ -1744,30 +1759,30 @@ def test_mcp_server_remaining_branches(mocker: pytest_mock.MockerFixture) -> Non
         return_value=mock_snap_lit,
     ):
         res_lit = check_hallucination("test", "test.op_lit", kwarg_values={"custom_opt": "gamma"})
-        assert res_lit["is_hallucinated"] is True
-        assert "Invalid literal value" in res_lit["reason"]
+        assert res_lit.is_hallucinated is True
+        assert "Invalid literal value" in res_lit.reason
 
         res_valid = check_hallucination(
             "test",
             "test.op_lit",
             kwarg_values={"custom_opt": "alpha", "reduction": "mean"},
         )
-        assert res_valid["is_hallucinated"] is False
+        assert res_valid.is_hallucinated is False
 
     # 3. check_sass_instruction unsupported architecture branch (line 414)
     res_sass_arch = check_sass_instruction("HMMA16816", sm_arch="sm_70")
-    assert res_sass_arch["is_valid"] is False
-    assert any("is not supported on target architecture 'sm_70'" in err for err in res_sass_arch["errors"])
+    assert res_sass_arch.is_valid is False
+    assert any("is not supported on target architecture 'sm_70'" in err for err in res_sass_arch.errors)
 
     # 4. check_rdna_instruction unsupported gfx architecture branch (line 507)
     res_rdna_arch = check_rdna_instruction("v_add_f32", gfx_arch="GFX99/UNKNOWN")
-    assert res_rdna_arch["is_valid"] is False
-    assert any("is not supported on 'GFX99/UNKNOWN'" in err for err in res_rdna_arch["errors"])
+    assert res_rdna_arch.is_valid is False
+    assert any("is not supported on 'GFX99/UNKNOWN'" in err for err in res_rdna_arch.errors)
 
     # 5. check_mlir_op operand types count mismatch (lines 635-640)
     res_mlir_count = check_mlir_op("arith.addf", operand_types=["f32"])
-    assert res_mlir_count["is_valid"] is False
-    assert any("Operand types count mismatch" in err for err in res_mlir_count["errors"])
+    assert res_mlir_count.is_valid is False
+    assert any("Operand types count mismatch" in err for err in res_mlir_count.errors)
 
     # MLIR variadic operand type count mismatch bypass
     mock_snap_mlir = {
@@ -1787,22 +1802,22 @@ def test_mcp_server_remaining_branches(mocker: pytest_mock.MockerFixture) -> Non
         return_value=mock_snap_mlir,
     ):
         res_var = check_mlir_op("custom.variadic", operand_types=["f32", "f32"])
-        assert res_var["is_valid"] is True
+        assert res_var.is_valid is True
 
     # Structured attributes dictionary checks
     res_scatter_invalid = check_mlir_op(
         "stablehlo.scatter",
         structured_attributes={"scatter_dimension_numbers": "not_a_dict"},
     )
-    assert res_scatter_invalid["is_valid"] is False
-    assert any("ScatterDimensionNumbersAttr must be structured dictionary" in e for e in res_scatter_invalid["errors"])
+    assert res_scatter_invalid.is_valid is False
+    assert any("ScatterDimensionNumbersAttr must be structured dictionary" in e for e in res_scatter_invalid.errors)
 
     res_gather_invalid = check_mlir_op(
         "stablehlo.gather",
         structured_attributes={"gather_dimension_numbers": "not_a_dict"},
     )
-    assert res_gather_invalid["is_valid"] is False
-    assert any("GatherDimensionNumbersAttr must be structured dictionary" in e for e in res_gather_invalid["errors"])
+    assert res_gather_invalid.is_valid is False
+    assert any("GatherDimensionNumbersAttr must be structured dictionary" in e for e in res_gather_invalid.errors)
 
     res_scatter_valid = check_mlir_op(
         "stablehlo.scatter",
@@ -1816,7 +1831,7 @@ def test_mcp_server_remaining_branches(mocker: pytest_mock.MockerFixture) -> Non
             "other_unrelated_attr": 42,
         },
     )
-    assert not any("ScatterDimensionNumbersAttr" in e for e in res_scatter_valid["errors"])
+    assert not any("ScatterDimensionNumbersAttr" in e for e in res_scatter_valid.errors)
 
     res_gather_valid = check_mlir_op(
         "stablehlo.gather",
@@ -1829,7 +1844,7 @@ def test_mcp_server_remaining_branches(mocker: pytest_mock.MockerFixture) -> Non
             }
         },
     )
-    assert not any("GatherDimensionNumbersAttr" in e for e in res_gather_valid["errors"])
+    assert not any("GatherDimensionNumbersAttr" in e for e in res_gather_valid.errors)
 
     # 6. check_mlir_op where operands is None and extracted from params (lines 600-607)
     mock_snap_no_operands = {
@@ -1854,7 +1869,7 @@ def test_mcp_server_remaining_branches(mocker: pytest_mock.MockerFixture) -> Non
         return_value=mock_snap_no_operands,
     ):
         res_from_params = check_mlir_op("custom.from_params", operands_count=1)
-        assert res_from_params["is_valid"] is True
+        assert res_from_params.is_valid is True
 
 
 def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1865,7 +1880,7 @@ def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         tmp_path: Pytest temporary directory fixture.
     """
     from ml_ecosystem_snapshots.mcp_server import (
-        _SNAPSHOT_CACHE,
+        DEFAULT_SNAPSHOT_REPOSITORY,
         check_hallucination,
         get_api_signature,
         get_framework_snapshot,
@@ -1873,7 +1888,7 @@ def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         search_apis,
     )
 
-    _SNAPSHOT_CACHE.clear()
+    DEFAULT_SNAPSHOT_REPOSITORY.clear()
 
     # Create dummy versioned snapshots in local cache
     cached_snap_dir = tmp_path / "snapshots"
@@ -1923,7 +1938,7 @@ def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         kwargs=["query"],
         version="2.4.0",
     )
-    assert chk["is_hallucinated"] is False
+    assert chk.is_hallucinated is False
 
     # Test handle_mcp_message with version in tools/call
     msg_sig: dict[str, JsonValue] = {
@@ -1940,7 +1955,7 @@ def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         },
     }
     resp_sig = handle_mcp_message(msg_sig)
-    assert "sdpa" in resp_sig["result"]["content"][0]["text"]
+    assert "sdpa" in ensure_present(ensure_present(resp_sig.result).content)[0].text
 
     msg_search: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
@@ -1956,7 +1971,7 @@ def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         },
     }
     resp_search = handle_mcp_message(msg_search)
-    assert "scaled_dot_product_attention" in resp_search["result"]["content"][0]["text"]
+    assert "scaled_dot_product_attention" in ensure_present(ensure_present(resp_search.result).content)[0].text
 
     msg_chk: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
@@ -1973,7 +1988,7 @@ def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         },
     }
     resp_chk = handle_mcp_message(msg_chk)
-    assert '"is_hallucinated": false' in resp_chk["result"]["content"][0]["text"]
+    assert '"is_hallucinated": false' in ensure_present(ensure_present(resp_chk.result).content)[0].text
 
 
 def test_opaque_c_extension_guardrails(mocker: pytest_mock.MockerFixture) -> None:
@@ -2018,12 +2033,14 @@ def test_opaque_c_extension_guardrails(mocker: pytest_mock.MockerFixture) -> Non
         strict_kwargs=False,
         strict_c_extensions=False,
     )
-    assert res_perm["is_hallucinated"] is False
-    perm_warning = res_perm["warning"]
+    assert res_perm.is_hallucinated is False
+    perm_warning = res_perm.warning
     assert perm_warning is not None
-    assert "WARNING: API has opaque C-extension signature; cannot definitively confirm argument validity" in perm_warning
-    assert res_perm["signature_completeness"] == "opaque"
-    assert res_perm["is_c_extension"] is True
+    assert (
+        "WARNING: API has opaque C-extension signature; cannot definitively confirm argument validity" in perm_warning
+    )
+    assert res_perm.signature_completeness == "opaque"
+    assert res_perm.is_c_extension is True
 
     # 2. Strict C-extension mode rejects unrecognized kwargs on opaque functions
     res_strict_c = check_hallucination(
@@ -2033,8 +2050,8 @@ def test_opaque_c_extension_guardrails(mocker: pytest_mock.MockerFixture) -> Non
         strict_kwargs=False,
         strict_c_extensions=True,
     )
-    assert res_strict_c["is_hallucinated"] is True
-    assert "hallucinated_kwarg" in res_strict_c["invalid_kwargs"]
+    assert res_strict_c.is_hallucinated is True
+    assert "hallucinated_kwarg" in res_strict_c.invalid_kwargs
     # 3. Test compliance.score_compliance with strict_c_extensions
     target_opaque: list[GhostRef] = [
         ExtendedGhostRef(
@@ -2052,14 +2069,17 @@ def test_opaque_c_extension_guardrails(mocker: pytest_mock.MockerFixture) -> Non
     ]
     # Non-strict: matches with warning
     score_relaxed = score_compliance(mock_snap, target_opaque, strict_c_extensions=False)
-    assert "torch.opaque_func" in score_relaxed["matched"]
-    assert "torch.opaque_func" in score_relaxed["opaque_signatures"]
-    assert any("opaque" in w.lower() for w in score_relaxed["warnings"])
+    assert "torch.opaque_func" in score_relaxed.matched
+    assert "torch.opaque_func" in score_relaxed.opaque_signatures
+    assert any("opaque" in w.lower() for w in score_relaxed.warnings)
 
     # Strict: rejected as mismatch
     score_strict = score_compliance(mock_snap, target_opaque, strict_c_extensions=True)
-    assert "torch.opaque_func" not in score_strict["matched"]
-    assert any(m["api_path"] == "torch.opaque_func" and m["reason"] is not None and "Opaque C-extension" in m["reason"] for m in score_strict["mismatched"])
+    assert "torch.opaque_func" not in score_strict.matched
+    assert any(
+        m.api_path == "torch.opaque_func" and m.reason is not None and "Opaque C-extension" in m.reason
+        for m in score_strict.mismatched
+    )
 
     # 4. Opaque function with recognized named argument -> reason == 'Valid API call with warning: ...'
     mock_snap_named = {
@@ -2088,8 +2108,8 @@ def test_opaque_c_extension_guardrails(mocker: pytest_mock.MockerFixture) -> Non
         kwargs=["x"],
         strict_kwargs=True,
     )
-    assert res_named["is_hallucinated"] is False
-    assert "Valid API call with warning" in res_named["reason"]
+    assert res_named.is_hallucinated is False
+    assert "Valid API call with warning" in res_named.reason
 
 
 def test_framework_agnostic_dtype_validation(mocker: pytest_mock.MockerFixture) -> None:
@@ -2151,7 +2171,7 @@ def test_framework_agnostic_dtype_validation(mocker: pytest_mock.MockerFixture) 
         kwarg_dtypes={"a": "jnp.float32", "b": "jnp.float32"},
         arg_ranks={"a": 2},
     )
-    assert res_valid["is_hallucinated"] is False
+    assert res_valid.is_hallucinated is False
 
     # Invalid call with unsupported dtype (int32 on floating-point solver)
     res_invalid_dtype = check_hallucination(
@@ -2159,8 +2179,8 @@ def test_framework_agnostic_dtype_validation(mocker: pytest_mock.MockerFixture) 
         "jax.numpy.linalg.solve",
         kwarg_dtypes={"a": "tf.int32"},
     )
-    assert res_invalid_dtype["is_hallucinated"] is True
-    assert any("Dtype 'tf.int32' is not supported" in err for err in res_invalid_dtype.get("dtype_errors", []))
+    assert res_invalid_dtype.is_hallucinated is True
+    assert any("Dtype 'tf.int32' is not supported" in err for err in (res_invalid_dtype.dtype_errors or []))
 
 
 def test_translate_concept_arguments() -> None:
@@ -2174,9 +2194,9 @@ def test_translate_concept_arguments() -> None:
         target_framework="stablehlo",
         source_kwargs={"input": "A", "other": "B"},
     )
-    assert shlo_res["translated_kwargs"]["lhs"] == "A"
-    assert shlo_res["translated_kwargs"]["rhs"] == "B"
-    assert "dot_dimension_numbers" in shlo_res["translated_kwargs"]
+    assert shlo_res.translated_kwargs["lhs"] == "A"
+    assert shlo_res.translated_kwargs["rhs"] == "B"
+    assert "dot_dimension_numbers" in shlo_res.translated_kwargs
 
     # 2. Matmul: torch -> jax
     jax_res = translate_concept_arguments(
@@ -2185,8 +2205,8 @@ def test_translate_concept_arguments() -> None:
         target_framework="jax",
         source_kwargs={"mat1": "A", "mat2": "B"},
     )
-    assert jax_res["translated_kwargs"]["a"] == "A"
-    assert jax_res["translated_kwargs"]["b"] == "B"
+    assert jax_res.translated_kwargs["a"] == "A"
+    assert jax_res.translated_kwargs["b"] == "B"
 
     # 3. Matmul: jax -> torch
     torch_res = translate_concept_arguments(
@@ -2195,8 +2215,8 @@ def test_translate_concept_arguments() -> None:
         target_framework="torch",
         source_kwargs={"a": "A", "b": "B"},
     )
-    assert torch_res["translated_kwargs"]["input"] == "A"
-    assert torch_res["translated_kwargs"]["other"] == "B"
+    assert torch_res.translated_kwargs["input"] == "A"
+    assert torch_res.translated_kwargs["other"] == "B"
 
     # 4. Matmul: torch -> tf
     tf_res = translate_concept_arguments(
@@ -2205,8 +2225,8 @@ def test_translate_concept_arguments() -> None:
         target_framework="tf",
         source_kwargs={"input": "A", "other": "B"},
     )
-    assert tf_res["translated_kwargs"]["a"] == "A"
-    assert tf_res["translated_kwargs"]["b"] == "B"
+    assert tf_res.translated_kwargs["a"] == "A"
+    assert tf_res.translated_kwargs["b"] == "B"
 
     # 5. Reductions: dim/keepdim (torch) <-> axis/keepdims (jax, numpy, tf)
     red_res = translate_concept_arguments(
@@ -2215,9 +2235,9 @@ def test_translate_concept_arguments() -> None:
         target_framework="jax",
         source_kwargs={"dim": 1, "keepdim": True, "extra_flag": 42},
     )
-    assert red_res["translated_kwargs"]["axis"] == 1
-    assert red_res["translated_kwargs"]["keepdims"] is True
-    assert red_res["unmapped_kwargs"]["extra_flag"] == 42
+    assert red_res.translated_kwargs["axis"] == 1
+    assert red_res.translated_kwargs["keepdims"] is True
+    assert red_res.unmapped_kwargs["extra_flag"] == 42
 
     red_to_torch = translate_concept_arguments(
         concept="reduce_mean",
@@ -2225,8 +2245,8 @@ def test_translate_concept_arguments() -> None:
         target_framework="torch",
         source_kwargs={"axis": [0, 1], "keepdims": False},
     )
-    assert red_to_torch["translated_kwargs"]["dim"] == [0, 1]
-    assert red_to_torch["translated_kwargs"]["keepdim"] is False
+    assert red_to_torch.translated_kwargs["dim"] == [0, 1]
+    assert red_to_torch.translated_kwargs["keepdim"] is False
 
     # 6. Softmax
     sm_to_jax = translate_concept_arguments(
@@ -2235,7 +2255,7 @@ def test_translate_concept_arguments() -> None:
         target_framework="jax",
         source_kwargs={"dim": -1},
     )
-    assert sm_to_jax["translated_kwargs"]["axis"] == -1
+    assert sm_to_jax.translated_kwargs["axis"] == -1
 
     sm_to_torch = translate_concept_arguments(
         concept="softmax",
@@ -2243,7 +2263,7 @@ def test_translate_concept_arguments() -> None:
         target_framework="torch",
         source_kwargs={"axis": -1},
     )
-    assert sm_to_torch["translated_kwargs"]["dim"] == -1
+    assert sm_to_torch.translated_kwargs["dim"] == -1
 
     # 7. Convolution: torch -> stablehlo & tf
     conv_shlo = translate_concept_arguments(
@@ -2257,9 +2277,9 @@ def test_translate_concept_arguments() -> None:
             "padding": "SAME",
         },
     )
-    assert conv_shlo["translated_kwargs"]["lhs"] == "X"
-    assert conv_shlo["translated_kwargs"]["rhs"] == "W"
-    assert conv_shlo["translated_kwargs"]["window_strides"] == [1, 1]
+    assert conv_shlo.translated_kwargs["lhs"] == "X"
+    assert conv_shlo.translated_kwargs["rhs"] == "W"
+    assert conv_shlo.translated_kwargs["window_strides"] == [1, 1]
 
     conv_tf = translate_concept_arguments(
         concept="conv2d",
@@ -2267,9 +2287,9 @@ def test_translate_concept_arguments() -> None:
         target_framework="tensorflow",
         source_kwargs={"input": "X", "weight": "W", "stride": 2, "padding": "VALID"},
     )
-    assert conv_tf["translated_kwargs"]["input"] == "X"
-    assert conv_tf["translated_kwargs"]["filters"] == "W"
-    assert conv_tf["translated_kwargs"]["strides"] == 2
+    assert conv_tf.translated_kwargs["input"] == "X"
+    assert conv_tf.translated_kwargs["filters"] == "W"
+    assert conv_tf.translated_kwargs["strides"] == 2
 
     conv_torch = translate_concept_arguments(
         concept="conv2d",
@@ -2277,8 +2297,8 @@ def test_translate_concept_arguments() -> None:
         target_framework="torch",
         source_kwargs={"input": "X", "weight": "W", "stride": 1, "padding": 0},
     )
-    assert conv_torch["translated_kwargs"]["input"] == "X"
-    assert conv_torch["translated_kwargs"]["weight"] == "W"
+    assert conv_torch.translated_kwargs["input"] == "X"
+    assert conv_torch.translated_kwargs["weight"] == "W"
 
     conv_jax = translate_concept_arguments(
         concept="conv2d",
@@ -2286,8 +2306,8 @@ def test_translate_concept_arguments() -> None:
         target_framework="jax",
         source_kwargs={"input": "X", "weight": "W", "stride": 1, "padding": 0},
     )
-    assert conv_jax["translated_kwargs"]["lhs"] == "X"
-    assert conv_jax["translated_kwargs"]["rhs"] == "W"
+    assert conv_jax.translated_kwargs["lhs"] == "X"
+    assert conv_jax.translated_kwargs["rhs"] == "W"
 
 
 def test_translate_concept_arguments_norm_rpc_and_edge_cases() -> None:
@@ -2306,9 +2326,9 @@ def test_translate_concept_arguments_norm_rpc_and_edge_cases() -> None:
         target_framework="jax",
         source_kwargs={"weight": "gamma", "bias": "beta", "eps": 1e-5},
     )
-    assert norm_jax["translated_kwargs"]["scale"] == "gamma"
-    assert norm_jax["translated_kwargs"]["bias"] == "beta"
-    assert norm_jax["translated_kwargs"]["epsilon"] == 1e-5
+    assert norm_jax.translated_kwargs["scale"] == "gamma"
+    assert norm_jax.translated_kwargs["bias"] == "beta"
+    assert norm_jax.translated_kwargs["epsilon"] == 1e-5
 
     norm_shlo = translate_concept_arguments(
         concept="layer_norm",
@@ -2317,9 +2337,9 @@ def test_translate_concept_arguments_norm_rpc_and_edge_cases() -> None:
         source_kwargs={"weight": "gamma", "bias": "beta", "eps": 1e-5},
         alias_map={"normalization": {"torch": ["torch.nn.LayerNorm"]}},
     )
-    assert norm_shlo["translated_kwargs"]["scale"] == "gamma"
-    assert norm_shlo["translated_kwargs"]["offset"] == "beta"
-    assert norm_shlo["translated_kwargs"]["epsilon"] == 1e-5
+    assert norm_shlo.translated_kwargs["scale"] == "gamma"
+    assert norm_shlo.translated_kwargs["offset"] == "beta"
+    assert norm_shlo.translated_kwargs["epsilon"] == 1e-5
 
     # 8. Test MCP JSON-RPC protocol message
     mcp_msg: dict[str, JsonValue] = {
@@ -2337,12 +2357,12 @@ def test_translate_concept_arguments_norm_rpc_and_edge_cases() -> None:
         },
     }
     resp = handle_mcp_message(mcp_msg)
-    assert resp["id"] == 88
-    content = json.loads(resp["result"]["content"][0]["text"])
+    assert resp.id == 88
+    content = json.loads(ensure_present(ensure_present(resp.result).content)[0].text)
     assert content["translated_kwargs"]["lhs"] == "A"
 
     # 9. Full branch coverage for unmapped/identity/empty branches
-    assert translate_concept_arguments("matmul", "torch", "custom_fw", {})["translated_kwargs"] == {}
+    assert translate_concept_arguments("matmul", "torch", "custom_fw", {}).translated_kwargs == {}
 
     custom_red = translate_concept_arguments(
         "reduce_sum",
@@ -2350,48 +2370,50 @@ def test_translate_concept_arguments_norm_rpc_and_edge_cases() -> None:
         "custom_fw",
         {"dim": 0, "axis": 1, "keepdim": True, "keepdims": False},
     )
-    assert custom_red["translated_kwargs"]["dim"] == 0
-    assert custom_red["translated_kwargs"]["axis"] == 1
-    assert custom_red["translated_kwargs"]["keepdim"] is True
-    assert custom_red["translated_kwargs"]["keepdims"] is False
+    assert custom_red.translated_kwargs["dim"] == 0
+    assert custom_red.translated_kwargs["axis"] == 1
+    assert custom_red.translated_kwargs["keepdim"] is True
+    assert custom_red.translated_kwargs["keepdims"] is False
 
     custom_sm = translate_concept_arguments("softmax", "custom_fw", "custom_fw", {"dim": 0, "axis": 1})
-    assert custom_sm["translated_kwargs"]["dim"] == 0
-    assert custom_sm["translated_kwargs"]["axis"] == 1
+    assert custom_sm.translated_kwargs["dim"] == 0
+    assert custom_sm.translated_kwargs["axis"] == 1
 
-    assert translate_concept_arguments("conv2d", "torch", "custom_fw", {})["translated_kwargs"] == {}
-    assert translate_concept_arguments("generic_norm", "torch", "jax", {"weight": "w"})["translated_kwargs"]["scale"] == "w"
+    assert translate_concept_arguments("conv2d", "torch", "custom_fw", {}).translated_kwargs == {}
+    assert (
+        translate_concept_arguments("generic_norm", "torch", "jax", {"weight": "w"}).translated_kwargs["scale"] == "w"
+    )
 
     # Partial matmul and conv operands for 100% branch coverage
     partial_mm = translate_concept_arguments("matmul", "torch", "torch", {"other": "B"})
-    assert "input" not in partial_mm["translated_kwargs"]
-    assert partial_mm["translated_kwargs"]["other"] == "B"
+    assert "input" not in partial_mm.translated_kwargs
+    assert partial_mm.translated_kwargs["other"] == "B"
 
     partial_mm2 = translate_concept_arguments("matmul", "torch", "torch", {"input": "A"})
-    assert partial_mm2["translated_kwargs"]["input"] == "A"
-    assert "other" not in partial_mm2["translated_kwargs"]
+    assert partial_mm2.translated_kwargs["input"] == "A"
+    assert "other" not in partial_mm2.translated_kwargs
 
     partial_conv = translate_concept_arguments("conv2d", "torch", "torch", {"input": "X"})
-    assert partial_conv["translated_kwargs"]["input"] == "X"
-    assert "weight" not in partial_conv["translated_kwargs"]
+    assert partial_conv.translated_kwargs["input"] == "X"
+    assert "weight" not in partial_conv.translated_kwargs
 
     partial_conv_no_inp = translate_concept_arguments("conv2d", "torch", "torch", {"weight": "W"})
-    assert "input" not in partial_conv_no_inp["translated_kwargs"]
-    assert partial_conv_no_inp["translated_kwargs"]["weight"] == "W"
+    assert "input" not in partial_conv_no_inp.translated_kwargs
+    assert partial_conv_no_inp.translated_kwargs["weight"] == "W"
 
     unknown_conv = translate_concept_arguments("conv2d", "torch", "custom_fw", {"input": "X"})
-    assert unknown_conv["translated_kwargs"] == {}
-    assert unknown_conv["unmapped_kwargs"]["input"] == "X"
+    assert unknown_conv.translated_kwargs == {}
+    assert unknown_conv.unmapped_kwargs["input"] == "X"
 
     unknown_concept = translate_concept_arguments("unrecognized_op", "torch", "jax", {"foo": "bar"})
-    assert unknown_concept["translated_kwargs"] == {}
-    assert unknown_concept["unmapped_kwargs"]["foo"] == "bar"
+    assert unknown_concept.translated_kwargs == {}
+    assert unknown_concept.unmapped_kwargs["foo"] == "bar"
 
     # SASS and RDNA modifier branch tests
-    assert check_sass_instruction("FADD.FTZ", modifiers=[".FTZ"])["is_valid"] is True
-    assert check_rdna_instruction("v_add_f32_e32", modifiers=["_e32"])["is_valid"] is True
-    assert check_rdna_instruction("v_add_f32_e64", modifiers=["_e64"])["is_valid"] is True
-    assert check_rdna_instruction("v_add_f32_e32", modifiers=["_e64"])["mnemonic_exists"] is True
+    assert check_sass_instruction("FADD.FTZ", modifiers=[".FTZ"]).is_valid is True
+    assert check_rdna_instruction("v_add_f32_e32", modifiers=["_e32"]).is_valid is True
+    assert check_rdna_instruction("v_add_f32_e64", modifiers=["_e64"]).is_valid is True
+    assert check_rdna_instruction("v_add_f32_e32", modifiers=["_e64"]).mnemonic_exists is True
 
 
 def test_check_hallucination_parameter_allowed_values_error(
@@ -2428,15 +2450,15 @@ def test_check_hallucination_parameter_allowed_values_error(
         "torch.custom_norm",
         kwarg_values={"mode": "invalid_mode"},
     )
-    assert res["is_hallucinated"] is True
-    assert "Invalid enum value 'invalid_mode' for parameter 'mode'" in res["reason"]
+    assert res.is_hallucinated is True
+    assert "Invalid enum value 'invalid_mode' for parameter 'mode'" in res.reason
 
     res_valid = check_hallucination(
         "torch",
         "torch.custom_norm",
         kwarg_values={"mode": "fast"},
     )
-    assert res_valid["is_hallucinated"] is False
+    assert res_valid.is_hallucinated is False
 
 
 def test_hallucination_accepted_kwargs_bounded_vs_unconstrained(
@@ -2473,9 +2495,9 @@ def test_hallucination_accepted_kwargs_bounded_vs_unconstrained(
         "custom.CustomLayer",
         kwargs=["dropout_rate", "activation"],
     )
-    assert valid_res["is_hallucinated"] is False
-    assert len(valid_res["invalid_kwargs"]) == 0
-    assert valid_res["has_unconstrained_kwargs"] is False
+    assert valid_res.is_hallucinated is False
+    assert len(valid_res.invalid_kwargs) == 0
+    assert valid_res.has_unconstrained_kwargs is False
 
     # 2. Illegal kwarg not in accepted_kwargs SHOULD be flagged
     invalid_res = check_hallucination(
@@ -2483,5 +2505,5 @@ def test_hallucination_accepted_kwargs_bounded_vs_unconstrained(
         "custom.CustomLayer",
         kwargs=["dropout_rate", "hallucinated_param"],
     )
-    assert invalid_res["is_hallucinated"] is True
-    assert invalid_res["invalid_kwargs"] == ["hallucinated_param"]
+    assert invalid_res.is_hallucinated is True
+    assert invalid_res.invalid_kwargs == ["hallucinated_param"]

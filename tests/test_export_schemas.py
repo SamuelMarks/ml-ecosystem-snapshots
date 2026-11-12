@@ -6,8 +6,6 @@ Protobuf structured type mapping and enum preservation, and Scoped LLM prompt co
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
 
 from ml_ecosystem_snapshots.export import (
@@ -94,7 +92,7 @@ def test_to_pydantic_variable_positional_tuple() -> None:
     code = to_pydantic(ref, validate_varargs=True)
     assert "class VarOp(pydantic.BaseModel):" in code
     assert "args: tuple[int, ...] = pydantic.Field(default=(), description=" in code
-    assert "kwargs: dict[str, object] = pydantic.Field(default_factory=dict, description=" in code
+    assert "kwargs: dict[str, JsonValue] = pydantic.Field(default_factory=dict, description=" in code
 
 
 def test_to_protobuf_structured_types_and_enums() -> None:
@@ -159,7 +157,10 @@ def test_to_protobuf_structured_types_and_enums() -> None:
 
 def test_export_scoped_prompt_context_with_hallucination_guards() -> None:
     """Test export_scoped_prompt_context injecting hallucination guards and parameter constraints."""
-    mock_torch_snap = {
+    from ml_ecosystem_snapshots.models import JsonValue
+    from ml_ecosystem_snapshots.serialization.repository import SnapshotRepository
+
+    mock_torch_snap: dict[str, JsonValue] = {
         "categories": {
             "math": [
                 {
@@ -186,24 +187,24 @@ def test_export_scoped_prompt_context_with_hallucination_guards() -> None:
         }
     }
 
-    with patch(
-        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
-        return_value=mock_torch_snap,
-    ):
-        ctx = export_scoped_prompt_context("torch", max_symbols=10)
-        # Verify common hallucination guards
-        assert "## Common Hallucination Guards & Anti-Patterns" in ctx
-        for guard in COMMON_HALLUCINATION_GUARDS["torch"]:
-            assert guard in ctx
+    repo = SnapshotRepository(backing_store={"torch": mock_torch_snap})
+    ctx = export_scoped_prompt_context("torch", max_symbols=10, repository=repo)
+    # Verify common hallucination guards
+    assert "## Common Hallucination Guards & Anti-Patterns" in ctx
+    for guard in COMMON_HALLUCINATION_GUARDS["torch"]:
+        assert guard in ctx
 
-        # Verify dtypes and rank in parameter constraints
-        assert "dtypes: ['float32', 'float64', 'complex64', 'complex128']" in ctx
-        assert "rank: >=2" in ctx
+    # Verify dtypes and rank in parameter constraints
+    assert "dtypes: ['float32', 'float64', 'complex64', 'complex128']" in ctx
+    assert "rank: >=2" in ctx
 
 
 def test_export_scoped_prompt_context_module_prefix_filtering() -> None:
     """Test export_scoped_prompt_context filtering with module_prefix."""
-    mock_snap = {
+    from ml_ecosystem_snapshots.models import JsonValue
+    from ml_ecosystem_snapshots.serialization.repository import SnapshotRepository
+
+    mock_snap: dict[str, JsonValue] = {
         "categories": {
             "all": [
                 {
@@ -224,10 +225,7 @@ def test_export_scoped_prompt_context_module_prefix_filtering() -> None:
         }
     }
 
-    with patch(
-        "ml_ecosystem_snapshots.mcp.cache.get_framework_snapshot",
-        return_value=mock_snap,
-    ):
-        ctx_filtered = export_scoped_prompt_context("torch", module_prefix="torch.nn")
-        assert "torch.nn.Linear" in ctx_filtered
-        assert "torch.optim.Adam" not in ctx_filtered
+    repo = SnapshotRepository(backing_store={"torch": mock_snap})
+    ctx_filtered = export_scoped_prompt_context("torch", module_prefix="torch.nn", repository=repo)
+    assert "torch.nn.Linear" in ctx_filtered
+    assert "torch.optim.Adam" not in ctx_filtered

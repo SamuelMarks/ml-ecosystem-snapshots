@@ -7,6 +7,7 @@ and semantic default value preservation.
 from __future__ import annotations
 
 import inspect
+import types
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,7 @@ from ml_ecosystem_snapshots.mcp_server import check_hallucination, handle_mcp_me
 from ml_ecosystem_snapshots.models import (
     ExtendedGhostParam,
     GhostPythonRef,
+    ensure_present,
 )
 
 
@@ -75,8 +77,7 @@ def test_sanitize_param_default_callables_and_memory_addresses() -> None:
     assert is_mand is False
 
     # Anonymous lambda
-    anon = lambda x: x  # noqa: E731
-    def_val, factory_str, is_mand = sanitize_param_default(anon)
+    def_val, factory_str, is_mand = sanitize_param_default(lambda x: x)
     assert def_val == "<factory_default>"
     assert factory_str is not None
     assert "<lambda>" in factory_str
@@ -206,24 +207,26 @@ def test_infer_torch_dtype_and_rank() -> None:
     assert rank_unk is None
 
 
-def test_get_aten_op_schema_real() -> None:
-    """Test get_aten_op_schema querying real PyTorch runtime ATen schemas."""
-    from torch_mock import ensure_torch
+def test_get_aten_op_schema_real(mock_torch_module: types.ModuleType) -> None:
+    """Test get_aten_op_schema querying real or scoped mock PyTorch runtime ATen schemas.
 
-    ensure_torch()
+    Args:
+        mock_torch_module: Scoped `torch` module fixture.
+    """
+    assert mock_torch_module is not None
 
     # torch.ops.aten.add has overloads: Tensor, Scalar, out, etc.
     schemas_add = get_aten_op_schema("add")
     assert schemas_add is not None
     assert len(schemas_add) > 1
-    overload_names = [ov["overload_name"] for ov in schemas_add]
+    overload_names = [ov.overload_name for ov in schemas_add]
     assert "Tensor" in overload_names
     assert "Scalar" in overload_names
     assert "out" in overload_names
 
     # Check parameter structure of Tensor overload
-    tensor_ov = next(ov for ov in schemas_add if ov["overload_name"] == "Tensor")
-    param_names = [p["name"] for p in tensor_ov["params"]]
+    tensor_ov = next(ov for ov in schemas_add if ov.overload_name == "Tensor")
+    param_names = [p.name for p in tensor_ov.params]
     assert "input" in param_names
     assert "other" in param_names
     assert "alpha" in param_names
@@ -231,22 +234,24 @@ def test_get_aten_op_schema_real() -> None:
     # In-place operator add_
     schemas_add_ = get_aten_op_schema("add_")
     assert schemas_add_ is not None
-    assert all(ov["is_inplace"] is True for ov in schemas_add_)
+    assert all(ov.is_inplace is True for ov in schemas_add_)
 
     # Out-variant detection
-    out_ov = next(ov for ov in schemas_add if ov["overload_name"] == "out")
-    assert out_ov["is_out"] is True
-    assert any(p["is_out"] for p in out_ov["params"])
+    out_ov = next(ov for ov in schemas_add if ov.overload_name == "out")
+    assert out_ov.is_out is True
+    assert any(p.is_out for p in out_ov.params)
 
     # Non-existent op
     assert get_aten_op_schema("completely_fictional_op") is None
 
 
-def test_extract_aten_c_extension_signature_real() -> None:
-    """Test extract_aten_c_extension_signature extracting full signature and overloads."""
-    from torch_mock import ensure_torch
+def test_extract_aten_c_extension_signature_real(mock_torch_module: types.ModuleType) -> None:
+    """Test extract_aten_c_extension_signature extracting full signature and overloads.
 
-    torch = ensure_torch()
+    Args:
+        mock_torch_module: Scoped `torch` module fixture.
+    """
+    torch = mock_torch_module
 
     sig = extract_aten_c_extension_signature(torch.add, "torch.add")
     assert sig is not None
@@ -262,7 +267,7 @@ def test_extract_aten_c_extension_signature_real() -> None:
     # Method call target (stripping receiver 'self')
     sig_method = extract_aten_c_extension_signature(None, "torch.Tensor.add")
     assert sig_method is not None
-    assert sig_method[0][0] != "self"
+    assert sig_method[0].name != "self"
 
     # Non-existent target
     assert extract_aten_c_extension_signature(None, "torch.not_existing_at_all") is None
@@ -308,38 +313,40 @@ def test_parse_native_functions_yaml(tmp_path: Path) -> None:
     # 3 overloads for add
     add_overloads = parsed["add"]
     assert len(add_overloads) == 3
-    ov_names = [ov["overload_name"] for ov in add_overloads]
+    ov_names = [ov.overload_name for ov in add_overloads]
     assert "Tensor" in ov_names
     assert "Scalar" in ov_names
     assert "out" in ov_names
 
     # Check Tensor overload parameters
-    tensor_ov = next(ov for ov in add_overloads if ov["overload_name"] == "Tensor")
-    assert tensor_ov["params"][0]["name"] == "input"
-    assert tensor_ov["params"][1]["name"] == "other"
-    assert tensor_ov["params"][2]["name"] == "alpha"
-    assert tensor_ov["params"][2]["kind"] == "KEYWORD_ONLY"
-    assert tensor_ov["params"][2]["default"] == "1"
+    tensor_ov = next(ov for ov in add_overloads if ov.overload_name == "Tensor")
+    assert tensor_ov.params[0].name == "input"
+    assert tensor_ov.params[1].name == "other"
+    assert tensor_ov.params[2].name == "alpha"
+    assert tensor_ov.params[2].kind == "KEYWORD_ONLY"
+    assert tensor_ov.params[2].default == "1"
 
     # Check out overload
-    out_ov = next(ov for ov in add_overloads if ov["overload_name"] == "out")
-    assert out_ov["is_out"] is True
-    assert any(p["name"] == "out" and p["is_out"] for p in out_ov["params"])
+    out_ov = next(ov for ov in add_overloads if ov.overload_name == "out")
+    assert out_ov.is_out is True
+    assert any(p.name == "out" and p.is_out for p in out_ov.params)
 
     # Check in-place relu_
     relu_inplace = parsed["relu_"][0]
-    assert relu_inplace["is_inplace"] is True
+    assert relu_inplace.is_inplace is True
 
     # Empty or invalid YAML
     assert parse_native_functions_yaml("") == {}
     assert parse_native_functions_yaml("not a list") == {}
 
 
-def test_ghost_inspector_aten_torch_no_decay() -> None:
-    """Test that GhostInspector inspects PyTorch ATen operators without decaying to (*args, **kwargs)."""
-    from torch_mock import ensure_torch
+def test_ghost_inspector_aten_torch_no_decay(mock_torch_module: types.ModuleType) -> None:
+    """Test that GhostInspector inspects PyTorch ATen operators without decaying to (*args, **kwargs).
 
-    torch = ensure_torch()
+    Args:
+        mock_torch_module: Scoped `torch` module fixture.
+    """
+    torch = mock_torch_module
 
     # Inspect torch.add
     ref_add = GhostInspector.inspect(torch.add, "torch.add")
@@ -361,7 +368,9 @@ def test_ghost_inspector_aten_torch_no_decay() -> None:
     # Inspect torch.matmul
     ref_matmul = GhostInspector.inspect(torch.matmul, "torch.matmul")
     assert ref_matmul.name == "matmul"
-    assert not (len(ref_matmul.params) == 2 and ref_matmul.params[0].name == "args" and ref_matmul.params[1].name == "kwargs")
+    assert not (
+        len(ref_matmul.params) == 2 and ref_matmul.params[0].name == "args" and ref_matmul.params[1].name == "kwargs"
+    )
     assert any(p.name == "input" for p in ref_matmul.params)
     assert any(p.name == "other" for p in ref_matmul.params)
 
@@ -449,9 +458,9 @@ def test_check_hallucination_dtype_and_rank_validation() -> None:
             "torch.linalg.inv",
             arg_dtypes=["int32"],
         )
-        assert res_inv_bad["is_hallucinated"] is True
-        assert "not supported" in res_inv_bad["reason"]
-        assert "int32" in res_inv_bad["reason"]
+        assert res_inv_bad.is_hallucinated is True
+        assert "not supported" in res_inv_bad.reason
+        assert "int32" in res_inv_bad.reason
 
         # Valid float32 passed to torch.linalg.inv
         res_inv_ok = check_hallucination(
@@ -459,7 +468,7 @@ def test_check_hallucination_dtype_and_rank_validation() -> None:
             "torch.linalg.inv",
             arg_dtypes=["float32"],
         )
-        assert res_inv_ok["is_hallucinated"] is False
+        assert res_inv_ok.is_hallucinated is False
 
         # 2. Flag int32 passed to torch.cholesky
         res_chol_bad = check_hallucination(
@@ -467,8 +476,8 @@ def test_check_hallucination_dtype_and_rank_validation() -> None:
             "torch.cholesky",
             kwarg_dtypes={"input": "int32"},
         )
-        assert res_chol_bad["is_hallucinated"] is True
-        assert "not supported" in res_chol_bad["reason"]
+        assert res_chol_bad.is_hallucinated is True
+        assert "not supported" in res_chol_bad.reason
 
         # 3. Flag rank mismatch for torch.mm (e.g. 1D vector instead of 2D matrix)
         res_mm_bad = check_hallucination(
@@ -476,8 +485,8 @@ def test_check_hallucination_dtype_and_rank_validation() -> None:
             "torch.mm",
             arg_ranks=[1, 2],
         )
-        assert res_mm_bad["is_hallucinated"] is True
-        assert "Rank 1 is not supported" in res_mm_bad["reason"]
+        assert res_mm_bad.is_hallucinated is True
+        assert "Rank 1 is not supported" in res_mm_bad.reason
 
         # Valid rank 2 for both inputs in torch.mm
         res_mm_ok = check_hallucination(
@@ -485,7 +494,7 @@ def test_check_hallucination_dtype_and_rank_validation() -> None:
             "torch.mm",
             arg_ranks=[2, 2],
         )
-        assert res_mm_ok["is_hallucinated"] is False
+        assert res_mm_ok.is_hallucinated is False
 
         # Rank >= 2 check for torch.linalg.inv
         res_inv_rank_bad = check_hallucination(
@@ -493,8 +502,8 @@ def test_check_hallucination_dtype_and_rank_validation() -> None:
             "torch.linalg.inv",
             arg_ranks=[1],
         )
-        assert res_inv_rank_bad["is_hallucinated"] is True
-        assert "Rank 1 is not supported" in res_inv_rank_bad["reason"]
+        assert res_inv_rank_bad.is_hallucinated is True
+        assert "Rank 1 is not supported" in res_inv_rank_bad.reason
 
 
 def test_handle_mcp_message_dtypes_and_ranks() -> None:
@@ -539,20 +548,22 @@ def test_handle_mcp_message_dtypes_and_ranks() -> None:
             },
         }
         resp = handle_mcp_message(msg)
-        assert "result" in resp
-        assert '"is_hallucinated": true' in resp["result"]["content"][0]["text"]
-        assert "not supported" in resp["result"]["content"][0]["text"]
+        assert resp.result is not None
+        assert '"is_hallucinated": true' in ensure_present(ensure_present(resp.result).content)[0].text
+        assert "not supported" in ensure_present(ensure_present(resp.result).content)[0].text
 
 
-def test_aten_edge_cases_and_mocks(mocker: pytest_mock.MockerFixture) -> None:
+def test_aten_edge_cases_and_mocks(
+    mock_torch_module: types.ModuleType,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
     """Test edge branches of get_aten_op_schema and extract_aten_c_extension_signature with mocks.
 
     Args:
+        mock_torch_module: Scoped `torch` module fixture.
         mocker: Pytest mocker fixture.
     """
-    from torch_mock import ensure_torch
-
-    torch = ensure_torch()
+    torch = mock_torch_module
 
     # 1. Test get_aten_op_schema when schema is None on an overload
     class DummyOp:
@@ -604,20 +615,22 @@ def test_aten_edge_cases_and_mocks(mocker: pytest_mock.MockerFixture) -> None:
     )
     sig = extract_aten_c_extension_signature(None, "custom_op")
     assert sig is not None
-    assert sig[0][0] == "x"
+    assert sig[0].name == "x"
     assert len(sig.overloads) == 1
-    assert sig.overloads[0][0][0] == "y"
+    assert sig.overloads[0][0].name == "y"
 
 
-def test_torch_collect_api_array_api_aten(mocker: pytest_mock.MockerFixture) -> None:
-    """Test collect_api(ARRAY_API) with real PyTorch to verify aten ops collection.
+def test_torch_collect_api_array_api_aten(
+    mock_torch_module: types.ModuleType,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
+    """Test collect_api(ARRAY_API) with PyTorch to verify aten ops collection.
 
     Args:
+        mock_torch_module: Scoped `torch` module fixture.
         mocker: Pytest mocker fixture.
     """
-    from torch_mock import ensure_torch
-
-    torch = ensure_torch()
+    torch = mock_torch_module
     from ml_switcheroo_ir.schema.ghost import SemanticTier
 
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
@@ -640,15 +653,17 @@ def test_torch_collect_api_array_api_aten(mocker: pytest_mock.MockerFixture) -> 
         assert "in_place_mutation" in tensor_in_place[0].environment_tags
 
 
-def test_get_jit_schemas_for_op(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_jit_schemas_for_op(
+    mock_torch_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test get_jit_schemas_for_op parsing and when torch._C lacks _jit_get_all_schemas.
 
     Args:
+        mock_torch_module: Scoped `torch` module fixture.
         monkeypatch: Pytest monkeypatch fixture.
     """
-    from torch_mock import ensure_torch
-
-    torch = ensure_torch()
+    torch = mock_torch_module
     from ml_ecosystem_snapshots.frameworks import torch as torch_fw
     from ml_ecosystem_snapshots.frameworks.torch import get_jit_schemas_for_op
 
@@ -656,18 +671,22 @@ def test_get_jit_schemas_for_op(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(torch_fw, "_JIT_SCHEMAS_CACHE", None)
     res = get_jit_schemas_for_op("add")
     assert len(res) >= 1
-    assert res[0]["params"][0]["name"] == "input"
+    assert res[0].params[0].name == "input"
 
     monkeypatch.delattr(torch._C, "_jit_get_all_schemas", raising=False)
     monkeypatch.setattr(torch_fw, "_JIT_SCHEMAS_CACHE", None)
     assert get_jit_schemas_for_op("add") == []
 
 
-def test_ghost_inspector_aten_fallback_branches() -> None:
-    """Test GhostInspector ATen branches when C-extension docstring is absent or has varargs."""
-    from torch_mock import MockTorchOp, ensure_torch
+def test_ghost_inspector_aten_fallback_branches(mock_torch_module: types.ModuleType) -> None:
+    """Test GhostInspector ATen branches when C-extension docstring is absent or has varargs.
 
-    ensure_torch()
+    Args:
+        mock_torch_module: Scoped `torch` module fixture.
+    """
+    from torch_mock import MockTorchOp
+
+    assert mock_torch_module is not None
 
     # 1. Target with empty docstring (c_ext_params is None -> c_ext_params = aten_sig)
     op_no_doc = MockTorchOp("relu", "")

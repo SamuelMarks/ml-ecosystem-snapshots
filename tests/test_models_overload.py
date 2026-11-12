@@ -5,39 +5,43 @@ from __future__ import annotations
 import pathlib
 import sys
 
+import pytest
 from ml_switcheroo_ir.schema.ghost import GhostRef
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.static_parsers import _GRIFFE_CACHE
+from ml_ecosystem_snapshots.introspection.static_parsers import clear_griffe_cache
 
 
-def test_ghost_inspector_overloads(tmp_path: pathlib.Path) -> None:
+def test_ghost_inspector_overloads(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test extracting function overloads via Griffe.
 
     Args:
         tmp_path: Temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
     """
     p = tmp_path / "test_overload_mock_unique.py"
     p.write_text(
-        """from __future__ import annotations
-import typing
-
-@typing.overload
-def my_overloaded_func(a: int) -> int: ...
-
-@typing.overload
-def my_overloaded_func(a: str, b: str) -> str: ...
-
-def my_overloaded_func(a: int | str, b: str | None = None) -> int | str:
-    return a
-"""
+        chr(10).join(
+            [
+                "from __future__ import annotations",
+                "import typing",
+                "@typing.overload",
+                "def my_overloaded_func(a: int) -> int: ...",
+                "@typing.overload",
+                "def my_overloaded_func(a: str, b: str) -> str: ...",
+                "def my_overloaded_func(a: int | str, b: str | None = None) -> int | str:",
+                "    return a",
+            ]
+        ),
+        encoding="utf-8",
     )
 
-    _GRIFFE_CACHE.clear()
-
-    sys.path.insert(0, str(tmp_path))
-    if "test_overload_mock_unique" in sys.modules:
-        del sys.modules["test_overload_mock_unique"]
+    clear_griffe_cache()
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delitem(sys.modules, "test_overload_mock_unique", raising=False)
     import test_overload_mock_unique
 
     ref = GhostInspector.inspect(
@@ -59,39 +63,38 @@ def my_overloaded_func(a: int | str, b: str | None = None) -> int | str:
     assert ov1.params[1].annotation == "str"
     assert ov1.returns_type == "str"
 
-    p.unlink(missing_ok=True)
-    if str(tmp_path) in sys.path:
-        sys.path.remove(str(tmp_path))
 
-
-def test_ghost_inspector_class_constructor_overloads(tmp_path: pathlib.Path) -> None:
+def test_ghost_inspector_class_constructor_overloads(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test extracting overloads on class constructors via Griffe.
 
     Args:
         tmp_path: Temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
     """
     p = tmp_path / "test_class_overload_mock.py"
     p.write_text(
-        """from __future__ import annotations
-import typing
-
-class OverloadedClass:
-    @typing.overload
-    def __init__(self, dim: int) -> None: ...
-
-    @typing.overload
-    def __init__(self, dim: str, mode: str) -> None: ...
-
-    def __init__(self, dim: int | str, mode: str | None = None) -> None:
-        pass
-"""
+        chr(10).join(
+            [
+                "from __future__ import annotations",
+                "import typing",
+                "class OverloadedClass:",
+                "    @typing.overload",
+                "    def __init__(self, dim: int) -> None: ...",
+                "    @typing.overload",
+                "    def __init__(self, dim: str, mode: str) -> None: ...",
+                "    def __init__(self, dim: int | str, mode: str | None = None) -> None:",
+                "        pass",
+            ]
+        ),
+        encoding="utf-8",
     )
 
-    _GRIFFE_CACHE.clear()
-
-    sys.path.insert(0, str(tmp_path))
-    if "test_class_overload_mock" in sys.modules:
-        del sys.modules["test_class_overload_mock"]
+    clear_griffe_cache()
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delitem(sys.modules, "test_class_overload_mock", raising=False)
     import test_class_overload_mock
 
     ref = GhostInspector.inspect(
@@ -112,7 +115,3 @@ class OverloadedClass:
     assert ov1.params[0].name == "dim"
     assert ov1.params[1].name == "mode"
     assert ov1.params[1].annotation == "str"
-
-    p.unlink(missing_ok=True)
-    if str(tmp_path) in sys.path:
-        sys.path.remove(str(tmp_path))

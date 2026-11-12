@@ -84,13 +84,19 @@ def test_no_raw_unparsed_tokens() -> None:
 
         # Ensure <class ' does not leak into types, parameter annotations, or defaults
         for item in _load_snapshot_items(json_path):
-            assert "<class '" not in str(item.get("returns_type", "")), f"Leaked type representation in returns_type of {item.get('api_path')}"
+            assert "<class '" not in str(item.get("returns_type", "")), (
+                f"Leaked type representation in returns_type of {item.get('api_path')}"
+            )
             raw_params = item.get("params", [])
             if isinstance(raw_params, list):
                 for p in raw_params:
                     if isinstance(p, dict):
-                        assert "<class '" not in str(p.get("annotation", "")), f"Leaked type representation in annotation of parameter {p.get('name')}"
-                        assert "<class '" not in str(p.get("default", "")), f"Leaked type representation in default of parameter {p.get('name')}"
+                        assert "<class '" not in str(p.get("annotation", "")), (
+                            f"Leaked type representation in annotation of parameter {p.get('name')}"
+                        )
+                        assert "<class '" not in str(p.get("default", "")), (
+                            f"Leaked type representation in default of parameter {p.get('name')}"
+                        )
 
 
 def test_no_uniform_duplicate_operands_rdna() -> None:
@@ -184,7 +190,9 @@ def test_mlir_operand_attribute_integrity() -> None:
 
     assert len(data) >= 14, f"MLIR dump has insufficient operations: {len(data)}"
     ops_with_operands = sum(1 for item in data if item.get("operands"))
-    assert ops_with_operands / len(data) >= 0.70, f"Too many MLIR operations have empty operands: {ops_with_operands} / {len(data)}"
+    assert ops_with_operands / len(data) >= 0.70, (
+        f"Too many MLIR operations have empty operands: {ops_with_operands} / {len(data)}"
+    )
 
     op_map = {str(item["api_path"]): item for item in data if "api_path" in item}
 

@@ -10,11 +10,20 @@ import pytest_mock
 
 
 def test_align_namespace_exact_mapping() -> None:
-    """Test align_namespace exact mapping for zero_jax and zero_optax prefixes."""
+    """Test align_namespace exact mapping with configurable NamespaceAlignmentRule preset."""
+    from ml_ecosystem_snapshots.cli.commands.verify_compliance import (
+        ZERO_ECOSYSTEM_ALIGNMENT_RULE,
+        resolve_alignment_preset,
+    )
     from ml_ecosystem_snapshots.compliance import align_namespace
 
-    assert align_namespace("zero_jax", "target_prefix", "ref") == "jax"
-    assert align_namespace("zero_optax", "target_prefix", "ref") == "optax"
+    assert resolve_alignment_preset("zero") == ZERO_ECOSYSTEM_ALIGNMENT_RULE
+    assert resolve_alignment_preset(None, "zero_jax") == ZERO_ECOSYSTEM_ALIGNMENT_RULE
+    assert resolve_alignment_preset("default", "zero_jax").prefix_map == {}
+    assert align_namespace("zero_jax", "target_prefix", "ref", alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE) == "jax"
+    assert (
+        align_namespace("zero_optax", "target_prefix", "ref", alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE) == "optax"
+    )
 
 
 def test_score_compliance_sig_tuple_edge_cases() -> None:
@@ -89,7 +98,7 @@ def test_score_compliance_sig_tuple_edge_cases() -> None:
         )
     ]
     res = score_compliance(ref_snap, target_refs)
-    assert "ref.func1" in res["matched"]
+    assert "ref.func1" in res.matched
 
 
 def test_score_compliance_varargs_fallback_special_cases() -> None:
@@ -245,8 +254,8 @@ def test_score_compliance_varargs_fallback_special_cases() -> None:
 
     # Strict parameter comparison rejects mismatched parameter names/types even when len(params) == len(params)
     strict_res = score_compliance(ref_snap, target_refs)
-    assert strict_res["matched"] == []
-    mismatched_paths = {m["api_path"] for m in strict_res["mismatched"]}
+    assert strict_res.matched == []
+    mismatched_paths = {m.api_path for m in strict_res.mismatched}
     assert mismatched_paths == {
         "chex.assert_shape",
         "jax.nn.relu",
@@ -255,7 +264,9 @@ def test_score_compliance_varargs_fallback_special_cases() -> None:
     }
 
 
-def test_extract_target_refs_single_sys_path_and_logging(tmp_path: Path, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture) -> None:
+def test_extract_target_refs_single_sys_path_and_logging(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
     """Verify extract_target_refs_single restores sys.path cleanly and logs warnings instead of printing.
 
     Args:
@@ -278,11 +289,11 @@ def test_extract_target_refs_single_sys_path_and_logging(tmp_path: Path, capsys:
     with caplog.at_level(logging.WARNING, logger="ml_ecosystem_snapshots.compliance"):
         refs = extract_target_refs_single(str(sub_mod), "warn_pkg.broken_mod", "ref")
 
-    assert refs == []
+    assert [r.api_path for r in refs] == ["ref.broken_fn"]
     assert list(sys.path) == before_sys_path
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert any("Exception in walk for warn_pkg.broken_mod" in r.message for r in caplog.records)
+    assert any("Exception in walk for warn_pkg.broken_mod.nonexistent_dep_xyz_987" in r.message for r in caplog.records)
 
 
 def test_extract_target_refs_string_path(tmp_path: Path) -> None:
@@ -352,21 +363,21 @@ def test_check_mlir_text_compliance() -> None:
     }
     """
     res_valid = check_mlir_text_compliance(valid_snippet)
-    assert res_valid["is_compliant"] is True
-    assert res_valid["verified_ops"] >= 1
+    assert res_valid.is_compliant is True
+    assert res_valid.verified_ops >= 1
 
     # 2. Invalid MLIR snippet with non-existent op
     invalid_snippet = """
     %0 = non_existent_dialect.non_existent_op(%a) : i32
     """
     res_invalid = check_mlir_text_compliance(invalid_snippet)
-    assert res_invalid["is_compliant"] is False
-    assert len(res_invalid["errors"]) > 0
+    assert res_invalid.is_compliant is False
+    assert len(res_invalid.errors) > 0
 
     # 3. Existing op with invalid operand count (branch 404)
     res_bad_count = check_mlir_text_compliance("%0 = arith.addf(%a) : f32")
-    assert res_bad_count["is_compliant"] is False
-    assert any("Operand count mismatch" in err for err in res_bad_count["errors"])
+    assert res_bad_count.is_compliant is False
+    assert any("Operand count mismatch" in err for err in res_bad_count.errors)
 
 
 def test_check_sass_assembly_compliance() -> None:
@@ -379,22 +390,22 @@ def test_check_sass_assembly_compliance() -> None:
     /*0020*/ @P0 FADD R3, R4, R5;
     """
     res_valid = check_sass_assembly_compliance(valid_sass, sm_arch="sm_80")
-    assert res_valid["is_compliant"] is True
-    assert res_valid["verified_instructions"] == 2
+    assert res_valid.is_compliant is True
+    assert res_valid.verified_instructions == 2
 
     # 2. Incompatible instruction for architecture: WGMMA on sm_80
     invalid_sass = """
     WGMMA R0, R1, R2, R3;
     """
     res_invalid = check_sass_assembly_compliance(invalid_sass, sm_arch="sm_80")
-    assert res_invalid["is_compliant"] is False
-    assert any("WGMMA instructions are strictly supported on sm_90+" in err for err in res_invalid["errors"])
+    assert res_invalid.is_compliant is False
+    assert any("WGMMA instructions are strictly supported on sm_90+" in err for err in res_invalid.errors)
 
     # 3. Comment lines starting with '#' and lines that do not match instruction regex
     sass_comments = "# A comment line\n// Another comment\n@@ invalid label !@#\n\n"
     res_comments = check_sass_assembly_compliance(sass_comments)
-    assert res_comments["is_compliant"] is True
-    assert res_comments["total_instructions"] == 0
+    assert res_comments.is_compliant is True
+    assert res_comments.total_instructions == 0
 
 
 def test_check_rdna_assembly_compliance() -> None:
@@ -407,22 +418,22 @@ def test_check_rdna_assembly_compliance() -> None:
     v_add_f32 v0, v1, v2
     """
     res_valid = check_rdna_assembly_compliance(valid_rdna)
-    assert res_valid["is_compliant"] is True
-    assert res_valid["verified_instructions"] == 1
+    assert res_valid.is_compliant is True
+    assert res_valid.verified_instructions == 1
 
     # 2. Misaligned 64-bit register pair (odd start index)
     invalid_rdna = """
     v_add_f32 v[1:2], v0, v1
     """
     res_invalid = check_rdna_assembly_compliance(invalid_rdna)
-    assert res_invalid["is_compliant"] is False
-    assert any("Register alignment error" in err for err in res_invalid["errors"])
+    assert res_invalid.is_compliant is False
+    assert any("Register alignment error" in err for err in res_invalid.errors)
 
     # 3. Comment lines starting with ';' or '#' and lines that do not match instruction regex
     rdna_comments = "; Semicolon comment\n# Hash comment\n!! invalid rdna line !@#\n\n"
     res_comments = check_rdna_assembly_compliance(rdna_comments)
-    assert res_comments["is_compliant"] is True
-    assert res_comments["total_instructions"] == 0
+    assert res_comments.is_compliant is True
+    assert res_comments.total_instructions == 0
 
 
 def test_validate_broadcast_and_matmul_shapes() -> None:
@@ -554,43 +565,78 @@ def test_compliance_edge_branches(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
+    from ml_ecosystem_snapshots.cli.commands.verify_compliance import ZERO_ECOSYSTEM_ALIGNMENT_RULE
     from ml_ecosystem_snapshots.compliance import (
         align_namespace,
         extract_target_refs_single,
     )
 
     # Test exact mapping match where api_path != target_prefix
-    assert align_namespace("zero_chex", "custom_target", "custom_ref") == "chex"
-    assert align_namespace("zero_chex.assert_shape", "custom_target", "custom_ref") == "chex.assert_shape"
-    assert align_namespace("zero_orbax", "custom_target", "custom_ref") == "orbax"
-    assert align_namespace("zero_grain", "custom_target", "custom_ref") == "grain"
+    assert (
+        align_namespace("zero_chex", "custom_target", "custom_ref", alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE)
+        == "chex"
+    )
+    assert (
+        align_namespace(
+            "zero_chex.assert_shape",
+            "custom_target",
+            "custom_ref",
+            alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE,
+        )
+        == "chex.assert_shape"
+    )
+    assert (
+        align_namespace("zero_orbax", "custom_target", "custom_ref", alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE)
+        == "orbax"
+    )
+    assert (
+        align_namespace("zero_grain", "custom_target", "custom_ref", alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE)
+        == "grain"
+    )
 
-    # Test extract_target_refs_single with zero_jax module
+    # Test extract_target_refs_single with zero_jax module and path_rewrites
     pkg_dir = tmp_path / "zero_jax"
-    os.makedirs(pkg_dir / "nn", exist_ok=True)
+    os.makedirs(pkg_dir / "nn" / "nn", exist_ok=True)
     with open(pkg_dir / "__init__.py", "w") as f:
         f.write("")
     with open(pkg_dir / "nn" / "__init__.py", "w") as f:
+        f.write("")
+    with open(pkg_dir / "nn" / "nn" / "__init__.py", "w") as f:
         f.write("def relu(x):\n    '''Rectified linear unit.'''\n    return x\n")
 
-    refs = extract_target_refs_single(str(pkg_dir), "zero_jax", "jax")
-    assert len(refs) >= 1
+    refs = extract_target_refs_single(
+        str(pkg_dir),
+        "zero_jax",
+        "jax",
+        alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE,
+    )
+    assert any(r.api_path == "jax.nn.relu" for r in refs)
 
-    # Also test when node.path does not start with zero_jax. but zero_jax in current_path
+    # Also test when node.path does not start with zero_jax. but zero_jax. in current_path
     pkg_dir2 = tmp_path / "sub_zero_jax"
-    os.makedirs(pkg_dir2 / "sub", exist_ok=True)
+    os.makedirs(pkg_dir2 / "zero_jax", exist_ok=True)
     with open(pkg_dir2 / "__init__.py", "w") as f:
         f.write("")
-    with open(pkg_dir2 / "sub" / "__init__.py", "w") as f:
+    with open(pkg_dir2 / "zero_jax" / "__init__.py", "w") as f:
         f.write("def gelu(x):\n    '''Gelu.'''\n    return x\n")
-    refs2 = extract_target_refs_single(str(pkg_dir2), "sub_zero_jax", "jax")
+    refs2 = extract_target_refs_single(
+        str(pkg_dir2),
+        "sub_zero_jax",
+        "jax",
+        alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE,
+    )
     assert len(refs2) >= 1
 
-    # Test when parts has no subparts to loop over (len(parts) == 1)
+    # Test rule where neither node.path nor current_path matches node_prefix_rewrites
     single_file = tmp_path / "single_file.py"
     with open(single_file, "w") as f:
         f.write("def standalone():\n    '''Standalone.'''\n    return 42\n")
-    refs3 = extract_target_refs_single(str(single_file), "single_file", "ref_pkg")
+    refs3 = extract_target_refs_single(
+        str(single_file),
+        "single_file",
+        "ref_pkg",
+        alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE,
+    )
     assert len(refs3) >= 1
 
 
@@ -625,11 +671,11 @@ def test_score_compliance_opaque_c_extensions() -> None:
     ]
     # Permissive
     res_perm = score_compliance(ref_snap, target_opaque, strict_c_extensions=False)
-    assert "test.opaque" in res_perm["matched"]
+    assert "test.opaque" in res_perm.matched
 
     # Strict
     res_strict = score_compliance(ref_snap, target_opaque, strict_c_extensions=True)
-    assert any(m["api_path"] == "test.opaque" for m in res_strict["mismatched"])
+    assert any(m.api_path == "test.opaque" for m in res_strict.mismatched)
 
 
 def test_extract_target_refs_single_root_function(tmp_path: Path, mocker: pytest_mock.MockerFixture) -> None:
@@ -663,8 +709,8 @@ def test_extract_target_refs_single_root_function(tmp_path: Path, mocker: pytest
     assert len(refs) == 1
 
 
-def test_compliance_models_getitem_and_get() -> None:
-    """Test __getitem__ and get methods on ComplianceMismatchEntry, ComplianceScoreReport, and SnippetComplianceReport."""
+def test_compliance_models_typed_attributes() -> None:
+    """Test typed attribute access and serialization on ComplianceMismatchEntry, ComplianceScoreReport, and SnippetComplianceReport."""
     from ml_ecosystem_snapshots.compliance import (
         ComplianceMismatchEntry,
         ComplianceScoreReport,
@@ -677,10 +723,10 @@ def test_compliance_models_getitem_and_get() -> None:
         actual=[],
         reason="Mismatch reason",
     )
-    assert mismatch["api_path"] == "pkg.fn"
-    assert len(mismatch["expected"]) == 1
-    assert mismatch["actual"] == []
-    assert mismatch["reason"] == "Mismatch reason"
+    assert mismatch.api_path == "pkg.fn"
+    assert len(mismatch.expected) == 1
+    assert mismatch.actual == []
+    assert mismatch.reason == "Mismatch reason"
 
     score_rep = ComplianceScoreReport(
         score_percentage=75.0,
@@ -691,15 +737,13 @@ def test_compliance_models_getitem_and_get() -> None:
         opaque_signatures=["op1"],
         warnings=["warn1"],
     )
-    assert score_rep["score_percentage"] == 75.0
-    assert score_rep["total_endpoints"] == 4
-    assert score_rep["matched"] == ["a", "b", "c"]
-    assert score_rep["missing"] == ["d"]
-    assert score_rep["mismatched"] == [mismatch]
-    assert score_rep["opaque_signatures"] == ["op1"]
-    assert score_rep["warnings"] == ["warn1"]
-    assert score_rep.get("score_percentage") == 75.0
-    assert score_rep.get("unknown_key", 99) == 99
+    assert score_rep.score_percentage == 75.0
+    assert score_rep.total_endpoints == 4
+    assert score_rep.matched == ["a", "b", "c"]
+    assert score_rep.missing == ["d"]
+    assert score_rep.mismatched == [mismatch]
+    assert score_rep.opaque_signatures == ["op1"]
+    assert score_rep.warnings == ["warn1"]
 
     snip_rep = SnippetComplianceReport(
         is_compliant=True,
@@ -709,11 +753,9 @@ def test_compliance_models_getitem_and_get() -> None:
         verified_instructions=2,
         errors=[],
     )
-    assert snip_rep["is_compliant"] is True
-    assert snip_rep["total_ops"] == 3
-    assert snip_rep["verified_ops"] == 3
-    assert snip_rep["total_instructions"] == 2
-    assert snip_rep["verified_instructions"] == 2
-    assert snip_rep["errors"] == []
-    assert snip_rep.get("is_compliant") is True
-    assert snip_rep.get("unknown_key", "fallback") == "fallback"
+    assert snip_rep.is_compliant is True
+    assert snip_rep.total_ops == 3
+    assert snip_rep.verified_ops == 3
+    assert snip_rep.total_instructions == 2
+    assert snip_rep.verified_instructions == 2
+    assert snip_rep.errors == []

@@ -7,13 +7,13 @@ import textwrap
 
 from ml_ecosystem_snapshots.exceptions import IntrospectionError
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
-    InspectableTarget,
+    LivePythonTarget,
     get_runtime_source,
 )
 
 
-def _parse_callable_ast(
-    func: InspectableTarget,
+def parse_callable_ast(
+    func: LivePythonTarget,
 ) -> ast.AST:
     """Retrieve and parse the Python AST of a live callable target.
 
@@ -34,6 +34,9 @@ def _parse_callable_ast(
         raise IntrospectionError(f"Unable to parse AST for callable {func!r}: {exc}") from exc
 
 
+_parse_callable_ast = parse_callable_ast
+
+
 class _KwargAccessVisitor(ast.NodeVisitor):
     """AST visitor collecting string keys queried on a `**kwargs` dictionary."""
 
@@ -52,7 +55,12 @@ class _KwargAccessVisitor(ast.NodeVisitor):
         Args:
             node: The AST Call node.
         """
-        if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name) and node.func.value.id == self._kwarg_name and node.func.attr in ("get", "pop", "setdefault"):
+        if (
+            isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == self._kwarg_name
+            and node.func.attr in ("get", "pop", "setdefault")
+        ):
             if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
                 self.discovered.add(node.args[0].value)
         self.generic_visit(node)
@@ -75,7 +83,9 @@ class _KwargAccessVisitor(ast.NodeVisitor):
         Args:
             node: The AST Compare node.
         """
-        for op, comparator in zip(node.ops, node.comparators):
+        for idx in range(min(len(node.ops), len(node.comparators))):
+            op = node.ops[idx]
+            comparator = node.comparators[idx]
             if isinstance(op, (ast.In, ast.NotIn)):
                 if isinstance(comparator, ast.Name) and comparator.id == self._kwarg_name:
                     if isinstance(node.left, ast.Constant) and isinstance(node.left.value, str):
@@ -84,7 +94,7 @@ class _KwargAccessVisitor(ast.NodeVisitor):
 
 
 def extract_accepted_kwargs_from_ast(
-    func: InspectableTarget,
+    func: LivePythonTarget,
 ) -> list[str] | None:
     """Statically analyze a function AST to extract keyword arguments accessed via `**kwargs`.
 
