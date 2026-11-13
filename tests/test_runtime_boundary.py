@@ -24,8 +24,8 @@ class _SampleCallable:
         """Return first positional argument or None.
 
         Args:
-            args: Variadic positional arguments.
-            kwargs: Variadic keyword arguments.
+            *args: Variadic positional arguments.
+            **kwargs: Variadic keyword arguments.
 
         Returns:
             First argument or None.

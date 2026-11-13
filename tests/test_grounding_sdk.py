@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 import pytest
+from ml_switcheroo_ir.validation.core import ValidationError
 
 from ml_ecosystem_snapshots.grounding import (
     DiagnosticSeverity,
@@ -22,6 +23,18 @@ from ml_ecosystem_snapshots.grounding import (
     validate_stablehlo_op,
 )
 from ml_ecosystem_snapshots.models import GhostRef, JsonValue
+
+
+def _diag_field(diag: GroundingDiagnostic | ValidationError) -> str:
+    """Return the evaluated field or attribute name from a grounding diagnostic item.
+
+    Args:
+        diag: Grounding diagnostic model or graph validation error instance.
+
+    Returns:
+        Evaluated field or attribute identifier string.
+    """
+    return diag.field if isinstance(diag, GroundingDiagnostic) else diag.attribute
 
 
 def test_compute_levenshtein() -> None:
@@ -43,6 +56,9 @@ def test_grounding_models() -> None:
         suggested_fix="add",
     )
     assert diag.field == "operands"
+    assert _diag_field(diag) == "operands"
+    val_err = ValidationError(node_id="n0", attribute="kind", message="Ungrounded symbol")
+    assert _diag_field(val_err) == "kind"
     assert diag.severity == DiagnosticSeverity.ERROR
     assert diag.suggested_fix == "add"
 
@@ -256,10 +272,7 @@ def test_validate_sass_instruction() -> None:
         operands=["R1", "R2"],
     )
     assert not report_invalid_mnem.is_grounded
-    assert any(
-        isinstance(d, GroundingDiagnostic) and d.field == "mnemonic" and d.suggested_fix == "FFMA"
-        for d in report_invalid_mnem.diagnostics
-    )
+    assert any(_diag_field(d) == "mnemonic" and d.suggested_fix == "FFMA" for d in report_invalid_mnem.diagnostics)
 
     # Test invalid architecture
     report_bad_arch = validate_sass_instruction(
@@ -268,7 +281,7 @@ def test_validate_sass_instruction() -> None:
         operands=["R1", "R2", "R3", "R4"],
     )
     assert not report_bad_arch.is_grounded
-    assert any(isinstance(d, GroundingDiagnostic) and d.field == "architecture" for d in report_bad_arch.diagnostics)
+    assert any(_diag_field(d) == "architecture" for d in report_bad_arch.diagnostics)
 
     # Test unrecognized modifier
     report_bad_mod = validate_sass_instruction(
@@ -277,7 +290,7 @@ def test_validate_sass_instruction() -> None:
         operands=["R1", "R2", "R3", "R4"],
         modifiers=[".NONEXISTENT_MODIFIER"],
     )
-    assert any(isinstance(d, GroundingDiagnostic) and d.field == "modifiers" for d in report_bad_mod.diagnostics)
+    assert any(_diag_field(d) == "modifiers" for d in report_bad_mod.diagnostics)
 
     # Test operand count mismatch
     report_bad_ops = validate_sass_instruction(
@@ -286,7 +299,7 @@ def test_validate_sass_instruction() -> None:
         operands=["R1"],
     )
     assert not report_bad_ops.is_grounded
-    assert any(isinstance(d, GroundingDiagnostic) and d.field == "operands" for d in report_bad_ops.diagnostics)
+    assert any(_diag_field(d) == "operands" for d in report_bad_ops.diagnostics)
 
 
 def test_validate_rdna_instruction() -> None:
@@ -306,7 +319,7 @@ def test_validate_rdna_instruction() -> None:
         operands=["v0", "v1"],
     )
     assert not report_typo.is_grounded
-    assert any(isinstance(d, GroundingDiagnostic) and d.field == "mnemonic" for d in report_typo.diagnostics)
+    assert any(_diag_field(d) == "mnemonic" for d in report_typo.diagnostics)
 
     # Test odd-aligned 64-bit register pair violation
     report_odd_reg = validate_rdna_instruction(
@@ -315,10 +328,7 @@ def test_validate_rdna_instruction() -> None:
         operands=["v[1:2]", "v[2:3]"],
     )
     assert not report_odd_reg.is_grounded
-    assert any(
-        isinstance(d, GroundingDiagnostic) and "operands[0]" in d.field and "even-aligned" in d.message
-        for d in report_odd_reg.diagnostics
-    )
+    assert any("operands[0]" in _diag_field(d) and "even-aligned" in d.message for d in report_odd_reg.diagnostics)
 
 
 def test_validate_stablehlo_op() -> None:
@@ -338,10 +348,7 @@ def test_validate_stablehlo_op() -> None:
         attributes={},
     )
     assert not report_dot_missing.is_grounded
-    assert any(
-        isinstance(d, GroundingDiagnostic) and d.field == "attributes.dot_dimension_numbers"
-        for d in report_dot_missing.diagnostics
-    )
+    assert any(_diag_field(d) == "attributes.dot_dimension_numbers" for d in report_dot_missing.diagnostics)
 
     # Test convolution missing dimension_numbers
     report_conv_missing = validate_stablehlo_op(
@@ -350,10 +357,7 @@ def test_validate_stablehlo_op() -> None:
         attributes={},
     )
     assert not report_conv_missing.is_grounded
-    assert any(
-        isinstance(d, GroundingDiagnostic) and d.field == "attributes.dimension_numbers"
-        for d in report_conv_missing.diagnostics
-    )
+    assert any(_diag_field(d) == "attributes.dimension_numbers" for d in report_conv_missing.diagnostics)
 
     # Test unrecognized op with suggestion
     report_typo = validate_stablehlo_op(
@@ -362,7 +366,7 @@ def test_validate_stablehlo_op() -> None:
         attributes={},
     )
     assert not report_typo.is_grounded
-    assert any(isinstance(d, GroundingDiagnostic) and d.field == "operation" for d in report_typo.diagnostics)
+    assert any(_diag_field(d) == "operation" for d in report_typo.diagnostics)
 
     # Test operand count mismatch
     report_op_count = validate_stablehlo_op(
@@ -371,7 +375,7 @@ def test_validate_stablehlo_op() -> None:
         attributes={},
     )
     assert not report_op_count.is_grounded
-    assert any(isinstance(d, GroundingDiagnostic) and d.field == "operands" for d in report_op_count.diagnostics)
+    assert any(_diag_field(d) == "operands" for d in report_op_count.diagnostics)
 
 
 def test_validate_mlir_op() -> None:
@@ -402,7 +406,7 @@ def test_validate_mlir_op() -> None:
         attributes={},
     )
     assert not report_count.is_grounded
-    assert any(isinstance(d, GroundingDiagnostic) and d.field == "operand_count" for d in report_count.diagnostics)
+    assert any(_diag_field(d) == "operand_count" for d in report_count.diagnostics)
 
 
 def test_validate_python_call(tmp_path: Path) -> None:
@@ -472,10 +476,7 @@ def test_validate_python_call(tmp_path: Path) -> None:
         engine=engine,
     )
     assert not res_unrec.is_grounded
-    assert any(
-        isinstance(d, GroundingDiagnostic) and d.field == "api_path" and d.suggested_fix == "torch.sum"
-        for d in res_unrec.diagnostics
-    )
+    assert any(_diag_field(d) == "api_path" and d.suggested_fix == "torch.sum" for d in res_unrec.diagnostics)
 
     # Hallucinated axis kwarg on torch -> suggests dim
     res_halluc_axis = validate_python_call(
@@ -486,10 +487,7 @@ def test_validate_python_call(tmp_path: Path) -> None:
         engine=engine,
     )
     assert not res_halluc_axis.is_grounded
-    assert any(
-        isinstance(d, GroundingDiagnostic) and d.field == "kwargs.axis" and d.suggested_fix == "dim"
-        for d in res_halluc_axis.diagnostics
-    )
+    assert any(_diag_field(d) == "kwargs.axis" and d.suggested_fix == "dim" for d in res_halluc_axis.diagnostics)
 
     # Hallucinated dim kwarg on numpy -> suggests axis
     res_halluc_dim = validate_python_call(
@@ -500,10 +498,7 @@ def test_validate_python_call(tmp_path: Path) -> None:
         engine=engine,
     )
     assert not res_halluc_dim.is_grounded
-    assert any(
-        isinstance(d, GroundingDiagnostic) and d.field == "kwargs.dim" and d.suggested_fix == "axis"
-        for d in res_halluc_dim.diagnostics
-    )
+    assert any(_diag_field(d) == "kwargs.dim" and d.suggested_fix == "axis" for d in res_halluc_dim.diagnostics)
 
     # Hallucinated arbitrary kwarg
     res_rand_kw = validate_python_call(
@@ -524,7 +519,7 @@ def test_validate_python_call(tmp_path: Path) -> None:
         engine=engine,
     )
     assert not res_too_many_args.is_grounded
-    assert any(isinstance(d, GroundingDiagnostic) and d.field == "args" for d in res_too_many_args.diagnostics)
+    assert any(_diag_field(d) == "args" for d in res_too_many_args.diagnostics)
 
     # Overloads (dict & object) and accepted_kwargs coverage
     from ml_switcheroo_ir.schema.ghost import ParameterKind
@@ -987,7 +982,7 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
         arg_dtypes=["int32"],
     )
     assert not py_dt_err.is_grounded
-    assert any(isinstance(d, GroundingDiagnostic) and d.field == "arguments" for d in py_dt_err.diagnostics)
+    assert any(_diag_field(d) == "arguments" for d in py_dt_err.diagnostics)
 
     # Python secondary overload positional arity acceptance
     ov_dir = str(tmp_path / "ov_dir")
@@ -1041,7 +1036,7 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
         control_codes={"stall_count": 99},
     )
     assert not sass_err_rep.is_grounded
-    fields = {d.field for d in sass_err_rep.diagnostics if isinstance(d, GroundingDiagnostic)}
+    fields = {_diag_field(d) for d in sass_err_rep.diagnostics}
     assert "modifiers" in fields
     assert "operands[1]" in fields
     assert "operands" in fields
@@ -1057,7 +1052,7 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
         wave_size=64,
     )
     assert not rdna_err_rep.is_grounded
-    rdna_fields = {d.field for d in rdna_err_rep.diagnostics if isinstance(d, GroundingDiagnostic)}
+    rdna_fields = {_diag_field(d) for d in rdna_err_rep.diagnostics}
     assert "gfx_arch" in rdna_fields
     assert "encoding" in rdna_fields
     assert "modifiers" in rdna_fields
@@ -1164,7 +1159,7 @@ def test_unified_grounding_ir_and_keepdim_branches(tmp_path: Path) -> None:
         result_types=["tensor<4xf32>"],
     )
     assert not shlo_err.is_grounded
-    shlo_fields = {d.field for d in shlo_err.diagnostics if isinstance(d, GroundingDiagnostic)}
+    shlo_fields = {_diag_field(d) for d in shlo_err.diagnostics}
     assert "traits" in shlo_fields
     assert "attributes" in shlo_fields
 
@@ -1174,7 +1169,7 @@ def test_unified_grounding_ir_and_keepdim_branches(tmp_path: Path) -> None:
         attributes={},
         regions={"body": {"block_arguments": ["tensor<f32>"], "yield_types": []}},
     )
-    assert any(isinstance(d, GroundingDiagnostic) and d.field == "regions.body" for d in shlo_reg_err.diagnostics)
+    assert any(_diag_field(d) == "regions.body" for d in shlo_reg_err.diagnostics)
 
     # RDNA empty gfx_arch branch
     rdna_no_arch = validate_rdna_instruction(
@@ -1249,7 +1244,7 @@ def test_unified_grounding_ir_and_keepdim_branches(tmp_path: Path) -> None:
         attributes={},
         engine=eng_mlir,
     )
-    assert any(isinstance(d, GroundingDiagnostic) and d.field == "operands[0]" for d in shlo_type_err.diagnostics)
+    assert any(_diag_field(d) == "operands[0]" for d in shlo_type_err.diagnostics)
 
     mlir_type_err = validate_mlir_op(
         dialect="arith",
@@ -1261,7 +1256,7 @@ def test_unified_grounding_ir_and_keepdim_branches(tmp_path: Path) -> None:
         result_types=["f64"],
     )
     assert not mlir_type_err.is_grounded
-    mlir_fields = {d.field for d in mlir_type_err.diagnostics if isinstance(d, GroundingDiagnostic)}
+    mlir_fields = {_diag_field(d) for d in mlir_type_err.diagnostics}
     assert "operands[0]" in mlir_fields
     assert "attributes" in mlir_fields
 
@@ -1273,7 +1268,7 @@ def test_unified_grounding_ir_and_keepdim_branches(tmp_path: Path) -> None:
         operand_types=["tensor<4xf32>", "tensor<8xf32>"],
         result_types=["tensor<4xf32>"],
     )
-    assert any(isinstance(d, GroundingDiagnostic) and d.field == "traits" for d in mlir_trait_err.diagnostics)
+    assert any(_diag_field(d) == "traits" for d in mlir_trait_err.diagnostics)
 
 
 def test_grounding_models_cross_repo_identity() -> None:

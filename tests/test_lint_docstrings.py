@@ -111,7 +111,7 @@ def test_check_file_docstrings_detects_missing_and_placeholder_docs(tmp_path: Pa
     assert "banned robotic docstring phrase" in joined
     assert "missing class docstring on 'UndocumentedClass'" in joined
     assert "missing function docstring on 'undoc_fn'" in joined
-    assert "undocumented parameter(s) ['a', 'args', 'kwargs'] on 'bad_sig'" in joined
+    assert "undocumented parameter(s) ['a', '*args', '**kwargs'] on 'bad_sig'" in joined
     assert "missing Returns:/Yields: docstring section on 'bad_sig'" in joined
     assert "missing Raises: docstring section on 'bad_sig'" in joined
     assert "overloaded_fn" not in joined

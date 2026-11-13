@@ -243,11 +243,11 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ops_empty == CANONICAL_WGSL_OPS
 
     # Case 3: Outer import failure
-    def mock_files_raise(_: str) -> MagicMock:
+    def mock_files_raise(anchor: str) -> MagicMock:
         """Mock failure in files resource resolution.
 
         Args:
-            _: Resource anchor package.
+            anchor: Resource anchor package.
 
         Raises:
             RuntimeError: Always raised to simulate resource lookup failure.
@@ -255,6 +255,7 @@ def test_load_wgsl_ops_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         Returns:
             Never returns.
         """
+        _ = anchor
         raise RuntimeError("Outer failure")
 
     monkeypatch.setattr("importlib.resources.files", mock_files_raise)

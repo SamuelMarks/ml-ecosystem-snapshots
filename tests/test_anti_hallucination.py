@@ -1876,8 +1876,8 @@ def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     """Test MCP server versioned snapshot lookups, search, and message handling.
 
     Args:
-        monkeypatch: Pytest monkeypatch fixture.
         tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
     """
     from ml_ecosystem_snapshots.mcp_server import (
         DEFAULT_SNAPSHOT_REPOSITORY,

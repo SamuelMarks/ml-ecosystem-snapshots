@@ -28,7 +28,7 @@ class SubLayer(BaseLayer):
 
         Args:
             name: Submodule layer identifier.
-            kwargs: Forwarded keyword arguments to parent initializer.
+            **kwargs: Forwarded keyword arguments to parent initializer.
         """
         pass
 

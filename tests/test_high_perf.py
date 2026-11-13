@@ -51,7 +51,7 @@ def test_triton_collect(monkeypatch: pytest.MonkeyPatch) -> None:
         Args:
             obj: Target callable.
             path: Dotted API path.
-            kw: Extra keyword arguments.
+            **kw: Extra keyword arguments.
 
         Returns:
             Stub `GhostRef`.

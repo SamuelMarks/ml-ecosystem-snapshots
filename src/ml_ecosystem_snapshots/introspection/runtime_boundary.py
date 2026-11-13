@@ -68,8 +68,8 @@ class InspectableCallableProtocol(typing.Protocol):
         """Invoke the callable target.
 
         Args:
-            args: Variadic positional arguments.
-            kwargs: Variadic keyword arguments.
+            *args: Variadic positional arguments.
+            **kwargs: Variadic keyword arguments.
 
         Returns:
             Result of invocation.

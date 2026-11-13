@@ -7,6 +7,7 @@ losses, optimizers, and activations.
 
 from __future__ import annotations
 
+import importlib
 import inspect
 import logging
 import types
@@ -41,9 +42,7 @@ def _get_nnx() -> types.ModuleType | None:
     if nnx is not None:
         return nnx
     try:
-        import flax.nnx as _nnx
-
-        nnx = _nnx
+        nnx = importlib.import_module("flax.nnx")
         return nnx
     except (
         ImportError,

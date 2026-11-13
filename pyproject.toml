@@ -83,6 +83,8 @@ module = [
     "torchmetrics",
     "jax",
     "jax.*",
+    "flax",
+    "flax.*",
     "tensorflow",
     "dask",
     "dask.*",

@@ -162,11 +162,11 @@ def verify_sass_instruction(
 
     Args:
         mnemonic: Instruction mnemonic (e.g. 'FADD', 'WGMMA').
+        snap: Categorized NVIDIA SASS snapshot dictionary.
         operands: Optional list of operand strings (e.g. ['R', 'R', 'R']).
         modifiers: Optional list of instruction modifiers (e.g. ['.SAT', '.FTZ']).
         sm_arch: Optional target SM architecture (e.g. 'sm_80', 'sm_90').
         control_codes: Optional control code dictionary (e.g. {'stall_count': 1, 'latency_ticks': 4}).
-        snap: Categorized NVIDIA SASS snapshot dictionary.
 
     Returns:
         `IsaCheckResult` validation report model with is_valid, supported_architectures, and errors.
@@ -328,12 +328,12 @@ def verify_rdna_instruction(
 
     Args:
         mnemonic: Instruction mnemonic (e.g. 'v_add_f32', 's_load_dword').
+        snap: Categorized AMD RDNA snapshot dictionary.
         operands: Optional list of operand type strings.
         encoding: Optional instruction encoding format (e.g. 'VOP2', 'SMEM').
         gfx_arch: Optional target GFX architecture (e.g. 'GFX11/RDNA3').
         modifiers: Optional list of modifiers (e.g. ['-src', 'clamp', 'omod:2']).
         wave_size: Optional wavefront execution size (32 or 64).
-        snap: Categorized AMD RDNA snapshot dictionary.
 
     Returns:
         `IsaCheckResult` validation report model with is_valid, supported_architectures, and errors.

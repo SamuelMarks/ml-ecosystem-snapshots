@@ -634,13 +634,12 @@ class _HfDummyGenWithException:
 class _HfDummyGenFull:
     """Stub class with a multi-parameter `generate` signature."""
 
-    @typing.no_type_check
     def generate(
         self,
         existing_param: str,
         default_val: int = 10,
         no_default: float = 0.0,
-        no_anno=None,
+        no_anno: str | None = None,
         *args: LivePythonTarget,
         **kwargs: LivePythonTarget,
     ) -> None:
@@ -650,7 +649,7 @@ class _HfDummyGenFull:
             existing_param: Pre-existing parameter name.
             default_val: Parameter with integer default.
             no_default: Parameter with float annotation.
-            no_anno: Untyped parameter.
+            no_anno: Optional string parameter.
             *args: Variadic positional arguments.
             **kwargs: Variadic keyword arguments.
         """
@@ -757,8 +756,20 @@ def _check_hf_helper_extractors(mocker: pytest_mock.MockerFixture) -> None:
     )
     mocker.stopall()
     hf_mod._extract_generation_kwargs(_HfDummyGenFull(), ref_gen)
+    mocker.patch.object(
+        hf_mod,
+        "get_runtime_signature",
+        return_value=inspect.Signature(
+            [
+                inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+                inspect.Parameter("bare_param", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+            ]
+        ),
+    )
+    hf_mod._extract_generation_kwargs(_HfDummyGenFull(), ref_gen)
+    mocker.stopall()
     gen_param_names = {p.name for p in ref_gen.params}
-    assert {"existing_param", "default_val", "no_default", "no_anno"} <= gen_param_names
+    assert {"existing_param", "default_val", "no_default", "no_anno", "bare_param"} <= gen_param_names
     assert len([p for p in ref_gen.params if p.name == "existing_param"]) == 1
 
     ref2 = GhostRef(name="NoAnno", api_path="NoAnno", kind="class", params=[])

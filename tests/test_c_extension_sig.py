@@ -43,8 +43,8 @@ def patched_sig(target: LivePythonTarget, *args: LivePythonTarget, **kwargs: Liv
 
     Args:
         target: Callable object to inspect.
-        args: Positional arguments forwarded to `inspect.signature`.
-        kwargs: Keyword arguments forwarded to `inspect.signature`.
+        *args: Positional arguments forwarded to `inspect.signature`.
+        **kwargs: Keyword arguments forwarded to `inspect.signature`.
 
     Raises:
         ValueError: When `target` is `dummy_c_ext`.

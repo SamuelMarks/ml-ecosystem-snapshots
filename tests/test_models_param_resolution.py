@@ -60,8 +60,8 @@ def test_ghost_inspector_opaque_c_extension_none_env_tags() -> None:
         """Opaque function without signature or docstring.
 
         Args:
-            args: Variadic positional arguments or CLI namespace.
-            kwargs: Variadic keyword arguments.
+            *args: Variadic positional arguments or CLI namespace.
+            **kwargs: Variadic keyword arguments.
         """
         pass
 
@@ -103,7 +103,7 @@ class SampleChildForSuper(SampleParentForSuper):
 
         Args:
             a: First parameter value.
-            kwargs: Variadic keyword arguments.
+            **kwargs: Variadic keyword arguments.
         """
         pass
 

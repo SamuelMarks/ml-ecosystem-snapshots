@@ -390,8 +390,8 @@ def test_ensure_index_and_search_index(tmp_path: Path, monkeypatch: pytest.Monke
     """Test ensure_index populates database and search_index queries FTS5.
 
     Args:
-        monkeypatch: Pytest monkeypatch fixture.
         tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
     """
     db_file = str(tmp_path / "search_test.db")
     monkeypatch.setenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", str(tmp_path))
@@ -546,8 +546,8 @@ def test_get_available_snapshot_files(tmp_path: Path, monkeypatch: pytest.Monkey
     """Test get_available_snapshot_files discovers files from search paths.
 
     Args:
-        monkeypatch: Pytest monkeypatch fixture.
         tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
     """
     monkeypatch.setenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", str(tmp_path))
     cached_snap = tmp_path / "snapshots"
@@ -676,7 +676,7 @@ def test_get_readonly_connection_and_clean_cache(tmp_path: Path) -> None:
             """Exit context manager.
 
             Args:
-                args: Variadic positional arguments or CLI namespace.
+                *args: Exception type, value, and traceback arguments.
             """
             pass
 

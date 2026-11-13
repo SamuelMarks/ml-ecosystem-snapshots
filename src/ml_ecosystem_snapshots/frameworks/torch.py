@@ -721,7 +721,7 @@ def parse_native_functions_yaml(
                 arg_type = decl_parts[0]
                 arg_name = decl_parts[1]
             else:
-                arg_type = "Any"
+                arg_type = "Tensor"
                 arg_name = decl_parts[0]
 
             is_out = arg_name == "out" or "(a!)" in arg_type

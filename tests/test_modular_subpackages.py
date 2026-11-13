@@ -137,7 +137,7 @@ def test_introspection_and_serialization_subpackages() -> None:
         """Sample function accessing kwargs['alpha'].
 
         Args:
-            kwargs: Variadic keyword arguments.
+            **kwargs: Variadic keyword arguments.
 
         Returns:
             Extracted alpha value.

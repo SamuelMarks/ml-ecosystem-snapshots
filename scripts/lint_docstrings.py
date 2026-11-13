@@ -66,14 +66,15 @@ def _is_param_documented(doc: str, param_name: str) -> bool:
 
     Args:
         doc: Cleaned docstring text.
-        param_name: Parameter identifier (without leading `*` or `**`).
+        param_name: Parameter identifier (including leading `*` or `**` for variadics).
 
     Returns:
         True if `param_name` appears in `Args:` or `:param <name>:` format.
     """
     escaped = re.escape(param_name)
+    bare_escaped = re.escape(param_name.lstrip("*"))
     nl = chr(10)
-    pattern = rf"(?:^|{nl})\s*(?:\*{{0,2}}{escaped}\s*(?:\([^{nl})]*\))?\s*:|:param\s+\*{{0,2}}{escaped}\s*:)"
+    pattern = rf"(?:^|{nl})\s*(?:{escaped}\s*(?:\([^{nl})]*\))?\s*:|:param\s+(?:{escaped}|{bare_escaped})\s*:)"
     return re.search(pattern, doc) is not None
 
 
@@ -84,7 +85,7 @@ def _collect_required_params(node: ast.FunctionDef | ast.AsyncFunctionDef) -> li
         node: Function or async function AST node.
 
     Returns:
-        Ordered list of parameter identifiers.
+        Ordered list of parameter identifiers (with `*`/`**` prefixes on variadics).
     """
     names: list[str] = [
         arg.arg
@@ -92,9 +93,9 @@ def _collect_required_params(node: ast.FunctionDef | ast.AsyncFunctionDef) -> li
         if arg.arg not in {"self", "cls"}
     ]
     if node.args.vararg is not None:
-        names.append(node.args.vararg.arg)
+        names.append(f"*{node.args.vararg.arg}")
     if node.args.kwarg is not None:
-        names.append(node.args.kwarg.arg)
+        names.append(f"**{node.args.kwarg.arg}")
     return names
 
 

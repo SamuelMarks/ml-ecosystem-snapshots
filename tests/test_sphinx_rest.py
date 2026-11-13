@@ -491,7 +491,7 @@ def test_promote_documented_kwargs() -> None:
 
         Args:
             in_features: Size of each input sample.
-            kwargs: Variadic keyword arguments.
+            **kwargs: Variadic keyword arguments.
 
         :param in_features: Size of each input sample.
         :type in_features: int

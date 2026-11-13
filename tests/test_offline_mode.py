@@ -113,8 +113,8 @@ def test_index_db_stored_in_cache_dir_only(tmp_path: Path, monkeypatch: pytest.M
     """Verify that index database is strictly placed in local user cache directory.
 
     Args:
-        monkeypatch: Pytest monkeypatch fixture.
         tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
     """
     monkeypatch.setenv("ML_ECOSYSTEM_SNAPSHOTS_CACHE_DIR", str(tmp_path))
     db_path = get_index_db_path()

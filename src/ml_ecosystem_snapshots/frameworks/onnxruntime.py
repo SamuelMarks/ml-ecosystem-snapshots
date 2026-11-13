@@ -54,7 +54,7 @@ def _inspect_ort_symbol(obj: LivePythonTarget, name: str, inspector: GhostInspec
                 name="providers",
                 kind=ParameterKind.POSITIONAL_OR_KEYWORD,
                 default="None",
-                annotation="Sequence[str | tuple[str, dict[str, Any]]] | None",
+                annotation="Sequence[str | tuple[str, dict[str, JsonValue]]] | None",
             )
         )
     return ref

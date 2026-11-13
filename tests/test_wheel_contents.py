@@ -242,3 +242,33 @@ def test_zero_json_files_in_git() -> None:
         assert len(tracked_jsons) == 0, f"Found JSON files tracked in git: {tracked_jsons}"
     except (subprocess.SubprocessError, FileNotFoundError):
         return
+
+
+def test_ci_and_release_workflow_inline_python_contracts() -> None:
+    """Verify CI and release workflow inline Python catalog serialization and smoke-test contracts."""
+    import json
+
+    from ml_ecosystem_snapshots.frameworks.amd_rdna import load_exhaustive_rdna
+    from ml_ecosystem_snapshots.frameworks.nvidia_ptx import load_exhaustive_ptx
+    from ml_ecosystem_snapshots.frameworks.nvidia_sass import load_exhaustive_sass
+    from ml_ecosystem_snapshots.mcp_server import (
+        check_ptx_instruction,
+        check_rdna_instruction,
+        check_sass_instruction,
+    )
+
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for rel_workflow in (".github/workflows/ci.yml", ".github/workflows/release.yml"):
+        wf_path = os.path.join(root_dir, rel_workflow)
+        with open(wf_path, encoding="utf-8") as fp:
+            wf_content = fp.read()
+        assert "['is_valid']" not in wf_content, f"Stale dict subscript on IsaCheckResult in {rel_workflow}"
+        assert "('nvidia_sass_exhaustive.json', _load_exhaustive_sass)" not in wf_content
+        assert "('nvidia_sass_exhaustive.json', load_exhaustive_sass)" not in wf_content
+
+    assert len(json.dumps([r.model_dump() for r in load_exhaustive_sass()])) > 1000
+    assert len(json.dumps(load_exhaustive_rdna())) > 1000
+    assert len(json.dumps(load_exhaustive_ptx())) > 1000
+    assert check_sass_instruction("FADD").is_valid
+    assert check_rdna_instruction("v_add_f32").is_valid
+    assert check_ptx_instruction("add").is_valid

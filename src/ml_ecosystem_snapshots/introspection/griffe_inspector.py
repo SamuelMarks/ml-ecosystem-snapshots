@@ -111,14 +111,15 @@ def _merge_griffe_param_record(
         p_data: Raw parameter metadata record or dictionary from Griffe.
         cdd_params: Mutable parameter dictionary keyed by parameter name.
     """
+    clean_name = p_name.lstrip("*")
     rec = _coerce_param_record(p_data)
-    if p_name not in cdd_params:
-        cdd_params[p_name] = rec
+    if clean_name not in cdd_params:
+        cdd_params[clean_name] = rec
     else:
-        if rec.doc and not cdd_params[p_name].doc:
-            cdd_params[p_name].doc = rec.doc
-        if rec.typ and not cdd_params[p_name].typ:
-            cdd_params[p_name].typ = rec.typ
+        if rec.doc and not cdd_params[clean_name].doc:
+            cdd_params[clean_name].doc = rec.doc
+        if rec.typ and not cdd_params[clean_name].typ:
+            cdd_params[clean_name].typ = rec.typ
 
 
 def _populate_griffe_docstring_ir(

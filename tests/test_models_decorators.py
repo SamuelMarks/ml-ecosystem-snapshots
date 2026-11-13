@@ -27,8 +27,8 @@ def dummy_decorator(
         """Discard arguments and return `None` as a decorated call stub.
 
         Args:
-            args: Variadic positional arguments.
-            kwargs: Variadic keyword arguments.
+            *args: Variadic positional arguments.
+            **kwargs: Variadic keyword arguments.
 
         Returns:
             Always `None`.

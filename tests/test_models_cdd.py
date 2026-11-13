@@ -16,8 +16,8 @@ def some_function(a: int = 1, b: str = "test", *args: JsonValue, **kwargs: JsonV
     Args:
         a: The first integer parameter.
         b: The second string parameter.
-        args: Variadic positional arguments.
-        kwargs: Variadic keyword arguments.
+        *args: Variadic positional arguments.
+        **kwargs: Variadic keyword arguments.
     """
     pass
 

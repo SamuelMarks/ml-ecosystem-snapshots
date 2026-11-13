@@ -245,13 +245,13 @@ def _extract_griffe_params_section(
     for item in items:
         if not isinstance(item, _DocstringParamItemProtocol):
             continue
-        p_name = item.name
+        p_name = str(item.name).lstrip("*") if item.name else ""
         if p_name:
             annotation = item.annotation
             value = item.value
             desc = item.description
             cleaned_typ = strip_sphinx_roles(str(annotation)) if annotation is not None else None
-            params[str(p_name)] = DocstringParamMeta(
+            params[p_name] = DocstringParamMeta(
                 doc=str(desc) if desc else "",
                 typ=cleaned_typ,
                 default=str(value) if value is not None else None,

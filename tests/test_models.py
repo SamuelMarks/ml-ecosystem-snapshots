@@ -50,8 +50,8 @@ def dummy_func(a: int, b: int = 2, *args: LivePythonTarget, **kwargs: LivePython
     Args:
         a: Primary integer input.
         b: Optional integer input with default value.
-        args: Variadic positional arguments.
-        kwargs: Variadic keyword arguments.
+        *args: Variadic positional arguments.
+        **kwargs: Variadic keyword arguments.
     """
     pass
 
@@ -799,8 +799,8 @@ def test_ghost_inspector_c_ext_overloads_with_literal_and_standard_enum(
         """Dummy C function.
 
         Args:
-            args: Variadic positional arguments or CLI namespace.
-            kwargs: Variadic keyword arguments.
+            *args: Variadic positional arguments or CLI namespace.
+            **kwargs: Variadic keyword arguments.
         """
         return None
 
@@ -845,7 +845,7 @@ def test_extract_accepted_kwargs_from_ast() -> None:
         """Sample function querying kwargs in various ways.
 
         Args:
-            kwargs: Variadic keyword arguments.
+            **kwargs: Variadic keyword arguments.
         """
         var_key = "test"
         _ = kwargs.get("alpha", 1.0)

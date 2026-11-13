@@ -2383,7 +2383,7 @@ class _FallbackTorchTensor:
         """Return a tensor view with the requested shape.
 
         Args:
-            shape: Target view dimensions.
+            *shape: Target view dimensions.
 
         Returns:
             Viewed tensor instance.
@@ -2394,7 +2394,7 @@ class _FallbackTorchTensor:
         """Return a reshaped tensor with the requested dimensions.
 
         Args:
-            shape: Target reshape dimensions.
+            *shape: Target reshape dimensions.
 
         Returns:
             Reshaped tensor instance.
@@ -2405,7 +2405,7 @@ class _FallbackTorchTensor:
         """Permute tensor axes according to `dims`.
 
         Args:
-            dims: Axis permutation indices.
+            *dims: Axis permutation indices.
 
         Returns:
             Permuted tensor instance.
@@ -2428,7 +2428,7 @@ class _FallbackTorchTensor:
         """Repeat tensor elements along specified dimensions.
 
         Args:
-            sizes: Repetition counts per axis.
+            *sizes: Repetition counts per axis.
 
         Returns:
             Repeated tensor instance.
@@ -2439,8 +2439,8 @@ class _FallbackTorchTensor:
         """Convert tensor dtype or device placement.
 
         Args:
-            args: Positional conversion arguments.
-            kwargs: Keyword conversion arguments.
+            *args: Positional conversion arguments.
+            **kwargs: Keyword conversion arguments.
 
         Returns:
             Converted tensor instance.
@@ -2463,8 +2463,8 @@ class _FallbackJaxArray:
         """Reshape the array without changing its data.
 
         Args:
-            args: Positional shape arguments.
-            kwargs: Keyword shape arguments.
+            *args: Positional shape arguments.
+            **kwargs: Keyword shape arguments.
 
         Returns:
             Reshaped array instance.
@@ -2475,8 +2475,8 @@ class _FallbackJaxArray:
         """Permute array dimensions.
 
         Args:
-            args: Positional axis arguments.
-            kwargs: Keyword axis arguments.
+            *args: Positional axis arguments.
+            **kwargs: Keyword axis arguments.
 
         Returns:
             Transposed array instance.

@@ -220,8 +220,8 @@ def test_cmd_check_output_formatting(
     """Verify cmd check output formatting behavior.
 
     Args:
-        capsys: Pytest stdout/stderr capture fixture.
         mocker: Pytest mocker fixture.
+        capsys: Pytest stdout/stderr capture fixture.
         tmp_path: Pytest temporary directory fixture.
     """
     import json
