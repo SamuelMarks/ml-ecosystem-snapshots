@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import logging
 import types
 import typing
@@ -15,6 +14,7 @@ from ml_ecosystem_snapshots.introspection.context import (
     DocstringIrResult,
     ExtractedParamRecord,
     OverloadExtractionContext,
+    ParamDefaultValue,
     RawParamTuple,
 )
 from ml_ecosystem_snapshots.introspection.live_inspector import _build_extended_params
@@ -46,7 +46,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _coerce_param_record(
-    val: (ExtractedParamRecord | DocstringParamMeta | typing.Mapping[str, JsonValue | ast.AST] | JsonValue),
+    val: (ExtractedParamRecord | DocstringParamMeta | typing.Mapping[str, ParamDefaultValue] | ParamDefaultValue),
 ) -> ExtractedParamRecord:
     """Coerce a raw parameter dict or model into `ExtractedParamRecord`.
 
@@ -101,7 +101,7 @@ def _merge_griffe_return_meta(
 
 def _merge_griffe_param_record(
     p_name: str,
-    p_data: ExtractedParamRecord | DocstringParamMeta | typing.Mapping[str, JsonValue | ast.AST] | JsonValue,
+    p_data: ExtractedParamRecord | DocstringParamMeta | typing.Mapping[str, ParamDefaultValue] | ParamDefaultValue,
     cdd_params: dict[str, ExtractedParamRecord],
 ) -> None:
     """Merge a single Griffe docstring parameter entry into `cdd_params`.
@@ -321,10 +321,10 @@ def _supplement_cdd_params_from_griffe(
     for param in griffe_params:
         if param.name == "self":
             continue
+        p_kind_str = _get_griffe_param_kind_name(param)
+        if p_kind_str == "VAR_POSITIONAL":
+            has_varargs = True
         if param.name not in cdd_ast_params:
-            p_kind_str = _get_griffe_param_kind_name(param)
-            if p_kind_str == "VAR_POSITIONAL":
-                has_varargs = True
             default_val = str(param.default) if param.default is not None else None
             anno_val = (
                 active_sanitize_type_str(str(resolved_hints.get(param.name, param.annotation)))
@@ -335,8 +335,7 @@ def _supplement_cdd_params_from_griffe(
         else:
             for i, (pn, pk, pd, pa) in enumerate(extracted_params):
                 if pn == param.name:
-                    p_kind_str = _get_griffe_param_kind_name(param, default=pk)
-                    extracted_params[i] = (pn, p_kind_str, pd, pa)
+                    extracted_params[i] = (pn, _get_griffe_param_kind_name(param, default=pk), pd, pa)
     return has_varargs
 
 

@@ -15,6 +15,7 @@ from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.introspection.context import (
     DocstringIrResult,
     ExtractedParamRecord,
+    ParamDefaultValue,
     RawParamTuple,
 )
 from ml_ecosystem_snapshots.introspection.griffe_inspector import (
@@ -148,6 +149,34 @@ def _detect_super_kwargs_call(parsed_ast: ast.AST) -> bool:
     return False
 
 
+def collect_variadic_ast_names(parsed_ast: ast.AST) -> set[str]:
+    """Collect `*args` and `**kwargs` parameter names from a function or class `__init__` AST.
+
+    Args:
+        parsed_ast: Parsed class or function AST statement node.
+
+    Returns:
+        Set of variadic positional and variadic keyword parameter names.
+    """
+    fn_nodes: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+    if isinstance(parsed_ast, ast.ClassDef):
+        fn_nodes = [
+            stmt
+            for stmt in parsed_ast.body
+            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)) and stmt.name == "__init__"
+        ]
+    elif isinstance(parsed_ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        fn_nodes = [parsed_ast]
+
+    variadic_names: set[str] = set()
+    for fn_node in fn_nodes:
+        if fn_node.args.vararg is not None:
+            variadic_names.add(fn_node.args.vararg.arg)
+        if fn_node.args.kwarg is not None:
+            variadic_names.add(fn_node.args.kwarg.arg)
+    return variadic_names
+
+
 def _parse_cdd_ast_params(
     parsed_ast: ast.AST,
     kind: str,
@@ -175,8 +204,11 @@ def _parse_cdd_ast_params(
         with contextlib.redirect_stderr(io.StringIO()):
             cdd_parsed_ir = cdd.function.parse.function(parsed_ast)
 
+    variadic_names = collect_variadic_ast_names(parsed_ast)
     if cdd_parsed_ir and "params" in cdd_parsed_ir:
         for p_name, p_val in cdd_parsed_ir["params"].items():
+            if p_name in variadic_names:
+                continue
             rec = _coerce_param_record(p_val)
             if p_name in cdd_params and cdd_params[p_name].doc:
                 rec.doc = cdd_params[p_name].doc
@@ -185,7 +217,7 @@ def _parse_cdd_ast_params(
 
 
 def _format_cdd_param_default(
-    raw_def: JsonValue | ast.AST | None,
+    raw_def: ParamDefaultValue,
     active_ast_mod: types.ModuleType,
 ) -> str | None:
     """Format a CDD AST parameter default into a string representation.
@@ -261,4 +293,5 @@ __all__ = [
     "_is_super_init_call",
     "_parse_cdd_ast_params",
     "_populate_cdd_docstring_ir",
+    "collect_variadic_ast_names",
 ]

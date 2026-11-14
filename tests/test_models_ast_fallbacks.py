@@ -70,7 +70,7 @@ class SimpleClassModel:
 
 
 def target_fn_ast_edges(
-    self: LivePythonTarget,
+    self: SimpleClassModel,
     ast_arg: int = 42,
     broken_arg: str = "x",
     hint_arg: int = 1,
@@ -347,6 +347,10 @@ def test_ghost_inspector_cdd_ast_params_edges(
     assert ref.has_arg("ast_arg")
     assert ref.has_arg("broken_arg")
     assert ref.has_arg("hint_arg")
+    ast_param = next(p for p in ref.params if p.name == "ast_arg")
+    assert ast_param.default == "42"
+    hint_param = next(p for p in ref.params if p.name == "hint_arg")
+    assert hint_param.annotation == "int"
 
 
 def test_ghost_inspector_standard_fallback_exception_in_cdd_branch(

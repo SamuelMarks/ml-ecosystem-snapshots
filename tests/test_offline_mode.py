@@ -395,6 +395,7 @@ def test_offline_smoke_without_griffe_or_cdd(
     assert "griffe" in req_text
     assert "cdd" in req_text
 
+    orig_default_griffe_cache = static_parsers_mod.DEFAULT_GRIFFE_CACHE
     orig_griffe_cache = static_parsers_mod._GRIFFE_CACHE
     orig_ghost_inspector = inspector_mod.GhostInspector
 
@@ -426,8 +427,10 @@ def test_offline_smoke_without_griffe_or_cdd(
 
     importlib.reload(utils_mod)
     importlib.reload(static_parsers_mod)
+    static_parsers_mod.DEFAULT_GRIFFE_CACHE = orig_default_griffe_cache
+    static_parsers_mod._DEFAULT_GRIFFE_CACHE = orig_default_griffe_cache
+    static_parsers_mod._GRIFFE_CACHE = orig_griffe_cache
     importlib.reload(griffe_insp_mod)
     importlib.reload(cdd_insp_mod)
     importlib.reload(inspector_mod)
     pytest.MonkeyPatch().setattr(inspector_mod, "GhostInspector", orig_ghost_inspector)
-    static_parsers_mod._GRIFFE_CACHE = orig_griffe_cache

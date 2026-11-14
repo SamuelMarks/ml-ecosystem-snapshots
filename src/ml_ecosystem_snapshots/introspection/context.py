@@ -20,7 +20,7 @@ from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     get_member_dict,
 )
 from ml_ecosystem_snapshots.introspection.sanitize import sanitize_type_str
-from ml_ecosystem_snapshots.models import JsonValue
+from ml_ecosystem_snapshots.models import JsonValue, ScalarValue
 
 
 def _get_target_module_name(target: LivePythonTarget | StaticGriffeNode) -> str:
@@ -38,6 +38,13 @@ def _get_target_module_name(target: LivePythonTarget | StaticGriffeNode) -> str:
 
 RawParamTuple: typing_extensions.TypeAlias = tuple[str, str, "str | None", "str | None"]
 
+ParamDefaultAtom: typing_extensions.TypeAlias = (
+    "JsonValue | ast.AST | bytes | set[ScalarValue] | frozenset[ScalarValue] | tuple[ScalarValue, ...]"
+)
+ParamDefaultValue: typing_extensions.TypeAlias = (
+    "ParamDefaultAtom | tuple[ParamDefaultAtom, ...] | list[ParamDefaultAtom] | dict[str, ParamDefaultAtom]"
+)
+
 
 class ExtractedParamRecord(pydantic.BaseModel):
     """Intermediate extracted parameter metadata from CDD or Griffe docstrings/AST."""
@@ -46,7 +53,20 @@ class ExtractedParamRecord(pydantic.BaseModel):
 
     doc: str | None = None
     typ: str | None = None
-    default: JsonValue | ast.AST | None = None
+    default: (
+        JsonValue
+        | ast.AST
+        | bytes
+        | set[ScalarValue]
+        | frozenset[ScalarValue]
+        | tuple[ScalarValue, ...]
+        | tuple[
+            JsonValue | ast.AST | bytes | set[ScalarValue] | frozenset[ScalarValue] | tuple[ScalarValue, ...],
+            ...,
+        ]
+        | list[JsonValue | ast.AST | bytes | set[ScalarValue] | frozenset[ScalarValue] | tuple[ScalarValue, ...]]
+        | dict[str, JsonValue | ast.AST | bytes | set[ScalarValue] | frozenset[ScalarValue] | tuple[ScalarValue, ...]]
+    ) = None
 
     def get(self, key: str, default: str | None = None) -> str | None:
         """Retrieve a string field (`doc`, `typ`, or `default`) by key.
@@ -58,7 +78,7 @@ class ExtractedParamRecord(pydantic.BaseModel):
         Returns:
             String representation or `default`.
         """
-        field_map: dict[str, JsonValue | ast.AST | None] = {
+        field_map: dict[str, ParamDefaultValue] = {
             "doc": self.doc,
             "typ": self.typ,
             "default": self.default,
@@ -229,6 +249,8 @@ __all__ = [
     "DocstringIrResult",
     "ExtractedParamRecord",
     "OverloadExtractionContext",
+    "ParamDefaultAtom",
+    "ParamDefaultValue",
     "ParamExtractionContext",
     "RawParamTuple",
     "_get_target_module_name",
