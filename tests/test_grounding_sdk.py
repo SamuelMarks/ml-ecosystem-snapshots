@@ -1006,7 +1006,14 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
                                         {"name": "a", "kind": "POSITIONAL_OR_KEYWORD"},
                                         {"name": "b", "kind": "POSITIONAL_OR_KEYWORD"},
                                     ],
-                                }
+                                },
+                                {
+                                    "params": [
+                                        {"name": "a", "kind": "POSITIONAL_OR_KEYWORD"},
+                                        {"name": "alt_kw", "kind": "KEYWORD_ONLY"},
+                                    ],
+                                    "returns_type": "Tensor",
+                                },
                             ],
                         }
                     ]
@@ -1017,6 +1024,15 @@ def test_unified_grounding_and_mcp_parity_branches(tmp_path: Path) -> None:
     eng_ov = GroundingEngine(base_dirs=[ov_dir])
     res_ov_pos = validate_python_call("ovfw", "ovfw.func", args=[1, 2], kwargs={}, engine=eng_ov)
     assert res_ov_pos.is_grounded
+
+    res_ov_ghost_overload = validate_python_call(
+        "ovfw",
+        "ovfw.func",
+        args=[1],
+        kwargs={"alt_kw": 2},
+        engine=eng_ov,
+    )
+    assert res_ov_ghost_overload.is_grounded
 
     res_ov_pos_bad_kw = validate_python_call(
         "ovfw",

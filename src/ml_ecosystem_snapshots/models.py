@@ -34,6 +34,9 @@ from ml_switcheroo_ir.schema.ghost import (
     GhostOperationRef as GhostOperationRef,
 )
 from ml_switcheroo_ir.schema.ghost import (
+    GhostOverload as GhostOverload,
+)
+from ml_switcheroo_ir.schema.ghost import (
     GhostParam as GhostParam,
 )
 from ml_switcheroo_ir.schema.ghost import (
@@ -254,6 +257,7 @@ __all__ = [
     "GhostIsaRef",
     "GhostMlirRef",
     "GhostOperationRef",
+    "GhostOverload",
     "GhostParam",
     "GhostPythonRef",
     "GhostRef",

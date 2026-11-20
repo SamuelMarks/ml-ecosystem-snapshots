@@ -64,7 +64,7 @@ Machine Learning frameworks frequently utilize heavy GPU-bound libraries, comple
 | **LaTeX DSL** | *Built-in* | Standard LaTeX mathematical environments and formatting macros |
 | **MaxText** | [github.com/google/maxtext](https://github.com/google/maxtext) | Performant and highly scalable JAX LLM implementation |
 | **Metal (MSL)** | *Built-in* | Apple Metal Shading Language math, atomic, SIMD-group, and matrix intrinsics |
-| **ML-Switcheroo IR** | *Built-in* | Universal `LogicalGraph`, `TensorSpec`, symbolic algebra (`SymInt`/`Polynomial`), and compiler IR APIs |
+| **ML-Switcheroo IR** | *Built-in* | Universal `LogicalGraph`/`IRGraph`, `LogicalNode`/`IRNode`, `TensorSpec`, Tier-1 `@runtime_checkable` structural protocols (`DTypeLikeProtocol`, `DeviceLikeProtocol`, `SymbolicNodeProtocol`, etc.), symbolic algebra (`SymInt`/`Polynomial`), and compiler IR APIs |
 | **MLIR** | [mlir.llvm.org](https://mlir.llvm.org/) | Core MLIR dialects (`arith`, `math`, `tensor`, `linalg`, `scf`, `gpu`, etc.) via TableGen |
 | **MLX** | [ml-explore.github.io/mlx](https://ml-explore.github.io/mlx/) | Array framework optimized for Apple Silicon |
 | **NCCL** | [developer.nvidia.com/nccl](https://developer.nvidia.com/nccl) | NVIDIA Collective Communications Library primitives (`ncclAllReduce`, `ncclAllGather`, etc.) |
@@ -91,7 +91,7 @@ Machine Learning frameworks frequently utilize heavy GPU-bound libraries, comple
 | **Triton** | [triton-lang.org](https://triton-lang.org/) | Python-like programming language for high-throughput GPU kernels |
 | **WASM SIMD** | *Built-in* | WebAssembly 128-bit SIMD (`v128`) and relaxed SIMD instruction intrinsics |
 | **WebGL2 / GLSL** | *Built-in* | WebGL2 context APIs and GLSL ES 3.00 shader built-in functions |
-| **WGSL (WebGPU)** | *Built-in* | WebGPU Shading Language built-in functions,subgroup ops, and atomic primitives |
+| **WGSL (WebGPU)** | *Built-in* | WebGPU Shading Language built-in functions, subgroup ops, and atomic primitives |
 
 ---
 
@@ -132,7 +132,7 @@ Extract API structures from your local environment and save them as JSON:
 ml_ecosystem_snapshots capture torch jax keras --out-dir ./snapshots
 ```
 *Flags:*
-- `--isolated`: Runs each extraction in an isolated child subprocess to prevent driver crashes.
+- `--out-dir`: Output directory for generated JSON snapshots (default: `snapshots`).
 - `--include-nonpublic`: Captures internal and private APIs (`_` prefix).
 
 ### 2. Check Implementation Compliance
@@ -162,35 +162,42 @@ ml_ecosystem_snapshots generate-stubs --input ./snapshots/torch_v2.4.0.json --ou
 
 ### 5. Multi-Target Schema & Prompt Export
 
-Export framework definitions to standard schemas or compact LLM prompt context:
+Export framework definitions to standard schemas, C++/TypeScript bindings, or compact LLM prompt context:
 
 ```bash
 # Export to Pydantic V2 models
 ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format pydantic --out-dir ./models/
 
-# Export to OpenAPI 3.0 specification
+# Export to OpenAPI 3.0 or JSON Schema specifications
 ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format openapi --out-dir ./openapi/
+ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format json_schema --out-dir ./schemas/
 
-# Export to Protobuf v3 message and gRPC definitions
+# Export to Protobuf v3, C++ headers, or TypeScript interfaces
 ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format protobuf --out-dir ./proto/
+ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format cpp_header --out-dir ./include/
+ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format typescript --out-dir ./ts/
 
 # Export compact, typed LLM prompt context with hallucination guards
-ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format prompt --out-dir ./prompts/
+ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format llm_prompt --out-dir ./prompts/
 ```
 
-### 6. Hardware ISA & Compiler Dialect Verification
+### 6. Hardware ISA, Compiler Dialect & Domain Verification
 
-Directly validate assembly snippets and compiler IR from the terminal:
+Directly validate assembly snippets, compiler IR, shaders, and domain operations from the terminal:
 
 ```bash
-# Validate NVIDIA SASS instruction against Hopper architecture
+# Validate NVIDIA SASS / PTX instructions against target SM architecture
 ml_ecosystem_snapshots check-sass WGMMA --sm-arch sm_90 --modifiers .F16
+ml_ecosystem_snapshots check-ptx ld --types .f32 --state-space .global --sm-arch sm_80
 
 # Validate AMD RDNA instruction against RDNA3 architecture
 ml_ecosystem_snapshots check-rdna v_dual_fmac_f32 --gfx-arch GFX11/RDNA3
 
-# Validate StableHLO operation attributes and operand counts
+# Validate Core MLIR, StableHLO, WebGPU WGSL, ONNX, Metal, and ecosystem ops
+ml_ecosystem_snapshots check-mlir arith.addf --operands-count 2
 ml_ecosystem_snapshots check-stablehlo stablehlo.dot_general --operands-count 2 --attributes dot_dimension_numbers
+ml_ecosystem_snapshots check-wgsl storageStore --inputs-count 3
+ml_ecosystem_snapshots check-onnx Conv --inputs-count 2 --attributes kernel_shape,strides
 ```
 
 ### 7. Snapshot Management & Local Cache
@@ -200,7 +207,7 @@ ml_ecosystem_snapshots check-stablehlo stablehlo.dot_general --operands-count 2 
 ml_ecosystem_snapshots list-snapshots
 
 # Download official pre-compiled snapshot releases into cache
-ml_ecosystem_snapshots pull torch 2.4.0
+ml_ecosystem_snapshots pull torch@2.4.0
 ml_ecosystem_snapshots download-all
 
 # Cryptographically verify the integrity of cached snapshot files
@@ -222,7 +229,7 @@ ml_ecosystem_snapshots index --rebuild
 ml_ecosystem_snapshots mcp
 ```
 
-### Available MCP Tools
+### Available MCP Tools (29 Tools)
 
 | Tool Name | Description |
 |:---|:---|
@@ -230,13 +237,31 @@ ml_ecosystem_snapshots mcp
 | `search_apis` | Search available framework operations and mnemonics by keyword or prefix. |
 | `check_hallucination` | Verify whether an API path or keyword arguments represent LLM hallucinations. |
 | `explain_anti_pattern` | Provide canonical migration advice for common cross-framework anti-patterns. |
+| `check_code_block` | Batch verify an entire code block for nonexistent APIs and invalid kwargs. |
+| `translate_concept_arguments` | Translate arguments across frameworks (e.g. PyTorch `dim` to NumPy `axis`). |
 | `check_sass_instruction` | Validate NVIDIA SASS assembly against target compute capabilities (`sm_70`–`sm_100`). |
 | `check_rdna_instruction` | Validate AMD RDNA/CDNA assembly against GFX generations (`GFX9`–`GFX12`). |
 | `check_ptx_instruction` | Validate NVIDIA PTX instructions, type qualifiers, state spaces, and scopes. |
 | `check_mlir_op` | Verify MLIR dialect operations against TableGen ODS traits and type constraints. |
 | `check_stablehlo_op` | Verify StableHLO operation attributes, dimensions, and region signatures. |
-| `check_code_block` | Batch verify an entire code block for nonexistent APIs and invalid kwargs. |
-| `translate_concept_arguments` | Translate arguments across frameworks (e.g. PyTorch `dim` to NumPy `axis`). |
+| `check_wgsl_op` | Verify WebGPU WGSL shader operations and storage/workgroup intrinsics. |
+| `check_onnx_op` | Verify ONNX operator inputs, domains, and attributes against specification. |
+| `check_metal_op` | Verify Apple Metal Shading Language (MSL) compute operations and address spaces. |
+| `check_wasm_instruction` | Verify WebAssembly 2.0 / 128-bit SIMD instructions and operand counts. |
+| `check_webgl_op` | Verify WebGL 2.0 / GLSL ES 3.00 context and shader built-in operations. |
+| `check_cpp_op` | Verify C++20/23 / PyBind11 runtime math, memory, and SIMD intrinsics. |
+| `check_array_api_op` | Verify Python Array API Standard operations, inputs, and keyword arguments. |
+| `check_scipy_op` | Verify SciPy scientific computing operations (`special`, `linalg`, `signal`, `fft`). |
+| `check_torchvision_op` | Verify TorchVision computer vision operators and transforms. |
+| `check_torchaudio_op` | Verify TorchAudio signal and audio processing operations. |
+| `check_safetensors_op` | Verify SafeTensors serialization and zero-copy loading operations. |
+| `check_aten_op` | Verify PyTorch ATen C++ core operator schemas and dispatch arguments. |
+| `check_nccl_op` | Verify NCCL/RCCL collective communication primitives. |
+| `check_flash_attention_op` | Verify FlashAttention / PagedAttention kernel signatures and arguments. |
+| `check_chex_op` | Verify Chex assertions, dataclasses, fake contexts, and test variants. |
+| `check_grain_op` | Verify Grain (`grain` / `grain.python`) datasets, samplers, and loaders. |
+| `check_orbax_op` | Verify Orbax Checkpoint and Export managers, handlers, and arguments. |
+| `check_optax_op` | Verify Optax optimizers, gradient transformations, losses, and schedules. |
 
 ### Client Configuration Examples
 

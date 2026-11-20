@@ -11,7 +11,7 @@
 3. [Compliance Checking](#3-compliance-checking)
 4. [Structural Diffing & Semantic Changelogs](#4-structural-diffing--semantic-changelogs)
 5. [Code & Schema Export](#5-code--schema-export)
-6. [Hardware ISA & Compiler IR CLI Verification](#6-hardware-isa--compiler-ir-cli-verification)
+6. [Hardware ISA, Compiler IR & Domain CLI Verification](#6-hardware-isa-compiler-ir--domain-cli-verification)
 7. [Anti-Hallucination Grounding SDK (Python)](#7-anti-hallucination-grounding-sdk-python)
 8. [Model Context Protocol (MCP) Server](#8-model-context-protocol-mcp-server)
 
@@ -279,25 +279,30 @@ Generate JSON Schema validation specifications:
 ml_ecosystem_snapshots export --input jax --format json_schema --out-dir ./json_schema/
 ```
 
-### Export to Protobuf v3 & gRPC
+### Export to Protobuf v3, C++ Headers & TypeScript Interfaces
 
-Generate `.proto` message definitions, standard enums (Reduction, Padding, Layout), and service stubs:
+Generate `.proto` message definitions, C++ struct headers, and TypeScript interface bindings:
 
 ```bash
 ml_ecosystem_snapshots export --input torch --format protobuf --out-dir ./proto/
+ml_ecosystem_snapshots export --input torch --format cpp_header --out-dir ./include/
+ml_ecosystem_snapshots export --input torch --format typescript --out-dir ./ts/
 ```
 
-### Export LLM Prompt Contexts
+### Export LLM & Hardware/Compiler Prompt Contexts
 
-Generate compact Markdown specifications with parameter constraints and built-in hallucination guards:
+Generate compact Markdown specifications with parameter constraints and built-in hallucination guards (`llm_prompt`, `scoped_prompt`, `sass_prompt`, `ptx_prompt`, `rdna_prompt`, `mlir_prompt`, `stablehlo_prompt`):
 
 ```bash
 ml_ecosystem_snapshots export --input torch --format llm_prompt --out-dir ./prompts/
+ml_ecosystem_snapshots export --input torch --format scoped_prompt --out-dir ./prompts/
+ml_ecosystem_snapshots export --input nvidia_sass --format sass_prompt --out-dir ./prompts/
+ml_ecosystem_snapshots export --input stablehlo --format stablehlo_prompt --out-dir ./prompts/
 ```
 
 ---
 
-## 6. Hardware ISA & Compiler IR CLI Verification
+## 6. Hardware ISA, Compiler IR & Domain CLI Verification
 
 Directly validate machine instructions and compiler operations from the terminal.
 
@@ -355,6 +360,52 @@ ml_ecosystem_snapshots check-stablehlo stablehlo.dot_general
 
 # Verify an entire StableHLO text file
 ml_ecosystem_snapshots check-stablehlo --file graph.mlir
+```
+
+### NVIDIA PTX Instruction Verification (`check-ptx`)
+
+Validate PTX instructions, type qualifiers, state spaces, scopes, and SM capabilities:
+
+```bash
+# Verify global-memory float load on Ampere
+ml_ecosystem_snapshots check-ptx ld --types .f32 --state-space .global --sm-arch sm_80
+
+# Verify an entire PTX source file
+ml_ecosystem_snapshots check-ptx --file kernel.ptx --sm-arch sm_90
+```
+
+### WebGPU WGSL Shader Verification (`check-wgsl`)
+
+Validate WGSL compute shader intrinsics or `.wgsl` source files:
+
+```bash
+# Verify storageStore built-in operation
+ml_ecosystem_snapshots check-wgsl storageStore --inputs-count 3
+
+# Verify an entire WGSL shader file
+ml_ecosystem_snapshots check-wgsl --file compute.wgsl
+```
+
+### Ecosystem & Runtime Domain Verification (`check-*`)
+
+Validate operations across 17 specialized specifications (`check-onnx`, `check-metal`, `check-wasm`, `check-webgl`, `check-cpp`, `check-array-api`, `check-scipy`, `check-torchvision`, `check-torchaudio`, `check-safetensors`, `check-aten`, `check-nccl`, `check-flash-attention`, `check-chex`, `check-grain`, `check-orbax`, `check-optax`):
+
+```bash
+# Validate ONNX operator inputs and attributes
+ml_ecosystem_snapshots check-onnx Conv --inputs-count 2 --attributes kernel_shape,strides
+
+# Validate Apple Metal MSL operation and address space
+ml_ecosystem_snapshots check-metal atomic_fetch_add_explicit --address-space device --inputs-count 3
+
+# Validate WebAssembly SIMD instruction
+ml_ecosystem_snapshots check-wasm i32x4.add --operands-count 2
+
+# Validate ATen, NCCL, FlashAttention, Array API, and JAX ecosystem operations
+ml_ecosystem_snapshots check-aten aten::add.Tensor --inputs-count 2 --attributes alpha
+ml_ecosystem_snapshots check-nccl ncclAllReduce --inputs-count 6
+ml_ecosystem_snapshots check-flash-attention flash_attn_func --inputs-count 3 --attributes causal,softmax_scale
+ml_ecosystem_snapshots check-array-api matmul --inputs-count 2
+ml_ecosystem_snapshots check-optax adamw --attributes learning_rate,weight_decay
 ```
 
 ---

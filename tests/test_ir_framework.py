@@ -20,12 +20,14 @@ def test_collect_api_categories() -> None:
     """Test collect_api returns all expected IR symbols for supported semantic tiers."""
     for tier in (SemanticTier.ARRAY_API, SemanticTier.NEURAL, SemanticTier.UTIL):
         refs: list[GhostRef] = collect_api(tier)
-        assert len(refs) == 59
+        assert len(refs) == 70
 
         names = {ref.name for ref in refs}
         expected_symbols = {
             "LogicalGraph",
+            "IRGraph",
             "LogicalNode",
+            "IRNode",
             "TensorSpec",
             "TensorShape",
             "LogicalEdge",
@@ -37,6 +39,15 @@ def test_collect_api_categories() -> None:
             "EdgeList",
             "VersionedOutputList",
             "AutodiffSentinelProtocol",
+            "DTypeLikeProtocol",
+            "DeviceLikeProtocol",
+            "SymbolicNodeProtocol",
+            "SymbolicIntWrapperProtocol",
+            "CustomRuleHandleProtocol",
+            "LoopOptionsProtocol",
+            "MeshLikeProtocol",
+            "ArrayBufferProtocol",
+            "SubgraphLikeProtocol",
             "ZeroTangent",
             "NoTangent",
             "SymNode",
@@ -93,19 +104,60 @@ def test_collect_api_unsupported_category() -> None:
     assert refs == []
 
 
+def test_ir_graph_and_node_signatures() -> None:
+    """Test LogicalGraph, IRGraph, LogicalNode, and IRNode parameter parity."""
+    refs = collect_api(SemanticTier.ARRAY_API)
+    ref_by_name: dict[str, GhostRef] = {ref.name: ref for ref in refs}
+
+    lg_ref = ref_by_name["LogicalGraph"]
+    ir_graph_ref = ref_by_name["IRGraph"]
+    assert lg_ref.kind == "class"
+    assert ir_graph_ref.kind == "class"
+    assert [p.name for p in lg_ref.params] == [p.name for p in ir_graph_ref.params]
+    lg_params = {p.name: p for p in lg_ref.params}
+    for expected_field in ("name", "nodes", "outputs", "mesh", "annotations", "metadata", "sorted_nodes"):
+        assert expected_field in lg_params
+
+    ln_ref = ref_by_name["LogicalNode"]
+    ir_node_ref = ref_by_name["IRNode"]
+    assert ln_ref.kind == "class"
+    assert ir_node_ref.kind == "class"
+    assert [p.name for p in ln_ref.params] == [p.name for p in ir_node_ref.params]
+    ln_params = {p.name: p for p in ln_ref.params}
+    for expected_field in ("id", "op_type", "attributes", "sharding", "subgraphs", "device", "stream"):
+        assert expected_field in ln_params
+
+
 def test_ir_symbol_signatures_and_annotations() -> None:
     """Test parameter signatures and annotations for extracted IR symbols."""
     refs = collect_api(SemanticTier.ARRAY_API)
     ref_by_name: dict[str, GhostRef] = {ref.name: ref for ref in refs}
 
-    # Verify TensorSpec
+    # Verify TensorShape, TensorSpec, PartitionSpec, ZeroTangent, NoTangent
+    shape_ref = ref_by_name["TensorShape"]
+    assert shape_ref.kind == "class"
+    assert "dims" in {p.name for p in shape_ref.params}
+
     ts_ref = ref_by_name["TensorSpec"]
     assert ts_ref.kind == "class"
     ts_params = {p.name: p for p in ts_ref.params}
     assert "shape" in ts_params
     assert "dtype" in ts_params
+    assert ts_params["dtype"].annotation is not None
+    assert "DTypeLikeProtocol" in ts_params["dtype"].annotation
     assert "sparsity" in ts_params
     assert ts_params["sparsity"].default == "None"
+
+    ps_ref = ref_by_name["PartitionSpec"]
+    assert ps_ref.kind == "class"
+    assert "axes" in {p.name for p in ps_ref.params}
+
+    zt_ref = ref_by_name["ZeroTangent"]
+    nt_ref = ref_by_name["NoTangent"]
+    assert zt_ref.kind == "class"
+    assert nt_ref.kind == "class"
+    assert "id" in {p.name for p in zt_ref.params}
+    assert "id" in {p.name for p in nt_ref.params}
 
     # Verify LogicalEdge
     edge_ref = ref_by_name["LogicalEdge"]
@@ -121,7 +173,45 @@ def test_ir_symbol_signatures_and_annotations() -> None:
     assert topo_ref.kind == "function"
     assert topo_ref.returns_type == "list[LogicalNode]"
     topo_params = {p.name: p for p in topo_ref.params}
+    assert "graph" in topo_params
     assert topo_params["strict"].default == "False"
+
+
+def test_ir_v007_aliases_and_structural_protocols() -> None:
+    """Verify IRGraph, IRNode, and all v0.0.7 structural protocols resolve and validate in the IR snapshot."""
+    from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
+
+    protocol_names = (
+        "DTypeLikeProtocol",
+        "DeviceLikeProtocol",
+        "SymbolicNodeProtocol",
+        "SymbolicIntWrapperProtocol",
+        "CustomRuleHandleProtocol",
+        "LoopOptionsProtocol",
+        "MeshLikeProtocol",
+        "ArrayBufferProtocol",
+        "SubgraphLikeProtocol",
+    )
+    ir_members = get_member_dict(ir)
+    assert ir_members["IRGraph"] is ir.LogicalGraph
+    assert ir_members["IRNode"] is ir.LogicalNode
+
+    refs_by_name = {ref.name: ref for ref in collect_api(SemanticTier.NEURAL)}
+    for proto_name in protocol_names:
+        assert proto_name in ir_members
+        ref = refs_by_name[proto_name]
+        assert ref.kind == "class"
+        assert ref.api_path == f"ml_switcheroo_ir.{proto_name}"
+        assert ref.docstring is not None and len(ref.docstring) > 0
+
+    snap = extract_snapshot("ir")
+    assert snap.get("version") == "0.0.7"
+    env = validate_snapshot_envelope(snap)
+    assert isinstance(env, SnapshotEnvelope)
+    assert env.version == "0.0.7"
+    neural_names = {entry["name"] if isinstance(entry, dict) else entry.name for entry in env.categories["neural"]}
+    for sym in ("IRGraph", "IRNode", *protocol_names):
+        assert sym in neural_names
 
 
 def test_ir_live_signature_reflection_parity() -> None:
@@ -203,4 +293,4 @@ def test_ir_version_resolution_fallback(monkeypatch: pytest.MonkeyPatch) -> None
         raise RuntimeError("metadata missing")
 
     monkeypatch.setattr(importlib.metadata, "version", raise_meta_err)
-    assert get_pkg_version("ir") != "unknown"
+    assert get_pkg_version("ir") == "0.0.7"

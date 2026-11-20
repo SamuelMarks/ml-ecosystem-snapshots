@@ -22,6 +22,7 @@ from ml_ecosystem_snapshots.grounding.models import (
 )
 from ml_ecosystem_snapshots.models import (
     ExtendedGhostRef,
+    GhostOverload,
     GhostRef,
     JsonValue,
     ensure_json_dict,
@@ -323,17 +324,17 @@ _PythonCallOptionValue: typing_extensions.TypeAlias = "list[str] | dict[str, str
 
 
 def _normalize_candidate_dict(
-    ref_or_dict: GhostRef | ExtendedGhostRef | typing.Mapping[str, JsonValue],
+    ref_or_dict: GhostRef | ExtendedGhostRef | GhostOverload | typing.Mapping[str, JsonValue],
 ) -> dict[str, JsonValue]:
-    """Convert an ExtendedGhostRef or dictionary into a normalized candidate dictionary.
+    """Convert an ExtendedGhostRef, GhostOverload, or dictionary into a normalized candidate dictionary.
 
     Args:
-        ref_or_dict: ExtendedGhostRef model instance or raw dictionary.
+        ref_or_dict: ExtendedGhostRef/GhostOverload model instance or raw dictionary.
 
     Returns:
         Normalized dictionary with 'params', 'has_varargs', 'accepted_kwargs', etc.
     """
-    if isinstance(ref_or_dict, GhostRef):
+    if isinstance(ref_or_dict, (GhostRef, GhostOverload)):
         dumped: dict[str, JsonValue] = ref_or_dict.model_dump()
         return dumped
     return dict(ref_or_dict)

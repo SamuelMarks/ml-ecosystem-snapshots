@@ -9,6 +9,7 @@ import typing
 
 from ml_switcheroo_ir.schema.ghost import (
     ExtendedGhostRef,
+    GhostOverload,
     GhostParam,
     GhostPythonRef,
     GhostRef,
@@ -427,7 +428,7 @@ class GhostInspector:
         has_var_kwargs = any("VAR_KEYWORD" in str(p.kind) for p in params)
         discovered_kwargs = extract_accepted_kwargs_from_ast(target) if has_var_kwargs else None
 
-        overloads_list: list[dict[str, JsonValue] | GhostRef] = list(overloads_refs)
+        overloads_list: list[dict[str, JsonValue] | GhostOverload | GhostRef] = list(overloads_refs)
         return GhostPythonRef(
             name=name,
             api_path=api_path,

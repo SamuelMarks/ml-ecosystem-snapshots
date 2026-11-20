@@ -339,8 +339,8 @@ def test_get_pkg_version_keras_griffe_and_ir_fallbacks(
     fake_package_builder.build_module("ml_switcheroo_ir", version="0.0.9")
     assert get_pkg_version("ir") == "0.0.9"
     fake_package_builder.block_imports("ml_switcheroo_ir")
-    fake_package_builder.set_metadata_versions({"ml_switcheroo_ir": "0.0.6"})
-    assert get_pkg_version("ml_switcheroo_ir") == "0.0.6"
+    fake_package_builder.set_metadata_versions({"ml_switcheroo_ir": "0.0.7"})
+    assert get_pkg_version("ml_switcheroo_ir") == "0.0.7"
 
 
 def test_get_pkg_version_live_modules_and_exhaustive_json_files(
@@ -570,6 +570,7 @@ def test_extract_snapshot_isolated_and_package_init(monkeypatch: pytest.MonkeyPa
 
     # Package __version__ and __init__ ImportError fallback
     pkg_ver = str(get_member_dict(ml_ecosystem_snapshots).get("__version__", ""))
+    assert pkg_ver == "0.0.7"
     assert pkg_ver == ProjectMetadata(".", PluginManager()).version
 
     with monkeypatch.context() as mp:

@@ -8,10 +8,17 @@ The `ml_ecosystem_snapshots` library is engineered to solve a critical foundatio
 
 At the center of the architecture is the **Ghost Protocol**. Instead of relying on live, heavyweight Python runtime objects (which allocate GPU memory, spawn driver contexts, lock C++ thread state, or depend on gigabyte-sized binary wheels), every framework API, compiler operation, and machine instruction is reduced into a static, serializable representation.
 
-All models inherit from Pydantic V2 schemas defined in `ml_ecosystem_snapshots.models` and `ml_switcheroo_ir.schema.ghost`.
+All models inherit from Pydantic V2 schemas defined in `ml_ecosystem_snapshots.models`, `ml_ecosystem_snapshots.serialization`, and `ml_switcheroo_ir.schema.ghost`.
 
 ```mermaid
 classDiagram
+    class GhostOverload {
+        +List~GhostParam~ params
+        +str returns_type
+        +str returns_description
+        +str docstring
+    }
+
     class GhostRef {
         +str name
         +str api_path
@@ -21,7 +28,7 @@ classDiagram
         +str returns_type
         +str returns_description
         +List~str~ raises
-        +List~GhostRef~ overloads
+        +List~GhostOverload_or_GhostRef~ overloads
         +List~str~ environment_tags
         +List~str~ aliases
         +bool is_public
@@ -29,7 +36,7 @@ classDiagram
 
     class ExtendedGhostRef {
         +List~GhostResult~ returns
-        +Dict~str, Any~ domain_metadata
+        +Dict~str, JsonValue~ domain_metadata
         +str signature_completeness
         +bool is_c_extension
         +List~str~ accepted_kwargs
@@ -43,11 +50,11 @@ classDiagram
         +Literal["isa"] domain_type
         +List~str~ predicate_guards
         +Dict~str, str~ register_classes
-        +Dict~str, Any~ control_codes
+        +Dict~str, JsonValue~ control_codes
         +List~str~ instruction_modifiers
-        +Dict~str, Any~ structured_modifiers
+        +Dict~str, JsonValue~ structured_modifiers
         +List~Dict~ structured_operands
-        +Dict~str, Any~ vopd_profile
+        +Dict~str, JsonValue~ vopd_profile
         +List~str~ condition_codes
         +List~str~ supported_architectures
     }
@@ -56,8 +63,8 @@ classDiagram
         +Literal["mlir"] domain_type
         +List~str~ traits
         +List~ExtendedGhostParam~ operands
-        +Dict~str, Any~ attributes
-        +Dict~str, Any~ regions
+        +Dict~str, JsonValue~ attributes
+        +Dict~str, JsonValue~ regions
         +List~str~ successors
         +Dict~str, str~ type_constraints
     }
@@ -71,10 +78,11 @@ classDiagram
         +str upstream_commit
         +List~str~ supported_microarchitectures
         +str generated_at
-        +Dict~str, Any~ environment
+        +Dict~str, JsonValue~ environment
         +Dict~str, List~ categories
     }
 
+    GhostRef o-- GhostOverload
     GhostRef <|-- ExtendedGhostRef
     ExtendedGhostRef <|-- GhostPythonRef
     ExtendedGhostRef <|-- GhostIsaRef
@@ -90,10 +98,11 @@ classDiagram
   - `dtypes` & `allowed_dtypes`: Explicit lists of allowed tensor data types (e.g. `["float32", "bfloat16"]`).
   - `rank`: Expected tensor rank or dimensionality constraints.
   - `default`: Sanitized literal default value representation.
+- **`GhostOverload`**: Lightweight parameter-signature variant model stored alongside full `GhostRef` entries inside `GhostRef.overloads` (`list[dict[str, JsonValue] | GhostOverload | GhostRef] | None`).
 - **`GhostResult`**: Models structured SSA output returns for compiler IR operations (SSA result name, MLIR type like `tensor<?x?xf32>`, and description).
 - **`ExtendedGhostRef`**: Adds first-class support for:
   - `returns`: List of `GhostResult` objects, supporting multi-result SSA operations.
-  - `domain_metadata`: Structured dictionary holding domain-specific attributes (control code schedules, operand signatures, traits).
+  - `domain_metadata`: Structured `dict[str, JsonValue]` holding domain-specific attributes (control code schedules, operand signatures, traits).
   - `signature_completeness`: Classification of signature certainty (`exact`, `heuristic`, or `opaque`).
   - `is_c_extension`: Flag identifying symbols originating from compiled C/C++ extensions.
   - `accepted_kwargs`: Explicit list of recognized keyword arguments extracted from function ASTs that accept generic `**kwargs`.
@@ -123,15 +132,15 @@ graph TD
         REG -->|NVIDIA SASS, AMD RDNA, PTX| ISA_COL[ISA Exhaustive Catalogs]
         REG -->|StableHLO, Core MLIR| IR_COL[TableGen / ODS Parsers]
 
-        PY_COL --> GI[GhostInspector.inspect]
-        GI --> UNWRAP[Decorator Unwrapping]
-        UNWRAP --> CDD[cdd-python: AST & Docstrings]
-        UNWRAP --> GRIFFE[griffe: Types & Overloads]
-        UNWRAP --> RUNTIME[inspect.signature Fallback]
-        UNWRAP --> CEXT[utils.py: C-Extension Docstring Parser]
-        UNWRAP --> KWVIS[KwargAccessVisitor: **kwargs Analysis]
+        PY_COL --> GI[introspection/inspector.py: GhostInspector.inspect]
+        GI --> UNWRAP[runtime_boundary.py: Decorator Unwrapping]
+        UNWRAP --> CDD[cdd_inspector.py: cdd-python AST & Docstrings]
+        UNWRAP --> GRIFFE[griffe_inspector.py: Types & Overloads]
+        UNWRAP --> RUNTIME[live_inspector.py: Runtime Signature Fallback]
+        UNWRAP --> CEXT[c_extension_sig.py: C-Extension Docstring Parser]
+        UNWRAP --> KWVIS[ast_kwargs.py: KwargAccessVisitor **kwargs Analysis]
 
-        CDD --> SAN[Memory Address & Value Sanitizer]
+        CDD --> SAN[sanitize.py: Memory Address & Value Sanitizer]
         GRIFFE --> SAN
         RUNTIME --> SAN
         CEXT --> SAN
@@ -141,58 +150,56 @@ graph TD
         IR_COL --> SAN
 
         SAN --> DEDUP[_consolidate_aliases]
-        DEDUP --> ENV[SnapshotEnvelope: JSON / JSON.GZ]
+        DEDUP --> ENV[serialization/: SnapshotEnvelope JSON / JSON.GZ]
     end
 
     subgraph "Stage 2: Storage & Indexing"
         ENV --> DISK[(Disk Cache / Bundled Snapshots)]
         DISK --> FTS[index.py: Ephemeral SQLite FTS5 Index]
-        DISK --> ENGINE[GroundingEngine: In-Memory Target Registry]
+        DISK --> ENGINE[grounding/engine.py: In-Memory Target Registry]
     end
 
     subgraph "Stage 3: Verification, Protocol & Export"
-        ENGINE --> G_SDK[Grounding SDK]
+        ENGINE --> G_SDK[grounding/: Grounding SDK]
         G_SDK --> V_PY[validate_python_call]
-        G_SDK --> V_ISA[validate_sass / validate_rdna]
-        G_SDK --> V_IR[validate_mlir / validate_stablehlo]
+        G_SDK --> V_ISA[validate_sass / validate_rdna / validate_ptx]
+        G_SDK --> V_IR[validate_mlir / validate_stablehlo / validate_wgsl / domain ops]
 
-        DISK --> MCP[mcp_server.py: MCP JSON-RPC 2.0 Server]
-        MCP --> T_SIG[get_api_signature]
-        MCP --> T_SRCH[search_apis]
-        MCP --> T_HAL[check_hallucination]
-        MCP --> T_BLK[check_code_block]
-        MCP --> T_TRANS[translate_concept_arguments]
-        MCP --> T_EXP[explain_anti_pattern]
+        DISK --> MCP[mcp_server.py & mcp/: JSON-RPC 2.0 Server]
+        MCP --> T_SIG[get_api_signature / search_apis]
+        MCP --> T_HAL[check_hallucination / check_code_block]
+        MCP --> T_TRANS[translate_concept_arguments / explain_anti_pattern]
+        MCP --> T_DOM[23 ISA, Compiler IR & Domain check_* Tools]
 
         DISK --> DIFF[diff.py: Semantic Snapshot Differ]
         DISK --> STUBS[stubs.py: Synthetic .pyi Generator]
-        DISK --> COMP[compliance.py: Implementation Verifier]
-        DISK --> EXP[export.py: Multi-Target Exporter]
+        DISK --> COMP[compliance/: Implementation Verifier]
+        DISK --> EXP[export.py & exporters/: Multi-Target Exporter]
         EXP --> EXP_JSON[JSON Schema & OpenAPI]
         EXP --> EXP_PYD[Pydantic V2 Classes]
-        EXP --> EXP_PB[Protobuf v3 & gRPC]
+        EXP --> EXP_PB[Protobuf v3, C++ Headers & TypeScript]
         EXP --> EXP_LLM[Prompt Contexts & Hallucination Guards]
     end
 ```
 
 ---
 
-## 3. Multi-Tiered Introspection & Static Analysis Pipeline
+## 3. Multi-Tiered Introspection & Static Analysis Pipeline (`introspection/`)
 
-Introspecting modern ML libraries is complicated by heavy metaclasses, dynamically injected C++ operators, JIT decorators (`@torch.compile`, `@jax.jit`), and runtime-generated docstrings. The `GhostInspector` (`models.py`) and helper routines in `utils.py` execute an eight-tiered resolution strategy:
+Introspecting modern ML libraries is complicated by heavy metaclasses, dynamically injected C++ operators, JIT decorators (`@torch.compile`, `@jax.jit`), and runtime-generated docstrings. `GhostInspector` (`introspection/inspector.py`), coordinated with `introspection/runtime_boundary.py`, `c_extension_sig.py`, and `utils.py`, executes an eight-tiered resolution strategy:
 
-1. **Decorator Unwrapping:** Recursively unwrap nested wrapper objects up to 10 layers deep by checking `__wrapped__`, `_python_function` (TensorFlow), `_original_fn`, `__original_fn`, and `_orig_mod` (PyTorch Dynamo/Inductor).
-2. **`cdd-python` Static AST Parsing:** Parses the module AST statically without importing dynamic metaclasses. Extracts structured docstring sections (`params`, `returns`, `raises`), converts parameter defaults into literal AST nodes, and validates Sphinx/reST documentation.
-3. **`griffe` AST Engine:** Complements `cdd-python` by resolving complex PEP-585 / PEP-604 type annotations, resolving module-level `@typing.overload` stacks, and preserving `VAR_POSITIONAL` (`*args`) and `VAR_KEYWORD` (`**kwargs`) parameter roles across Google, NumPy, and Sphinx docstring conventions.
-4. **`inspect.signature` Fallback:** Standard runtime reflection utilized for pure-Python functions when static AST parsing is inapplicable.
-5. **C-Extension & PyBind11 Docstring Synthesizer (`utils.py:extract_c_extension_signature`):**
+1. **Decorator Unwrapping (`introspection/runtime_boundary.py`):** Recursively unwrap nested wrapper objects up to 10 layers deep in a centralized runtime boundary module (`__wrapped__`, `_python_function`, `_original_fn`, `__original_fn`, `_orig_mod`).
+2. **`cdd-python` Static AST Parsing (`introspection/cdd_inspector.py`):** Parses the module AST statically without importing dynamic metaclasses. Extracts structured docstring sections (`params`, `returns`, `raises`), converts parameter defaults into literal AST nodes, and validates Sphinx/reST documentation.
+3. **`griffe` AST Engine (`introspection/griffe_inspector.py`):** Complements `cdd-python` by resolving complex PEP-585 / PEP-604 type annotations, resolving module-level `@typing.overload` stacks, and preserving `VAR_POSITIONAL` (`*args`) and `VAR_KEYWORD` (`**kwargs`) parameter roles across Google, NumPy, and Sphinx docstring conventions.
+4. **Runtime Signature Fallback (`introspection/live_inspector.py`):** Standard runtime signature extraction via `get_runtime_signature` for pure-Python targets and `@runtime_checkable` `typing.Protocol` contracts when static AST parsing is inapplicable.
+5. **C-Extension & PyBind11 Docstring Synthesizer (`c_extension_sig.py:extract_c_extension_signature`):**
    - For compiled native functions (e.g. `torch.relu`, `aten::`, `c10::`) that raise `ValueError: no signature found for builtin`, docstrings are parsed with specialized regular expressions.
    - `_normalize_c_sig_args` translates C++ type syntax (e.g., `const Tensor & self, bool inplace=False`) into valid Python parameter signatures (`self: "Tensor" = False`) and unparses them into AST nodes.
    - Automatically handles numbered overload sets embedded in native docstrings.
-6. **AST Keyword Visitor (`KwargAccessVisitor`):**
+6. **AST Keyword Visitor (`introspection/ast_kwargs.py:KwargAccessVisitor`):**
    - When a function signature ends with generic `**kwargs`, the inspector walks the AST of the function body.
    - It identifies all explicit accesses matching `kwargs.get("param")`, `kwargs["param"]`, and `kwargs.pop("param")`, exposing them via `accepted_kwargs` on `ExtendedGhostRef` to prevent false-positive hallucination reports.
-7. **Memory Address Scrubbing & Factory Default Sanitization:**
+7. **Memory Address Scrubbing & Factory Default Sanitization (`introspection/sanitize.py`):**
    - Raw Python defaults often embed memory pointers (e.g., `<function mean at 0x1023a1a60>`, `<Device object at 0x7f...>`).
    - All defaults are processed through deterministic address scrubbing regexes: memory addresses are converted to `<addr>`, and unrepresentable runtime instances are mapped to `<factory_default>` or `<unrepresentable>` to ensure byte-identical snapshot serialization across machines.
 8. **TableGen & Pre-Compiled Extraction Tools (`tools/`):**
@@ -200,15 +207,15 @@ Introspecting modern ML libraries is complicated by heavy metaclasses, dynamical
 
 ---
 
-## 4. Extraction Engine & Subprocess Isolation (`api.py`)
+## 4. Extraction Engine & Subprocess Isolation (`api.py`, `registry.py`, `version_resolver.py`)
 
-The extraction engine manages lifecycle, concurrency, and environment isolation during snapshot generation:
+The extraction engine manages lifecycle, concurrency, declarative provenance metadata (`FRAMEWORK_PROVENANCE_METADATA`), and environment isolation during snapshot generation:
 
 - **Dynamic Collector Discovery (`get_available_frameworks`):** Uses `pkgutil` and `importlib` to scan the `ml_ecosystem_snapshots.frameworks` namespace, detecting all `collect_*` entry points and mapping canonical aliases.
 - **Subprocess Isolation (`extract_snapshot_isolated`):**
   - High-performance ML libraries (PyTorch with CUDA, JAX with Metal, TensorFlow) often initialize non-resettable hardware driver states upon import.
   - `extract_snapshot_isolated` runs the collection logic in an isolated child Python process via `subprocess.run`. This guarantees that memory pre-allocation locks, C++ symbol collisions, and segmentation faults do not pollute or crash the parent process.
-- **Concurrent Semantic Tier Processing:** Framework collection functions accept a `SemanticTier` filter (e.g. `CORE`, `TENSOR`, `NN`, `OPTIM`, `DISTRIBUTED`, `UTIL`). A `ThreadPoolExecutor` distributes tier extraction across threads.
+- **Concurrent Semantic Tier Processing:** Framework collection functions accept a `SemanticTier` filter (`ARRAY_API`, `NEURAL`, `OPTIMIZER`, `LOSS`, `ACTIVATION`, `EXTRAS`, `DISTRIBUTED`, `DATA`, `HUB`, `METRIC`, `UTIL`, `SCHEDULER`, `MODEL`, `INITIALIZER`, `DATALOADER`). A `ThreadPoolExecutor` distributes tier extraction across threads.
 - **Deterministic Alias Deduplication (`_consolidate_aliases`):**
   - Resolves duplicate functions exposed across multiple modules (e.g., `torch.add` vs `torch.Tensor.add`).
   - Converts parameter signatures into comparable tuples (including name, kind, default, annotation, direction, role, dtypes, and rank) and collapses duplicates, selecting the shortest canonical `api_path` as the primary reference while accumulating `aliases`.
@@ -279,20 +286,21 @@ The Grounding SDK provides programmatic, high-speed validation for LLM-generated
   - Verifies positional argument count against parameter specifications.
   - Flags hallucinated keyword arguments.
   - Provides automated cross-framework translations (e.g. flagging `axis` in `torch.sum` and recommending `dim`).
-- **Compiler IR Verification (`validate_stablehlo_op`, `validate_mlir_op`):**
-  - Verifies SSA operand counts against dialect signatures.
-  - Enforces mandatory attributes (e.g., requiring `dot_dimension_numbers` on `stablehlo.dot_general`).
-- **Hardware ISA Verification (`validate_sass_instruction`, `validate_rdna_instruction`):**
-  - Confirms instruction availability on the target microarchitecture (e.g., verifying `WGMMA` on `sm_90` or `v_dual_fmac` on `GFX11`).
+- **Compiler IR & Shader Verification (`validate_stablehlo_op`, `validate_mlir_op`, `verify_wgsl_op`):**
+  - Verifies SSA operand counts, mandatory attributes (e.g., `dot_dimension_numbers` on `stablehlo.dot_general`), and WebGPU WGSL storage/barrier operations.
+- **Hardware ISA Verification (`validate_sass_instruction`, `validate_rdna_instruction`, `verify_ptx_instruction`):**
+  - Confirms instruction availability on the target microarchitecture (e.g., verifying `WGMMA` on `sm_90`, `v_dual_fmac` on `GFX11`, or PTX state spaces/vector widths on target SM).
   - Checks operand count, modifier validity, and register class alignments.
+- **Ecosystem Domain Operation Verifiers (`grounding/domain_ops.py`):**
+  - Validates operator schemas, operand counts, address spaces, and keyword arguments across ONNX, Apple Metal (MSL), WebAssembly SIMD, WebGL2/GLSL, C++ Runtime, Python Array API, SciPy, TorchVision, TorchAudio, SafeTensors, ATen, NCCL/RCCL, FlashAttention, Chex, Grain, Orbax, and Optax.
 
 ---
 
-## 7. Model Context Protocol (MCP) Live Server (`mcp_server.py`)
+## 7. Model Context Protocol (MCP) Live Server (`mcp_server.py` & `mcp/`)
 
-The MCP server exposes the snapshot catalog to LLM coding agents, autonomous CLI tools, and IDE extensions via the JSON-RPC 2.0 Model Context Protocol standard over stdin/stdout.
+The MCP server (`mcp/protocol.py`, `mcp/registry.py`, `mcp/schemas.py`, `mcp/cache.py`, and `mcp/tools/`) exposes the snapshot catalog to LLM coding agents, autonomous CLI tools, and IDE extensions via the JSON-RPC 2.0 Model Context Protocol standard over stdin/stdout.
 
-### Exposed MCP Tool Catalog
+### Exposed MCP Tool Catalog (29 Tools)
 
 | Tool Name | Purpose | Key Parameters |
 |:---|:---|:---|
@@ -300,13 +308,31 @@ The MCP server exposes the snapshot catalog to LLM coding agents, autonomous CLI
 | `search_apis` | Search operations and mnemonics by keyword or prefix | `framework`, `query`, `limit`, `version` |
 | `check_hallucination` | Verify whether an API path or keyword arguments represent LLM hallucinations | `framework`, `api_path`, `kwargs`, `args_count`, `strict_kwargs` |
 | `explain_anti_pattern` | Provide canonical migration advice and rationale for flagged anti-patterns | `framework`, `api_path`, `hallucinated_argument`, `passed_value` |
+| `check_code_block` | Batch verify an entire code block for invalid APIs, kwargs, and hardware rules | `code`, `framework`, `version`, `sm_arch`, `gfx_arch` |
+| `translate_concept_arguments` | Translate arguments across frameworks using concept parameter mapping schemas | `concept`, `source_framework`, `target_framework`, `source_kwargs` |
 | `check_sass_instruction` | Validate SASS instruction legality, modifiers, and operands on target SM | `mnemonic`, `operands`, `modifiers`, `sm_arch`, `control_codes` |
 | `check_rdna_instruction` | Validate AMD RDNA instruction legality on target GFX architecture | `mnemonic`, `operands`, `encoding`, `gfx_arch`, `modifiers`, `wave_size` |
 | `check_ptx_instruction` | Validate PTX instruction, types, vector widths, and state space on SM | `mnemonic`, `types`, `operands`, `state_space`, `scope`, `sm_arch` |
 | `check_mlir_op` | Validate MLIR dialect operation against ODS traits, operands, and attributes | `op_name`, `operands_count`, `attributes`, `operand_types`, `regions` |
 | `check_stablehlo_op` | Validate StableHLO operation attributes and region constraints | `op_name`, `operands_count`, `attributes`, `structured_attributes` |
-| `check_code_block` | Batch verify an entire code block for invalid APIs, kwargs, and hardware rules | `code`, `framework`, `version`, `sm_arch`, `gfx_arch` |
-| `translate_concept_arguments` | Translate arguments across frameworks using concept parameter mapping schemas | `concept`, `source_framework`, `target_framework`, `source_kwargs` |
+| `check_wgsl_op` | Validate WebGPU WGSL shader operation against specification | `op_name`, `inputs_count`, `attributes` |
+| `check_onnx_op` | Validate ONNX operator inputs, domain, and attributes | `op_name`, `domain`, `inputs_count`, `attributes` |
+| `check_metal_op` | Validate Apple Metal MSL compute operation and address space | `op_name`, `address_space`, `inputs_count`, `attributes` |
+| `check_wasm_instruction` | Validate WebAssembly 2.0 / SIMD instruction and operand count | `mnemonic`, `operands_count`, `attributes` |
+| `check_webgl_op` | Validate WebGL 2.0 / GLSL ES 3.00 operation and arguments | `op_name`, `inputs_count`, `attributes` |
+| `check_cpp_op` | Validate C++20/23 / PyBind11 runtime operation | `op_name`, `inputs_count`, `attributes` |
+| `check_array_api_op` | Validate Python Array API Standard operation | `op_name`, `inputs_count`, `attributes` |
+| `check_scipy_op` | Validate SciPy scientific computing operation | `op_name`, `inputs_count`, `attributes` |
+| `check_torchvision_op` | Validate TorchVision computer vision operation | `op_name`, `inputs_count`, `attributes` |
+| `check_torchaudio_op` | Validate TorchAudio audio processing operation | `op_name`, `inputs_count`, `attributes` |
+| `check_safetensors_op` | Validate SafeTensors serialization operation | `op_name`, `inputs_count`, `attributes` |
+| `check_aten_op` | Validate PyTorch ATen C++ core operator | `op_name`, `inputs_count`, `attributes` |
+| `check_nccl_op` | Validate NCCL/RCCL collective communication primitive | `op_name`, `inputs_count`, `attributes` |
+| `check_flash_attention_op` | Validate FlashAttention / PagedAttention kernel operation | `op_name`, `inputs_count`, `attributes` |
+| `check_chex_op` | Validate Chex assertion, dataclass, fake context, or variant helper | `op_name`, `inputs_count`, `attributes` |
+| `check_grain_op` | Validate Grain dataset, sampler, or data loader operation | `op_name`, `inputs_count`, `attributes` |
+| `check_orbax_op` | Validate Orbax Checkpoint or Export manager/handler operation | `op_name`, `inputs_count`, `attributes` |
+| `check_optax_op` | Validate Optax optimizer, transformation, loss, or schedule | `op_name`, `inputs_count`, `attributes` |
 
 ### Concept Argument Translation
 Translates semantic parameters between frameworks (e.g. converting `dim` to `axis`, or adjusting `keepdim`/`keepdims` when migrating operations like `reduce_sum`, `matmul`, `softmax`, or `convolution` between PyTorch, JAX, NumPy, TensorFlow, and StableHLO).
@@ -329,20 +355,20 @@ Generates PEP-484 `.pyi` type stub files directly from snapshots:
 - Rebuilds module hierarchies, class definitions, method signatures, and function overloads.
 - Strips unrepresentable default values while preserving static type hints, enabling IDE autocompletion for frameworks without requiring the native framework wheels to be installed.
 
-### C. Static Compliance Engine (`compliance.py`)
-Enables cleanroom verification of third-party framework implementations (e.g. custom WebAssembly runtimes or mobile shims):
-- Compares a candidate library's runtime signatures against reference snapshots.
+### C. Static Compliance Engine (`compliance/`)
+Enables cleanroom verification of third-party framework implementations (`compliance/ast_extractor.py`, `compliance/assembly_verifier.py`, `compliance/dtype_rules.py`, `compliance/scorer.py`):
+- Compares a candidate library's AST/runtime signatures or assembly files against reference snapshots.
 - Emits compliance scores, categorizing missing symbols, signature mismatches, and parameter discrepancies.
 
-### D. Multi-Target Schema Exporting (`export.py`)
-Trans-compiles snapshots into diverse industry-standard interface definitions:
+### D. Multi-Target Schema & Code Exporting (`export.py` & `exporters/`)
+Trans-compiles snapshots into diverse industry-standard interface definitions (`exporters/openapi_schema.py`, `exporters/code_gen.py`, `exporters/prompts.py`):
 - **JSON Schema & OpenAPI Specifications**: Via `cdd-python`, generating web service API schemas and REST route definitions.
-- **Pydantic V2 Models**: Synthesizes type-safe Pydantic classes with support for overloaded variants (`typing.Union`) and variable argument validation (`Tuple[Any, ...]`).
-- **Protobuf v3 & gRPC Definitions**: Generates `.proto` message definitions, standardized enums (e.g. `ReductionType`, `PaddingMode`, `LayoutMode`, `InterpolationMode`), `TensorProto` definitions, and gRPC service signatures.
+- **Pydantic V2 Models**: Synthesizes type-safe Pydantic classes with overloaded union variants (`Variant0 | Variant1`) and strict `JsonValue` vararg tuple validation (`tuple[JsonValue, ...]`).
+- **Protobuf v3, C++ Headers & TypeScript Interfaces**: Generates `.proto` message/gRPC definitions, C++ struct headers (`to_cpp_header`), and TypeScript interfaces (`to_typescript`).
 - **LLM Prompt Context Exporters**:
   - `export_llm_prompt_context`: Compact Markdown specifications with parameter constraints.
-  - `export_sass_prompt_context`: Canonical SASS assembly templates specifying valid register files, modifiers, and SM capabilities.
-  - `export_mlir_prompt_context`: Canonical MLIR SSA syntax templates separating runtime operands from compile-time attributes and regions.
+  - `export_sass_prompt_context`, `export_ptx_prompt_context` & `export_rdna_prompt_context`: Canonical GPU assembly templates specifying valid register files, state spaces, modifiers, and microarchitectures.
+  - `export_mlir_prompt_context` & `export_stablehlo_prompt_context`: Canonical MLIR/StableHLO SSA syntax templates separating runtime operands from compile-time attributes and regions.
   - `export_scoped_prompt_context`: Hierarchical summary index with `COMMON_HALLUCINATION_GUARDS` to prevent context window explosion.
 
 ---
@@ -356,9 +382,9 @@ To achieve sub-millisecond symbol lookups without loading multi-megabyte JSON tr
 
 ---
 
-## 10. CLI Architecture & Path Resolution (`cli.py`)
+## 10. CLI Architecture & Path Resolution (`cli/`)
 
-The command-line interface provides the user-facing entrypoint for snapshot capture, inspection, and verification.
+The command-line interface (`cli/parser.py`, `cli/resolver.py`, and `cli/commands/`) provides the user-facing entrypoint for snapshot capture, inspection, and verification.
 
 ### Multi-Tier Snapshot Path Resolution (`resolve_snapshot_path`)
 Resolves snapshot identifiers (e.g. `torch`, `torch_v2.4.0.json`, or custom paths) across a cascading hierarchy:
@@ -376,7 +402,7 @@ Resolves snapshot identifiers (e.g. `torch`, `torch_v2.4.0.json`, or custom path
 | `capture` | Introspect installed frameworks and write JSON snapshots |
 | `diff` | Compare two snapshots and generate breaking/non-breaking changelogs |
 | `generate-stubs` | Synthesize `.pyi` type stubs from a snapshot |
-| `export` | Export snapshot to OpenAPI, JSON Schema, Pydantic V2, or Protobuf |
+| `export` | Export snapshot to OpenAPI, JSON Schema, Pydantic V2, Protobuf, C++ headers, TypeScript, or LLM prompts |
 | `mcp` | Launch the Model Context Protocol JSON-RPC tool server |
 | `check` | Verify compliance of a target implementation against a reference snapshot |
 | `list-snapshots` | List bundled and cached framework snapshots |
