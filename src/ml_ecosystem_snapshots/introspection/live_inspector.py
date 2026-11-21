@@ -33,6 +33,7 @@ from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     get_member_dict,
 )
 from ml_ecosystem_snapshots.introspection.sanitize import (
+    default_value_or_none,
     sanitize_param_default,
 )
 
@@ -134,7 +135,7 @@ def _extract_params_from_runtime_sig(
             continue
         if sig_param.kind == inspect.Parameter.VAR_POSITIONAL:
             has_varargs = True
-        default_val, _factory, _is_mand = sanitize_param_default(sig_param.default)
+        default_val = default_value_or_none(sanitize_param_default(sig_param.default))
         anno_val = None
         if sig_param.name in resolved_hints:
             anno_val = active_sanitize_type_str(str(resolved_hints[sig_param.name]))
@@ -169,8 +170,10 @@ def _merge_mro_super_kwargs(
         if _format_annotation_obj(parent) == "object":
             continue
         try:
+            import ml_ecosystem_snapshots.introspection.inspector as _active_insp
+
             parent_init = parent_members.get("__init__")
-            parent_sig = _insp_mod.get_runtime_signature(parent_init)
+            parent_sig = _active_insp.get_runtime_signature(parent_init)
             for param in parent_sig.parameters.values():
                 if param.name == "self" or param.kind in (
                     inspect.Parameter.VAR_POSITIONAL,

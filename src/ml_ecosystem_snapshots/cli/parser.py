@@ -460,7 +460,7 @@ def _register_asm_and_ir_subparsers(
         "--operands",
         type=str,
         default=None,
-        help="Comma-separated operands (e.g. '%r0,%r1,%r2')",
+        help="Comma-separated operands (e.g. '%%r0,%%r1,%%r2')",
     )
     parser_check_ptx.add_argument(
         "--state-space",

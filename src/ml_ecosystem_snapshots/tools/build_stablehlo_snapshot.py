@@ -15,7 +15,7 @@ import sys
 import typing
 from pathlib import Path
 
-from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel, ensure_json_dict
+from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel, json_dict_or_empty
 from ml_ecosystem_snapshots.tools.stablehlo_tablegen import (
     TableGenASTParser,
     build_verification_and_region_metadata,
@@ -51,14 +51,23 @@ def _resolve_stablehlo_content(
     if source_content is not None:
         return source_content
 
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
+    from ml_ecosystem_snapshots.exceptions import OfflineModeNetworkError
     from ml_ecosystem_snapshots.network_env import fetch_url
 
-    fetched = fetch_url(TABLEGEN_URL, timeout=10)
-    if fetched is None:
-        fetched = fetch_url(SPEC_URL)
-        if fetched is None:
-            raise RuntimeError("Failed to fetch StableHLO sources")
-    return fetched
+    td_res = fetch_url(TABLEGEN_URL, timeout=10)
+    if isinstance(td_res, Ok):
+        return td_res.value
+    if isinstance(td_res.error, OfflineModeNetworkError):
+        raise td_res.error
+
+    spec_res = fetch_url(SPEC_URL)
+    if isinstance(spec_res, Ok):
+        return spec_res.value
+    if isinstance(spec_res.error, OfflineModeNetworkError):
+        raise spec_res.error
+    raise RuntimeError("Failed to fetch StableHLO sources")
 
 
 def _parse_spec_table_row(
@@ -190,13 +199,13 @@ def _build_spec_op_record(
         kind="function",
         is_public=True,
         has_varargs=False,
-        environment_tags=[],
-        aliases=[],
-        overloads=[],
-        params=[ensure_json_dict(p) for p in params],
+        environment_tags=(),
+        aliases=(),
+        overloads=(),
+        params=tuple(json_dict_or_empty(p) for p in params),
         returns_type=returns_type,
         returns_description=None,
-        raises=[],
+        raises=(),
         docstring=docstring if docstring else None,
     )
 

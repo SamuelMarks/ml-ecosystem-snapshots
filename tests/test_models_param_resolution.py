@@ -6,8 +6,10 @@ from unittest.mock import patch
 
 import pytest
 from ml_switcheroo_ir.schema.ghost import ParameterKind
+from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
 
-from ml_ecosystem_snapshots.c_extension_sig import CExtensionSignature
+from ml_ecosystem_snapshots.c_extension_sig import build_c_extension_signature
+from ml_ecosystem_snapshots.exceptions import CExtensionSignatureError
 from ml_ecosystem_snapshots.introspection.inspector import (
     GhostInspector,
     to_parameter_kind,
@@ -27,20 +29,20 @@ def test_ghost_inspector_aten_overload_merge_and_returns() -> None:
         """func(x: int) -> None."""
         pass
 
-    c_sig = CExtensionSignature(
+    c_sig = build_c_extension_signature(
         [("x", "POSITIONAL_OR_KEYWORD", None, "int")],
         returns_type="Tensor",
     )
-    aten_sig = CExtensionSignature(
+    aten_sig = build_c_extension_signature(
         [("x", "POSITIONAL_OR_KEYWORD", None, "int")],
-        overloads=[CExtensionSignature([("x", "POSITIONAL_OR_KEYWORD", None, "float")])],
+        overloads=[build_c_extension_signature([("x", "POSITIONAL_OR_KEYWORD", None, "float")])],
     )
 
     with (
         patch("inspect.signature", side_effect=ValueError),
         patch(
             "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
-            return_value=c_sig,
+            return_value=Ok(c_sig),
         ),
         patch(
             "ml_ecosystem_snapshots.frameworks.torch.extract_aten_c_extension_signature",
@@ -69,7 +71,7 @@ def test_ghost_inspector_opaque_c_extension_none_env_tags() -> None:
         patch("inspect.signature", side_effect=ValueError),
         patch(
             "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
-            return_value=None,
+            return_value=Err(CExtensionSignatureError("no doc")),
         ),
         patch(
             "ml_ecosystem_snapshots.frameworks.torch.extract_aten_c_extension_signature",

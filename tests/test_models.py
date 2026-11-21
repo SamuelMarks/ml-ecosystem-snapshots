@@ -123,9 +123,8 @@ def test_ghost_inspector_c_extension(mocker: pytest_mock.MockerFixture) -> None:
 
 def test_ghost_inspector_hydrate() -> None:
     """Verify ghost inspector hydrate behavior."""
-    import pytest
+    from ml_switcheroo_ir.typeclasses.outcome import Err, raise_on_err
 
-    from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
     from ml_ecosystem_snapshots.models import JsonValue
 
     data: dict[str, JsonValue] = {
@@ -136,30 +135,30 @@ def test_ghost_inspector_hydrate() -> None:
         "docstring": None,
         "has_varargs": False,
     }
-    ref = GhostInspector.hydrate(data)
+    ref = raise_on_err(GhostInspector.hydrate(data))
     assert ref.name == "foo"
     assert ref.schema_version == "2.0.0"
 
     # Test hydrate rejects legacy schema_version and legacy param fields
-    with pytest.raises(SnapshotSchemaError, match="Unsupported schema_version"):
-        GhostInspector.hydrate(
-            {
-                "name": "bar",
-                "api_path": "bar",
-                "kind": "function",
-                "schema_version": "1.2",
-            }
-        )
+    legacy_ver = GhostInspector.hydrate(
+        {
+            "name": "bar",
+            "api_path": "bar",
+            "kind": "function",
+            "schema_version": "1.2",
+        }
+    )
+    assert isinstance(legacy_ver, Err) and "Unsupported schema_version" in str(legacy_ver.error)
 
-    with pytest.raises(SnapshotSchemaError, match="Legacy v1.x"):
-        GhostInspector.hydrate(
-            {
-                "name": "bar",
-                "api_path": "bar",
-                "kind": "function",
-                "params": [{"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "dtypes": ["f32"]}],
-            }
-        )
+    legacy_param = GhostInspector.hydrate(
+        {
+            "name": "bar",
+            "api_path": "bar",
+            "kind": "function",
+            "params": [{"name": "x", "kind": "POSITIONAL_OR_KEYWORD", "dtypes": ["f32"]}],
+        }
+    )
+    assert isinstance(legacy_param, Err) and "Legacy v1.x" in str(legacy_param.error)
 
 
 def test_unrepresentable_default() -> None:
@@ -709,6 +708,8 @@ def test_extended_ghost_param_allowed_values() -> None:
 
 def test_ghost_isa_ref_hydrate_overloads() -> None:
     """Test GhostInspector.hydrate creates overloads for multi-signature instructions."""
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
     from ml_ecosystem_snapshots.models import JsonValue
 
     raw_data: dict[str, JsonValue] = {
@@ -716,7 +717,7 @@ def test_ghost_isa_ref_hydrate_overloads() -> None:
         "operands": [["R", "R", "I"], ["R", "I"]],
         "architecture": ["sm_80", "sm_90"],
     }
-    hydrated = GhostInspector.hydrate(raw_data)
+    hydrated = raise_on_err(GhostInspector.hydrate(raw_data))
     assert isinstance(hydrated, GhostIsaRef)
     assert hydrated.overloads is not None
     assert len(hydrated.overloads) == 2
@@ -774,25 +775,27 @@ def test_ghost_inspector_c_ext_overloads_with_literal_and_standard_enum(
     """
     mocker.patch("inspect.signature", side_effect=ValueError)
 
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
     from ml_ecosystem_snapshots.c_extension_sig import CExtensionSignature, ParsedParamTuple
 
     mock_ov = CExtensionSignature(
-        params=[
+        params=(
             ParsedParamTuple(name="mode", kind="KEYWORD_ONLY", default=None, annotation='Literal["fast", "slow"]'),
             ParsedParamTuple(name="reduction", kind="KEYWORD_ONLY", default=None, annotation="str"),
-        ],
+        ),
         returns_type="int",
-        overloads=[],
+        overloads=(),
     )
     mock_c_sig = CExtensionSignature(
-        params=[ParsedParamTuple(name="x", kind="POSITIONAL_OR_KEYWORD", default=None, annotation="int")],
+        params=(ParsedParamTuple(name="x", kind="POSITIONAL_OR_KEYWORD", default=None, annotation="int"),),
         returns_type="int",
-        overloads=[mock_ov],
+        overloads=(mock_ov,),
     )
 
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
-        return_value=mock_c_sig,
+        return_value=Ok(mock_c_sig),
     )
 
     def dummy_fn(*args: LivePythonTarget, **kwargs: LivePythonTarget) -> None:
@@ -934,26 +937,32 @@ def test_ghost_instruction_and_operation_refs() -> None:
     assert len(op.operands or []) == 2
     assert len(op.returns or []) == 1
 
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
     # 3. Hydrate with domain_type="instruction" and "operation"
-    hydrated_inst = GhostInspector.hydrate(
-        {
-            "name": "v_add_f32",
-            "api_path": "v_add_f32",
-            "kind": "instruction",
-            "domain_type": "instruction",
-            "supported_architectures": ["GFX10+"],
-        }
+    hydrated_inst = raise_on_err(
+        GhostInspector.hydrate(
+            {
+                "name": "v_add_f32",
+                "api_path": "v_add_f32",
+                "kind": "instruction",
+                "domain_type": "instruction",
+                "supported_architectures": ["GFX10+"],
+            }
+        )
     )
     assert isinstance(hydrated_inst, GhostInstructionRef)
 
-    hydrated_op = GhostInspector.hydrate(
-        {
-            "name": "DotGeneralOp",
-            "api_path": "stablehlo.dot_general",
-            "kind": "operation",
-            "domain_type": "operation",
-            "traits": [],
-        }
+    hydrated_op = raise_on_err(
+        GhostInspector.hydrate(
+            {
+                "name": "DotGeneralOp",
+                "api_path": "stablehlo.dot_general",
+                "kind": "operation",
+                "domain_type": "operation",
+                "traits": [],
+            }
+        )
     )
     assert isinstance(hydrated_op, GhostOperationRef)
 
@@ -969,6 +978,7 @@ def test_ghost_inspector_griffe_param_not_in_cdd(
     Returns:
         None.
     """
+    from ml_ecosystem_snapshots.utils import DocstringMetadata, DocstringParamMeta
 
     def sample_func(x: int, extra_param: int = 0) -> None:
         """Sample docstring for testing docstring parameter merge.
@@ -985,7 +995,9 @@ def test_ghost_inspector_griffe_param_not_in_cdd(
     )
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.extract_griffe_docstring_metadata",
-        return_value={"params": {"extra_param": {"doc": "extra param doc", "typ": "int"}}},
+        return_value=DocstringMetadata(
+            params=(("extra_param", DocstringParamMeta(doc="extra param doc", typ="int")),),
+        ),
     )
 
     ref = GhostInspector.inspect(sample_func, "sample_func")
@@ -995,19 +1007,25 @@ def test_ghost_inspector_griffe_param_not_in_cdd(
 
 
 def test_ensure_json_dict_and_list() -> None:
-    """Verify `ensure_json_dict`, `ensure_json_list`, and `ensure_present` validate inputs and raise `SnapshotSchemaError`."""
+    """Verify `ensure_json_dict`, `ensure_json_list`, and `ensure_present` return total `Ok` / `Err(SnapshotSchemaError)`."""
+    from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
+
     from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
     from ml_ecosystem_snapshots.models import ensure_json_dict, ensure_json_list, ensure_present
 
-    assert ensure_json_dict({"k": 1}) == {"k": 1}
-    assert ensure_json_list([1, "a"]) == [1, "a"]
-    assert ensure_present("ok") == "ok"
+    assert ensure_json_dict({"k": 1}) == Ok({"k": 1})
+    assert ensure_json_list([1, "a"]) == Ok((1, "a"))
+    assert ensure_present("ok") == Ok("ok")
 
-    with pytest.raises(SnapshotSchemaError, match="dict"):
-        ensure_json_dict("not_a_dict")
+    bad_dict = ensure_json_dict("not_a_dict")
+    assert isinstance(bad_dict, Err) and isinstance(bad_dict.error, SnapshotSchemaError)
+    assert "dict" in str(bad_dict.error)
 
-    with pytest.raises(SnapshotSchemaError, match="list"):
-        ensure_json_list({"not": "a_list"})
+    bad_list = ensure_json_list({"not": "a_list"})
+    assert isinstance(bad_list, Err) and isinstance(bad_list.error, SnapshotSchemaError)
+    assert "list" in str(bad_list.error)
 
-    with pytest.raises(SnapshotSchemaError, match="non-None"):
-        ensure_present(None)
+    none_val: str | None = None
+    bad_pres = ensure_present(none_val)
+    assert isinstance(bad_pres, Err) and isinstance(bad_pres.error, SnapshotSchemaError)
+    assert "non-None" in str(bad_pres.error)

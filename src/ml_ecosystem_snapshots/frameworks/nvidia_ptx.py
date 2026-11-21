@@ -26,7 +26,7 @@ from ..models import (
     ExtendedGhostParam,
     IRParameterRole,
     JsonValue,
-    ensure_json_dict,
+    json_dict_or_empty,
 )
 
 
@@ -647,8 +647,8 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         params: list[GhostParam] = []
 
         raw_ops = inst.get("operands", [])
-        for idx, raw_op in enumerate(raw_ops if isinstance(raw_ops, list) else []):
-            op = ensure_json_dict(raw_op, "PTX operand")
+        for idx, raw_op in enumerate(raw_ops if isinstance(raw_ops, (list, tuple)) else []):
+            op = json_dict_or_empty(raw_op)
             role = IRParameterRole.RESULT if op.get("role") == "dst" else IRParameterRole.OPERAND
             default_role_name = "dst" if idx == 0 else f"src{idx - 1}"
             params.append(

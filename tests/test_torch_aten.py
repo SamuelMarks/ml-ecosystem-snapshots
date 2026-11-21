@@ -21,7 +21,12 @@ from ml_ecosystem_snapshots.frameworks.torch import (
     parse_native_functions_yaml,
 )
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
-from ml_ecosystem_snapshots.introspection.sanitize import sanitize_param_default
+from ml_ecosystem_snapshots.introspection.sanitize import (
+    FactoryDefault,
+    LiteralDefault,
+    MandatoryDefault,
+    sanitize_param_default,
+)
 from ml_ecosystem_snapshots.mcp_server import check_hallucination, handle_mcp_message
 from ml_ecosystem_snapshots.models import (
     ExtendedGhostParam,
@@ -32,37 +37,19 @@ from ml_ecosystem_snapshots.models import (
 
 def test_sanitize_param_default_semantic_literals() -> None:
     """Test preservation of semantic literals and distinguishing mandatory from explicit defaults."""
-    # Mandatory parameter (empty default)
-    def_val, factory_str, is_mand = sanitize_param_default(inspect.Parameter.empty)
-    assert def_val is None
-    assert factory_str is None
-    assert is_mand is True
-
-    # Explicit None default
-    def_val, factory_str, is_mand = sanitize_param_default(None)
-    assert def_val == "None"
-    assert factory_str is None
-    assert is_mand is False
-
-    # Boolean literals
-    assert sanitize_param_default(False) == ("False", None, False)
-    assert sanitize_param_default(True) == ("True", None, False)
-
-    # String literal
-    assert sanitize_param_default("mean") == ("'mean'", None, False)
-
-    # Numeric literals
-    assert sanitize_param_default(1e-5) == ("1e-05", None, False)
-    assert sanitize_param_default(42) == ("42", None, False)
-
-    # Ellipsis
-    assert sanitize_param_default(...) == ("...", None, False)
+    assert sanitize_param_default(inspect.Parameter.empty) == MandatoryDefault()
+    assert sanitize_param_default(None) == LiteralDefault(value_repr="None")
+    assert sanitize_param_default(False) == LiteralDefault(value_repr="False")
+    assert sanitize_param_default(True) == LiteralDefault(value_repr="True")
+    assert sanitize_param_default("mean") == LiteralDefault(value_repr="'mean'")
+    assert sanitize_param_default(1e-5) == LiteralDefault(value_repr="1e-05")
+    assert sanitize_param_default(42) == LiteralDefault(value_repr="42")
+    assert sanitize_param_default(...) == LiteralDefault(value_repr="...")
 
 
 def test_sanitize_param_default_callables_and_memory_addresses() -> None:
     """Test scrubbing non-deterministic memory addresses and handling callables."""
 
-    # Named callable
     def dummy_factory() -> int:
         """Dummy factory for test.
 
@@ -71,19 +58,16 @@ def test_sanitize_param_default_callables_and_memory_addresses() -> None:
         """
         return 1
 
-    def_val, factory_str, is_mand = sanitize_param_default(dummy_factory)
-    assert def_val == "<factory_default>"
-    assert factory_str == "<function dummy_factory>"
-    assert is_mand is False
+    assert sanitize_param_default(dummy_factory) == FactoryDefault(
+        placeholder="<factory_default>",
+        factory_repr="<function dummy_factory>",
+    )
 
-    # Anonymous lambda
-    def_val, factory_str, is_mand = sanitize_param_default(lambda x: x)
-    assert def_val == "<factory_default>"
-    assert factory_str is not None
-    assert "<lambda>" in factory_str
-    assert is_mand is False
+    lam_res = sanitize_param_default(lambda x: x)
+    assert isinstance(lam_res, FactoryDefault)
+    assert lam_res.placeholder == "<factory_default>"
+    assert "<lambda>" in lam_res.factory_repr
 
-    # Object with memory address
     class CustomObj:
         """Custom object with memory address in repr."""
 
@@ -95,12 +79,11 @@ def test_sanitize_param_default_callables_and_memory_addresses() -> None:
             """
             return "<CustomObj object at 0x7fa1234abcd>"
 
-    def_val, factory_str, is_mand = sanitize_param_default(CustomObj())
-    assert def_val == "<factory_default>"
-    assert "0x" not in def_val
-    assert is_mand is False
+    obj_res = sanitize_param_default(CustomObj())
+    assert isinstance(obj_res, FactoryDefault)
+    assert obj_res.placeholder == "<factory_default>"
+    assert "0x" not in obj_res.factory_repr
 
-    # String with memory address
     class CustomStrObj:
         """Custom object with memory address in str."""
 
@@ -120,9 +103,11 @@ def test_sanitize_param_default_callables_and_memory_addresses() -> None:
             """
             return "CustomStrObj at 0x7fa1234abcd"
 
-    def_val, factory_str, is_mand = sanitize_param_default(CustomStrObj())
-    assert def_val == "<factory_default>"
-    assert "0x" not in def_val
+    str_res = sanitize_param_default(CustomStrObj())
+    assert str_res == FactoryDefault(
+        placeholder="<factory_default>",
+        factory_repr="<factory_default>",
+    )
 
 
 def test_extended_ghost_param_fields() -> None:
@@ -255,8 +240,7 @@ def test_extract_aten_c_extension_signature_real(mock_torch_module: types.Module
 
     sig = extract_aten_c_extension_signature(torch.add, "torch.add")
     assert sig is not None
-    assert len(sig) >= 3  # input, other, alpha
-    assert sig.overloads is not None
+    assert len(sig.params) >= 3  # input, other, alpha
     assert len(sig.overloads) > 1
 
     # In-place target
@@ -267,7 +251,7 @@ def test_extract_aten_c_extension_signature_real(mock_torch_module: types.Module
     # Method call target (stripping receiver 'self')
     sig_method = extract_aten_c_extension_signature(None, "torch.Tensor.add")
     assert sig_method is not None
-    assert sig_method[0].name != "self"
+    assert sig_method.params[0].name != "self"
 
     # Non-existent target
     assert extract_aten_c_extension_signature(None, "torch.not_existing_at_all") is None
@@ -547,10 +531,13 @@ def test_handle_mcp_message_dtypes_and_ranks() -> None:
                 },
             },
         }
+        from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
         resp = handle_mcp_message(msg)
         assert resp.result is not None
-        assert '"is_hallucinated": true' in ensure_present(ensure_present(resp.result).content)[0].text
-        assert "not supported" in ensure_present(ensure_present(resp.result).content)[0].text
+        content_items = raise_on_err(ensure_present(raise_on_err(ensure_present(resp.result)).content))
+        assert '"is_hallucinated": true' in content_items[0].text
+        assert "not supported" in content_items[0].text
 
 
 def test_aten_edge_cases_and_mocks(
@@ -615,9 +602,9 @@ def test_aten_edge_cases_and_mocks(
     )
     sig = extract_aten_c_extension_signature(None, "custom_op")
     assert sig is not None
-    assert sig[0].name == "x"
+    assert sig.params[0].name == "x"
     assert len(sig.overloads) == 1
-    assert sig.overloads[0][0].name == "y"
+    assert sig.overloads[0].params[0].name == "y"
 
 
 def test_torch_collect_api_array_api_aten(

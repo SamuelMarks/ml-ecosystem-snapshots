@@ -32,7 +32,7 @@ Machine Learning frameworks frequently utilize heavy GPU-bound libraries, comple
 - **Anti-Hallucination Grounding SDK**: In-memory `GroundingEngine` with Levenshtein fuzzy distance matching, cross-framework argument translation (e.g. PyTorch `dim` vs. NumPy `axis`), and SSA operand/attribute verification.
 - **Model Context Protocol (MCP) Server**: Full JSON-RPC 2.0 tool server exposing real-time signature lookups, keyword hallucination validation, anti-pattern diagnostics, and assembly checking directly to AI agents.
 - **High-Throughput SQLite FTS5 Index**: Ephemeral on-demand full-text search index for sub-millisecond symbol lookups without memory-heavy JSON loading.
-- **Format-Agnostic Exports**: Convert snapshots into OpenAPI specifications, JSON Schema, Pydantic V2 models, Protobuf (`.proto`) messages/services, and scoped LLM prompt context templates with built-in hallucination guards.
+- **Format-Agnostic Exports**: Convert snapshots into OpenAPI specifications, JSON Schema, Pydantic V2 models, Protobuf (`.proto`) messages/services, C++ headers, TypeScript interfaces, and scoped LLM prompt context templates with built-in hallucination guards.
 - **Structural Diffing & Semantic Changelogs**: Compare snapshots to generate Markdown changelogs, classifying changes into breaking vs. non-breaking updates across signatures, modifiers, and microarchitecture capabilities.
 - **Python Type Stub Generation**: Reconstruct `.pyi` type stubs so that IDEs and language servers provide accurate autocompletion without needing frameworks installed.
 - **Static Compliance Verification**: Benchmark candidate framework shims or transpiled modules against canonical reference snapshots, scoring API parity and reporting mismatches.
@@ -48,7 +48,7 @@ Machine Learning frameworks frequently utilize heavy GPU-bound libraries, comple
 | **ATen** | [pytorch.org/cppdocs](https://pytorch.org/cppdocs/) | PyTorch ATen C++ core operator schemas and dispatch signatures |
 | **Awkward Array** | [awkward-array.org](https://awkward-array.org/) | Nested, variable-sized data manipulation and ragged array operations |
 | **Bohrium** | [bh107.org](https://bh107.org/) | Automatic parallelization array runtime for Python/NumPy |
-| **C++ Runtime** | *Built-in* | Standard C++20/23 math, memory, and SIMD runtime intrinsics |
+| **C++ Runtime** | *Built-in* | Standard C++17 / PyBind11 math, memory, and native tensor runtime intrinsics |
 | **Chex** | [chex.readthedocs.io](https://chex.readthedocs.io/) | JAX testing, assertion, dataclass, and PyTree validation utilities |
 | **CuPy** | [cupy.dev](https://cupy.dev/) | NumPy/SciPy-compatible array library for GPU-accelerated computing |
 | **Dask** | [dask.org](https://dask.org/) | Library for parallel and distributed array computing in Python |
@@ -64,10 +64,10 @@ Machine Learning frameworks frequently utilize heavy GPU-bound libraries, comple
 | **LaTeX DSL** | *Built-in* | Standard LaTeX mathematical environments and formatting macros |
 | **MaxText** | [github.com/google/maxtext](https://github.com/google/maxtext) | Performant and highly scalable JAX LLM implementation |
 | **Metal (MSL)** | *Built-in* | Apple Metal Shading Language math, atomic, SIMD-group, and matrix intrinsics |
-| **ML-Switcheroo IR** | *Built-in* | Universal `LogicalGraph`/`IRGraph`, `LogicalNode`/`IRNode`, `TensorSpec`, Tier-1 `@runtime_checkable` structural protocols (`DTypeLikeProtocol`, `DeviceLikeProtocol`, `SymbolicNodeProtocol`, etc.), symbolic algebra (`SymInt`/`Polynomial`), and compiler IR APIs |
+| **ML-Switcheroo IR** | *Built-in* | Universal `LogicalGraph`/`IRGraph`, `LogicalNode`/`IRNode`, `TensorSpec`, Tier-1 `@runtime_checkable` protocols, algebraic `typeclasses` (`Result`, `Validation`, `Monoid`, `Codec`, `Pretty`, `Endo`), `ProvenGraph` phantom proofs, and compiler IR APIs (v0.0.8, 153 symbols) |
 | **MLIR** | [mlir.llvm.org](https://mlir.llvm.org/) | Core MLIR dialects (`arith`, `math`, `tensor`, `linalg`, `scf`, `gpu`, etc.) via TableGen |
 | **MLX** | [ml-explore.github.io/mlx](https://ml-explore.github.io/mlx/) | Array framework optimized for Apple Silicon |
-| **NCCL** | [developer.nvidia.com/nccl](https://developer.nvidia.com/nccl) | NVIDIA Collective Communications Library primitives (`ncclAllReduce`, `ncclAllGather`, etc.) |
+| **NCCL** | [developer.nvidia.com/nccl](https://developer.nvidia.com/nccl) | NVIDIA Collective Communications Library primitives (`all_reduce`, `all_gather`, etc.) |
 | **Numba** | [numba.pydata.org](https://numba.pydata.org/) | LLVM JIT compiler decorators, vectorize, guvectorize, and CUDA kernel APIs |
 | **NumPy** | [numpy.org](https://numpy.org/) | The fundamental package for scientific computing with Python |
 | **NVIDIA PTX** | *Built-in* | NVIDIA Parallel Thread Execution (PTX) ISA, state spaces, and type qualifiers |
@@ -109,6 +109,10 @@ pip install ml-ecosystem-snapshots
 # Install with heavy framework dependencies for live extraction
 pip install "ml-ecosystem-snapshots[frameworks]"
 
+# Install host-compatible or Linux x86_64 GPU/runtime framework bundles
+pip install "ml-ecosystem-snapshots[host]"
+pip install "ml-ecosystem-snapshots[linux_x64]"
+
 # Install with development and code generation tools
 pip install "ml-ecosystem-snapshots[generate]"
 
@@ -140,7 +144,7 @@ ml_ecosystem_snapshots capture torch jax keras --out-dir ./snapshots
 Test a local module's API compliance against a canonical reference snapshot:
 
 ```bash
-ml_ecosystem_snapshots check ./snapshots/torch_v2.4.0.json ./my_project/src/my_torch_shim
+ml_ecosystem_snapshots check ./snapshots/torch_v2.4.0.json ./my_project/src/my_torch_shim \
     --reference-prefix torch --target-prefix my_project.my_torch_shim
 ```
 
@@ -183,7 +187,7 @@ ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format llm
 
 ### 6. Hardware ISA, Compiler Dialect & Domain Verification
 
-Directly validate assembly snippets, compiler IR, shaders, and domain operations from the terminal:
+Directly validate assembly snippets, compiler IR, shaders, and domain operations (`check-onnx`, `check-metal`, `check-wasm`, `check-webgl`, `check-cpp`, `check-array-api`, `check-scipy`, `check-torchvision`, `check-torchaudio`, `check-safetensors`, `check-aten`, `check-nccl`, `check-flash-attention`, `check-chex`, `check-grain`, `check-orbax`, `check-optax`) from the terminal:
 
 ```bash
 # Validate NVIDIA SASS / PTX instructions against target SM architecture
@@ -197,7 +201,7 @@ ml_ecosystem_snapshots check-rdna v_dual_fmac_f32 --gfx-arch GFX11/RDNA3
 ml_ecosystem_snapshots check-mlir arith.addf --operands-count 2
 ml_ecosystem_snapshots check-stablehlo stablehlo.dot_general --operands-count 2 --attributes dot_dimension_numbers
 ml_ecosystem_snapshots check-wgsl storageStore --inputs-count 3
-ml_ecosystem_snapshots check-onnx Conv --inputs-count 2 --attributes kernel_shape,strides
+ml_ecosystem_snapshots check-onnx Conv --inputs-count 3 --attributes kernel_shape,strides
 ```
 
 ### 7. Snapshot Management & Local Cache
@@ -249,7 +253,7 @@ ml_ecosystem_snapshots mcp
 | `check_metal_op` | Verify Apple Metal Shading Language (MSL) compute operations and address spaces. |
 | `check_wasm_instruction` | Verify WebAssembly 2.0 / 128-bit SIMD instructions and operand counts. |
 | `check_webgl_op` | Verify WebGL 2.0 / GLSL ES 3.00 context and shader built-in operations. |
-| `check_cpp_op` | Verify C++20/23 / PyBind11 runtime math, memory, and SIMD intrinsics. |
+| `check_cpp_op` | Verify C++17 / PyBind11 runtime math, memory, and tensor buffer intrinsics. |
 | `check_array_api_op` | Verify Python Array API Standard operations, inputs, and keyword arguments. |
 | `check_scipy_op` | Verify SciPy scientific computing operations (`special`, `linalg`, `signal`, `fft`). |
 | `check_torchvision_op` | Verify TorchVision computer vision operators and transforms. |
@@ -308,19 +312,34 @@ ml_ecosystem_snapshots mcp
 ### 1. Snapshot Extraction & Diffing
 
 ```python
-from ml_ecosystem_snapshots.api import extract_snapshot, write_snapshot
+from ml_ecosystem_snapshots import (
+    DIFF_RESULT_MONOID,
+    Ok,
+    Valid,
+    extract_snapshot,
+    prove_determinism_verified,
+    prove_hydrated_refs,
+    write_snapshot,
+)
 from ml_ecosystem_snapshots.diff import diff_snapshots, generate_changelog
 
-# Extract snapshot for PyTorch (uses isolated subprocess by default)
-snapshot = extract_snapshot("torch")
+# Total extraction returning Result[SnapshotError, ProvenSnapshot[EnvelopeValidPhase]]
+snap_res = extract_snapshot("ir")
 
-if snapshot:
-    print(f"Captured Torch v{snapshot['version']}")
-    write_snapshot("torch", snapshot, output_dir="./snapshots")
+if isinstance(snap_res, Ok):
+    proven_env = snap_res.value
+    print(f"Captured {proven_env.target} v{proven_env.version}")
+    write_snapshot("ir", proven_env, output_dir="./snapshots")
 
-# Diff two snapshot dictionaries
-# result = diff_snapshots(snap_v1, snap_v2)
-# print(generate_changelog(result))
+    # Promote through applicative Validation proof phases
+    hydrated_val = prove_hydrated_refs(proven_env)
+    if isinstance(hydrated_val, Valid):
+        det_val = prove_determinism_verified(hydrated_val.value)
+        print("Determinism verified:", isinstance(det_val, Valid))
+
+# Compose sequential snapshot diffs via DIFF_RESULT_MONOID
+# net_diff = DIFF_RESULT_MONOID.combine(diff_snapshots(v1, v2), diff_snapshots(v2, v3))
+# print(generate_changelog(net_diff))
 ```
 
 ### 2. Anti-Hallucination Grounding SDK
@@ -387,10 +406,14 @@ We welcome contributions.
 # Setup environment
 python -m venv .venv
 source .venv/bin/activate
-pip install -r test-requirements.txt
+pip install -r requirements.txt -r test-requirements.txt
+pip install -e .
 
-# Run test suite with 100% coverage enforcement
-pytest --cov=src/ml_ecosystem_snapshots --cov-branch
+# Run test suite and verification gates (100% line, branch, function, typing & docstring coverage)
+pytest --cov=src/ml_ecosystem_snapshots --cov=scripts --cov-branch --cov-fail-under=100
+python3 scripts/check_function_coverage.py
+python3 scripts/lint_typing.py
+python3 scripts/lint_docstrings.py
 ```
 
 ---

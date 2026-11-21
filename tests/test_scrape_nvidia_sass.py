@@ -176,16 +176,16 @@ def test_parse_nvdisasm_binary_info() -> None:
     fadd = next(r for r in records if r.mnemonic == "FADD")
     assert ".FTZ" in fadd.modifiers
     assert ".RN" in fadd.modifiers
-    assert fadd.operands == [["R", "R", "FI"]]
+    assert fadd.operands == (["R", "R", "FI"],)
 
     mov = next(r for r in records if r.mnemonic == "MOV")
-    assert mov.operands == [["R", "c[bank][offset]"]]
+    assert mov.operands == (["R", "c[bank][offset]"],)
 
     ldg = next(r for r in records if r.mnemonic == "LDG")
-    assert ldg.operands == [["R", "ADDR"]]
+    assert ldg.operands == (["R", "ADDR"],)
 
     nop = next(r for r in records if r.mnemonic == "NOP")
-    assert nop.operands == [[]]
+    assert nop.operands == ([],)
 
 
 def test_scrape_sass_nvdisasm_file() -> None:
@@ -204,9 +204,9 @@ def test_scrape_sass_nvdisasm_file() -> None:
         assert os.path.exists(output_path)
         assert len(records) == 2
         ffma = next(r for r in records if r.mnemonic == "FFMA")
-        assert ffma.operands == [["R", "R", "R", "R"]]
+        assert ffma.operands == (["R", "R", "R", "R"],)
         fadd = next(r for r in records if r.mnemonic == "FADD")
-        assert fadd.operands == [["R", "UR", "I"]]
+        assert fadd.operands == (["R", "UR", "I"],)
 
 
 def test_scrape_sass_json_list() -> None:
@@ -255,7 +255,7 @@ def test_scrape_sass_env_var() -> None:
             records = scrape_nvidia_sass.scrape_sass(output_path=output_path)
             assert len(records) == 1
             assert records[0].mnemonic == "FADD"
-            assert records[0].operands == [["R", "R", "R"]]
+            assert records[0].operands == (["R", "R", "R"],)
             assert os.path.isfile(output_path)
 
 

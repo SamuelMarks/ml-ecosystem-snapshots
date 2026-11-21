@@ -94,10 +94,14 @@ def test_extract_snapshot_and_extract_all(monkeypatch: pytest.MonkeyPatch) -> No
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    assert extract_snapshot("nonexistent") == {}
+    from ml_switcheroo_ir.typeclasses.outcome import Err, Invalid, Ok, Valid, raise_on_err
+
+    from ml_ecosystem_snapshots.proofs import prove_envelope_valid
+
+    assert isinstance(extract_snapshot("nonexistent"), Err)
 
     monkeypatch.setattr("ml_ecosystem_snapshots.api.get_pkg_version", lambda _fw: "unknown")
-    assert extract_snapshot("torch") == {}
+    assert isinstance(extract_snapshot("torch"), Err)
 
     monkeypatch.setattr("ml_ecosystem_snapshots.api.get_pkg_version", lambda _fw: "1.0.0")
     sample_ref = GhostRef(name="MSELoss", api_path="torch.nn.MSELoss", kind="class")
@@ -123,26 +127,38 @@ def test_extract_snapshot_and_extract_all(monkeypatch: pytest.MonkeyPatch) -> No
         return []
 
     monkeypatch.setitem(FRAMEWORK_COLLECTORS, "torch", fake_collect)
-    res = extract_snapshot("torch")
+    proven_torch = raise_on_err(extract_snapshot("torch"))
+    res = proven_torch.to_wire_dict()
     assert res["version"] == "1.0.0"
-    categories = ensure_json_dict(res["categories"])
-    loss_items = ensure_json_list(categories["loss"])
+    categories = raise_on_err(ensure_json_dict(res["categories"]))
+    loss_items = raise_on_err(ensure_json_list(categories["loss"]))
     assert len(loss_items) == 1
-    assert ensure_json_dict(loss_items[0])["name"] == "MSELoss"
+    assert raise_on_err(ensure_json_dict(loss_items[0]))["name"] == "MSELoss"
 
     monkeypatch.setitem(FRAMEWORK_COLLECTORS, "torch", lambda _cat, _inc=False: [])
-    assert extract_snapshot("torch") == {}
+    assert isinstance(extract_snapshot("torch"), Err)
+
+    sample_proven = raise_on_err(prove_envelope_valid({"target": "torch", "version": "1.0.0", "categories": {}}))
+    monkeypatch.setattr(
+        "ml_ecosystem_snapshots.api.extract_snapshot",
+        lambda fw, include_nonpublic=False: Ok(sample_proven) if fw == "torch" else Err(SnapshotError("skip")),
+    )
+    res_all = extract_all_snapshots()
+    assert isinstance(res_all, Valid)
+    assert "torch" in res_all.value
+    assert "jax" not in res_all.value
+
+    strict_err = extract_all_snapshots(frameworks=("torch", "jax"))
+    assert isinstance(strict_err, Invalid)
+    assert len(strict_err.errors) == 1
 
     monkeypatch.setattr(
         "ml_ecosystem_snapshots.api.extract_snapshot",
-        lambda fw, include_nonpublic=False: {"version": "1"} if fw == "torch" else {},
+        lambda _fw, include_nonpublic=False: Err(SnapshotError("empty")),
     )
-    res_all = extract_all_snapshots()
-    assert "torch" in res_all
-    assert "jax" not in res_all
-
-    monkeypatch.setattr("ml_ecosystem_snapshots.api.extract_snapshot", lambda _fw, _inc=False: {})
-    assert extract_all_snapshots() == {}
+    res_none = extract_all_snapshots()
+    assert isinstance(res_none, Valid)
+    assert res_none.value == {}
 
 
 def test_get_available_frameworks_with_fake_package_builder(
@@ -339,8 +355,8 @@ def test_get_pkg_version_keras_griffe_and_ir_fallbacks(
     fake_package_builder.build_module("ml_switcheroo_ir", version="0.0.9")
     assert get_pkg_version("ir") == "0.0.9"
     fake_package_builder.block_imports("ml_switcheroo_ir")
-    fake_package_builder.set_metadata_versions({"ml_switcheroo_ir": "0.0.7"})
-    assert get_pkg_version("ml_switcheroo_ir") == "0.0.7"
+    fake_package_builder.set_metadata_versions({"ml_switcheroo_ir": "0.0.8"})
+    assert get_pkg_version("ml_switcheroo_ir") == "0.0.8"
 
 
 def test_get_pkg_version_live_modules_and_exhaustive_json_files(
@@ -439,44 +455,52 @@ def test_get_pkg_version_live_modules_and_exhaustive_json_files(
 
 def test_validate_snapshot_envelope_and_provenance_metadata() -> None:
     """Verify `validate_snapshot_envelope`, hardware/DSL provenance metadata, and domain collector fallbacks."""
-    with pytest.raises(ValueError, match="Snapshot must be a dictionary"):
-        validate_snapshot_envelope("not a dict")
+    from ml_switcheroo_ir.typeclasses.outcome import Err, raise_on_err
 
-    env_default = validate_snapshot_envelope({"target": "torch", "version": "2.2.0", "categories": {}})
+    bad_env1 = validate_snapshot_envelope("not a dict")
+    assert isinstance(bad_env1, Err) and isinstance(bad_env1.error, SnapshotSchemaError)
+
+    env_default = raise_on_err(validate_snapshot_envelope({"target": "torch", "version": "2.2.0", "categories": {}}))
     assert env_default.target == "torch"
     assert env_default.schema_version == "2.0.0"
     assert env_default.generated_at is not None
 
-    assert validate_snapshot_envelope({"target": "torch", "schema_version": "1.0.0"}).schema_version == "2.0.0"
-    assert validate_snapshot_envelope({"target": "torch", "schema_version": "2.0.0"}).schema_version == "2.0.0"
-    with pytest.raises(SnapshotSchemaError, match="Unsupported envelope schema_version"):
-        validate_snapshot_envelope({"target": "torch", "schema_version": "9.9.9"})
+    assert (
+        raise_on_err(validate_snapshot_envelope({"target": "torch", "schema_version": "1.0.0"})).schema_version
+        == "2.0.0"
+    )
+    assert (
+        raise_on_err(validate_snapshot_envelope({"target": "torch", "schema_version": "2.0.0"})).schema_version
+        == "2.0.0"
+    )
+    bad_ver = validate_snapshot_envelope({"target": "torch", "schema_version": "9.9.9"})
+    assert isinstance(bad_ver, Err) and "Unsupported envelope schema_version" in str(bad_ver.error)
 
-    custom_env = validate_snapshot_envelope({"target": "jax", "generated_at": "2026-01-01T00:00:00Z"})
+    custom_env = raise_on_err(validate_snapshot_envelope({"target": "jax", "generated_at": "2026-01-01T00:00:00Z"}))
     assert custom_env.generated_at == "2026-01-01T00:00:00Z"
-    assert validate_snapshot_envelope({}).target == "unknown"
-    assert validate_snapshot_envelope({"target": "", "generated_at": ""}).generated_at != ""
+    assert raise_on_err(validate_snapshot_envelope({})).target == "unknown"
+    assert raise_on_err(validate_snapshot_envelope({"target": "", "generated_at": ""})).generated_at != ""
 
     for hw_target, expected_arch in (("nvidia_sass", "sm_80"), ("amd_rdna", "GFX11/RDNA3"), ("nvidia_ptx", "sm_70")):
-        hw_snap = extract_snapshot(hw_target)
+        hw_snap = raise_on_err(extract_snapshot(hw_target)).to_wire_dict()
         assert hw_snap["target"] == hw_target
-        assert expected_arch in ensure_json_list(hw_snap["supported_microarchitectures"])
+        assert expected_arch in raise_on_err(ensure_json_list(hw_snap["supported_microarchitectures"]))
 
-    shlo_snap = extract_snapshot("stablehlo")
+    shlo_snap = raise_on_err(extract_snapshot("stablehlo")).to_wire_dict()
     assert shlo_snap["version"] == "1.9.0"
-    assert len(ensure_json_dict(shlo_snap["categories"])) > 0
+    assert len(raise_on_err(ensure_json_dict(shlo_snap["categories"]))) > 0
 
-    mlir_snap = extract_snapshot("mlir")
+    mlir_snap = raise_on_err(extract_snapshot("mlir")).to_wire_dict()
     assert mlir_snap["source_type"] == "tablegen"
 
     for dsl in ("html_dsl", "latex_dsl", "tikz"):
-        dsl_snap = extract_snapshot(dsl)
+        dsl_snap = raise_on_err(extract_snapshot(dsl)).to_wire_dict()
         assert dsl_snap["source_type"] == "python_dsl"
 
-    assert ProvenanceMetadata(upstream_version="1.0", emit_in_envelope=True).items() == [
+    assert ProvenanceMetadata(upstream_version="1.0", emit_in_envelope=True).items() == (
         ("source_type", "python_package"),
         ("upstream_version", "1.0"),
-    ]
+    )
     assert len(make_lazy_collector("metal", "collect_api")(SemanticTier.ARRAY_API)) > 0
     assert (
         len(make_lazy_collector("ml_ecosystem_snapshots.frameworks.metal", "collect_api")(SemanticTier.ARRAY_API)) > 0
@@ -488,7 +512,7 @@ def test_validate_snapshot_envelope_and_provenance_metadata() -> None:
         DOMAIN_COLLECTORS["html_dsl"] = DomainCollectorAdapter(
             CollectorDomain.DOCUMENT_DSL, "elements", lambda _inc: []
         )
-        assert extract_snapshot("html_dsl") == {}
+        assert isinstance(extract_snapshot("html_dsl"), Err)
 
         def _raise_dom(_inc: bool) -> typing.NoReturn:
             """Raise RuntimeError during domain collection.
@@ -502,7 +526,7 @@ def test_validate_snapshot_envelope_and_provenance_metadata() -> None:
             raise RuntimeError("domain failure")
 
         DOMAIN_COLLECTORS["html_dsl"] = DomainCollectorAdapter(CollectorDomain.DOCUMENT_DSL, "elements", _raise_dom)
-        assert extract_snapshot("html_dsl") == {}
+        assert isinstance(extract_snapshot("html_dsl"), Err)
     finally:
         DOMAIN_COLLECTORS["html_dsl"] = orig_dom
 
@@ -513,23 +537,27 @@ def test_extract_snapshot_isolated_and_package_init(monkeypatch: pytest.MonkeyPa
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    snap = extract_snapshot_isolated("html_dsl", timeout=30)
+    from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Valid, raise_on_err
+
+    from ml_ecosystem_snapshots.proofs import prove_envelope_valid
+
+    snap = raise_on_err(extract_snapshot_isolated("html_dsl", timeout=30)).to_wire_dict()
     assert snap.get("target") == "html_dsl"
-    assert extract_snapshot_isolated("nonexistent_framework_xyz", timeout=10) == {}
+    assert isinstance(extract_snapshot_isolated("nonexistent_framework_xyz", timeout=10), Err)
 
     with monkeypatch.context() as mp:
         mp.setattr(
             "subprocess.run",
             lambda *_a, **_kw: subprocess.CompletedProcess(args=["python"], returncode=1, stdout=""),
         )
-        assert extract_snapshot_isolated("html_dsl") == {}
+        assert isinstance(extract_snapshot_isolated("html_dsl"), Err)
         mp.setattr(
             "subprocess.run",
             lambda *_a, **_kw: subprocess.CompletedProcess(args=["python"], returncode=0, stdout="   "),
         )
-        assert extract_snapshot_isolated("html_dsl") == {}
+        assert isinstance(extract_snapshot_isolated("html_dsl"), Err)
         mp.setattr("subprocess.run", lambda *_a, **_kw: (_ for _ in ()).throw(OSError("Process failed")))
-        assert extract_snapshot_isolated("html_dsl") == {}
+        assert isinstance(extract_snapshot_isolated("html_dsl"), Err)
 
     captured_envs: list[dict[str, str]] = []
 
@@ -549,14 +577,20 @@ def test_extract_snapshot_isolated_and_package_init(monkeypatch: pytest.MonkeyPa
         env_arg = kwargs.get("env")
         if isinstance(env_arg, dict):
             captured_envs.append(env_arg)
-        return subprocess.CompletedProcess(args=["python"], returncode=0, stdout='{"target": "html_dsl"}')
+        return subprocess.CompletedProcess(
+            args=["python"],
+            returncode=0,
+            stdout='{"schema_version": "2.0.0", "target": "html_dsl", "version": "0.0.2", "categories": {}}',
+        )
 
     with monkeypatch.context() as mp:
         mp.setenv("PYTHONPATH", "/custom/test/path")
         mp.setattr("subprocess.run", _capture_subproc)
-        assert extract_snapshot_isolated("html_dsl").get("target") == "html_dsl"
+        iso_proven = raise_on_err(extract_snapshot_isolated("html_dsl"))
+        assert str(iso_proven.target) == "html_dsl"
         assert "/custom/test/path" in captured_envs[0]["PYTHONPATH"]
 
+    sample_html = raise_on_err(prove_envelope_valid({"target": "html_dsl", "version": "0.0.2", "categories": {}}))
     with monkeypatch.context() as mp:
         mp.setattr(
             "ml_ecosystem_snapshots.api.FRAMEWORK_COLLECTORS",
@@ -564,13 +598,14 @@ def test_extract_snapshot_isolated_and_package_init(monkeypatch: pytest.MonkeyPa
         )
         mp.setattr(
             "ml_ecosystem_snapshots.api.extract_snapshot_isolated",
-            lambda _fw, _inc=False: {"target": "html_dsl"},
+            lambda _fw, include_nonpublic=False: Ok(sample_html),
         )
-        assert "html_dsl" in extract_all_snapshots(isolated=True)
+        iso_all = extract_all_snapshots(isolated=True)
+        assert isinstance(iso_all, Valid) and "html_dsl" in iso_all.value
 
     # Package __version__ and __init__ ImportError fallback
     pkg_ver = str(get_member_dict(ml_ecosystem_snapshots).get("__version__", ""))
-    assert pkg_ver == "0.0.7"
+    assert pkg_ver == "0.0.8"
     assert pkg_ver == ProjectMetadata(".", PluginManager()).version
 
     with monkeypatch.context() as mp:
@@ -580,6 +615,25 @@ def test_extract_snapshot_isolated_and_package_init(monkeypatch: pytest.MonkeyPa
     importlib.reload(ml_ecosystem_snapshots)
     restored_all = get_member_dict(ml_ecosystem_snapshots).get("__all__")
     assert isinstance(restored_all, list) and "extract_snapshot" in restored_all
+
+    cold_env = dict(os.environ)
+    src_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+    cold_env["PYTHONPATH"] = src_root
+    cold_proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from ml_ecosystem_snapshots import DIFF_RESULT_MONOID, Ok, extract_snapshot; "
+                "assert callable(extract_snapshot) and DIFF_RESULT_MONOID.empty() is not None"
+            ),
+        ],
+        env=cold_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert cold_proc.returncode == 0, cold_proc.stderr
 
 
 def test_write_snapshot_compression_and_streaming(
@@ -592,10 +646,14 @@ def test_write_snapshot_compression_and_streaming(
         tmp_path: Pytest temporary directory fixture.
         fake_package_builder: Typed fake-package builder fixture.
     """
-    special_path = write_snapshot(
-        "special_fw",
-        {"schema_version": "1.0.0", "target": "special_fw", "version": "1.0.0+cu120 debug", "categories": {}},
-        str(tmp_path / "special"),
+    from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, raise_on_err
+
+    special_path = raise_on_err(
+        write_snapshot(
+            "special_fw",
+            {"schema_version": "1.0.0", "target": "special_fw", "version": "1.0.0+cu120 debug", "categories": {}},
+            str(tmp_path / "special"),
+        )
     )
     assert special_path.endswith("special_fw_v1.0.0_cu120_debug.json")
     assert os.path.exists(special_path)
@@ -612,12 +670,12 @@ def test_write_snapshot_compression_and_streaming(
         "items": [{"name": "op3", "api_path": "test.op3", "kind": "function"}],
     }
 
-    p_plain = write_snapshot("compress_test", snap_data, str(tmp_path))
-    assert ensure_json_dict(load_json_data(p_plain))["version"] == "1.0.0"
+    p_plain = raise_on_err(write_snapshot("compress_test", snap_data, str(tmp_path)))
+    assert raise_on_err(ensure_json_dict(raise_on_err(load_json_data(p_plain))))["version"] == "1.0.0"
 
-    p_gz = write_snapshot("compress_test", snap_data, str(tmp_path), compress="gzip")
+    p_gz = raise_on_err(write_snapshot("compress_test", snap_data, str(tmp_path), compress="gzip"))
     assert p_gz.endswith(".json.gz")
-    assert ensure_json_dict(load_json_data(p_gz))["version"] == "1.0.0"
+    assert raise_on_err(ensure_json_dict(raise_on_err(load_json_data(p_gz))))["version"] == "1.0.0"
 
     class FakeCompressor:
         """Minimal Zstandard compressor prefixing `ZSTD_MAGIC_HEADER`."""
@@ -651,28 +709,28 @@ def test_write_snapshot_compression_and_streaming(
         "zstandard",
         members={"ZstdCompressor": FakeCompressor, "ZstdDecompressor": FakeDecompressor},
     )
-    p_zst = write_snapshot("compress_test", snap_data, str(tmp_path), compress="zstd")
+    p_zst = raise_on_err(write_snapshot("compress_test", snap_data, str(tmp_path), compress="zstd"))
     assert p_zst.endswith(".json.zst")
-    assert ensure_json_dict(load_json_data(p_zst))["version"] == "1.0.0"
+    assert raise_on_err(ensure_json_dict(raise_on_err(load_json_data(p_zst))))["version"] == "1.0.0"
 
     fake_package_builder.build_module("zstandard", members={"not_a_compressor": 1})
-    with pytest.raises(SnapshotError, match="ZstdModuleProtocol"):
-        write_snapshot("compress_bad_proto", snap_data, str(tmp_path), compress="zstd")
+    bad_proto = write_snapshot("compress_bad_proto", snap_data, str(tmp_path), compress="zstd")
+    assert isinstance(bad_proto, Err) and "ZstdModuleProtocol" in str(bad_proto.error)
 
     fake_package_builder.block_imports("zstandard")
-    with pytest.raises(SnapshotError, match="zstandard"):
-        write_snapshot("compress_fallback", snap_data, str(tmp_path), compress="zstd")
-    with pytest.raises(SnapshotError, match="zstandard"):
-        load_json_data(p_zst)
+    bad_fb = write_snapshot("compress_fallback", snap_data, str(tmp_path), compress="zstd")
+    assert isinstance(bad_fb, Err) and "zstandard" in str(bad_fb.error)
+    bad_load_zst = load_json_data(p_zst)
+    assert isinstance(bad_load_zst, Err) and "zstandard" in str(bad_load_zst.error)
 
     p_utf8_zst = tmp_path / "plain_utf8.json.zst"
     p_utf8_zst.write_bytes(b'{"key": "fallback"}')
-    assert load_json_data(p_utf8_zst) == {"key": "fallback"}
+    assert load_json_data(p_utf8_zst) == Ok({"key": "fallback"})
 
     p_non_utf8_zst = tmp_path / "corrupt.json.zst"
     p_non_utf8_zst.write_bytes(b"\xff\xfe\xfd")
-    with pytest.raises(SnapshotError, match="zstandard"):
-        load_json_data(p_non_utf8_zst)
+    bad_non_utf8 = load_json_data(p_non_utf8_zst)
+    assert isinstance(bad_non_utf8, Err) and "zstandard" in str(bad_non_utf8.error)
 
     assert {it["name"] for it in stream_snapshot_items(p_plain)} == {"op1", "op2", "op3"}
 

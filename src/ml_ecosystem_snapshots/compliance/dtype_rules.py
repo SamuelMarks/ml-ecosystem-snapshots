@@ -1,9 +1,12 @@
-"""Broadcasting shape rules, matmul shape validators, and dtype bitwidth/transcendental rules."""
+"""Total broadcasting shape rules, matmul validators, and dtype bitwidth rules."""
 
 from __future__ import annotations
 
 import math
 import typing
+
+from ml_switcheroo_ir.identifiers import NonBoolInt, PositiveInt
+from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Result
 
 DTYPE_BITWIDTHS: dict[str, int] = {
     "float64": 64,
@@ -40,21 +43,22 @@ DTYPE_BITWIDTHS: dict[str, int] = {
 
 
 def validate_broadcast_shapes(
-    shape_a: typing.Sequence[int | str], shape_b: typing.Sequence[int | str]
-) -> tuple[bool, list[int] | None, str | None]:
-    """Validate NumPy/PyTorch broadcasting compatibility between two tensor shapes.
+    shape_a: typing.Sequence[int | str],
+    shape_b: typing.Sequence[int | str],
+) -> Result[str, tuple[int, ...]]:
+    """Validate NumPy/PyTorch broadcasting compatibility totally into `Result[str, tuple[int, ...]]`.
 
     Rules:
         - Trailing dimensions are aligned.
         - Two dimensions are compatible if they are equal, or one of them is 1.
-        - Wildcard/symbolic dimensions ('?', -1) are treated as dynamically compatible.
+        - Wildcard/symbolic dimensions (`'?'`, `-1`, `'None'`) broadcast dynamically as `-1`.
 
     Args:
         shape_a: Shape sequence of the first tensor operand.
         shape_b: Shape sequence of the second tensor operand.
 
     Returns:
-        A tuple of (is_compatible, broadcast_resulting_shape, error_message).
+        `Ok(broadcast_shape_tuple)` if compatible, else `Err(error_message)`.
     """
     reversed_a = list(reversed(shape_a))
     reversed_b = list(reversed(shape_b))
@@ -83,13 +87,11 @@ def validate_broadcast_shapes(
         elif int_b == 1:
             result_shape.append(int_a)
         else:
-            return (
-                False,
-                None,
-                f"Shape mismatch: dimension at reverse index {i} cannot broadcast between {dim_a} and {dim_b} (shapes: {list(shape_a)} vs {list(shape_b)}).",
+            return Err(
+                f"Shape mismatch: dimension at reverse index {i} cannot broadcast between {dim_a} and {dim_b} (shapes: {list(shape_a)} vs {list(shape_b)})."
             )
 
-    return True, list(reversed(result_shape)), None
+    return Ok(tuple(reversed(result_shape)))
 
 
 def _dims_conflict(dim_lhs: int | str, dim_rhs: int | str) -> bool:
@@ -120,7 +122,7 @@ def _parse_dim_or_dynamic(dim: int | str) -> int:
 def _validate_low_rank_matmul(
     shape_a: typing.Sequence[int | str],
     shape_b: typing.Sequence[int | str],
-) -> tuple[bool, list[int] | None, str | None]:
+) -> Result[str, tuple[int, ...]]:
     """Validate matrix multiplication when at least one operand has rank below 2.
 
     Args:
@@ -128,76 +130,56 @@ def _validate_low_rank_matmul(
         shape_b: Shape sequence of the RHS tensor operand.
 
     Returns:
-        A tuple of `(is_compatible, output_shape, error_message)`.
+        `Ok(output_shape_tuple)` if valid, else `Err(error_message)`.
     """
     if len(shape_a) == 1 and len(shape_b) == 1:
         return (
-            (
-                False,
-                None,
-                f"1D vector dot product mismatch: {shape_a[0]} != {shape_b[0]}.",
-            )
+            Err(f"1D vector dot product mismatch: {shape_a[0]} != {shape_b[0]}.")
             if _dims_conflict(shape_a[0], shape_b[0])
-            else (True, [], None)
+            else Ok(())
         )
 
     if len(shape_a) == 1 and len(shape_b) >= 2:
         k_lhs = shape_a[0]
         k_rhs = shape_b[-2]
         if _dims_conflict(k_lhs, k_rhs):
-            return (
-                False,
-                None,
-                f"Vector-matrix multiplication contracting dimension mismatch: inner dimension {k_lhs} != {k_rhs} (shapes: {list(shape_a)} vs {list(shape_b)}).",
+            return Err(
+                f"Vector-matrix multiplication contracting dimension mismatch: inner dimension {k_lhs} != {k_rhs} (shapes: {list(shape_a)} vs {list(shape_b)})."
             )
-        batch_res = [_parse_dim_or_dynamic(d) for d in shape_b[:-2]]
-        return True, batch_res + [_parse_dim_or_dynamic(shape_b[-1])], None
+        batch_res = tuple(_parse_dim_or_dynamic(d) for d in shape_b[:-2])
+        return Ok((*batch_res, _parse_dim_or_dynamic(shape_b[-1])))
 
     if len(shape_a) >= 2 and len(shape_b) == 1:
         k_lhs = shape_a[-1]
         k_rhs = shape_b[0]
         if _dims_conflict(k_lhs, k_rhs):
-            return (
-                False,
-                None,
-                f"Matrix-vector multiplication contracting dimension mismatch: inner dimension {k_lhs} != {k_rhs} (shapes: {list(shape_a)} vs {list(shape_b)}).",
+            return Err(
+                f"Matrix-vector multiplication contracting dimension mismatch: inner dimension {k_lhs} != {k_rhs} (shapes: {list(shape_a)} vs {list(shape_b)})."
             )
-        batch_res = [_parse_dim_or_dynamic(d) for d in shape_a[:-2]]
-        return True, batch_res + [_parse_dim_or_dynamic(shape_a[-2])], None
+        batch_res = tuple(_parse_dim_or_dynamic(d) for d in shape_a[:-2])
+        return Ok((*batch_res, _parse_dim_or_dynamic(shape_a[-2])))
 
-    return (
-        False,
-        None,
-        f"Matrix multiplication requires at least 2D operands (got ranks {len(shape_a)} and {len(shape_b)}).",
-    )
+    return Err(f"Matrix multiplication requires at least 2D operands (got ranks {len(shape_a)} and {len(shape_b)}).")
 
 
 def validate_matmul_shapes(
     shape_a: typing.Sequence[int | str],
     shape_b: typing.Sequence[int | str],
     strict_2d: bool = False,
-) -> tuple[bool, list[int] | None, str | None]:
-    """Validate matrix multiplication shape and contracting inner-dimension constraints.
-
-    Rules:
-        - If strict_2d is True (e.g. torch.mm), both shapes must be strictly 2D.
-        - For 2D matrices (M, K) x (K, N), inner dimension K must match.
-        - For batch matrices (...B, M, K) x (...B, K, N), batch dimensions must broadcast.
-        - For 1D vectors (K,) x (K,), dot product requires matching dimension.
+) -> Result[str, tuple[int, ...]]:
+    """Validate matrix multiplication shape and contracting inner-dimension constraints totally.
 
     Args:
         shape_a: Shape sequence of LHS matrix tensor.
         shape_b: Shape sequence of RHS matrix tensor.
-        strict_2d: Flag enforcing strictly rank-2 matrix operands (torch.mm).
+        strict_2d: Flag enforcing strictly rank-2 matrix operands (`torch.mm`).
 
     Returns:
-        A tuple of (is_compatible, output_shape, error_message).
+        `Ok(output_shape_tuple)` if compatible, else `Err(error_message)`.
     """
     if strict_2d and (len(shape_a) != 2 or len(shape_b) != 2):
-        return (
-            False,
-            None,
-            f"Strict 2D matmul error: both operands must have rank 2, got ranks {len(shape_a)} and {len(shape_b)}.",
+        return Err(
+            f"Strict 2D matmul error: both operands must have rank 2, got ranks {len(shape_a)} and {len(shape_b)}."
         )
 
     if len(shape_a) < 2 or len(shape_b) < 2:
@@ -206,70 +188,75 @@ def validate_matmul_shapes(
     k_lhs = shape_a[-1]
     k_rhs = shape_b[-2]
     if _dims_conflict(k_lhs, k_rhs):
-        return (
-            False,
-            None,
-            f"Matrix multiplication contracting dimension mismatch: inner dimension {k_lhs} != {k_rhs} (shapes: {list(shape_a)} vs {list(shape_b)}).",
+        return Err(
+            f"Matrix multiplication contracting dimension mismatch: inner dimension {k_lhs} != {k_rhs} (shapes: {list(shape_a)} vs {list(shape_b)})."
         )
 
-    core_shape = [
+    core_shape = (
         _parse_dim_or_dynamic(shape_a[-2]),
         _parse_dim_or_dynamic(shape_b[-1]),
-    ]
+    )
     batch_a = shape_a[:-2]
     batch_b = shape_b[:-2]
     if batch_a or batch_b:
-        compat, b_shape, err = validate_broadcast_shapes(batch_a, batch_b)
-        if not compat:
-            return False, None, f"Batch dimension broadcasting error in matmul: {err}"
-        return True, (b_shape or []) + core_shape, None
+        b_res = validate_broadcast_shapes(batch_a, batch_b)
+        if isinstance(b_res, Err):
+            return Err(f"Batch dimension broadcasting error in matmul: {b_res.error}")
+        return Ok((*b_res.value, *core_shape))
 
-    return True, core_shape, None
+    return Ok(core_shape)
 
 
-def get_dtype_bitwidth(dtype_name: str) -> int:
-    """Return bitwidth for canonical, sub-byte, and quantized data types.
+def get_dtype_bitwidth(dtype_name: str) -> Result[str, PositiveInt]:
+    """Resolve bitwidth totally for canonical, sub-byte, and quantized data types.
 
     Args:
         dtype_name: Canonical or normalized dtype name.
 
     Returns:
-        Bitwidth in bits (e.g. 8 for qint8, 4 for qint4/int4, 2 for int2, 32 for float32).
+        `Ok(PositiveInt(bits))` when `dtype_name` is non-empty, else `Err(reason)`.
     """
     from ml_ecosystem_snapshots.grounding.dtypes import normalize_dtype_name
 
+    if not dtype_name.strip():
+        return Err("Data type name must be non-empty.")
     clean = normalize_dtype_name(dtype_name)
-    return DTYPE_BITWIDTHS.get(clean, 32)
+    bits = DTYPE_BITWIDTHS.get(clean, 32)
+    return Ok(PositiveInt(NonBoolInt(bits)))
 
 
-def estimate_tensor_memory_bytes(shape: typing.Sequence[int], dtype_name: str) -> float:
-    """Estimate memory footprint in bytes supporting sub-byte and quantized bitwidths.
+def estimate_tensor_memory_bytes(
+    shape: typing.Sequence[int],
+    dtype_name: str,
+) -> Result[str, float]:
+    """Estimate memory footprint in bytes totally supporting sub-byte and quantized bitwidths.
 
     Args:
-        shape: Tensor dimensions sequence.
+        shape: Tensor dimensions sequence (all dimensions must be non-negative).
         dtype_name: Canonical or normalized data type name.
 
     Returns:
-        Total estimated memory footprint in bytes.
+        `Ok(estimated_bytes)` on valid shape and dtype, else `Err(reason)`.
     """
-    bits = get_dtype_bitwidth(dtype_name)
+    if any(dim < 0 for dim in shape):
+        return Err(f"Tensor shape dimensions must be non-negative, got {list(shape)}.")
+    bits_res = get_dtype_bitwidth(dtype_name)
+    if isinstance(bits_res, Err):
+        return bits_res
     num_elements = math.prod(shape) if shape else 1
-    total_bits = num_elements * bits
-    return total_bits / 8.0
+    total_bits = num_elements * int(bits_res.value)
+    return Ok(total_bits / 8.0)
 
 
-def validate_dtype_for_op(op_name: str, dtype_name: str) -> tuple[bool, str | None]:
-    """Validate that a data type is legally applicable to a mathematical operator.
-
-    Rejects quantized, integer, boolean, and non-numeric types for transcendental
-    operations (e.g., 'sin', 'exp', 'log', 'cos', 'sqrt', 'cholesky', 'linalg_inv').
+def validate_dtype_for_op(op_name: str, dtype_name: str) -> Result[str, str]:
+    """Validate totally that a data type is legally applicable to a mathematical operator.
 
     Args:
         op_name: Operation or function name.
         dtype_name: Data type name to validate.
 
     Returns:
-        A tuple of (is_valid, error_message_or_None).
+        `Ok(normalized_dtype)` if compatible, else `Err(error_message)`.
     """
     from ml_ecosystem_snapshots.grounding.dtypes import normalize_dtype_name
 
@@ -302,11 +289,11 @@ def validate_dtype_for_op(op_name: str, dtype_name: str) -> tuple[bool, str | No
             "object",
         )
         if any(clean_dt.startswith(p) for p in non_float_prefixes):
-            return False, (
+            return Err(
                 f"Data type '{dtype_name}' is not supported for transcendental operation '{op_name}'. Floating-point or complex dtype required."
             )
 
-    return True, None
+    return Ok(clean_dt)
 
 
 __all__ = [

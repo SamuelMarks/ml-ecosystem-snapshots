@@ -1,7 +1,7 @@
-"""ML Framework Snapshots SDK.
+"""ML Framework Snapshots Pure Functional SDK.
 
-Provides a programmatic interface for capturing and saving API signatures
-from various machine learning frameworks.
+Provides total `Result` and `Validation` interfaces for capturing, consolidating,
+proving, and saving API signatures from machine learning frameworks and domains.
 """
 
 from __future__ import annotations
@@ -13,27 +13,33 @@ import logging
 import os
 import subprocess
 import sys
+import typing
 
-import typing_extensions
 from ml_switcheroo_ir.schema.ghost import (
-    ExtendedGhostParam,
-    ExtendedGhostRef,
-    GhostInstructionRef,
-    GhostIsaRef,
-    GhostMlirRef,
-    GhostOperationRef,
-    GhostPythonRef,
     GhostRef,
     SemanticTier,
 )
+from ml_switcheroo_ir.typeclasses.outcome import (
+    Err,
+    Invalid,
+    Result,
+    Valid,
+    Validation,
+)
 
-from ml_ecosystem_snapshots.exceptions import SnapshotError
+from ml_ecosystem_snapshots.exceptions import SnapshotError, SnapshotNotFoundError
 from ml_ecosystem_snapshots.models import (
     SCHEMA_VERSION,
     JsonValue,
     SnapshotEnvelope,
     SnapshotSymbolModel,
     ensure_json_dict,
+)
+from ml_ecosystem_snapshots.network_env import CompressionFormat
+from ml_ecosystem_snapshots.proofs import (
+    EnvelopeValidPhase,
+    ProvenSnapshot,
+    prove_envelope_valid,
 )
 from ml_ecosystem_snapshots.registry import (
     _CANONICAL_COLLECTOR_SPECS as _CANONICAL_COLLECTOR_SPECS,
@@ -52,6 +58,10 @@ from ml_ecosystem_snapshots.serialization.io import (
     validate_snapshot_envelope,
     write_snapshot,
 )
+from ml_ecosystem_snapshots.typeclasses import (
+    GHOST_REF_CONSOLIDATION_SEMIGROUP,
+    ghost_ref_canonical_key,
+)
 from ml_ecosystem_snapshots.version_resolver import (
     _extract_version_with_griffe as _resolve_version_with_griffe,
 )
@@ -67,7 +77,7 @@ def extract_version_with_griffe(module_name: str) -> str | None:
     """Extract `__version__` statically from a module using the custom Griffe fork.
 
     Args:
-        module_name: Dotted module name to inspect (e.g. 'keras', 'chex', 'optax').
+        module_name: Dotted module name to inspect (e.g. `'keras'`, `'chex'`, `'optax'`).
 
     Returns:
         Extracted version string with quotes stripped, or `None` if unavailable.
@@ -78,17 +88,14 @@ def extract_version_with_griffe(module_name: str) -> str | None:
 _extract_version_with_griffe = extract_version_with_griffe
 
 
-HashableKey: typing_extensions.TypeAlias = 'str | int | float | bool | None | tuple["HashableKey", ...]'
-
-
 def get_pkg_version(package_name: str) -> str:
-    """Safely retrieves the installed version of a python package.
+    """Safely retrieve the installed or pinned version of a framework package.
 
     Args:
-        package_name: The name of the pip package.
+        package_name: Name of the framework or pip package.
 
     Returns:
-        The version string, or "unknown" if not installed.
+        Version string, or `'unknown'` if not installed.
     """
     return _resolve_pkg_version(
         package_name,
@@ -97,117 +104,41 @@ def get_pkg_version(package_name: str) -> str:
     )
 
 
-def _domain_meta_to_key(meta: JsonValue) -> HashableKey:
-    """Convert domain metadata into a deterministic, hashable key.
+def consolidate_aliases(refs: typing.Sequence[GhostRef]) -> tuple[GhostRef, ...]:
+    """Purely consolidate structurally identical `GhostRef`s via `GHOST_REF_CONSOLIDATION_SEMIGROUP`.
+
+    Never mutates input `GhostRef` instances in-place.
 
     Args:
-        meta: Domain metadata value (dict, list, primitive, etc.).
+        refs: Sequence of `GhostRef` objects.
 
     Returns:
-        A hashable representation of the metadata.
+        Immutable tuple of consolidated `GhostRef` clones.
     """
-    if meta is None:
-        return None
-    if isinstance(meta, dict):
-        return tuple(sorted((str(k), _domain_meta_to_key(v)) for k, v in meta.items()))
-    if isinstance(meta, (list, tuple, set)):
-        return tuple(_domain_meta_to_key(x) for x in meta)
-    return str(meta)
-
-
-def consolidate_aliases(refs: list[GhostRef]) -> list[GhostRef]:
-    """Consolidate identical GhostRefs into a single reference with aliases.
-
-    Args:
-        refs: A list of GhostRef objects.
-
-    Returns:
-        A consolidated list of GhostRef objects.
-    """
-    consolidated: dict[HashableKey, GhostRef] = {}
+    consolidated: dict[tuple[str, ...], GhostRef] = {}
     for ref in refs:
-        param_sigs = tuple(
-            (
-                p.name,
-                str(p.kind),
-                str(p.default) if p.default is not None else None,
-                p.annotation,
-                str(p.direction if isinstance(p, ExtendedGhostParam) else None),
-                str(p.role if isinstance(p, ExtendedGhostParam) else None),
-                tuple(str(dt) for dt in ((p.allowed_dtypes or ()) if isinstance(p, ExtendedGhostParam) else ())),
-                str(p.rank_constraint if isinstance(p, ExtendedGhostParam) else None),
-            )
-            for p in ref.params
-        )
-        returns = ref.returns if isinstance(ref, ExtendedGhostRef) else None
-        returns_sig = tuple((str(r.name), str(r.type)) for r in returns) if returns else None
-        domain_type = str(
-            ref.domain_type
-            if isinstance(
-                ref,
-                (
-                    GhostPythonRef,
-                    GhostMlirRef,
-                    GhostOperationRef,
-                    GhostIsaRef,
-                    GhostInstructionRef,
-                ),
-            )
-            else None
-        )
-        domain_metadata_key = _domain_meta_to_key(ref.domain_metadata if isinstance(ref, ExtendedGhostRef) else None)
-
-        key: HashableKey = (
-            ref.name,
-            ref.kind,
-            domain_type,
-            param_sigs,
-            returns_sig,
-            domain_metadata_key,
-            ref.docstring,
-        )
-
+        key = ghost_ref_canonical_key(ref)
         if key not in consolidated:
-            consolidated[key] = ref
+            existing_aliases = sorted(set(ref.aliases)) if ref.aliases else []
+            consolidated[key] = ref.model_copy(update={"aliases": existing_aliases}, deep=True)
         else:
-            existing = consolidated[key]
-            if ref.aliases is None:
-                ref.aliases = []
-            if existing.aliases is None:
-                existing.aliases = []
-            if len(ref.api_path) < len(existing.api_path):
-                ref.aliases.append(existing.api_path)
-                ref.aliases.extend(existing.aliases)
-                ref.is_public = ref.is_public or existing.is_public
-                consolidated[key] = ref
-            else:
-                existing.aliases.append(ref.api_path)
-                existing.aliases.extend(ref.aliases)
-                existing.is_public = existing.is_public or ref.is_public
-
-    for ref in consolidated.values():
-        if ref.aliases is not None:
-            ref.aliases = sorted(list(set(ref.aliases)))
-        else:
-            ref.aliases = []
-
-    return list(consolidated.values())
+            consolidated[key] = GHOST_REF_CONSOLIDATION_SEMIGROUP.combine(consolidated[key], ref)
+    return tuple(consolidated.values())
 
 
 _consolidate_aliases = consolidate_aliases
 
 
-def _serialize_refs_to_models(refs: list[GhostRef]) -> list[SnapshotSymbolModel]:
-    """Consolidate aliases, sort, and validate `GhostRef` items into `SnapshotSymbolModel` records.
+def _serialize_refs_to_models(refs: typing.Sequence[GhostRef]) -> tuple[SnapshotSymbolModel, ...]:
+    """Consolidate aliases, sort, and validate `GhostRef` items into `SnapshotSymbolModel` tuples.
 
     Args:
-        refs: Collected `GhostRef` list.
+        refs: Collected `GhostRef` sequence.
 
     Returns:
-        Sorted list of validated `SnapshotSymbolModel` instances.
+        Sorted tuple of frozen `SnapshotSymbolModel` instances.
     """
-    consolidated = _consolidate_aliases(refs)
-    consolidated.sort(key=lambda x: x.name)
+    consolidated = sorted(_consolidate_aliases(refs), key=lambda x: x.name)
     dumped_refs: list[SnapshotSymbolModel] = []
     for r in consolidated:
         d: dict[str, JsonValue] = r.model_dump(exclude_unset=True)
@@ -216,23 +147,23 @@ def _serialize_refs_to_models(refs: list[GhostRef]) -> list[SnapshotSymbolModel]
         ]
         d["kwargs"] = kwargs_list
         dumped_refs.append(SnapshotSymbolModel.model_validate(d))
-    return dumped_refs
+    return tuple(dumped_refs)
 
 
 def _serialize_category_refs(
     collect_func: CollectorFn,
     cat: SemanticTier,
     include_nonpublic: bool,
-) -> tuple[str, list[SnapshotSymbolModel]]:
+) -> tuple[str, tuple[SnapshotSymbolModel, ...]]:
     """Collect, consolidate, and validate all API symbols for a semantic tier.
 
     Args:
         collect_func: Framework category collector callable.
-        cat: The `SemanticTier` enum category to extract.
+        cat: `SemanticTier` enum category to extract.
         include_nonpublic: Whether to include non-public APIs.
 
     Returns:
-        A tuple of `(category_name, validated_snapshot_symbol_models)`.
+        Tuple of `(category_name, validated_snapshot_symbol_models)`.
     """
     try:
         refs = collect_func(cat, include_nonpublic)
@@ -250,7 +181,7 @@ def _serialize_category_refs(
         SnapshotError,
     ) as exc:
         _LOGGER.debug("Category %s collection failed: %s", cat.value, exc)
-    return cat.value, []
+    return cat.value, ()
 
 
 def _collect_framework_categories(
@@ -274,7 +205,7 @@ def _collect_framework_categories(
             if domain_refs:
                 symbol_models = _serialize_refs_to_models(domain_refs)
                 categories_map[domain_collector.category_key] = [
-                    m.model_dump(exclude_unset=True) for m in symbol_models
+                    m.model_dump(mode="json", exclude_unset=True) for m in symbol_models
                 ]
         except (
             ImportError,
@@ -298,31 +229,34 @@ def _collect_framework_categories(
         for future in concurrent.futures.as_completed(future_to_cat):
             cat_val, symbol_models = future.result()
             if symbol_models:
-                categories_map[cat_val] = [m.model_dump(exclude_unset=True) for m in symbol_models]
+                categories_map[cat_val] = [m.model_dump(mode="json", exclude_unset=True) for m in symbol_models]
     return categories_map
 
 
-def extract_snapshot(framework_name: str, include_nonpublic: bool = False) -> dict[str, JsonValue]:
-    """Extract a validated snapshot dictionary for a specific framework.
+def extract_snapshot(
+    framework_name: str,
+    include_nonpublic: bool = False,
+) -> Result[SnapshotError, ProvenSnapshot[EnvelopeValidPhase]]:
+    """Extract and prove an envelope-valid snapshot for `framework_name` totally into `Result`.
 
     Args:
-        framework_name: The framework identifier (e.g., "torch", "jax").
+        framework_name: Framework identifier (e.g. `'torch'`, `'jax'`, `'ir'`).
         include_nonpublic: Whether to include non-public APIs.
 
     Returns:
-        A dictionary serialized from a validated `SnapshotEnvelope` containing the version and category signatures.
-        Returns an empty dict if the framework is unknown or not installed.
+        `Ok(ProvenSnapshot[EnvelopeValidPhase])` on success, `Err(SnapshotNotFoundError)`
+        if unknown or uninstalled, or `Err(SnapshotError)` if empty or schema-invalid.
     """
     if framework_name not in FRAMEWORK_COLLECTORS:
-        return {}
+        return Err(SnapshotNotFoundError(f"Unknown framework collector: {framework_name!r}."))
 
     version = get_pkg_version(framework_name)
     if version == "unknown":
-        return {}
+        return Err(SnapshotNotFoundError(f"Framework {framework_name!r} is not installed (version='unknown')."))
 
     categories_map = _collect_framework_categories(framework_name, include_nonpublic)
     if not categories_map:
-        return {}
+        return Err(SnapshotError(f"No API symbols collected for framework {framework_name!r}."))
 
     raw_envelope: dict[str, JsonValue] = {
         "schema_version": SCHEMA_VERSION,
@@ -335,16 +269,15 @@ def extract_snapshot(framework_name: str, include_nonpublic: bool = False) -> di
             raw_envelope[k] = list(v) if isinstance(v, list) else v
     raw_envelope["categories"] = {cat_name: list(cat_items) for cat_name, cat_items in categories_map.items()}
     validated_envelope = SnapshotEnvelope.model_validate(raw_envelope)
-    return validated_envelope.model_dump(exclude_none=True)
+    return prove_envelope_valid(validated_envelope)
 
 
 def extract_snapshot_isolated(
-    framework: str, include_nonpublic: bool = False, timeout: int = 300
-) -> dict[str, JsonValue]:
-    """Extract a framework snapshot within an isolated child subprocess.
-
-    Prevents CUDA/Metal memory pre-allocation locks, framework-level C-extension
-    conflicts, and memory leaks from polluting the parent process.
+    framework: str,
+    include_nonpublic: bool = False,
+    timeout: int = 300,
+) -> Result[SnapshotError, ProvenSnapshot[EnvelopeValidPhase]]:
+    """Extract a framework snapshot in an isolated child subprocess totally into `Result`.
 
     Args:
         framework: Name of the framework to extract.
@@ -352,7 +285,7 @@ def extract_snapshot_isolated(
         timeout: Subprocess timeout in seconds.
 
     Returns:
-        The extracted snapshot dictionary, or empty dict on failure.
+        `Ok(ProvenSnapshot[EnvelopeValidPhase])` on success, else `Err(SnapshotError)`.
     """
     env = os.environ.copy()
     existing_pypath = env.get("PYTHONPATH", "")
@@ -361,13 +294,14 @@ def extract_snapshot_isolated(
         src_paths.append(existing_pypath)
     env["PYTHONPATH"] = os.pathsep.join(src_paths)
 
-    cmd = [
-        sys.executable,
-        "-c",
-        (
-            f"import json, sys; from ml_ecosystem_snapshots.api import extract_snapshot; snap = extract_snapshot({repr(framework)}, include_nonpublic={include_nonpublic}); sys.stdout.write(json.dumps(snap))"
-        ),
-    ]
+    child_code = (
+        "import json, sys; "
+        "from ml_switcheroo_ir.typeclasses.outcome import Ok; "
+        "from ml_ecosystem_snapshots.api import extract_snapshot; "
+        f"res = extract_snapshot({repr(framework)}, include_nonpublic={include_nonpublic}); "
+        "sys.stdout.write(json.dumps(res.value.to_wire_dict()) if isinstance(res, Ok) else '')"
+    )
+    cmd = [sys.executable, "-c", child_code]
 
     try:
         proc = subprocess.run(
@@ -378,36 +312,73 @@ def extract_snapshot_isolated(
             check=False,
             env=env,
         )
-        if proc.returncode == 0 and proc.stdout.strip():
-            parsed_snap = ensure_json_dict(json.loads(proc.stdout), "isolated snapshot")
-            if not parsed_snap:
-                return {}
-            return validate_snapshot_envelope(parsed_snap).model_dump(exclude_none=True)
-    except (OSError, subprocess.SubprocessError, ValueError, TypeError, SnapshotError) as e:
-        _LOGGER.warning("Subprocess extraction failed for %s: %s", framework, e)
+        if proc.returncode != 0 or not proc.stdout.strip():
+            return Err(
+                SnapshotError(f"Isolated extraction returned empty/non-zero for {framework!r} (rc={proc.returncode}).")
+            )
+        parsed_res = ensure_json_dict(json.loads(proc.stdout), "isolated snapshot")
+        if isinstance(parsed_res, Err):
+            return parsed_res
+        if not parsed_res.value:
+            return Err(SnapshotError(f"Isolated extraction returned empty dict for {framework!r}."))
+        return prove_envelope_valid(parsed_res.value)
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError, SnapshotError) as exc:
+        _LOGGER.warning("Subprocess extraction failed for %s: %s", framework, exc)
+        return Err(SnapshotError(f"Subprocess extraction failed for {framework!r}: {exc}"))
 
-    return {}
 
+def extract_all_snapshots(
+    include_nonpublic: bool = False,
+    isolated: bool = False,
+    output_dir: str | None = None,
+    frameworks: typing.Sequence[str] | None = None,
+    compress: str | CompressionFormat | None = None,
+) -> Validation[tuple[SnapshotError, ...], dict[str, ProvenSnapshot[EnvelopeValidPhase]]]:
+    """Extract snapshots across frameworks, accumulating errors via `Validation`.
 
-def extract_all_snapshots(include_nonpublic: bool = False, isolated: bool = False) -> dict[str, dict[str, JsonValue]]:
-    """Extract snapshots for all supported and installed frameworks.
+    When `frameworks` is explicitly provided, every extraction or write failure is
+    accumulated into `Invalid(tuple[SnapshotError, ...])`. When `frameworks` is
+    `None`, uninstalled optional frameworks are skipped while any `output_dir` write
+    failure is accumulated into `Invalid`.
 
     Args:
         include_nonpublic: Whether to include non-public APIs.
-        isolated: Whether to execute each framework extraction in an isolated child subprocess.
+        isolated: Whether to execute each framework extraction in an isolated subprocess.
+        output_dir: Optional directory to write extracted snapshots to disk.
+        frameworks: Optional explicit subset of framework identifiers to extract.
+        compress: Optional compression format when `output_dir` is set.
 
     Returns:
-        A dictionary mapping framework identifiers to their snapshot data.
+        `Valid(dict[framework, ProvenSnapshot[EnvelopeValidPhase]])` or `Invalid(errors)`.
     """
-    results: dict[str, dict[str, JsonValue]] = {}
-    for fw in FRAMEWORK_COLLECTORS:
-        if isolated:
-            data = extract_snapshot_isolated(fw, include_nonpublic)
+    strict_targets = frameworks is not None
+    targets = tuple(frameworks) if frameworks is not None else tuple(FRAMEWORK_COLLECTORS.keys())
+    results: dict[str, ProvenSnapshot[EnvelopeValidPhase]] = {}
+    errors: list[SnapshotError] = []
+
+    for fw in targets:
+        res = (
+            extract_snapshot_isolated(fw, include_nonpublic=include_nonpublic)
+            if isolated
+            else extract_snapshot(fw, include_nonpublic=include_nonpublic)
+        )
+        if isinstance(res, Err):
+            if strict_targets:
+                errors.append(res.error)
         else:
-            data = extract_snapshot(fw, include_nonpublic)
-        if data:
-            results[fw] = data
-    return results
+            proven = res.value
+            if output_dir is not None:
+                write_res = write_snapshot(fw, proven, output_dir, compress=compress)
+                if isinstance(write_res, Err):
+                    errors.append(write_res.error)
+                else:
+                    results[fw] = proven
+            else:
+                results[fw] = proven
+
+    if errors:
+        return Invalid(tuple(errors))
+    return Valid(results)
 
 
 __all__ = [
@@ -415,7 +386,6 @@ __all__ = [
     "CollectorFn",
     "FRAMEWORK_COLLECTORS",
     "FRAMEWORK_PROVENANCE_METADATA",
-    "HashableKey",
     "ProvenanceMetadata",
     "consolidate_aliases",
     "extract_all_snapshots",

@@ -10,21 +10,22 @@ import sys
 import typing
 
 from ml_switcheroo_ir.schema.ghost import GhostRef
+from ml_switcheroo_ir.typeclasses.outcome import raise_on_err, value_or
 
 from ml_ecosystem_snapshots.compliance.models import NamespaceAlignmentRule
 from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
-from ml_ecosystem_snapshots.models import JsonValue, ensure_json_dict, ensure_json_list
+from ml_ecosystem_snapshots.models import JsonValue, json_dict_or_empty, json_tuple_or_empty
 
 ZERO_ECOSYSTEM_ALIGNMENT_RULE = NamespaceAlignmentRule(
-    prefix_map={
-        "zero_jax": "jax",
-        "zero_optax": "optax",
-        "zero_chex": "chex",
-        "zero_orbax": "orbax",
-        "zero_grain": "grain",
-    },
+    prefix_map=(
+        ("zero_jax", "jax"),
+        ("zero_optax", "optax"),
+        ("zero_chex", "chex"),
+        ("zero_orbax", "orbax"),
+        ("zero_grain", "grain"),
+    ),
     subpackage_roots=("jax", "optax"),
-    node_prefix_rewrites={"zero_jax.": "{target_prefix}.jax."},
+    node_prefix_rewrites=(("zero_jax.", "{target_prefix}.jax."),),
     path_rewrites=(
         (".activation", ""),
         (".nn.nn", ".nn"),
@@ -124,12 +125,12 @@ def _check_assembly_or_mlir_target(
     return False
 
 
-def _print_module_breakdown(matched: list[str], missing: list[str]) -> None:
+def _print_module_breakdown(matched: typing.Sequence[str], missing: typing.Sequence[str]) -> None:
     """Print per-module compliance percentage breakdown.
 
     Args:
-        matched: List of matched API paths.
-        missing: List of missing API paths.
+        matched: Sequence of matched API paths.
+        missing: Sequence of missing API paths.
     """
     print("Breakdown by Module:")
     matched_by_mod: dict[str, list[str]] = collections.defaultdict(list)
@@ -193,21 +194,21 @@ def _format_missing_ref_row(fqn: str, ref: GhostRef) -> str:
 
 
 def _print_missing_apis_table(
-    missing: list[str],
+    missing: typing.Sequence[str],
     reference_snapshot: typing.Mapping[str, JsonValue],
 ) -> None:
     """Print the Markdown table of missing APIs from a compliance check.
 
     Args:
-        missing: List of missing fully qualified API paths.
+        missing: Sequence of missing fully qualified API paths.
         reference_snapshot: Reference snapshot dictionary containing categories.
     """
     print(f"\nMissing APIs ({len(missing)}):\n")
 
     ref_map: dict[str, GhostRef] = {}
-    cats = ensure_json_dict(reference_snapshot.get("categories", {}), "compliance categories")
+    cats = json_dict_or_empty(reference_snapshot.get("categories", {}))
     for _cat, raw_items in cats.items():
-        for item in ensure_json_list(raw_items, "category items"):
+        for item in json_tuple_or_empty(raw_items):
             ref_item = GhostRef.model_validate(item)
             ref_map[ref_item.api_path] = ref_item
             for alias in ref_item.aliases or []:
@@ -233,7 +234,7 @@ def cmd_check(args: argparse.Namespace) -> None:
     from ml_ecosystem_snapshots.cli.resolver import resolve_snapshot_path
     from ml_ecosystem_snapshots.compliance import extract_target_refs, score_compliance
 
-    path = resolve_snapshot_path(args.snapshot_json)
+    path = value_or(resolve_snapshot_path(args.snapshot_json), args.snapshot_json)
     with open(path, encoding="utf-8") as f:
         reference_snapshot = json.load(f)
 
@@ -248,11 +249,13 @@ def cmd_check(args: argparse.Namespace) -> None:
     alignment_rule = resolve_alignment_preset(preset_name, str(args.target_prefix))
 
     print(f"Extracting target APIs from {args.target_path}...")
-    target_refs = extract_target_refs(
-        args.target_path,
-        args.target_prefix,
-        args.reference_prefix,
-        alignment_rule=alignment_rule,
+    target_refs = raise_on_err(
+        extract_target_refs(
+            args.target_path,
+            args.target_prefix,
+            args.reference_prefix,
+            alignment_rule=alignment_rule,
+        )
     )
 
     print("Scoring compliance...")

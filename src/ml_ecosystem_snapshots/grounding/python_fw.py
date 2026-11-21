@@ -6,6 +6,7 @@ import typing
 
 import pydantic
 import typing_extensions
+from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
 
 from ml_ecosystem_snapshots.grounding.dtypes import (
     CallConstraintOptions,
@@ -25,9 +26,9 @@ from ml_ecosystem_snapshots.models import (
     GhostOverload,
     GhostRef,
     JsonValue,
-    ensure_json_dict,
-    ensure_json_list,
     ensure_present,
+    json_dict_or_empty,
+    json_tuple_or_empty,
 )
 
 
@@ -40,7 +41,7 @@ def _extract_cand_params(cand: dict[str, JsonValue]) -> list[dict[str, JsonValue
     Returns:
         List of parameter dictionaries.
     """
-    raw = ensure_json_list(cand.get("params") or [])
+    raw = json_tuple_or_empty(cand.get("params") or [])
     return [dict(p) for p in raw if isinstance(p, dict)]
 
 
@@ -292,16 +293,16 @@ def _evaluate_overload_candidate(
     res = HallucinationCheckResult(
         api_exists=True,
         is_hallucinated=cand_hallucinated,
-        invalid_kwargs=invalid,
-        canonical_params=sorted(list(cand_names)),
+        invalid_kwargs=tuple(invalid),
+        canonical_params=tuple(sorted(cand_names)),
         has_unconstrained_kwargs=cand_has_var_kwargs,
         reason=reason,
         snapshot_source="bundled",
         signature_completeness=str(cand.get("signature_completeness", "opaque" if cand_is_opaque else "exact")),
         is_c_extension=bool(cand.get("is_c_extension", False) or cand_is_opaque),
-        dtype_errors=dtype_errors if dtype_errors else None,
-        rank_errors=rank_errors if rank_errors else None,
-        shape_errors=shape_errors if shape_errors else None,
+        dtype_errors=tuple(dtype_errors) if dtype_errors else None,
+        rank_errors=tuple(rank_errors) if rank_errors else None,
+        shape_errors=tuple(shape_errors) if shape_errors else None,
         warning=opaque_warning,
     )
     return res, err_count
@@ -380,7 +381,7 @@ def _collect_candidate_param_names(
     """
     all_param_names: set[str] = set()
     for cand in candidates:
-        cand_params = ensure_json_list(cand.get("params"))
+        cand_params = json_tuple_or_empty(cand.get("params"))
         for p in cand_params:
             if isinstance(p, dict) and p.get("name"):
                 all_param_names.add(str(p["name"]))
@@ -629,8 +630,8 @@ def verify_python_call(
         return HallucinationCheckResult(
             api_exists=False,
             is_hallucinated=True,
-            invalid_kwargs=kwargs or [],
-            canonical_params=[],
+            invalid_kwargs=tuple(kwargs) if kwargs else (),
+            canonical_params=(),
             has_unconstrained_kwargs=False,
             reason=reason,
             snapshot_source=snapshot_source,
@@ -638,14 +639,14 @@ def verify_python_call(
 
     candidates: list[dict[str, JsonValue]] = [dict(sig)]
     raw_overloads = sig.get("overloads")
-    if isinstance(raw_overloads, list) and raw_overloads:
-        candidates.extend(ensure_json_dict(ov) for ov in raw_overloads)
+    if isinstance(raw_overloads, (list, tuple)) and raw_overloads:
+        candidates.extend(json_dict_or_empty(ov) for ov in raw_overloads)
 
     best_result: HallucinationCheckResult | None = None
     fewest_errors = 999999
 
     for cand in candidates:
-        res, err_count = _evaluate_overload_candidate(
+        cand_res, err_count = _evaluate_overload_candidate(
             cand=cand,
             framework=framework,
             api_path=api_path,
@@ -655,14 +656,14 @@ def verify_python_call(
             kwarg_values=kwarg_values,
             options=opts,
         )
-        res.snapshot_source = snapshot_source
+        res = cand_res.model_copy(update={"snapshot_source": snapshot_source})
         if not res.is_hallucinated:
             return res
         if err_count < fewest_errors:
             fewest_errors = err_count
             best_result = res
 
-    return ensure_present(best_result, "overload candidate evaluation result")
+    return raise_on_err(ensure_present(best_result, "overload candidate evaluation result"))
 
 
 __all__ = [

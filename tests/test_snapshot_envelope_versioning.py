@@ -165,7 +165,9 @@ def test_extract_snapshot_provenance_metadata() -> None:
         "latex_dsl",
         "tikz",
     ):
-        snap = extract_snapshot(target)
+        from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
+        snap = raise_on_err(extract_snapshot(target)).to_wire_dict()
         assert snap["target"] == target
         assert "version" in snap
         assert snap["version"] is not None
@@ -178,10 +180,10 @@ def test_extract_snapshot_provenance_metadata() -> None:
             from ml_ecosystem_snapshots.models import ensure_json_list
 
             assert "supported_microarchitectures" in snap
-            assert len(ensure_json_list(snap["supported_microarchitectures"])) > 0
+            assert len(raise_on_err(ensure_json_list(snap["supported_microarchitectures"]))) > 0
 
         # Validate against schema
-        envelope = validate_snapshot_envelope(snap)
+        envelope = raise_on_err(validate_snapshot_envelope(snap))
         assert envelope.target == target
 
 

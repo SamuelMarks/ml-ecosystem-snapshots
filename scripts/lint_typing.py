@@ -219,11 +219,7 @@ BANNED_CLASS_DUNDERS: frozenset[str] = frozenset(
     }
 )
 
-WHITELISTED_CONTAINER_DUNDERS: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("CExtensionSignature", "__getitem__"),
-    }
-)
+WHITELISTED_CONTAINER_DUNDERS: frozenset[tuple[str, str]] = frozenset()
 
 
 def _is_protocol_base(base: ast.expr) -> bool:

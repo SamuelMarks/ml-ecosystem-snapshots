@@ -130,8 +130,9 @@ def test_extract_accepted_kwargs_subscript_branches() -> None:
     )
 
     with patch("inspect.getsource", return_value="def sample_fn(**kwargs): pass"):
-        with patch(
-            "ml_ecosystem_snapshots.introspection.ast_kwargs.ast.parse",
+        with patch.object(
+            ast,
+            "parse",
             return_value=tree,
         ):
             res = extract_accepted_kwargs_from_ast(lambda **kwargs: None)
@@ -493,6 +494,8 @@ def test_ghost_inspector_c_ext_overload_infer_exception(
     Returns:
         None.
     """
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
     from ml_ecosystem_snapshots.c_extension_sig import (
         CExtensionSignature,
         ParsedParamTuple,
@@ -512,16 +515,14 @@ def test_ghost_inspector_c_ext_overload_infer_exception(
         annotation="Tensor",
     )
     fake_sig = CExtensionSignature(
-        params=[param],
+        params=(param,),
         returns_type="Tensor",
-        overloads=[
-            CExtensionSignature(params=[param], returns_type="Tensor"),
-        ],
+        overloads=(CExtensionSignature(params=(param,), returns_type="Tensor"),),
     )
 
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
-        return_value=fake_sig,
+        return_value=Ok(fake_sig),
     )
     mocker.patch("inspect.signature", side_effect=TypeError("no signature"))
 

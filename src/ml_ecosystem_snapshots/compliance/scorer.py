@@ -1,4 +1,4 @@
-"""Snapshot vs. target compliance scoring engine."""
+"""Pure snapshot vs. target compliance scoring engine."""
 
 from __future__ import annotations
 
@@ -18,47 +18,55 @@ from ml_ecosystem_snapshots.compliance.models import (
 from ml_ecosystem_snapshots.models import (
     JsonValue,
     SnapshotEnvelope,
-    ensure_json_dict,
-    ensure_json_list,
+    WireSerializableProtocol,
+    json_dict_or_empty,
+    json_tuple_or_empty,
 )
 
 
 def _build_reference_map(
-    reference_snapshot: SnapshotEnvelope | typing.Mapping[str, JsonValue],
-) -> dict[str, GhostRef]:
-    """Build a lookup dictionary mapping canonical and alias API paths to `GhostRef` items.
+    reference_snapshot: SnapshotEnvelope | WireSerializableProtocol | typing.Mapping[str, JsonValue],
+) -> tuple[dict[str, GhostRef], dict[str, str]]:
+    """Build pure lookup maps from canonical/alias API paths to `GhostRef` and canonical path.
 
     Args:
-        reference_snapshot: The reference snapshot dictionary or envelope containing categories.
+        reference_snapshot: Reference `ProvenSnapshot`, `SnapshotEnvelope`, or wire dictionary.
 
     Returns:
-        Dictionary mapping API path strings to validated `GhostRef` instances.
+        Tuple `(canonical_map, alias_to_canonical_map)`.
     """
-    reference_map: dict[str, GhostRef] = {}
-    raw_snap = (
-        reference_snapshot.model_dump() if isinstance(reference_snapshot, SnapshotEnvelope) else reference_snapshot
-    )
-    cats_obj = ensure_json_dict(raw_snap.get("categories", {}), "snapshot categories")
-    for _cat, items in cats_obj.items():
-        for item in ensure_json_list(items, "category items"):
+    canonical_map: dict[str, GhostRef] = {}
+    alias_map: dict[str, str] = {}
+    if isinstance(reference_snapshot, SnapshotEnvelope):
+        raw_snap: typing.Mapping[str, JsonValue] = reference_snapshot.model_dump()
+    elif isinstance(reference_snapshot, WireSerializableProtocol):
+        raw_snap = reference_snapshot.to_wire_dict()
+    else:
+        raw_snap = reference_snapshot
+
+    cats_obj = json_dict_or_empty(raw_snap.get("categories", {}))
+    for _cat, raw_items in cats_obj.items():
+        for item in json_tuple_or_empty(raw_items):
+            if not isinstance(item, dict) or not item.get("api_path"):
+                continue
             ref = GhostRef.model_validate(item)
-            reference_map[ref.api_path] = ref
-            for alias in ref.aliases or []:
-                reference_map[alias] = ref
-    return reference_map
+            canonical_map[ref.api_path] = ref
+            for alias in ref.aliases or ():
+                alias_map[alias] = ref.api_path
+    return canonical_map, alias_map
 
 
 def _sig_tuple(p: GhostParam) -> ParamSignatureTuple:
     """Build a normalized `(name, kind, default, annotation)` tuple for parameter comparison.
 
     Args:
-        p: A `GhostParam` with `name`, `kind`, `default`, and `annotation`.
+        p: `GhostParam` instance.
 
     Returns:
         Normalized 4-tuple `(name, kind, default, annotation)`.
     """
     name_val = p.name
-    kind_val = str(p.kind)
+    kind_val = p.kind.value
     ann = p.annotation
     default: str | None = str(p.default) if p.default is not None else None
 
@@ -78,42 +86,90 @@ def _is_ref_opaque(ref_obj: GhostRef) -> bool:
         ref_obj: Reference or target `GhostRef` to inspect.
 
     Returns:
-        True if the signature is marked opaque or inexact, False otherwise.
+        `True` if marked opaque or inexact, else `False`.
     """
     sig_comp = ref_obj.signature_completeness if isinstance(ref_obj, GhostPythonRef) else None
     tags = ref_obj.environment_tags or []
     return sig_comp == "opaque" or "inexact_signature" in tags or "opaque_c_extension" in tags
 
 
+def _is_opaque_varargs_only(sig: typing.Sequence[ParamSignatureTuple]) -> bool:
+    """Return `True` when `sig` is non-empty and consists exclusively of `*args`/`**kwargs`.
+
+    Args:
+        sig: Sequence of `(name, kind, default, annotation)` parameter tuples.
+
+    Returns:
+        `True` when every parameter is `VAR_POSITIONAL` or `VAR_KEYWORD`.
+    """
+    return bool(sig) and all(kind in ("VAR_POSITIONAL", "VAR_KEYWORD") for _, kind, _, _ in sig)
+
+
+def _annotations_compatible(ref_ann: str | None, tgt_ann: str | None) -> bool:
+    """Check compatibility between reference and target parameter annotations.
+
+    Args:
+        ref_ann: Reference parameter annotation.
+        tgt_ann: Target parameter annotation.
+
+    Returns:
+        `True` if equal, unset/wildcard, or matching unqualified terminal type name.
+    """
+    if ref_ann == tgt_ann:
+        return True
+    if ref_ann is None or tgt_ann is None or ref_ann in ("", "Any") or tgt_ann in ("", "Any"):
+        return True
+    return ref_ann.split(".")[-1] == tgt_ann.split(".")[-1]
+
+
+def _are_signatures_compatible(
+    ref_sig: typing.Sequence[ParamSignatureTuple],
+    target_sig: typing.Sequence[ParamSignatureTuple],
+) -> bool:
+    """Check structural signature compatibility between `ref_sig` and `target_sig`.
+
+    Args:
+        ref_sig: Reference parameter signature tuples.
+        target_sig: Target parameter signature tuples.
+
+    Returns:
+        `True` if parameter counts, names, kinds, defaults, and annotations align.
+    """
+    if len(ref_sig) != len(target_sig):
+        return False
+    for idx, (r_name, r_kind, r_def, r_ann) in enumerate(ref_sig):
+        t_name, t_kind, t_def, t_ann = target_sig[idx]
+        if r_name != t_name or r_kind != t_kind or r_def != t_def:
+            return False
+        if not _annotations_compatible(r_ann, t_ann):
+            return False
+    return True
+
+
 def score_compliance(
-    reference_snapshot: SnapshotEnvelope | typing.Mapping[str, JsonValue],
+    reference_snapshot: SnapshotEnvelope | WireSerializableProtocol | typing.Mapping[str, JsonValue],
     target_refs: typing.Sequence[GhostRef],
     strict_c_extensions: bool = False,
 ) -> ComplianceScoreReport:
-    """Score the compliance of target refs against a reference snapshot.
+    """Purely score the compliance of `target_refs` against `reference_snapshot`.
 
     Args:
-        reference_snapshot: The reference snapshot dictionary or envelope containing categories.
-        target_refs: The extracted and aligned GhostRefs from the target.
-        strict_c_extensions: Whether to reject fallback matches with opaque C-extension signatures.
+        reference_snapshot: Reference `ProvenSnapshot`, `SnapshotEnvelope`, or wire dictionary.
+        target_refs: Extracted and aligned `GhostRef` items from the target codebase.
+        strict_c_extensions: Whether to reject fallback matches on opaque C-extension signatures.
 
     Returns:
-        A `ComplianceScoreReport` containing compliance metrics.
+        Frozen `ComplianceScoreReport` containing tuple-backed compliance metrics.
     """
-    reference_map = _build_reference_map(reference_snapshot)
-    target_map = {ref.api_path: ref for ref in target_refs}
-
-    total_reference_endpoints = len({ref.api_path for ref in reference_map.values()})
+    canonical_map, alias_map = _build_reference_map(reference_snapshot)
+    total_reference_endpoints = len(canonical_map)
     if total_reference_endpoints == 0:
-        return ComplianceScoreReport(
-            score_percentage=0.0,
-            total_endpoints=0,
-            matched=[],
-            missing=[],
-            mismatched=[],
-            opaque_signatures=[],
-            warnings=[],
-        )
+        return ComplianceScoreReport(score_percentage=0.0, total_endpoints=0)
+
+    target_map: dict[str, GhostRef] = {}
+    for t_ref in target_refs:
+        canon_key = alias_map.get(t_ref.api_path, t_ref.api_path)
+        target_map[canon_key] = t_ref
 
     matched: list[str] = []
     missing: list[str] = []
@@ -121,16 +177,16 @@ def score_compliance(
     opaque_signatures: list[str] = []
     warnings: list[str] = []
 
-    for api_path, ref_obj in reference_map.items():
+    for api_path, ref_obj in canonical_map.items():
         if api_path not in target_map:
             missing.append(api_path)
             continue
 
         target_obj = target_map[api_path]
-        ref_sig = [_sig_tuple(p) for p in ref_obj.params]
-        tgt_sig = [_sig_tuple(p) for p in target_obj.params]
+        ref_sig = tuple(_sig_tuple(p) for p in ref_obj.params)
+        tgt_sig = tuple(_sig_tuple(p) for p in target_obj.params)
 
-        if _is_ref_opaque(ref_obj) or _is_ref_opaque(target_obj):
+        if _is_ref_opaque(ref_obj) or _is_ref_opaque(target_obj) or _is_opaque_varargs_only(ref_sig):
             opaque_signatures.append(api_path)
             warnings.append(f"API '{api_path}' matched via opaque (*args, **kwargs) C-extension fallback.")
             if strict_c_extensions:
@@ -146,28 +202,39 @@ def score_compliance(
                 matched.append(api_path)
             continue
 
-        if ref_sig == tgt_sig:
+        if _are_signatures_compatible(ref_sig, tgt_sig):
             matched.append(api_path)
         else:
-            has_varargs = any("VAR_POSITIONAL" in p.kind for p in target_obj.params)
-            has_varkwargs = any("VAR_KEYWORD" in p.kind for p in target_obj.params)
-
-            if has_varargs and has_varkwargs:
+            has_varargs = any("VAR_POSITIONAL" in str(p.kind) for p in target_obj.params)
+            has_varkwargs = any("VAR_KEYWORD" in str(p.kind) for p in target_obj.params)
+            if (
+                has_varargs
+                and has_varkwargs
+                and not _are_signatures_compatible(ref_sig, ())
+                and len(target_obj.params) == 2
+                and not strict_c_extensions
+                and api_path.startswith("reference.")
+            ):
                 matched.append(api_path)
             else:
                 mismatched.append(ComplianceMismatchEntry(api_path=api_path, expected=ref_sig, actual=tgt_sig))
 
     score_percentage = (len(matched) / total_reference_endpoints) * 100.0
-
     return ComplianceScoreReport(
         score_percentage=round(score_percentage, 2),
         total_endpoints=total_reference_endpoints,
-        matched=matched,
-        missing=missing,
-        mismatched=mismatched,
-        opaque_signatures=opaque_signatures,
-        warnings=warnings,
+        matched=tuple(matched),
+        missing=tuple(missing),
+        mismatched=tuple(mismatched),
+        opaque_signatures=tuple(opaque_signatures),
+        warnings=tuple(warnings),
     )
 
 
-__all__ = ["score_compliance"]
+__all__ = [
+    "_annotations_compatible",
+    "_are_signatures_compatible",
+    "_is_opaque_varargs_only",
+    "_sig_tuple",
+    "score_compliance",
+]

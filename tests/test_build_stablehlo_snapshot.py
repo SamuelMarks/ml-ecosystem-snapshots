@@ -91,7 +91,9 @@ Dot general op.
 | `result` | tensor | (C1) |
 
 """
-    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: mock_content.decode("utf-8"))
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
+    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: Ok(mock_content.decode("utf-8")))
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 3
@@ -157,7 +159,9 @@ def test_extract_ops_empty_op(monkeypatch: pytest.MonkeyPatch) -> None:
 #### Semantics
 Empty op.
 """
-    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: mock_content.decode("utf-8"))
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
+    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: Ok(mock_content.decode("utf-8")))
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 0
@@ -181,7 +185,9 @@ def test_extract_ops_missing_semantics(monkeypatch: pytest.MonkeyPatch) -> None:
 |-------|------|------|-------------|
 | (I1) | `lhs` | tensor | (C1) |
 """
-    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: mock_content.decode("utf-8"))
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
+    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: Ok(mock_content.decode("utf-8")))
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
@@ -212,7 +218,9 @@ def test_extract_ops_multi_output(monkeypatch: pytest.MonkeyPatch) -> None:
 | `res1` | tensor |
 | `res2` | tensor |
 """
-    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: mock_content.decode("utf-8"))
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
+    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: Ok(mock_content.decode("utf-8")))
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
@@ -242,7 +250,9 @@ def test_extract_ops_ignore_unnamed_columns(monkeypatch: pytest.MonkeyPatch) -> 
 | Label | Name | Type | Constraints |
 | (I1) | `res` | tensor | (C1) |
 """
-    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: mock_content.decode("utf-8"))
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
+    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: Ok(mock_content.decode("utf-8")))
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
@@ -273,7 +283,9 @@ def test_extract_ops_missing_type_column_outputs(
 |------|
 | `res` |
 """
-    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: mock_content.decode("utf-8"))
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
+    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: Ok(mock_content.decode("utf-8")))
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
@@ -308,7 +320,9 @@ def test_extract_ops_unmatched_lines(monkeypatch: pytest.MonkeyPatch) -> None:
 Some extra text
 
 """
-    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: mock_content.decode("utf-8"))
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
+    monkeypatch.setattr(network_env, "fetch_url", lambda _url, timeout=10: Ok(mock_content.decode("utf-8")))
 
     ghost_refs = build_stablehlo_snapshot.extract_ops()
     assert len(ghost_refs) == 1
@@ -831,11 +845,15 @@ def test_extract_ops_tablegen_failure_fallback(
     Args:
         mocker: Pytest mocker fixture.
     """
+    from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
+
+    from ml_ecosystem_snapshots.exceptions import SnapshotError
+
     mock_urlopen = mocker.patch(
         "ml_ecosystem_snapshots.network_env.fetch_url",
         side_effect=[
-            None,
-            (
+            Err(SnapshotError("td failed")),
+            Ok(
                 "# StableHLO Spec\n### abs\n#### Semantics\nAbs op.\n#### Inputs\n| (I1) | `x` | tensor | (C1) |\n#### Outputs\n| `res` | tensor | (C1) |\n"
             ),
         ],
@@ -853,8 +871,10 @@ def test_main_entrypoint(mocker: pytest_mock.MockerFixture) -> None:
     """
     import runpy
 
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("ml_ecosystem_snapshots.network_env.fetch_url", return_value="")
+    mocker.patch("ml_ecosystem_snapshots.network_env.fetch_url", return_value=Ok(""))
     res = runpy.run_path(
         _get_stablehlo_module_path(),
         run_name="__main__",
@@ -869,6 +889,13 @@ def test_build_stablehlo_snapshot_fetch_fail(monkeypatch: pytest.MonkeyPatch) ->
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    monkeypatch.setattr("ml_ecosystem_snapshots.network_env.fetch_url", lambda _url, timeout=10: None)
+    from ml_switcheroo_ir.typeclasses.outcome import Err
+
+    from ml_ecosystem_snapshots.exceptions import SnapshotError
+
+    monkeypatch.setattr(
+        "ml_ecosystem_snapshots.network_env.fetch_url",
+        lambda _url, timeout=10: Err(SnapshotError("unreachable")),
+    )
     with pytest.raises(RuntimeError, match="StableHLO"):
         build_stablehlo_snapshot.extract_ops(source_content=None)

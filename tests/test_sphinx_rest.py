@@ -35,14 +35,15 @@ def test_griffe_rest_sphinx_field_lists() -> None:
 :raises RuntimeError: If out of memory.
 """
     meta = extract_griffe_docstring_metadata(docstring, parser_name="rest")
+    param_map = meta.param_map()
 
     # Verify parameters
-    assert "query" in meta.params
-    assert "key" in meta.params
-    assert "value" in meta.params
+    assert "query" in param_map
+    assert "key" in param_map
+    assert "value" in param_map
 
-    assert meta.params["query"].typ == "torch.Tensor"
-    assert "Query tensor" in meta.params["query"].doc
+    assert param_map["query"].typ == "torch.Tensor"
+    assert "Query tensor" in param_map["query"].doc
 
     # Verify return
     assert meta.returns is not None
@@ -267,13 +268,15 @@ def test_ghost_inspector_merge_branches(mocker: pytest_mock.MockerFixture) -> No
     assert "ValueError" in (ref.raises or [])
     assert not ref.has_arg("ValueError")
 
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
     # Test hydrate with and without schema_version
-    hydrated_with = GhostInspector.hydrate(
-        {"name": "op", "api_path": "op", "kind": "function", "schema_version": "2.0.0"}
+    hydrated_with = raise_on_err(
+        GhostInspector.hydrate({"name": "op", "api_path": "op", "kind": "function", "schema_version": "2.0.0"})
     )
     assert hydrated_with.schema_version == "2.0.0"
 
-    hydrated_without = GhostInspector.hydrate({"name": "op", "api_path": "op", "kind": "function"})
+    hydrated_without = raise_on_err(GhostInspector.hydrate({"name": "op", "api_path": "op", "kind": "function"}))
     assert hydrated_without.schema_version == "2.0.0"
 
 
@@ -365,9 +368,9 @@ def test_extract_griffe_docstring_metadata_edge_cases(
     )
 
     meta = extract_griffe_docstring_metadata("any doc")
-    assert "x" in meta.params
+    assert "x" in meta.param_map()
     assert len(meta.params) == 1
-    assert meta.raises == ["ValueError"]
+    assert meta.raises == ("ValueError",)
 
 
 def test_ghost_inspector_custom_fault_and_doc_return() -> None:
@@ -595,7 +598,7 @@ def test_extract_griffe_docstring_metadata_duplicate_and_missing_params() -> Non
 :raises DuplicateError: Second occurrence.
 """
     meta = extract_griffe_docstring_metadata(docstring, parser_name="rest")
-    assert meta.raises == ["DuplicateError"]
+    assert meta.raises == ("DuplicateError",)
 
     fake_param_section = mock.MagicMock()
     fake_param_section.kind = "parameters"
@@ -611,9 +614,9 @@ def test_extract_griffe_docstring_metadata_duplicate_and_missing_params() -> Non
         return_value=[fake_param_section],
     ):
         meta_misclassified = extract_griffe_docstring_metadata(":raises MisclassifiedError: Doc.", parser_name="rest")
-        assert "MisclassifiedError" not in meta_misclassified.params
+        assert "MisclassifiedError" not in meta_misclassified.param_map()
         assert "MisclassifiedError" in meta_misclassified.raises
 
     with mock.patch("ml_ecosystem_snapshots.utils.parse_docstring_with_griffe", return_value=[]):
         meta_empty = extract_griffe_docstring_metadata(":raises SoloError: Doc.", parser_name="rest")
-        assert meta_empty.raises == ["SoloError"]
+        assert meta_empty.raises == ("SoloError",)

@@ -20,7 +20,7 @@ jobs:
         cache: 'pip'
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v10.3.3
+      uses: astral-sh/setup-uv@v10.4.0
       with:
         version: "latest"
 
@@ -45,7 +45,7 @@ jobs:
         from ml_ecosystem_snapshots.frameworks.nvidia_ptx import load_exhaustive_ptx
         fw_dir = os.path.join('src', 'ml_ecosystem_snapshots', 'frameworks')
         for fname, getter in [
-            ('nvidia_sass_exhaustive.json', lambda: [r.model_dump() for r in load_exhaustive_sass()]),
+            ('nvidia_sass_exhaustive.json', lambda: [r.model_dump(mode='json') for r in load_exhaustive_sass()]),
             ('amd_rdna_exhaustive.json', load_exhaustive_rdna),
             ('nvidia_ptx_exhaustive.json', load_exhaustive_ptx),
         ]:
@@ -61,10 +61,10 @@ jobs:
         uv build --wheel
         python3 -c "
         import zipfile, glob, sys
-        wheels = glob.glob('dist/*.whl')
+        wheels = sorted(glob.glob('dist/*.whl'))
         if not wheels:
             sys.exit('No wheel produced!')
-        with zipfile.ZipFile(wheels[0], 'r') as zf:
+        with zipfile.ZipFile(wheels[-1], 'r') as zf:
             names = zf.namelist()
             for n in names:
                 if n.endswith(('.db', '.sqlite', '.sqlite3', '.db-wal', '.db-journal')):
@@ -72,7 +72,7 @@ jobs:
             jsons = [n for n in names if n.endswith('.json')]
             if len(jsons) < 4:
                 sys.exit(f'Expected >= 4 json snapshots in wheel, found: {len(jsons)}')
-            print(f'Verified wheel {wheels[0]}: {len(jsons)} JSON snapshots, 0 database files.')
+            print(f'Verified wheel {wheels[-1]}: {len(jsons)} JSON snapshots, 0 database files.')
         "
 
     - name: End-to-end offline smoke test with pre-built wheel

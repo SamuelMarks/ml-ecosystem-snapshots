@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 import pytest_mock
+from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, raise_on_err
 
 
 def test_align_namespace_exact_mapping() -> None:
@@ -19,7 +20,7 @@ def test_align_namespace_exact_mapping() -> None:
 
     assert resolve_alignment_preset("zero") == ZERO_ECOSYSTEM_ALIGNMENT_RULE
     assert resolve_alignment_preset(None, "zero_jax") == ZERO_ECOSYSTEM_ALIGNMENT_RULE
-    assert resolve_alignment_preset("default", "zero_jax").prefix_map == {}
+    assert resolve_alignment_preset("default", "zero_jax").prefix_map == ()
     assert align_namespace("zero_jax", "target_prefix", "ref", alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE) == "jax"
     assert (
         align_namespace("zero_optax", "target_prefix", "ref", alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE) == "optax"
@@ -254,7 +255,7 @@ def test_score_compliance_varargs_fallback_special_cases() -> None:
 
     # Strict parameter comparison rejects mismatched parameter names/types even when len(params) == len(params)
     strict_res = score_compliance(ref_snap, target_refs)
-    assert strict_res.matched == []
+    assert strict_res.matched == ()
     mismatched_paths = {m.api_path for m in strict_res.mismatched}
     assert mismatched_paths == {
         "chex.assert_shape",
@@ -287,7 +288,7 @@ def test_extract_target_refs_single_sys_path_and_logging(
 
     before_sys_path = list(sys.path)
     with caplog.at_level(logging.WARNING, logger="ml_ecosystem_snapshots.compliance"):
-        refs = extract_target_refs_single(str(sub_mod), "warn_pkg.broken_mod", "ref")
+        refs = raise_on_err(extract_target_refs_single(str(sub_mod), "warn_pkg.broken_mod", "ref"))
 
     assert [r.api_path for r in refs] == ["ref.broken_fn"]
     assert list(sys.path) == before_sys_path
@@ -310,7 +311,7 @@ def test_extract_target_refs_string_path(tmp_path: Path) -> None:
     sub_mod = Path(os.path.join(pkg_dir, "api.py"))
     sub_mod.write_text("def my_func(a: int) -> None: pass")
 
-    refs = extract_target_refs(str(sub_mod), "str_pkg.api", "ref")
+    refs = raise_on_err(extract_target_refs(str(sub_mod), "str_pkg.api", "ref"))
     assert len(refs) == 1
     assert refs[0].api_path == "ref.my_func"
 
@@ -324,7 +325,7 @@ def test_get_module_info_from_path_no_src_dir(tmp_path: Path) -> None:
     from ml_ecosystem_snapshots.compliance import get_module_info_from_path
 
     # mod_name will be empty if we point to a root dir without __init__.py
-    path, mod = get_module_info_from_path(str(tmp_path), target_prefix="my_pkg")
+    path, mod = raise_on_err(get_module_info_from_path(str(tmp_path), target_prefix="my_pkg"))
     assert path == str(tmp_path)
     assert mod == "my_pkg"
 
@@ -343,7 +344,7 @@ def test_extract_target_refs_list_path(tmp_path: Path) -> None:
     sub_mod = Path(os.path.join(pkg_dir, "api.py"))
     sub_mod.write_text("def list_func(): pass")
 
-    refs = extract_target_refs([str(sub_mod)], "list_pkg.api", "ref")
+    refs = raise_on_err(extract_target_refs([str(sub_mod)], "list_pkg.api", "ref"))
     assert len(refs) == 1
     assert refs[0].api_path == "ref.list_func"
 
@@ -444,52 +445,31 @@ def test_validate_broadcast_and_matmul_shapes() -> None:
     )
 
     # 1. Broadcasting
-    compat1, res1, _ = validate_broadcast_shapes([2, 3], [1, 3])
-    assert compat1 is True
-    assert res1 == [2, 3]
+    assert validate_broadcast_shapes([2, 3], [1, 3]) == Ok((2, 3))
 
-    compat2, _, err2 = validate_broadcast_shapes([2, 3], [3, 2])
-    assert compat2 is False
-    assert "Shape mismatch" in (err2 or "")
+    err2 = validate_broadcast_shapes([2, 3], [3, 2])
+    assert isinstance(err2, Err) and "Shape mismatch" in err2.error
 
-    compat3, res3, _ = validate_broadcast_shapes([1, 4, 1], [2, 1, 5])
-    assert compat3 is True
-    assert res3 == [2, 4, 5]
+    assert validate_broadcast_shapes([1, 4, 1], [2, 1, 5]) == Ok((2, 4, 5))
 
     # Dynamic / wildcard and non-int dimensions
-    compat_dyn, res_dyn, _ = validate_broadcast_shapes(["?"], [4])
-    assert compat_dyn is True
-    assert res_dyn == [-1]
-
-    compat_str, res_str, _ = validate_broadcast_shapes(["invalid_dim"], [4])
-    assert compat_str is True
-    assert res_str == [-1]
+    assert validate_broadcast_shapes(["?"], [4]) == Ok((-1,))
+    assert validate_broadcast_shapes(["invalid_dim"], [4]) == Ok((-1,))
 
     # 2. Matmul strict 2D
-    compat_s2d, _, err_s2d = validate_matmul_shapes([2, 3, 4], [2, 4, 5], strict_2d=True)
-    assert compat_s2d is False
-    assert "Strict 2D matmul error" in (err_s2d or "")
+    err_s2d = validate_matmul_shapes([2, 3, 4], [2, 4, 5], strict_2d=True)
+    assert isinstance(err_s2d, Err) and "Strict 2D matmul error" in err_s2d.error
 
-    compat_s2d_ok, res_s2d_ok, _ = validate_matmul_shapes([2, 3], [3, 4], strict_2d=True)
-    assert compat_s2d_ok is True
-    assert res_s2d_ok == [2, 4]
+    assert validate_matmul_shapes([2, 3], [3, 4], strict_2d=True) == Ok((2, 4))
 
     # 1D vector dot products
-    compat_1d, _, _ = validate_matmul_shapes([4], [4])
-    assert compat_1d is True
+    assert validate_matmul_shapes([4], [4]) == Ok(())
+    assert isinstance(validate_matmul_shapes(["?"], [4]), Ok)
+    assert isinstance(validate_matmul_shapes([4], ["?"]), Ok)
+    assert isinstance(validate_matmul_shapes(["?"], ["?"]), Ok)
 
-    compat_1d_sym, _, _ = validate_matmul_shapes(["?"], [4])
-    assert compat_1d_sym is True
-
-    compat_1d_sym2, _, _ = validate_matmul_shapes([4], ["?"])
-    assert compat_1d_sym2 is True
-
-    compat_1d_sym3, _, _ = validate_matmul_shapes(["?"], ["?"])
-    assert compat_1d_sym3 is True
-
-    compat_1d_err, _, err_1d = validate_matmul_shapes([4], [5])
-    assert compat_1d_err is False
-    assert "dot product mismatch" in (err_1d or "")
+    err_1d = validate_matmul_shapes([4], [5])
+    assert isinstance(err_1d, Err) and "dot product mismatch" in err_1d.error
 
 
 def test_validate_matmul_vector_and_batch_shapes() -> None:
@@ -497,66 +477,40 @@ def test_validate_matmul_vector_and_batch_shapes() -> None:
     from ml_ecosystem_snapshots.compliance import validate_matmul_shapes
 
     # Vector-matrix (1D x 2D) and Matrix-vector (2D x 1D)
-    compat_vm, res_vm, _ = validate_matmul_shapes([4], [4, 5])
-    assert compat_vm is True
-    assert res_vm == [5]
-
-    compat_mv, res_mv, _ = validate_matmul_shapes([3, 4], [4])
-    assert compat_mv is True
-    assert res_mv == [3]
+    assert validate_matmul_shapes([4], [4, 5]) == Ok((5,))
+    assert validate_matmul_shapes([3, 4], [4]) == Ok((3,))
 
     # Batch vector-matrix and matrix-vector
-    compat_bvm, res_bvm, _ = validate_matmul_shapes([4], [2, 4, 5])
-    assert compat_bvm is True
-    assert res_bvm == [2, 5]
-
-    compat_bmv, res_bmv, _ = validate_matmul_shapes([2, 3, 4], [4])
-    assert compat_bmv is True
-    assert res_bmv == [2, 3]
+    assert validate_matmul_shapes([4], [2, 4, 5]) == Ok((2, 5))
+    assert validate_matmul_shapes([2, 3, 4], [4]) == Ok((2, 3))
 
     # Symbolic dynamic dimensions in vector-matrix and matrix-vector
-    compat_sym_vm, res_sym_vm, _ = validate_matmul_shapes(["?"], ["?", 5])
-    assert compat_sym_vm is True
-    assert res_sym_vm == [5]
-
-    compat_sym_mv, res_sym_mv, _ = validate_matmul_shapes([3, "?"], ["?"])
-    assert compat_sym_mv is True
-    assert res_sym_mv == [3]
+    assert validate_matmul_shapes(["?"], ["?", 5]) == Ok((5,))
+    assert validate_matmul_shapes([3, "?"], ["?"]) == Ok((3,))
 
     # Contracting mismatch in vector-matrix / matrix-vector
-    compat_vm_err, _, err_vm = validate_matmul_shapes([4], [5, 6])
-    assert compat_vm_err is False
-    assert "Vector-matrix multiplication contracting dimension mismatch" in (err_vm or "")
+    err_vm = validate_matmul_shapes([4], [5, 6])
+    assert isinstance(err_vm, Err) and "Vector-matrix multiplication contracting dimension mismatch" in err_vm.error
 
-    compat_mv_err, _, err_mv = validate_matmul_shapes([3, 4], [5])
-    assert compat_mv_err is False
-    assert "Matrix-vector multiplication contracting dimension mismatch" in (err_mv or "")
+    err_mv = validate_matmul_shapes([3, 4], [5])
+    assert isinstance(err_mv, Err) and "Matrix-vector multiplication contracting dimension mismatch" in err_mv.error
 
     # Rank < 1 error (e.g. scalar operand)
-    compat_r0, _, err_r0 = validate_matmul_shapes([], [4, 5])
-    assert compat_r0 is False
-    assert "requires at least 2D operands" in (err_r0 or "")
+    err_r0 = validate_matmul_shapes([], [4, 5])
+    assert isinstance(err_r0, Err) and "requires at least 2D operands" in err_r0.error
 
     # 2D matmul valid and contracting mismatch
-    compat_2d, res_2d, _ = validate_matmul_shapes([2, 3], [3, 4])
-    assert compat_2d is True
-    assert res_2d == [2, 4]
+    assert validate_matmul_shapes([2, 3], [3, 4]) == Ok((2, 4))
+    assert isinstance(validate_matmul_shapes([2, "?"], [3, 4]), Ok)
 
-    compat_2d_sym, _res_2d_sym, _ = validate_matmul_shapes([2, "?"], [3, 4])
-    assert compat_2d_sym is True
-
-    compat_k_err, _, err_k = validate_matmul_shapes([2, 3], [4, 5])
-    assert compat_k_err is False
-    assert "contracting dimension mismatch" in (err_k or "")
+    err_k = validate_matmul_shapes([2, 3], [4, 5])
+    assert isinstance(err_k, Err) and "contracting dimension mismatch" in err_k.error.lower()
 
     # Batch matmul valid and batch mismatch
-    compat_bm, res_bm, _ = validate_matmul_shapes([2, 3, 4], [2, 4, 5])
-    assert compat_bm is True
-    assert res_bm == [2, 3, 5]
+    assert validate_matmul_shapes([2, 3, 4], [2, 4, 5]) == Ok((2, 3, 5))
 
-    compat_bm_err, _, err_bm = validate_matmul_shapes([2, 3, 4], [3, 4, 5])
-    assert compat_bm_err is False
-    assert "Batch dimension broadcasting error" in (err_bm or "")
+    err_bm = validate_matmul_shapes([2, 3, 4], [3, 4, 5])
+    assert isinstance(err_bm, Err) and "Batch dimension broadcasting error" in err_bm.error
 
 
 def test_compliance_edge_branches(tmp_path: Path) -> None:
@@ -604,11 +558,13 @@ def test_compliance_edge_branches(tmp_path: Path) -> None:
     with open(pkg_dir / "nn" / "nn" / "__init__.py", "w") as f:
         f.write("def relu(x):\n    '''Rectified linear unit.'''\n    return x\n")
 
-    refs = extract_target_refs_single(
-        str(pkg_dir),
-        "zero_jax",
-        "jax",
-        alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE,
+    refs = raise_on_err(
+        extract_target_refs_single(
+            str(pkg_dir),
+            "zero_jax",
+            "jax",
+            alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE,
+        )
     )
     assert any(r.api_path == "jax.nn.relu" for r in refs)
 
@@ -619,11 +575,13 @@ def test_compliance_edge_branches(tmp_path: Path) -> None:
         f.write("")
     with open(pkg_dir2 / "zero_jax" / "__init__.py", "w") as f:
         f.write("def gelu(x):\n    '''Gelu.'''\n    return x\n")
-    refs2 = extract_target_refs_single(
-        str(pkg_dir2),
-        "sub_zero_jax",
-        "jax",
-        alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE,
+    refs2 = raise_on_err(
+        extract_target_refs_single(
+            str(pkg_dir2),
+            "sub_zero_jax",
+            "jax",
+            alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE,
+        )
     )
     assert len(refs2) >= 1
 
@@ -631,11 +589,13 @@ def test_compliance_edge_branches(tmp_path: Path) -> None:
     single_file = tmp_path / "single_file.py"
     with open(single_file, "w") as f:
         f.write("def standalone():\n    '''Standalone.'''\n    return 42\n")
-    refs3 = extract_target_refs_single(
-        str(single_file),
-        "single_file",
-        "ref_pkg",
-        alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE,
+    refs3 = raise_on_err(
+        extract_target_refs_single(
+            str(single_file),
+            "single_file",
+            "ref_pkg",
+            alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE,
+        )
     )
     assert len(refs3) >= 1
 
@@ -705,7 +665,7 @@ def test_extract_target_refs_single_root_function(tmp_path: Path, mocker: pytest
     mocker.patch("griffe.load", return_value=fn_node)
     mocker.patch("importlib.import_module", return_value=real_fn)
 
-    refs = extract_target_refs_single(fpath, "standalone", "ref_pkg")
+    refs = raise_on_err(extract_target_refs_single(fpath, "standalone", "ref_pkg"))
     assert len(refs) == 1
 
 
@@ -719,31 +679,31 @@ def test_compliance_models_typed_attributes() -> None:
 
     mismatch = ComplianceMismatchEntry(
         api_path="pkg.fn",
-        expected=[("a", "POSITIONAL_OR_KEYWORD", None, "int")],
-        actual=[],
+        expected=(("a", "POSITIONAL_OR_KEYWORD", None, "int"),),
+        actual=(),
         reason="Mismatch reason",
     )
     assert mismatch.api_path == "pkg.fn"
     assert len(mismatch.expected) == 1
-    assert mismatch.actual == []
+    assert mismatch.actual == ()
     assert mismatch.reason == "Mismatch reason"
 
     score_rep = ComplianceScoreReport(
         score_percentage=75.0,
         total_endpoints=4,
-        matched=["a", "b", "c"],
-        missing=["d"],
-        mismatched=[mismatch],
-        opaque_signatures=["op1"],
-        warnings=["warn1"],
+        matched=("a", "b", "c"),
+        missing=("d",),
+        mismatched=(mismatch,),
+        opaque_signatures=("op1",),
+        warnings=("warn1",),
     )
     assert score_rep.score_percentage == 75.0
     assert score_rep.total_endpoints == 4
-    assert score_rep.matched == ["a", "b", "c"]
-    assert score_rep.missing == ["d"]
-    assert score_rep.mismatched == [mismatch]
-    assert score_rep.opaque_signatures == ["op1"]
-    assert score_rep.warnings == ["warn1"]
+    assert score_rep.matched == ("a", "b", "c")
+    assert score_rep.missing == ("d",)
+    assert score_rep.mismatched == (mismatch,)
+    assert score_rep.opaque_signatures == ("op1",)
+    assert score_rep.warnings == ("warn1",)
 
     snip_rep = SnippetComplianceReport(
         is_compliant=True,
@@ -751,11 +711,11 @@ def test_compliance_models_typed_attributes() -> None:
         verified_ops=3,
         total_instructions=2,
         verified_instructions=2,
-        errors=[],
+        errors=(),
     )
     assert snip_rep.is_compliant is True
     assert snip_rep.total_ops == 3
     assert snip_rep.verified_ops == 3
     assert snip_rep.total_instructions == 2
     assert snip_rep.verified_instructions == 2
-    assert snip_rep.errors == []
+    assert snip_rep.errors == ()

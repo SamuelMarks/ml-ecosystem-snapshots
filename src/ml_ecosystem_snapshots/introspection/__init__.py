@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from ml_ecosystem_snapshots.c_extension_sig import (
     CExtensionSignature,
+    ParsedCSignatureLine,
+    build_c_extension_signature,
     extract_c_extension_signature,
 )
 from ml_ecosystem_snapshots.introspection.ast_kwargs import (
@@ -28,6 +30,13 @@ from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     get_runtime_source,
 )
 from ml_ecosystem_snapshots.introspection.sanitize import (
+    TYPE_STR_SANITIZE_ENDO,
+    FactoryDefault,
+    LiteralDefault,
+    MandatoryDefault,
+    SanitizedDefault,
+    UnrepresentableDefault,
+    default_value_or_none,
     sanitize_param_default,
     sanitize_type_str,
 )
@@ -42,13 +51,22 @@ __all__ = [
     "CExtensionSignature",
     "DefaultValueInput",
     "DescriptorProtocol",
+    "FactoryDefault",
     "GhostInspector",
     "InspectableCallableProtocol",
+    "LiteralDefault",
     "LivePythonTarget",
+    "MandatoryDefault",
+    "ParsedCSignatureLine",
     "STATIC_GRIFFE_TYPES",
+    "SanitizedDefault",
     "StaticGriffeNode",
+    "TYPE_STR_SANITIZE_ENDO",
+    "UnrepresentableDefault",
     "WrappedTargetProtocol",
+    "build_c_extension_signature",
     "clear_griffe_cache",
+    "default_value_or_none",
     "extract_accepted_kwargs_from_ast",
     "extract_c_extension_signature",
     "get_member_dict",

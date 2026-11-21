@@ -7,9 +7,10 @@ import typing
 
 import pydantic
 import typing_extensions
+from ml_switcheroo_ir.typeclasses.outcome import Err
 
-from ml_ecosystem_snapshots.introspection.inspector import STANDARD_ENUM_MAP
-from ml_ecosystem_snapshots.models import JsonValue, ensure_json_dict
+from ml_ecosystem_snapshots.introspection.torch_inspector import STANDARD_ENUM_MAP
+from ml_ecosystem_snapshots.models import JsonValue, json_dict_or_empty
 
 
 class CallConstraintOptions(pydantic.BaseModel):
@@ -48,7 +49,7 @@ def _extract_cand_params(cand: typing.Mapping[str, JsonValue]) -> list[dict[str,
         List of parameter dictionaries.
     """
     raw_params = cand.get("params")
-    return [ensure_json_dict(p) for p in raw_params] if isinstance(raw_params, list) else []
+    return [json_dict_or_empty(p) for p in raw_params] if isinstance(raw_params, (list, tuple)) else []
 
 
 DTYPE_CANONICAL_ALIASES: dict[str, str] = {
@@ -562,9 +563,9 @@ def _validate_candidate_shapes(
         from ml_ecosystem_snapshots.compliance import validate_broadcast_shapes
 
         sh_list = list(passed_shapes.values())
-        compat, _, err = validate_broadcast_shapes(sh_list[0], sh_list[1])
-        if not compat and err:
-            shape_errors.append(f"Broadcasting error in '{api_path}': {err}")
+        bcast_res = validate_broadcast_shapes(sh_list[0], sh_list[1])
+        if isinstance(bcast_res, Err):
+            shape_errors.append(f"Broadcasting error in '{api_path}': {bcast_res.error}")
 
     is_matmul = any(op in clean_api for op in ("matmul", "mm", "bmm")) or clean_api == "dot"
     if is_matmul and len(passed_shapes) >= 2:
@@ -572,9 +573,9 @@ def _validate_candidate_shapes(
 
         strict_2d = clean_api == "mm"
         sh_list = list(passed_shapes.values())
-        compat, _, err = validate_matmul_shapes(sh_list[0], sh_list[1], strict_2d=strict_2d)
-        if not compat and err:
-            shape_errors.append(f"Matmul error in '{api_path}': {err}")
+        mm_res = validate_matmul_shapes(sh_list[0], sh_list[1], strict_2d=strict_2d)
+        if isinstance(mm_res, Err):
+            shape_errors.append(f"Matmul error in '{api_path}': {mm_res.error}")
 
     return shape_errors
 

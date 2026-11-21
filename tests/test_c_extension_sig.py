@@ -341,31 +341,34 @@ def test_opaque_c_extension_existing_environment_tags(
 
 
 def test_c_extension_signature_sequence_operations() -> None:
-    """Verify CExtensionSignature parameter access, iteration, equality, and repr."""
+    """Verify frozen CExtensionSignature construction, iter_params, as_raw_tuples, and equality."""
     from ml_ecosystem_snapshots.c_extension_sig import (
         CExtensionSignature,
         ParsedParamTuple,
+        build_c_extension_signature,
     )
 
-    sig = CExtensionSignature(
+    sig = build_c_extension_signature(
         params=[
             ("x", "POSITIONAL_OR_KEYWORD", None, "Tensor"),
             ParsedParamTuple(name="y", kind="POSITIONAL_OR_KEYWORD", default="1", annotation="int"),
         ],
         returns_type="Tensor",
     )
-    assert len(sig) == 2
-    assert sig[0].name == "x"
-    assert sig[0].kind == "POSITIONAL_OR_KEYWORD"
-    assert sig[0].default is None
-    assert sig[0].annotation == "Tensor"
-    assert sig[0].as_tuple() == ("x", "POSITIONAL_OR_KEYWORD", None, "Tensor")
-    assert sig[1].name == "y"
-    assert sig[1].default == "1"
+    assert len(sig.params) == 2
+    assert sig.params[0].name == "x"
+    assert sig.params[0].kind == "POSITIONAL_OR_KEYWORD"
+    assert sig.params[0].default is None
+    assert sig.params[0].annotation == "Tensor"
+    assert sig.params[0].as_tuple() == ("x", "POSITIONAL_OR_KEYWORD", None, "Tensor")
+    assert sig.params[1].name == "y"
+    assert sig.params[1].default == "1"
+    assert sig.as_raw_tuples() == (
+        ("x", "POSITIONAL_OR_KEYWORD", None, "Tensor"),
+        ("y", "POSITIONAL_OR_KEYWORD", "1", "int"),
+    )
 
-    # Equality and repr
-    sig_copy = CExtensionSignature(params=list(sig.iter_params()))
+    sig_copy = CExtensionSignature(params=tuple(sig.iter_params()), returns_type="Tensor")
     assert sig == sig_copy
-    assert sig == list(sig.iter_params())
-    assert sig != "not_a_sig"
-    assert "ParsedParamTuple" in repr(sig) or "'x'" in repr(sig)
+    assert sig != CExtensionSignature()
+    assert "ParsedParamTuple" in repr(sig)

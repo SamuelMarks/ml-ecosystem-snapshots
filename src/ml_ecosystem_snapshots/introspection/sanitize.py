@@ -1,10 +1,20 @@
-"""Default value and type annotation sanitization utilities for Ghost introspection."""
+"""Default value and type annotation sanitization utilities for Ghost introspection.
+
+Models parameter default extraction as a closed algebraic sum type (`SanitizedDefault`)
+and type-annotation normalization as a pure `Endo[str]` monoid pipeline.
+"""
 
 from __future__ import annotations
 
 import ast
 import inspect
 import re
+import threading
+import typing
+
+import pydantic
+import typing_extensions
+from ml_switcheroo_ir.typeclasses.algebra import Endo, Monoid, endo_monoid
 
 from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
@@ -14,77 +24,134 @@ from ml_ecosystem_snapshots.introspection.runtime_boundary import (
 from ml_ecosystem_snapshots.utils import strip_sphinx_roles
 
 
-def _sanitize_callable_default(
-    val: DefaultValueInput,
-) -> tuple[str | None, str | None, bool]:
-    """Sanitize a callable parameter default value into class name or factory metadata.
+class _SanitizedDefaultBase(pydantic.BaseModel):
+    """Frozen base model for `SanitizedDefault` sum-type variants."""
+
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
+
+
+class MandatoryDefault(_SanitizedDefaultBase):
+    """Variant indicating a parameter has no default value (`inspect.Parameter.empty`)."""
+
+
+class LiteralDefault(_SanitizedDefaultBase):
+    """Variant carrying a deterministic literal, class name, or scrubbed string default.
+
+    Attributes:
+        value_repr: Deterministic serialized string representation of the default value.
+    """
+
+    value_repr: str
+
+
+class FactoryDefault(_SanitizedDefaultBase):
+    """Variant carrying a factory placeholder and scrubbed callable/device descriptor.
+
+    Attributes:
+        placeholder: Deterministic placeholder emitted into snapshot parameter defaults.
+        factory_repr: Scrubbed factory or constructor representation.
+    """
+
+    placeholder: str
+    factory_repr: str
+
+
+class UnrepresentableDefault(_SanitizedDefaultBase):
+    """Variant indicating an optional default whose runtime representation failed safely."""
+
+
+SanitizedDefault: typing_extensions.TypeAlias = (
+    "MandatoryDefault | LiteralDefault | FactoryDefault | UnrepresentableDefault"
+)
+
+
+def default_value_or_none(sanitized: SanitizedDefault, unrepresentable_token: str = "<unrepresentable>") -> str | None:
+    """Fold a `SanitizedDefault` sum-type value into its snapshot default string or `None`.
+
+    Args:
+        sanitized: Closed `SanitizedDefault` sum-type instance.
+        unrepresentable_token: String emitted when `sanitized` is `UnrepresentableDefault`.
+
+    Returns:
+        `None` for `MandatoryDefault`, otherwise deterministic string representation.
+    """
+    if isinstance(sanitized, MandatoryDefault):
+        return None
+    if isinstance(sanitized, LiteralDefault):
+        return sanitized.value_repr
+    if isinstance(sanitized, FactoryDefault):
+        return sanitized.placeholder
+    if isinstance(sanitized, UnrepresentableDefault):
+        return unrepresentable_token
+    typing_extensions.assert_never(sanitized)
+
+
+def _sanitize_callable_default(val: DefaultValueInput) -> SanitizedDefault:
+    """Sanitize a callable parameter default value into `LiteralDefault` or `FactoryDefault`.
 
     Args:
         val: Callable default value from `inspect.Parameter`.
 
     Returns:
-        Tuple of `(default_value_string, default_factory_string, is_mandatory_bool)`.
+        `LiteralDefault` for class objects, otherwise `FactoryDefault`.
     """
     val_repr = repr(val)
     if val_repr.startswith("<class '") and val_repr.endswith("'>"):
         cls_name = val_repr[8:-2]
-        return (cls_name, None, False)
+        return LiteralDefault(value_repr=cls_name)
     func_name = get_member_dict(val).get("__name__")
     factory_str = f"<function {func_name}>" if func_name else "<factory_default>"
-    return ("<factory_default>", factory_str, False)
+    return FactoryDefault(placeholder="<factory_default>", factory_repr=factory_str)
 
 
-def _sanitize_repr_default(
-    val: DefaultValueInput,
-) -> tuple[str | None, str | None, bool]:
+def _sanitize_repr_default(val: DefaultValueInput) -> SanitizedDefault:
     """Sanitize a non-primitive, non-callable default value by scrubbing memory addresses.
 
     Args:
         val: Non-primitive default value object.
 
     Returns:
-        Tuple of `(default_value_string, default_factory_string, is_mandatory_bool)`.
+        `LiteralDefault` or `FactoryDefault` with memory addresses scrubbed.
     """
     val_repr = repr(val)
     m_dt = re.match(r"^<dtype:\s*'([^']+)'\s*>$", val_repr)
     if m_dt:
-        return (f"tf.{m_dt.group(1)}", None, False)
+        return LiteralDefault(value_repr=f"tf.{m_dt.group(1)}")
 
     if "device(type=" in val_repr:
         m_dev = re.search(r"type='([^']+)'", val_repr)
         dev_type = m_dev.group(1) if m_dev else "cpu"
-        return (repr(dev_type), val_repr, False)
+        return FactoryDefault(placeholder=repr(dev_type), factory_repr=val_repr)
 
     if " at 0x" in val_repr or re.search(r"\b0x[0-9a-fA-F]{4,}\b", val_repr):
         scrubbed = re.sub(r"\s*at\s*0x[0-9a-fA-F]+", "", val_repr)
         scrubbed = re.sub(r"\b0x[0-9a-fA-F]{4,}\b", "<addr>", scrubbed)
         if scrubbed.startswith("<") and scrubbed.endswith(">"):
-            return ("<factory_default>", scrubbed, False)
-        return (scrubbed, None, False)
+            return FactoryDefault(placeholder="<factory_default>", factory_repr=scrubbed)
+        return LiteralDefault(value_repr=scrubbed)
 
     val_str = str(val)
     if " at 0x" in val_str or re.search(r"\b0x[0-9a-fA-F]{4,}\b", val_str):
-        return ("<factory_default>", "<factory_default>", False)
-    return (val_str, None, False)
+        return FactoryDefault(placeholder="<factory_default>", factory_repr="<factory_default>")
+    return LiteralDefault(value_repr=val_str)
 
 
-def sanitize_param_default(
-    val: DefaultValueInput,
-) -> tuple[str | None, str | None, bool]:
-    """Sanitize parameter default value while preserving semantic literals and scrubbing memory addresses.
+def sanitize_param_default(val: DefaultValueInput) -> SanitizedDefault:
+    """Sanitize parameter default value into a closed `SanitizedDefault` sum-type value.
 
     Args:
         val: Raw default value from `inspect.Parameter` or AST.
 
     Returns:
-        Tuple of `(default_value_string, default_factory_string, is_mandatory_bool)`.
+        Closed `SanitizedDefault` variant (`MandatoryDefault`, `LiteralDefault`,
+        `FactoryDefault`, or `UnrepresentableDefault`).
     """
     if val is inspect.Parameter.empty:
-        return (None, None, True)
+        return MandatoryDefault()
     if val is Ellipsis or val is None or isinstance(val, (bool, int, float)):
-        return ("..." if val is Ellipsis else str(val), None, False)
+        return LiteralDefault(value_repr="..." if val is Ellipsis else str(val))
     if isinstance(val, str):
-        return (repr(val), None, False)
+        return LiteralDefault(value_repr=repr(val))
 
     try:
         if callable(val):
@@ -101,10 +168,10 @@ def sanitize_param_default(
         RuntimeError,
         SyntaxError,
     ):
-        return ("<unrepresentable>", None, False)
+        return UnrepresentableDefault()
 
 
-_PEP585_TYPE_MAP: dict[str, str] = {
+_PEP585_TYPE_MAP: typing.Final[dict[str, str]] = {
     "List": "list",
     "Dict": "dict",
     "Tuple": "tuple",
@@ -153,7 +220,7 @@ class _TypeHintSanitizer(ast.NodeTransformer):
             The normalized AST Name node.
         """
         if node.id in _PEP585_TYPE_MAP:
-            node.id = _PEP585_TYPE_MAP[node.id]
+            return ast.copy_location(ast.Name(id=_PEP585_TYPE_MAP[node.id], ctx=node.ctx), node)
         return node
 
     def visit_Attribute(self, node: ast.Attribute) -> ast.AST:
@@ -172,28 +239,65 @@ class _TypeHintSanitizer(ast.NodeTransformer):
         return node
 
 
-def sanitize_type_str(typ_str: str | None) -> str | None:
-    """Normalize type hint strings to PEP-585 and PEP-604 syntax.
+def _strip_sphinx_stage(raw: str) -> str:
+    """Strip Sphinx markup roles from a type string (`Endo[str]` stage 1).
 
     Args:
-        typ_str: Raw type annotation string or None.
+        raw: Input type annotation string.
 
     Returns:
-        Sanitized type string or None.
+        String with Sphinx roles stripped.
     """
-    if not typ_str:
-        return typ_str
+    return strip_sphinx_roles(raw) or ""
 
-    typ_str = strip_sphinx_roles(typ_str)
-    if not typ_str:
-        return typ_str
 
-    typ_str = re.sub(r"<class '([^']+)'>", r"\1", typ_str)
+def _unwrap_class_tag_stage(raw: str) -> str:
+    """Unwrap `<class 'pkg.Type'>` tags to `pkg.Type` (`Endo[str]` stage 2).
 
+    Args:
+        raw: Input type annotation string.
+
+    Returns:
+        String with `<class '...'>` wrappers removed.
+    """
+    if not raw:
+        return raw
+    return re.sub(r"<class '([^']+)'>", r"\1", raw)
+
+
+def _scrub_memory_addr_stage(raw: str) -> str:
+    """Scrub runtime hex memory addresses (`at 0x...`) from type strings (`Endo[str]` stage 3).
+
+    Args:
+        raw: Input type annotation string.
+
+    Returns:
+        String with runtime hex memory addresses removed.
+    """
+    if not raw or "0x" not in raw:
+        return raw
+    return re.sub(r"\s*at\s*0x[0-9a-fA-F]+", "", raw)
+
+
+_AST_PARSE_LOCK: typing.Final[threading.Lock] = threading.Lock()
+
+
+def _normalize_ast_pep604_stage(raw: str) -> str:
+    """Normalize `Optional[T]` / `Union[A, B]` AST nodes to PEP-604 `A | B` syntax.
+
+    Args:
+        raw: Input type annotation string.
+
+    Returns:
+        PEP-585/604 normalized type string, or `raw` unchanged if non-Python syntax.
+    """
+    if not raw:
+        return raw
     try:
-        node = ast.parse(typ_str, mode="eval")
-        node = _TypeHintSanitizer().visit(node)
-        return ast.unparse(node)
+        with _AST_PARSE_LOCK:
+            node = ast.parse(raw, mode="eval")
+        transformed = _TypeHintSanitizer().visit(node)
+        return ast.unparse(transformed)
     except (
         SnapshotError,
         ImportError,
@@ -205,7 +309,51 @@ def sanitize_type_str(typ_str: str | None) -> str | None:
         RuntimeError,
         SyntaxError,
     ):
+        return raw
+
+
+_SPHINX_STRIP_ENDO: typing.Final[Endo[str]] = Endo(app=_strip_sphinx_stage)
+_CLASS_TAG_UNWRAP_ENDO: typing.Final[Endo[str]] = Endo(app=_unwrap_class_tag_stage)
+_MEMORY_ADDR_SCRUB_ENDO: typing.Final[Endo[str]] = Endo(app=_scrub_memory_addr_stage)
+_AST_PEP604_NORMALIZE_ENDO: typing.Final[Endo[str]] = Endo(app=_normalize_ast_pep604_stage)
+_STR_ENDO_MONOID: typing.Final[Monoid[Endo[str]]] = endo_monoid()
+
+TYPE_STR_SANITIZE_ENDO: typing.Final[Endo[str]] = _STR_ENDO_MONOID.mconcat(
+    (
+        _AST_PEP604_NORMALIZE_ENDO,
+        _MEMORY_ADDR_SCRUB_ENDO,
+        _CLASS_TAG_UNWRAP_ENDO,
+        _SPHINX_STRIP_ENDO,
+    )
+)
+
+
+def sanitize_type_str(typ_str: str | None) -> str | None:
+    """Normalize type hint strings to PEP-585 and PEP-604 syntax via `TYPE_STR_SANITIZE_ENDO`.
+
+    Args:
+        typ_str: Raw type annotation string or None.
+
+    Returns:
+        Sanitized type string or None.
+    """
+    if not typ_str:
         return typ_str
+    return TYPE_STR_SANITIZE_ENDO.app(typ_str)
 
 
-__all__ = ["sanitize_param_default", "sanitize_type_str"]
+__all__ = [
+    "FactoryDefault",
+    "LiteralDefault",
+    "MandatoryDefault",
+    "SanitizedDefault",
+    "TYPE_STR_SANITIZE_ENDO",
+    "UnrepresentableDefault",
+    "default_value_or_none",
+    "sanitize_param_default",
+    "sanitize_type_str",
+    "_AST_PEP604_NORMALIZE_ENDO",
+    "_CLASS_TAG_UNWRAP_ENDO",
+    "_MEMORY_ADDR_SCRUB_ENDO",
+    "_SPHINX_STRIP_ENDO",
+]

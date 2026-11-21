@@ -66,26 +66,27 @@ def test_extract_c_extension_signatures(monkeypatch: pytest.MonkeyPatch) -> None
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
+    from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
 
     def empty_doc() -> None:
         """Placeholder target with empty docstring."""
         pass
 
     monkeypatch.setattr(empty_doc, "__doc__", "")
-    assert extract_c_extension_signature(empty_doc, "empty_doc") is None
+    assert isinstance(extract_c_extension_signature(empty_doc, "empty_doc"), Err)
 
     def bad_syntax() -> None:
         """func(a b c) -> int."""
         pass
 
     monkeypatch.setattr(bad_syntax, "__doc__", "func(a b c) -> int")
-    assert extract_c_extension_signature(bad_syntax, "bad_syntax") is None
+    assert isinstance(extract_c_extension_signature(bad_syntax, "bad_syntax"), Err)
 
     def no_match() -> None:
         """This is just a description without signature."""
         pass
 
-    assert extract_c_extension_signature(no_match, "no_match") is None
+    assert isinstance(extract_c_extension_signature(no_match, "no_match"), Err)
 
     def string_def() -> None:
         """func(a='hello', b=None, *args: int, c=1, **kwargs: float) -> str.
@@ -99,25 +100,27 @@ def test_extract_c_extension_signatures(monkeypatch: pytest.MonkeyPatch) -> None
         "__doc__",
         "func(a='hello', b=None, *args: int, c=1, **kwargs: float) -> str\n\nDescription text.",
     )
-    sig = extract_c_extension_signature(string_def, "func")
-    assert sig is not None
-    names = [s.name for s in sig]
+    sig_res = extract_c_extension_signature(string_def, "func")
+    assert isinstance(sig_res, Ok)
+    sig = sig_res.value
+    names = [s.name for s in sig.params]
     assert "a" in names
     assert "args" in names
     assert "c" in names
     assert "kwargs" in names
-    assert sig[0].default == "'hello'"  # a='hello'
-    assert sig[1].default == "None"  # b=None
+    assert sig.params[0].default == "'hello'"
+    assert sig.params[1].default == "None"
 
     def func_with_self() -> None:
         """func(self, x=torch.float32)."""
         pass
 
     monkeypatch.setattr(func_with_self, "__doc__", "func(self, x=torch.float32)")
-    sig2 = extract_c_extension_signature(func_with_self, "func")
-    assert sig2 is not None
-    assert sig2[0].name == "x"
-    assert sig2[0].default == "torch.float32"  # value error fallback
+    sig2_res = extract_c_extension_signature(func_with_self, "func")
+    assert isinstance(sig2_res, Ok)
+    sig2 = sig2_res.value
+    assert sig2.params[0].name == "x"
+    assert sig2.params[0].default == "torch.float32"
 
 
 def test_extract_c_extension_signature_overloads(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -126,6 +129,7 @@ def test_extract_c_extension_signature_overloads(monkeypatch: pytest.MonkeyPatch
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
 
     def leading_empty() -> None:
         """Placeholder target with leading blank lines."""
@@ -137,8 +141,8 @@ def test_extract_c_extension_signature_overloads(monkeypatch: pytest.MonkeyPatch
         "\n\nOverloaded function.\n\n1. func(x: int) -> int\n2. func(y: str) -> str",
     )
     sig_leading = extract_c_extension_signature(leading_empty, "func")
-    assert sig_leading is not None
-    assert len(sig_leading.overloads) == 1
+    assert isinstance(sig_leading, Ok)
+    assert len(sig_leading.value.overloads) == 1
 
     def numbered_with_empty() -> None:
         """Placeholder target with numbered overloads after blank line."""
@@ -150,8 +154,8 @@ def test_extract_c_extension_signature_overloads(monkeypatch: pytest.MonkeyPatch
         "func(x: int) -> int\n\n1. func(x: int) -> int\n2. func(y: str) -> str",
     )
     sig_num = extract_c_extension_signature(numbered_with_empty, "func")
-    assert sig_num is not None
-    assert len(sig_num.overloads) == 2
+    assert isinstance(sig_num, Ok)
+    assert len(sig_num.value.overloads) == 2
 
     def sig_then_overload_header() -> None:
         """Placeholder target with signature followed by overload header."""
@@ -163,8 +167,8 @@ def test_extract_c_extension_signature_overloads(monkeypatch: pytest.MonkeyPatch
         "func(x: int) -> int\nOverloaded function.\n1. func(x: int) -> int\n2. func(y: str) -> str",
     )
     sig_so = extract_c_extension_signature(sig_then_overload_header, "func")
-    assert sig_so is not None
-    assert len(sig_so.overloads) == 2
+    assert isinstance(sig_so, Ok)
+    assert len(sig_so.value.overloads) == 2
 
     def sig_then_doc_text() -> None:
         """Placeholder target with signature followed by prose description."""
@@ -176,8 +180,8 @@ def test_extract_c_extension_signature_overloads(monkeypatch: pytest.MonkeyPatch
         "func(x: int) -> int\nSome description without overload header.",
     )
     sig_dt = extract_c_extension_signature(sig_then_doc_text, "func")
-    assert sig_dt is not None
-    assert len(sig_dt.overloads) == 0
+    assert isinstance(sig_dt, Ok)
+    assert len(sig_dt.value.overloads) == 0
 
 
 def test_utils_branches(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -186,6 +190,7 @@ def test_utils_branches(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
+    from ml_switcheroo_ir.typeclasses.outcome import Err
 
     class Dummy:
         """Placeholder class whose `__doc__` is patched with whitespace."""
@@ -193,7 +198,7 @@ def test_utils_branches(monkeypatch: pytest.MonkeyPatch) -> None:
         pass
 
     monkeypatch.setattr(Dummy, "__doc__", "\n")
-    assert extract_c_extension_signature(Dummy, "X") is None
+    assert isinstance(extract_c_extension_signature(Dummy, "X"), Err)
 
 
 def test_normalize_c_sig_args_and_unparse_branches(
@@ -204,7 +209,8 @@ def test_normalize_c_sig_args_and_unparse_branches(
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    # Test with trailing comma, keyword-only marker '*', slash '/', varargs, varkwargs, colon, C++ type with default, and plain arg
+    from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
+
     raw = "Tensor a, *, /, *args, **kwargs, c: int, const Tensor& d = None, plain_arg, "
     normalized = normalize_c_sig_args(raw)
     assert 'a: "Tensor"' in normalized
@@ -216,24 +222,19 @@ def test_normalize_c_sig_args_and_unparse_branches(
     assert 'd: "Tensor" = None' in normalized
     assert "plain_arg" in normalized
 
-    # Test unparse_anno when node is None (unannotated parameter)
     parsed = parse_c_extension_sig_str("func(unannotated_arg)")
-    assert parsed is not None
-    assert parsed[1][0].annotation is None
+    assert isinstance(parsed, Ok)
+    assert parsed.value.params[0].annotation is None
 
-    # Test C++ style signature where first ast.parse raises SyntaxError and normalized parse succeeds (lines 162-163)
     parsed_cpp = parse_c_extension_sig_str("func(Tensor self, bool inplace=False) -> Tensor")
-    assert parsed_cpp is not None
-    assert parsed_cpp[1][0].name == "inplace"
+    assert isinstance(parsed_cpp, Ok)
+    assert parsed_cpp.value.params[0].name == "inplace"
 
-    # Test invalid syntax after normalization to hit inner SyntaxError handler
-    assert parse_c_extension_sig_str("func(a b c)") is None
+    assert isinstance(parse_c_extension_sig_str("func(a b c)"), Err)
 
-    # Test normalize_c_sig_args with empty string and bracket ending
     assert normalize_c_sig_args("") == ""
     assert normalize_c_sig_args("std::vector<int>") == "std::vector<int>"
 
-    # Test fallback scanning lines where candidate parse fails first, then succeeds
     def usage_func() -> None:
         """Function with usage docstring demonstrating signature parsing fallback."""
         pass
@@ -244,8 +245,8 @@ def test_normalize_c_sig_args_and_unparse_branches(
         ("Some description\n>>> usage_func(invalid syntax arg)\n>>> usage_func(valid_arg: int) -> int\n"),
     )
     sig_usage = extract_c_extension_signature(usage_func, "usage_func")
-    assert sig_usage is not None
-    assert sig_usage[0].name == "valid_arg"
+    assert isinstance(sig_usage, Ok)
+    assert sig_usage.value.params[0].name == "valid_arg"
 
 
 def test_tablegen_list_and_traits() -> None:
@@ -256,9 +257,9 @@ def test_tablegen_list_and_traits() -> None:
     )
 
     # Empty and simple cases
-    assert split_tablegen_list("") == []
-    assert split_tablegen_list("  ") == []
-    assert split_tablegen_list("Pure, Commutative") == ["Pure", "Commutative"]
+    assert split_tablegen_list("") == ()
+    assert split_tablegen_list("  ") == ()
+    assert split_tablegen_list("Pure, Commutative") == ("Pure", "Commutative")
 
     # Nested brackets, angles, parens, strings with commas and escaped characters
     complex_raw = 'Pure, AllElementTypesMatch<["operand", "result"]>, DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>, SomeAttr<"foo, bar", (ins I32:$x)>, // line comment\nEscaped<"hello \\"world\\", test">'
@@ -270,14 +271,14 @@ def test_tablegen_list_and_traits() -> None:
     assert 'Escaped<"hello \\"world\\", test">' in res
 
     # extract_tablegen_traits without brackets
-    assert extract_tablegen_traits("No brackets here") == []
+    assert extract_tablegen_traits("No brackets here") == ()
 
     # extract_tablegen_traits with malformed or unclosed bracket
-    assert extract_tablegen_traits("[UnclosedTrait") == []
+    assert extract_tablegen_traits("[UnclosedTrait") == ()
 
     # extract_tablegen_traits with escaped quote inside brackets and string with brackets
     escaped_bracket_text = 'let x = "[not_a_trait]"; let traits = [Trait<"nested \\"quote\\" [inside]">];'
-    assert extract_tablegen_traits(escaped_bracket_text) == ['Trait<"nested \\"quote\\" [inside]">']
+    assert extract_tablegen_traits(escaped_bracket_text) == ('Trait<"nested \\"quote\\" [inside]">',)
 
     # extract_tablegen_traits with specialized interfaces
     sample_text = 'Op<"custom", [Pure, "getAsmResultNames", ["getAsmResultNames"], "inferReturnTypeComponents", ["inferReturnTypeComponents"], "inferResultRanges", ["inferResultRanges"], // ignore comment\nAllTypesMatch<["a", "b"]>]>'
@@ -289,21 +290,21 @@ def test_tablegen_list_and_traits() -> None:
     assert 'AllTypesMatch<["a", "b"]>' in traits
 
     # Branch 676 -> 678: empty elements between commas
-    assert split_tablegen_list("Trait1, , Trait2, ") == ["Trait1", "Trait2"]
+    assert split_tablegen_list("Trait1, , Trait2, ") == ("Trait1", "Trait2")
 
     # Escaped backslash and quotes before outer bracket (lines 703-704, 706-707)
     text_with_escaped_pre_bracket = r'let x = "escaped \"quote\" before [not_a_trait]"; let traits = [Trait1];'
-    assert extract_tablegen_traits(text_with_escaped_pre_bracket) == ["Trait1"]
+    assert extract_tablegen_traits(text_with_escaped_pre_bracket) == ("Trait1",)
 
     # Fallback and interface loops (line 748 and branch 758 -> 745)
     from unittest.mock import patch
 
     with patch(
         "ml_ecosystem_snapshots.utils.split_tablegen_list",
-        return_value=["// comment", "   ", "TraitA"],
+        return_value=("// comment", "   ", "TraitA"),
     ):
         res_mocked = extract_tablegen_traits("[dummy]")
-        assert res_mocked == ["TraitA"]
+        assert res_mocked == ("TraitA",)
 
 
 def test_get_custom_snapshots_paths_deduplication(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -322,7 +323,7 @@ def test_get_custom_snapshots_paths_deduplication(tmp_path: Path, monkeypatch: p
         f"{p1}{os.pathsep}{p1}{os.pathsep}/non/existent/path",
     )
     paths = get_custom_snapshots_paths()
-    assert paths == [p1]
+    assert paths == (p1,)
 
 
 def test_resolve_griffe_parser_setattr_failure() -> None:
@@ -452,9 +453,9 @@ def test_extract_griffe_sections_skip_non_protocol_items(monkeypatch: pytest.Mon
         ],
     )
     meta = extract_griffe_docstring_metadata("synthetic docstring")
-    assert meta.params == {}
+    assert meta.params == ()
     assert meta.returns is None
-    assert meta.raises == []
+    assert meta.raises == ()
 
 
 def test_is_offline_mode_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -492,15 +493,19 @@ def test_docstring_metadata_typed_attributes() -> None:
     assert r_meta.typ == "bool"
 
     d_meta = DocstringMetadata(
-        params={"x": p_meta},
+        params=(("x", p_meta),),
         returns=r_meta,
-        raises=["ValueError"],
+        raises=("ValueError",),
     )
-    assert d_meta.params == {"x": p_meta}
+    assert DocstringMetadata.model_validate({"params": {"x": p_meta}}) == DocstringMetadata(params=(("x", p_meta),))
+    assert d_meta.params == (("x", p_meta),)
+    assert d_meta.param_map() == {"x": p_meta}
+    assert d_meta.get_param("x") == p_meta
+    assert d_meta.get_param("missing") is None
     assert d_meta.returns == r_meta
-    assert d_meta.raises == ["ValueError"]
+    assert d_meta.raises == ("ValueError",)
 
     d_meta_none_ret = DocstringMetadata()
-    assert d_meta_none_ret.params == {}
+    assert d_meta_none_ret.params == ()
     assert d_meta_none_ret.returns is None
-    assert d_meta_none_ret.raises == []
+    assert d_meta_none_ret.raises == ()

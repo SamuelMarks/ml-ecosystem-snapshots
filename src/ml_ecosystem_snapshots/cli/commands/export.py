@@ -8,6 +8,7 @@ import os
 import typing
 
 from ml_switcheroo_ir.schema.ghost import GhostRef
+from ml_switcheroo_ir.typeclasses.outcome import and_then, raise_on_err, value_or
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.models import JsonValue, ensure_json_dict, ensure_json_list
@@ -23,9 +24,9 @@ def cmd_stubs(args: argparse.Namespace) -> None:
     from ml_ecosystem_snapshots.network_env import load_json_data
     from ml_ecosystem_snapshots.stubs import generate_stubs
 
-    path = resolve_snapshot_path(args.input)
-    snap = ensure_json_dict(load_json_data(path), "snapshot")
-    generate_stubs(snap, args.out_dir, include_nonpublic=args.include_nonpublic)
+    path = value_or(resolve_snapshot_path(args.input), args.input)
+    snap = raise_on_err(and_then(load_json_data(path), lambda d: ensure_json_dict(d, "snapshot")))
+    raise_on_err(generate_stubs(snap, args.out_dir, include_nonpublic=args.include_nonpublic))
     print(f"Stubs generated in {args.out_dir}")
 
 
@@ -41,12 +42,14 @@ def _hydrate_snapshot_refs(snap: JsonValue) -> list[GhostRef]:
     refs: list[GhostRef] = []
     if isinstance(snap, list):
         for item in snap:
-            refs.append(GhostInspector.hydrate(ensure_json_dict(item, "snapshot item")))
+            item_dict = raise_on_err(ensure_json_dict(item, "snapshot item"))
+            refs.append(raise_on_err(GhostInspector.hydrate(item_dict)))
     elif isinstance(snap, dict):
-        cats = ensure_json_dict(snap.get("categories", {}), "snapshot categories")
+        cats = raise_on_err(ensure_json_dict(snap.get("categories", {}), "snapshot categories"))
         for _cat, items in cats.items():
-            for item in ensure_json_list(items, "category items"):
-                refs.append(GhostInspector.hydrate(ensure_json_dict(item, "snapshot item")))
+            for item in raise_on_err(ensure_json_list(items, "category items")):
+                item_dict = raise_on_err(ensure_json_dict(item, "snapshot item"))
+                refs.append(raise_on_err(GhostInspector.hydrate(item_dict)))
     return refs
 
 
@@ -164,8 +167,8 @@ def cmd_export(args: argparse.Namespace) -> None:
     from ml_ecosystem_snapshots.cli.resolver import resolve_snapshot_path
     from ml_ecosystem_snapshots.network_env import load_json_data
 
-    path = resolve_snapshot_path(args.input)
-    snap: JsonValue = load_json_data(path)
+    path = value_or(resolve_snapshot_path(args.input), args.input)
+    snap: JsonValue = raise_on_err(load_json_data(path))
 
     refs = _hydrate_snapshot_refs(snap)
     os.makedirs(args.out_dir, exist_ok=True)

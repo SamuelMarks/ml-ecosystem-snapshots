@@ -9,7 +9,7 @@ import subprocess
 import typing
 
 from ml_ecosystem_snapshots.exceptions import SnapshotError
-from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel, ensure_json_dict
+from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel, json_dict_or_empty
 from ml_ecosystem_snapshots.utils import extract_tablegen_traits
 
 
@@ -629,11 +629,11 @@ def parse_mlir_tablegen(content: str, dialect_name: str) -> list[TableGenRecordM
                 api_path=f"{dialect_name}.{op_name}",
                 dialect=dialect_name,
                 class_name=class_name,
-                operands=[dict(o) for o in operands],
-                attributes=[dict(a) for a in attributes],
-                results=[dict(r) for r in results],
-                regions=list(regions),
-                traits=list(traits),
+                operands=tuple(dict(o) for o in operands),
+                attributes=tuple(dict(a) for a in attributes),
+                results=tuple(dict(r) for r in results),
+                regions=tuple(regions),
+                traits=tuple(traits),
                 description=description,
             )
         )
@@ -789,11 +789,11 @@ def parse_llvm_tblgen_json(
                 api_path=f"{dialect_name}.{mnemonic}",
                 dialect=dialect_name,
                 class_name=class_name,
-                operands=[ensure_json_dict(o) for o in operands],
-                attributes=[ensure_json_dict(a) for a in attributes],
-                results=[ensure_json_dict(r) for r in results],
-                regions=[ensure_json_dict(rg) if isinstance(rg, dict) else str(rg) for rg in regions],
-                traits=[str(t) for t in traits],
+                operands=tuple(json_dict_or_empty(o) for o in operands),
+                attributes=tuple(json_dict_or_empty(a) for a in attributes),
+                results=tuple(json_dict_or_empty(r) for r in results),
+                regions=tuple(json_dict_or_empty(rg) if isinstance(rg, dict) else str(rg) for rg in regions),
+                traits=tuple(str(t) for t in traits),
                 description=str(description) if description is not None else None,
             )
         )

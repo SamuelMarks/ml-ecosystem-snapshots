@@ -94,8 +94,8 @@ def inspect_mlir_python_module(
                             api_path=str(op_mnemonic),
                             dialect=dialect,
                             class_name=attr_name,
-                            operands=[],
-                            attributes=[],
+                            operands=(),
+                            attributes=(),
                             description=inspect.getdoc(cls) or f"MLIR {attr_name} operation.",
                         )
                     )
@@ -149,12 +149,15 @@ def _fetch_upstream_dialect_ops(
         "llvm": ("LLVMIR", ["LLVMOps.td"]),
     }
 
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
     for dialect_name, (d_cap, files) in dialect_map.items():
         subpath = f"{d_cap}" if d_cap == "LLVMIR" else f"{d_cap}/IR"
         for td_file in files:
             url = f"https://raw.githubusercontent.com/llvm/llvm-project/{tag_ref}/mlir/include/mlir/Dialect/{subpath}/{td_file}"
-            td_content = fetch_url(url)
-            if td_content:
+            td_res = fetch_url(url)
+            if isinstance(td_res, Ok) and td_res.value:
+                td_content = td_res.value
                 parsed = (
                     parse_llvm_tblgen_json(td_content, dialect_name)
                     if td_content.strip().startswith("{")

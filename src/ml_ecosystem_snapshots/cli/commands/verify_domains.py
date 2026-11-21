@@ -168,16 +168,16 @@ def _report_domain_check_result(
     is_valid = res.is_valid if isinstance(res, DomainOpCheckResult) else bool(res.get("is_valid"))
     if not is_valid:
         print(f"{label} '{target}' {invalid_format}")
-        errs = res.errors if isinstance(res, DomainOpCheckResult) else res.get("errors", [])
-        err_list = errs if isinstance(errs, list) else []
-        for err in err_list:
+        errs = res.errors if isinstance(res, DomainOpCheckResult) else res.get("errors", ())
+        err_seq = errs if isinstance(errs, (list, tuple)) else ()
+        for err in err_seq:
             print(f"  - {err}")
         sys.exit(1)
 
-    exp_inputs = res.expected_inputs if isinstance(res, DomainOpCheckResult) else res.get("expected_inputs", [])
-    exp_attrs = res.expected_attributes if isinstance(res, DomainOpCheckResult) else res.get("expected_attributes", [])
-    inp_len = len(exp_inputs) if isinstance(exp_inputs, list) else 0
-    attr_strs = [str(a) for a in exp_attrs] if isinstance(exp_attrs, list) else []
+    exp_inputs = res.expected_inputs if isinstance(res, DomainOpCheckResult) else res.get("expected_inputs", ())
+    exp_attrs = res.expected_attributes if isinstance(res, DomainOpCheckResult) else res.get("expected_attributes", ())
+    inp_len = len(exp_inputs) if isinstance(exp_inputs, (list, tuple)) else 0
+    attr_strs = [str(a) for a in exp_attrs] if isinstance(exp_attrs, (list, tuple)) else []
     print(f"{label} '{target}' is valid.")
     print(f"  Inputs:     {inp_len}")
     print(f"  Attributes: {', '.join(attr_strs)}")

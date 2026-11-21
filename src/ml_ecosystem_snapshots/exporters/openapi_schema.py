@@ -12,15 +12,32 @@ from ml_ecosystem_snapshots.models import JsonValue
 
 
 class CddIrModel(pydantic.BaseModel):
-    """Typed cdd-python Intermediate Representation (IR) model."""
+    """Immutable typed cdd-python Intermediate Representation (IR) model."""
 
-    model_config = pydantic.ConfigDict(extra="forbid")
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
     name: str
     type: str = "static"
     doc: str = ""
-    params: dict[str, dict[str, str]] = pydantic.Field(default_factory=dict)
+    params: tuple[dict[str, JsonValue], ...] = ()
     returns: dict[str, dict[str, str]] | None = None
+
+    def param_map(self) -> dict[str, dict[str, str]]:
+        """Project `params` tuple entries into a dictionary keyed by parameter name.
+
+        Returns:
+            Mapping from parameter name to `{typ, doc, default}` strings.
+        """
+        out: dict[str, dict[str, str]] = {}
+        for entry in self.params:
+            name_str = str(entry["name"])
+            meta: dict[str, str] = {}
+            for k in ("typ", "doc", "default"):
+                val = entry.get(k)
+                if isinstance(val, str):
+                    meta[k] = val
+            out[name_str] = meta
+        return out
 
     def to_cdd_dict(self) -> dict[str, JsonValue]:
         """Convert to a mutable dictionary with `OrderedDict` params/returns for `cdd-python`.
@@ -28,7 +45,7 @@ class CddIrModel(pydantic.BaseModel):
         Returns:
             Dictionary suitable for `cdd-python` emitters.
         """
-        params_od: dict[str, JsonValue] = OrderedDict((k, dict(v)) for k, v in self.params.items())
+        params_od: dict[str, JsonValue] = OrderedDict((k, dict(v)) for k, v in self.param_map().items())
         returns_od: dict[str, JsonValue] | None = (
             OrderedDict((k, dict(v)) for k, v in self.returns.items()) if self.returns is not None else None
         )
@@ -42,25 +59,25 @@ class CddIrModel(pydantic.BaseModel):
 
 
 def ghost_to_cdd_ir(ref: GhostRef) -> CddIrModel:
-    """Convert a GhostRef to cdd-python Intermediate Representation (IR).
+    """Convert a `GhostRef` to an immutable `CddIrModel`.
 
     Args:
         ref: The `GhostRef` instance to convert into a `CddIrModel`.
 
     Returns:
-        The `CddIrModel` representation.
+        Frozen `CddIrModel` representation.
     """
-    params_map: dict[str, dict[str, str]] = {}
+    params_entries: list[dict[str, JsonValue]] = []
 
     for param in ref.params:
-        p_dict: dict[str, str] = {}
+        p_dict: dict[str, JsonValue] = {"name": param.name}
         if param.annotation:
             p_dict["typ"] = param.annotation
         if param.description:
             p_dict["doc"] = param.description
         if param.default is not None:
             p_dict["default"] = str(param.default)
-        params_map[param.name] = p_dict
+        params_entries.append(p_dict)
 
     returns_map: dict[str, dict[str, str]] | None = None
     if ref.returns_type or ref.returns_description:
@@ -75,16 +92,16 @@ def ghost_to_cdd_ir(ref: GhostRef) -> CddIrModel:
         name=ref.name,
         type="class" if ref.kind == "class" else "static",
         doc=ref.docstring or "",
-        params=params_map,
+        params=tuple(params_entries),
         returns=returns_map,
     )
 
 
 def to_json_schema(ref: GhostRef) -> dict[str, JsonValue]:
-    """Convert a GhostRef into a JSON Schema.
+    """Convert a `GhostRef` into a JSON Schema.
 
     Args:
-        ref: The GhostRef to convert.
+        ref: The `GhostRef` to convert.
 
     Returns:
         A dictionary representing the JSON Schema.
@@ -97,10 +114,10 @@ def to_json_schema(ref: GhostRef) -> dict[str, JsonValue]:
 
 
 def to_openapi(refs: typing.Sequence[GhostRef]) -> dict[str, JsonValue]:
-    """Convert a sequence of GhostRefs into an OpenAPI specification.
+    """Convert a sequence of `GhostRef`s into an OpenAPI specification.
 
     Args:
-        refs: A sequence of GhostRefs.
+        refs: A sequence of `GhostRef`s.
 
     Returns:
         A dictionary representing the OpenAPI specification.

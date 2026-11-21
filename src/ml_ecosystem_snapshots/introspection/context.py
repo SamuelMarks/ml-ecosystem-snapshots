@@ -10,10 +10,12 @@ import typing
 import pydantic
 import typing_extensions
 from ml_switcheroo_ir.schema.ghost import ParameterKind
+from ml_switcheroo_ir.typeclasses.outcome import Result
 
 from ml_ecosystem_snapshots.c_extension_sig import (
     CExtensionSignature,
 )
+from ml_ecosystem_snapshots.exceptions import CExtensionSignatureError
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     LivePythonTarget,
     StaticGriffeNode,
@@ -125,7 +127,10 @@ class ParamExtractionContext:
     environment_tags: list[str] | None
     active_ast_mod: types.ModuleType
     active_sanitize_type_str: typing.Callable[[str | None], str | None]
-    active_extract_c_ext_sig: typing.Callable[[LivePythonTarget | StaticGriffeNode, str], CExtensionSignature | None]
+    active_extract_c_ext_sig: typing.Callable[
+        [LivePythonTarget | StaticGriffeNode, str],
+        Result[CExtensionSignatureError, CExtensionSignature],
+    ]
 
     def __init__(
         self,

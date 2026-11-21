@@ -2,13 +2,29 @@
 
 from __future__ import annotations
 
-from ml_ecosystem_snapshots.introspection.sanitize import sanitize_type_str
+import inspect
+
+import numpy as np
+
+from ml_ecosystem_snapshots.introspection.sanitize import (
+    TYPE_STR_SANITIZE_ENDO,
+    FactoryDefault,
+    LiteralDefault,
+    MandatoryDefault,
+    UnrepresentableDefault,
+    default_value_or_none,
+    sanitize_param_default,
+    sanitize_type_str,
+)
 
 
 def test_sanitize_type_str() -> None:
-    """Verify sanitize type str behavior."""
+    """Verify sanitize_type_str and TYPE_STR_SANITIZE_ENDO behavior."""
     assert sanitize_type_str(None) is None
+    assert sanitize_type_str("") == ""
+    assert sanitize_type_str(":py:class:`int`") == "int"
     assert sanitize_type_str("<class 'list'>") == "list"
+    assert sanitize_type_str("CustomType at 0x7fff1234") == "CustomType"
     assert sanitize_type_str("typing.List[int]") == "list[int]"
     assert sanitize_type_str("typing.Dict[str, typing.Tuple[int, int]]") == "dict[str, tuple[int, int]]"
     assert sanitize_type_str("Union[list, dict]") == "list | dict"
@@ -19,13 +35,38 @@ def test_sanitize_type_str() -> None:
     assert sanitize_type_str("Type[int]") == "type[int]"
     assert sanitize_type_str("int") == "int"
     assert sanitize_type_str("some_invalid_ast!") == "some_invalid_ast!"
-    assert sanitize_type_str("Union[int]") == "Union[int]"  # no transformation if len < 2
+    assert sanitize_type_str("Union[int]") == "Union[int]"
     assert sanitize_type_str("typing.Any") == "Any"
+    assert TYPE_STR_SANITIZE_ENDO.app("") == ""
+
+
+def test_sanitize_param_default_sum_type_variants() -> None:
+    """Test sanitize_param_default closed SanitizedDefault variants and default_value_or_none folding."""
+    assert sanitize_param_default(inspect.Parameter.empty) == MandatoryDefault()
+    assert default_value_or_none(MandatoryDefault()) is None
+
+    assert sanitize_param_default(Ellipsis) == LiteralDefault(value_repr="...")
+    assert sanitize_param_default(42) == LiteralDefault(value_repr="42")
+    assert sanitize_param_default("abc") == LiteralDefault(value_repr="'abc'")
+    assert default_value_or_none(LiteralDefault(value_repr="42")) == "42"
+
+    def sample_factory() -> int:
+        """Return sample default integer.
+
+        Returns:
+            Constant integer 1.
+        """
+        return 1
+
+    fac = sanitize_param_default(sample_factory)
+    assert fac == FactoryDefault(placeholder="<factory_default>", factory_repr="<function sample_factory>")
+    assert default_value_or_none(fac) == "<factory_default>"
+    assert default_value_or_none(UnrepresentableDefault()) == "<unrepresentable>"
+    assert default_value_or_none(UnrepresentableDefault(), unrepresentable_token="...") == "..."
 
 
 def test_sanitize_param_default_edge_cases() -> None:
     """Test sanitize_param_default for non-bracket scrubbed repr and string-only address leaks."""
-    from ml_ecosystem_snapshots.introspection.sanitize import sanitize_param_default
 
     class CustomReprWithAngleBrackets:
         """Helper class with angle-bracket repr containing address."""
@@ -87,27 +128,6 @@ def test_sanitize_param_default_edge_cases() -> None:
             """
             return "NormalCustomObject()"
 
-    def_val0, factory0, is_mand0 = sanitize_param_default(CustomReprWithAngleBrackets())
-    assert def_val0 == "<factory_default>"
-    assert factory0 == "<MyObject>"
-    assert is_mand0 is False
-
-    def_val1, factory1, is_mand1 = sanitize_param_default(CustomReprWithoutAngleBrackets())
-    assert def_val1 == "custom_object"
-    assert factory1 is None
-    assert is_mand1 is False
-
-    def_val2, factory2, is_mand2 = sanitize_param_default(CustomStrWithAddress())
-    assert def_val2 == "<factory_default>"
-    assert factory2 == "<factory_default>"
-    assert is_mand2 is False
-
-    def_val3, factory3, is_mand3 = sanitize_param_default(NormalCustomObject())
-    assert def_val3 == "NormalCustomObject()"
-    assert factory3 is None
-    assert is_mand3 is False
-
-    # Exception raising value
     class BuggyRepr:
         """Helper class that raises on repr."""
 
@@ -122,15 +142,21 @@ def test_sanitize_param_default_edge_cases() -> None:
             """
             raise RuntimeError("broken repr")
 
-    def_val4, factory4, is_mand4 = sanitize_param_default(BuggyRepr())
-    assert def_val4 == "<unrepresentable>"
-    assert factory4 is None
-    assert is_mand4 is False
+    assert sanitize_param_default(CustomReprWithAngleBrackets()) == FactoryDefault(
+        placeholder="<factory_default>",
+        factory_repr="<MyObject>",
+    )
+    assert sanitize_param_default(CustomReprWithoutAngleBrackets()) == LiteralDefault(value_repr="custom_object")
+    assert sanitize_param_default(CustomStrWithAddress()) == FactoryDefault(
+        placeholder="<factory_default>",
+        factory_repr="<factory_default>",
+    )
+    assert sanitize_param_default(NormalCustomObject()) == LiteralDefault(value_repr="NormalCustomObject()")
+    assert sanitize_param_default(BuggyRepr()) == UnrepresentableDefault()
 
 
 def test_sanitize_param_default_pointer_scrubbing() -> None:
     """Test scrubbing raw hexadecimal pointer addresses from default representations."""
-    from ml_ecosystem_snapshots.introspection.sanitize import sanitize_param_default
 
     class PointerDefault:
         """Class with repr containing hex address without at prefix."""
@@ -162,30 +188,17 @@ def test_sanitize_param_default_pointer_scrubbing() -> None:
             """
             return "Device(0x7fffbeef)"
 
-    val_def, fac_def, mand_def = sanitize_param_default(PointerDefault())
-    assert val_def == "Device(<addr>)"
-    assert fac_def is None
-    assert mand_def is False
-
-    val_str, fac_str, mand_str = sanitize_param_default(PointerStrOnly())
-    assert val_str == "<factory_default>"
-    assert fac_str == "<factory_default>"
-    assert mand_str is False
+    assert sanitize_param_default(PointerDefault()) == LiteralDefault(value_repr="Device(<addr>)")
+    assert sanitize_param_default(PointerStrOnly()) == FactoryDefault(
+        placeholder="<factory_default>",
+        factory_repr="<factory_default>",
+    )
 
 
 def test_sanitize_framework_constants() -> None:
     """Test preservation of framework dtypes, classes, and device constants."""
-    import numpy as np
+    assert sanitize_param_default(np.float32) == LiteralDefault(value_repr="numpy.float32")
 
-    from ml_ecosystem_snapshots.introspection.sanitize import sanitize_param_default
-
-    # 1. NumPy dtype class
-    val_np, fac_np, mand_np = sanitize_param_default(np.float32)
-    assert val_np == "numpy.float32"
-    assert fac_np is None
-    assert mand_np is False
-
-    # 2. Mock TF dtype representation
     class MockTFDtype:
         """Mock TF DType with angle-bracket repr."""
 
@@ -197,12 +210,8 @@ def test_sanitize_framework_constants() -> None:
             """
             return "<dtype: 'float32'>"
 
-    val_tf, fac_tf, mand_tf = sanitize_param_default(MockTFDtype())
-    assert val_tf == "tf.float32"
-    assert fac_tf is None
-    assert mand_tf is False
+    assert sanitize_param_default(MockTFDtype()) == LiteralDefault(value_repr="tf.float32")
 
-    # 3. Mock Torch device representation
     class MockTorchDevice:
         """Mock Torch Device."""
 
@@ -214,7 +223,7 @@ def test_sanitize_framework_constants() -> None:
             """
             return "device(type='cpu')"
 
-    val_dev, fac_dev, mand_dev = sanitize_param_default(MockTorchDevice())
-    assert val_dev == "'cpu'"
-    assert fac_dev == "device(type='cpu')"
-    assert mand_dev is False
+    assert sanitize_param_default(MockTorchDevice()) == FactoryDefault(
+        placeholder="'cpu'",
+        factory_repr="device(type='cpu')",
+    )

@@ -74,7 +74,7 @@ def test_ghost_to_cdd_ir(sample_ghost_ref: GhostRef) -> None:
     assert ir.type == "class"
     assert ir.doc == "Applies a linear transformation to the incoming data."
 
-    params = ir.params
+    params = ir.param_map()
     assert "in_features" in params
     assert params["in_features"]["typ"] == "int"
     assert params["in_features"]["doc"] == "size of each input sample"
@@ -269,7 +269,7 @@ def test_export_branches() -> None:
         returns_type="str",
     )  # No returns_description
     ir_empty = ghost_to_cdd_ir(r_empty_anno)
-    assert "p_empty" in ir_empty.params
+    assert "p_empty" in ir_empty.param_map()
     assert ir_empty.returns is not None
     assert ir_empty.returns["return_type"]["typ"] == "str"
 

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 import griffe
-import pytest
+from ml_switcheroo_ir.typeclasses.outcome import Err, raise_on_err
 
 from ml_ecosystem_snapshots.compliance import (
     align_namespace,
@@ -15,6 +15,7 @@ from ml_ecosystem_snapshots.compliance import (
     get_module_info_from_path,
     score_compliance,
 )
+from ml_ecosystem_snapshots.exceptions import SnapshotError, SnapshotNotFoundError
 from ml_ecosystem_snapshots.models import ExtendedGhostRef, JsonValue
 
 
@@ -24,16 +25,13 @@ def test_get_module_info_from_path_file(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    # Create a simple structure
-    # tmp_path/my_pkg/__init__.py
-    # tmp_path/my_pkg/sub_module.py
     pkg_dir = Path(os.path.join(tmp_path, "my_pkg"))
     pkg_dir.mkdir()
     Path(os.path.join(pkg_dir, "__init__.py")).touch()
     sub_mod = Path(os.path.join(pkg_dir, "sub_module.py"))
     sub_mod.write_text("def foo(): pass")
 
-    search_path, mod_name = get_module_info_from_path(str(sub_mod))
+    search_path, mod_name = raise_on_err(get_module_info_from_path(str(sub_mod)))
     assert search_path == str(tmp_path)
     assert mod_name == "my_pkg.sub_module"
 
@@ -44,13 +42,11 @@ def test_get_module_info_from_path_dir(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    # Create a simple structure
-    # tmp_path/my_pkg/__init__.py
     pkg_dir = Path(os.path.join(tmp_path, "my_pkg"))
     pkg_dir.mkdir()
     Path(os.path.join(pkg_dir, "__init__.py")).touch()
 
-    search_path, mod_name = get_module_info_from_path(str(pkg_dir))
+    search_path, mod_name = raise_on_err(get_module_info_from_path(str(pkg_dir)))
     assert search_path == str(tmp_path)
     assert mod_name == "my_pkg"
 
@@ -61,33 +57,30 @@ def test_get_module_info_from_path_init_file(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    # Create a simple structure
-    # tmp_path/my_pkg/__init__.py
     pkg_dir = Path(os.path.join(tmp_path, "my_pkg"))
     pkg_dir.mkdir()
     init_file = Path(os.path.join(pkg_dir, "__init__.py"))
     init_file.touch()
 
-    search_path, mod_name = get_module_info_from_path(str(init_file))
+    search_path, mod_name = raise_on_err(get_module_info_from_path(str(init_file)))
     assert search_path == str(tmp_path)
     assert mod_name == "my_pkg"
 
 
 def test_get_module_info_from_path_not_exist() -> None:
-    """Test getting module info for non-existent path raises FileNotFoundError."""
-    with pytest.raises(FileNotFoundError):
-        get_module_info_from_path("does_not_exist_xyz.py")
+    """Test getting module info for non-existent path returns Err(SnapshotNotFoundError)."""
+    res = get_module_info_from_path("does_not_exist_xyz.py")
+    assert isinstance(res, Err) and isinstance(res.error, SnapshotNotFoundError)
 
 
 def test_get_module_info_from_path_value_error(tmp_path: Path) -> None:
-    """Test getting module info raises ValueError when module name is empty.
+    """Test getting module info returns Err(SnapshotError) when module name is empty.
 
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    # This happens if you pass the root directory
-    with pytest.raises(ValueError, match="Could not derive module name"):
-        get_module_info_from_path(str(tmp_path))
+    res = get_module_info_from_path(str(tmp_path))
+    assert isinstance(res, Err) and isinstance(res.error, SnapshotError)
 
 
 def test_extract_target_ast(tmp_path: Path) -> None:
@@ -99,7 +92,7 @@ def test_extract_target_ast(tmp_path: Path) -> None:
     file_path = Path(os.path.join(tmp_path, "simple_mod.py"))
     file_path.write_text("def my_func(): pass")
 
-    ast_node = extract_target_ast(str(file_path))
+    ast_node = raise_on_err(extract_target_ast(str(file_path)))
     assert isinstance(ast_node, griffe.Module)
     assert ast_node.name == "simple_mod"
     assert "my_func" in ast_node.members
@@ -124,7 +117,7 @@ def test_get_module_info_from_path_no_py_ext(tmp_path: Path) -> None:
     sub_mod = Path(os.path.join(pkg_dir, "sub_module"))
     sub_mod.write_text("def foo(): pass")
 
-    search_path, mod_name = get_module_info_from_path(str(sub_mod))
+    search_path, mod_name = raise_on_err(get_module_info_from_path(str(sub_mod)))
     assert search_path == str(tmp_path)
     assert mod_name == "my_pkg.sub_module"
 
@@ -141,7 +134,7 @@ def test_extract_target_refs(tmp_path: Path) -> None:
     sub_mod = Path(os.path.join(pkg_dir, "api.py"))
     sub_mod.write_text("def my_func(a: int) -> int: return a")
 
-    refs = extract_target_refs(str(sub_mod), "mock_pkg.api", "reference")
+    refs = raise_on_err(extract_target_refs(str(sub_mod), "mock_pkg.api", "reference"))
     assert len(refs) == 1
     assert refs[0].api_path == "reference.my_func"
     assert refs[0].name == "my_func"
@@ -308,7 +301,7 @@ def test_extract_target_refs_import_error(tmp_path: Path) -> None:
         "import missing_module\nraise RuntimeError('must never execute at import time')\ndef my_func(x: int) -> int:\n    return x\n"
     )
 
-    refs = extract_target_refs(str(sub_mod), "bad_pkg.api", "reference")
+    refs = raise_on_err(extract_target_refs(str(sub_mod), "bad_pkg.api", "reference"))
     assert [r.api_path for r in refs] == ["reference.my_func"]
 
 
@@ -365,7 +358,7 @@ def test_extract_target_refs_skip_private(tmp_path: Path) -> None:
     sub_mod = Path(os.path.join(pkg_dir, "api.py"))
     sub_mod.write_text("def _private_func(): pass\nclass _PrivateClass: pass")
 
-    refs = extract_target_refs(str(sub_mod), "priv_pkg.api", "reference")
+    refs = raise_on_err(extract_target_refs(str(sub_mod), "priv_pkg.api", "reference"))
     assert len(refs) == 0
 
 
@@ -379,15 +372,8 @@ def test_extract_target_refs_nested_import_error(tmp_path: Path) -> None:
     pkg_dir.mkdir()
     Path(os.path.join(pkg_dir, "__init__.py")).touch()
     sub_mod = Path(os.path.join(pkg_dir, "api.py"))
-    # Create something that looks like an attribute but actually triggers ImportError logic
-    # that doesn't resolve to a live object.
-    # In `extract_target_refs`, if import fails we fallback to getattr.
-    # We mock it by not instantiating the object, but letting griffe parse it.
-
-    # Actually just a normal failure that is caught in `except Exception:` block:
-    # We can mock this by trying to extract a fake file
     sub_mod.write_text("import sys\nsys.modules['nested_pkg.api.broken'] = None\ndef broken(): pass")
-    refs = extract_target_refs([str(sub_mod), str(sub_mod)], "nested_pkg.api", "reference")
+    refs = raise_on_err(extract_target_refs([str(sub_mod), str(sub_mod)], "nested_pkg.api", "reference"))
 
     assert [r.name for r in refs] == ["broken"]
 
@@ -407,7 +393,7 @@ def test_extract_target_refs_sys_path(tmp_path: Path) -> None:
     sub_mod.write_text("def my_func(): pass")
 
     sys.path.insert(0, str(tmp_path))
-    refs = extract_target_refs(str(sub_mod), "sys_pkg.api", "reference")
+    refs = raise_on_err(extract_target_refs(str(sub_mod), "sys_pkg.api", "reference"))
     assert len(refs) == 1
     sys.path.remove(str(tmp_path))
 
@@ -422,7 +408,7 @@ def test_extract_target_refs_empty_members(tmp_path: Path) -> None:
     pkg_dir.mkdir()
     Path(os.path.join(pkg_dir, "__init__.py")).touch()
 
-    refs = extract_target_refs(str(pkg_dir), "empty_pkg", "reference")
+    refs = raise_on_err(extract_target_refs(str(pkg_dir), "empty_pkg", "reference"))
     assert len(refs) == 0
 
 
@@ -440,10 +426,8 @@ def test_extract_target_refs_catch_all_exception(tmp_path: Path) -> None:
     sub_mod = Path(os.path.join(pkg_dir, "api.py"))
     sub_mod.write_text("class BrokenClass:\n    @property\n    def prop(self): raise RuntimeError('Broken')")
 
-    refs = extract_target_refs(str(sub_mod), "broken_pkg.api", "reference")
-    # Griffe parses it, GhostInspector will try to inspect and might fail, but it's wrapped in a general catch block.
-    # It should survive and may yield BrokenClass if parsed but shouldn't crash on inspection.
-    assert any(r.name == "BrokenClass" for r in refs) or refs == []
+    refs = raise_on_err(extract_target_refs(str(sub_mod), "broken_pkg.api", "reference"))
+    assert any(r.name == "BrokenClass" for r in refs) or refs == ()
 
 
 def test_extract_target_refs_catch_inner_exception(tmp_path: Path) -> None:
@@ -498,7 +482,7 @@ def test_extract_target_refs_catch_inner_exception(tmp_path: Path) -> None:
         "inspect",
         mock_inspect,
     ):
-        refs = extract_target_refs(str(sub_mod), "inner_broken_pkg.api", "reference")
+        refs = raise_on_err(extract_target_refs(str(sub_mod), "inner_broken_pkg.api", "reference"))
         # Should have extracted Outer, skipped Inner due to exception
         assert len(refs) == 1
 
@@ -516,7 +500,7 @@ def test_extract_target_refs_no_parts(tmp_path: Path) -> None:
     sub_mod = Path(os.path.join(pkg_dir, "__init__.py"))
     sub_mod.write_text("def top_func(): pass")
 
-    refs = extract_target_refs(str(sub_mod), "top_level_pkg", "reference")
+    refs = raise_on_err(extract_target_refs(str(sub_mod), "top_level_pkg", "reference"))
     assert len(refs) == 1
 
 
@@ -532,12 +516,9 @@ def test_extract_target_refs_break_loop(tmp_path: Path) -> None:
     pkg_dir.mkdir()
     Path(os.path.join(pkg_dir, "__init__.py")).touch()
     sub_mod = Path(os.path.join(pkg_dir, "api.py"))
-    # This will have parts "break_pkg", "api", "MyClass"
     sub_mod.write_text("class MyClass:\n    pass")
 
-    refs = extract_target_refs(str(sub_mod), "break_pkg.api", "reference")
-    # Loop should evaluate `parts` fully.
-    # It hits `except ImportError:` when it hits `MyClass`, sets object, and `break` is called.
+    refs = raise_on_err(extract_target_refs(str(sub_mod), "break_pkg.api", "reference"))
     assert len(refs) == 1
 
 
@@ -553,13 +534,9 @@ def test_extract_target_refs_continue_loop(tmp_path: Path) -> None:
     pkg_dir.mkdir()
     Path(os.path.join(pkg_dir, "__init__.py")).touch()
     sub_mod = Path(os.path.join(pkg_dir, "api.py"))
-    # Provide a function that gets completely imported but isn't part of the target loop break
     sub_mod.write_text("import sys\ndef func(): pass")
 
-    refs = extract_target_refs(str(sub_mod), "cont_pkg.api", "reference")
-    # if `importlib.import_module` works for ALL parts, then `for i in range` finishes
-    # without `break` and doesn't trigger `except ImportError`.
-    # Let's ensure the `except ImportError` isn't required for correct execution.
+    refs = raise_on_err(extract_target_refs(str(sub_mod), "cont_pkg.api", "reference"))
     assert any(r.name == "func" or r.name == "sys" for r in refs)
 
 
@@ -587,11 +564,11 @@ def test_derive_base_path_src(tmp_path: Path) -> None:
     orig = os.getcwd()
     os.chdir(tmp_path)
     try:
-        path, mod = get_module_info_from_path(str(tmp_path), "my_mod")
+        path, mod = raise_on_err(get_module_info_from_path(str(tmp_path), "my_mod"))
         assert path == str(src_dir)
         assert mod == "my_mod"
 
-        path, mod = get_module_info_from_path(str(py_file), "")
+        path, mod = raise_on_err(get_module_info_from_path(str(py_file), ""))
         assert path == str(tmp_path)
         assert mod == "my_pkg.my_mod"
     finally:

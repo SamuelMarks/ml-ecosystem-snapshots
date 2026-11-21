@@ -150,7 +150,9 @@ def test_collect_api_inspection_exception_handled() -> None:
 
 def test_extract_snapshot_torchaudio() -> None:
     """Verify full snapshot extraction for torchaudio target."""
-    snap = extract_snapshot("torchaudio")
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
+    snap = raise_on_err(extract_snapshot("torchaudio")).to_wire_dict()
     assert snap.get("target") == "torchaudio"
     cats = snap.get("categories", {})
     assert isinstance(cats, dict)

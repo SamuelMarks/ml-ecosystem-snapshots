@@ -153,12 +153,12 @@ def test_diff_snapshots() -> None:
     }
 
     res = diff_snapshots(snap1, snap2)
-    assert res.added == ["a.d"]
-    assert res.removed == ["a.c"]
+    assert res.added == ("a.d",)
+    assert res.removed == ("a.c",)
     assert "a.b" in res.signature_changed
     assert "a.non_breaking" in res.signature_changed
 
-    expected_breaking = [
+    expected_breaking = (
         "a.added_param_no_default",
         "a.b",
         "a.default_removed",
@@ -166,9 +166,9 @@ def test_diff_snapshots() -> None:
         "a.kind_change_restrictive",
         "a.kind_change_to_var",
         "a.removed_param",
-    ]
+    )
     assert res.breaking_signature_changed == expected_breaking
-    assert res.non_breaking_signature_changed == ["a.non_breaking"]
+    assert res.non_breaking_signature_changed == ("a.non_breaking",)
 
     # Test identical
     res2 = diff_snapshots(snap1, snap1)
@@ -247,11 +247,11 @@ def test_changelog_combinations() -> None:
 
     # Only added
     res1 = DiffResult(
-        added=["a"],
-        removed=[],
-        signature_changed=[],
-        breaking_signature_changed=[],
-        non_breaking_signature_changed=[],
+        added=("a",),
+        removed=(),
+        signature_changed=(),
+        breaking_signature_changed=(),
+        non_breaking_signature_changed=(),
     )
     changelog = generate_changelog(res1)
     assert "## Added" in changelog
@@ -259,11 +259,11 @@ def test_changelog_combinations() -> None:
 
     # Only removed
     res2 = DiffResult(
-        added=[],
-        removed=["b"],
-        signature_changed=[],
-        breaking_signature_changed=[],
-        non_breaking_signature_changed=[],
+        added=(),
+        removed=("b",),
+        signature_changed=(),
+        breaking_signature_changed=(),
+        non_breaking_signature_changed=(),
     )
     changelog = generate_changelog(res2)
     assert "## Added" not in changelog
@@ -271,22 +271,22 @@ def test_changelog_combinations() -> None:
 
     # Only breaking
     res3 = DiffResult(
-        added=[],
-        removed=[],
-        signature_changed=["c"],
-        breaking_signature_changed=["c"],
-        non_breaking_signature_changed=[],
+        added=(),
+        removed=(),
+        signature_changed=("c",),
+        breaking_signature_changed=("c",),
+        non_breaking_signature_changed=(),
     )
     changelog = generate_changelog(res3)
     assert "## Breaking Signature Changes" in changelog
 
     # Only non-breaking
     res4 = DiffResult(
-        added=[],
-        removed=[],
-        signature_changed=["d"],
-        breaking_signature_changed=[],
-        non_breaking_signature_changed=["d"],
+        added=(),
+        removed=(),
+        signature_changed=("d",),
+        breaking_signature_changed=(),
+        non_breaking_signature_changed=("d",),
     )
     changelog = generate_changelog(res4)
     assert "## Non-Breaking Signature Changes" in changelog
@@ -304,9 +304,9 @@ def test_diff_branches() -> None:
         "categories": {"MODEL": [{"name": "A", "api_path": "A", "kind": "function", "params": []}]}
     }
     res_empty = diff_snapshots(s1, s2)
-    assert res_empty.added == []
-    assert res_empty.removed == []
-    assert res_empty.signature_changed == []
+    assert res_empty.added == ()
+    assert res_empty.removed == ()
+    assert res_empty.signature_changed == ()
 
     # Hit branch where kind changed but it's not breaking (e.g. POSITIONAL_ONLY -> POSITIONAL_OR_KEYWORD)
     s3: dict[str, JsonValue] = {
@@ -335,7 +335,7 @@ def test_diff_branches() -> None:
     }
     res_kind = diff_snapshots(s3, s4)
     assert len(res_kind.signature_changed) == 1
-    assert res_kind.breaking_signature_changed == []
+    assert res_kind.breaking_signature_changed == ()
     assert len(res_kind.non_breaking_signature_changed) == 1
 
 
@@ -476,15 +476,15 @@ def test_diff_snapshots_list_and_non_dict() -> None:
     invalid_1: None = None
     invalid_2: int = 123
     res_invalid = diff_snapshots(invalid_1, invalid_2)
-    assert res_invalid.added == []
-    assert res_invalid.removed == []
+    assert res_invalid.added == ()
+    assert res_invalid.removed == ()
 
     # Item without api_path, name, or mnemonic
     empty_item_snap1: dict[str, JsonValue] = {"categories": {"misc": [{}]}}
     empty_item_snap2: dict[str, JsonValue] = {"categories": {"misc": [{"other_key": "val"}]}}
     res_empty_item = diff_snapshots(empty_item_snap1, empty_item_snap2)
-    assert res_empty_item.added == []
-    assert res_empty_item.removed == []
+    assert res_empty_item.added == ()
+    assert res_empty_item.removed == ()
 
 
 def test_diff_metadata_and_deprecated_capabilities() -> None:

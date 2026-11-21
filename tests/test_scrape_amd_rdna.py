@@ -324,7 +324,7 @@ def test_parse_llvm_tblgen_json() -> None:
     assert "v_mov_b32" in res_map
     assert res_map["v_mov_b32"].encoding == "VOP1"
     assert res_map["v_mov_b32"].architecture == "GFX10/RDNA1"
-    assert res_map["v_mov_b32"].operands == [["VGPR_32", "VGPR_32"]]
+    assert res_map["v_mov_b32"].operands == (["VGPR_32", "VGPR_32"],)
     assert "_e32" in res_map["v_mov_b32"].modifiers
 
     assert "v_fma_f32" in res_map
@@ -406,7 +406,7 @@ def test_parse_llvm_tblgen_json_operand_and_encoding_fallbacks() -> None:
     assert "v_empty_ops" in res_map
     assert "s_mov_sop1" in res_map
     assert res_map["s_mov_sop1"].encoding == "SOP1"
-    assert res_map["s_mov_sop1"].modifiers == []
+    assert res_map["s_mov_sop1"].modifiers == ()
 
 
 def test_scrape_amd_rdna_duplicate_operand_signatures(tmp_path: Path) -> None:
@@ -466,24 +466,30 @@ def test_scrape_amd_rdna_main_entrypoint(mocker: pytest_mock.MockerFixture) -> N
     import importlib.util
     import runpy
 
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
     spec = importlib.util.find_spec("ml_ecosystem_snapshots.tools.scrape_amd_rdna")
     assert spec is not None and spec.origin is not None
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("ml_ecosystem_snapshots.network_env.fetch_url", return_value="")
+    mocker.patch("ml_ecosystem_snapshots.network_env.fetch_url", return_value=Ok(""))
     res = runpy.run_path(spec.origin, run_name="__main__")
     assert "main" in res
     assert mock_open.called
 
 
 def test_fetch_amdgpu_td_file_cache_and_network_edge_cases(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify `fetch_td_file` handles read-only cache directories, `None` network responses, and `use_cache=False`.
+    """Verify `fetch_td_file` handles read-only cache directories, `Err` network responses, and `use_cache=False`.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
     import os
 
-    monkeypatch.setattr("ml_ecosystem_snapshots.network_env.fetch_url", lambda _url: "def V_ADD_F32;")
+    from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
+
+    from ml_ecosystem_snapshots.exceptions import SnapshotError
+
+    monkeypatch.setattr("ml_ecosystem_snapshots.network_env.fetch_url", lambda _url: Ok("def V_ADD_F32;"))
 
     def deny_makedirs(*args: str | int, **kwargs: bool | int) -> None:
         """Simulate read-only filesystem when creating cache directory.
@@ -502,5 +508,8 @@ def test_fetch_amdgpu_td_file_cache_and_network_edge_cases(monkeypatch: pytest.M
     assert scrape_amd_rdna.fetch_td_file("UncachedFakeInst.td", use_cache=True) == "def V_ADD_F32;"
     assert scrape_amd_rdna.fetch_td_file("UncachedFakeInst.td", use_cache=False) == "def V_ADD_F32;"
 
-    monkeypatch.setattr("ml_ecosystem_snapshots.network_env.fetch_url", lambda _url: None)
+    monkeypatch.setattr(
+        "ml_ecosystem_snapshots.network_env.fetch_url",
+        lambda _url: Err(SnapshotError("missing")),
+    )
     assert scrape_amd_rdna.fetch_td_file("UncachedMissingInst.td", use_cache=True) == ""

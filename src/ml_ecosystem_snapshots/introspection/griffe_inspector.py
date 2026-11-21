@@ -139,7 +139,7 @@ def _populate_griffe_docstring_ir(
         result: Mutable `DocstringIrResult` accumulator.
     """
     try:
-        from ml_ecosystem_snapshots.models import ensure_json_dict, ensure_json_list
+        from ml_ecosystem_snapshots.models import json_dict_or_empty, json_tuple_or_empty
 
         griffe_meta = active_extract_griffe_meta(doc, docstring_parser_name)
         ret_meta = griffe_meta.returns if isinstance(griffe_meta, DocstringMetadata) else griffe_meta.get("returns")
@@ -149,7 +149,7 @@ def _populate_griffe_docstring_ir(
         raises_seq: typing.Sequence[JsonValue] = (
             griffe_meta.raises
             if isinstance(griffe_meta, DocstringMetadata)
-            else ensure_json_list(griffe_meta.get("raises", []), "griffe raises")
+            else json_tuple_or_empty(griffe_meta.get("raises", []))
         )
         for exc in raises_seq:
             exc_str = str(exc)
@@ -159,9 +159,9 @@ def _populate_griffe_docstring_ir(
                 del result.cdd_params[exc_str]
 
         params_map: typing.Mapping[str, DocstringParamMeta | JsonValue] = (
-            griffe_meta.params
+            griffe_meta.param_dict()
             if isinstance(griffe_meta, DocstringMetadata)
-            else ensure_json_dict(griffe_meta.get("params", {}), "griffe params")
+            else json_dict_or_empty(griffe_meta.get("params", {}))
         )
         for p_name, p_data in params_map.items():
             _merge_griffe_param_record(p_name, p_data, result.cdd_params)

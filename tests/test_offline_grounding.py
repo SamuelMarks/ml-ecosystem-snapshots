@@ -134,7 +134,7 @@ def test_offline_mcp_hallucination_accepted_kwargs() -> None:
     )
     assert valid_res.api_exists is True
     assert valid_res.is_hallucinated is False
-    assert valid_res.invalid_kwargs == []
+    assert valid_res.invalid_kwargs == ()
     assert valid_res.has_unconstrained_kwargs is False
 
     # 2. Hallucinated kwarg not in accepted_kwargs must be rejected

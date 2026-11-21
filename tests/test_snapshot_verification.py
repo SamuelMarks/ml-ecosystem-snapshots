@@ -238,7 +238,9 @@ def test_schema_validity_all_snapshots() -> None:
                 # Ensure ExtendedGhostRef or basic GhostRef fields parse
                 assert "name" in item or "mnemonic" in item or "api_path" in item or "class_name" in item
             else:
-                validated = GhostInspector.hydrate(item)
+                from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
+                validated = raise_on_err(GhostInspector.hydrate(item))
                 assert validated.name is not None
 
 

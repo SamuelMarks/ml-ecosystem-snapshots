@@ -1059,7 +1059,7 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         parsed_modifiers = parse_sass_modifiers(raw_modifiers)
 
         arch: JsonValue = (
-            list(inst_data.architecture) if isinstance(inst_data.architecture, list) else inst_data.architecture
+            list(inst_data.architecture) if isinstance(inst_data.architecture, tuple) else inst_data.architecture
         )
         valid_archs = resolve_sm_architectures(arch)
         env_tags = ["cuda"] + valid_archs
@@ -1067,7 +1067,7 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
         docstring = f"NVIDIA SASS {mnemonic} instruction.\nDescription: {base_desc}\nModifiers: {', '.join(parsed_modifiers) if parsed_modifiers else 'None'}\nTarget Architectures: {', '.join(valid_archs)}\nPredicate Guard: Supported (@P0, @!P1)"
 
         operands_list: list[list[str]] = [
-            [str(op) for op in sig] for sig in inst_data.operands if isinstance(sig, list)
+            [str(op) for op in sig] for sig in inst_data.operands if isinstance(sig, (list, tuple))
         ]
 
         # Find the maximum length signature for the canonical representation

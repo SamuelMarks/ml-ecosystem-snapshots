@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 
+from ml_switcheroo_ir.typeclasses.outcome import and_then, raise_on_err, value_or
+
 
 def cmd_diff(args: argparse.Namespace) -> None:
-    """Handle the diff command comparing two snapshot files.
+    """Handle the diff command comparing two snapshot files at the CLI I/O edge.
 
     Args:
         args: Parsed command line arguments containing json1, json2, and changelog flag.
@@ -16,11 +18,11 @@ def cmd_diff(args: argparse.Namespace) -> None:
     from ml_ecosystem_snapshots.models import ensure_json_dict
     from ml_ecosystem_snapshots.network_env import load_json_data
 
-    path1 = resolve_snapshot_path(args.json1)
-    path2 = resolve_snapshot_path(args.json2)
+    path1 = value_or(resolve_snapshot_path(args.json1), args.json1)
+    path2 = value_or(resolve_snapshot_path(args.json2), args.json2)
 
-    snap1 = ensure_json_dict(load_json_data(path1), "snapshot 1")
-    snap2 = ensure_json_dict(load_json_data(path2), "snapshot 2")
+    snap1 = raise_on_err(and_then(load_json_data(path1), lambda d: ensure_json_dict(d, "snapshot 1")))
+    snap2 = raise_on_err(and_then(load_json_data(path2), lambda d: ensure_json_dict(d, "snapshot 2")))
 
     result = diff_snapshots(snap1, snap2)
 

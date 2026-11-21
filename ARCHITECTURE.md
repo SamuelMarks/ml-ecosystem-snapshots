@@ -149,7 +149,7 @@ graph TD
         ISA_COL --> SAN
         IR_COL --> SAN
 
-        SAN --> DEDUP[_consolidate_aliases]
+        SAN --> DEDUP[consolidate_aliases]
         DEDUP --> ENV[serialization/: SnapshotEnvelope JSON / JSON.GZ]
     end
 
@@ -216,10 +216,10 @@ The extraction engine manages lifecycle, concurrency, declarative provenance met
   - High-performance ML libraries (PyTorch with CUDA, JAX with Metal, TensorFlow) often initialize non-resettable hardware driver states upon import.
   - `extract_snapshot_isolated` runs the collection logic in an isolated child Python process via `subprocess.run`. This guarantees that memory pre-allocation locks, C++ symbol collisions, and segmentation faults do not pollute or crash the parent process.
 - **Concurrent Semantic Tier Processing:** Framework collection functions accept a `SemanticTier` filter (`ARRAY_API`, `NEURAL`, `OPTIMIZER`, `LOSS`, `ACTIVATION`, `EXTRAS`, `DISTRIBUTED`, `DATA`, `HUB`, `METRIC`, `UTIL`, `SCHEDULER`, `MODEL`, `INITIALIZER`, `DATALOADER`). A `ThreadPoolExecutor` distributes tier extraction across threads.
-- **Deterministic Alias Deduplication (`_consolidate_aliases`):**
+- **Deterministic Alias Deduplication (`consolidate_aliases`):**
   - Resolves duplicate functions exposed across multiple modules (e.g., `torch.add` vs `torch.Tensor.add`).
-  - Converts parameter signatures into comparable tuples (including name, kind, default, annotation, direction, role, dtypes, and rank) and collapses duplicates, selecting the shortest canonical `api_path` as the primary reference while accumulating `aliases`.
-- **Domain Metadata Hashing (`_domain_meta_to_key`):** Recursively converts arbitrary domain metadata dictionaries into deterministic sorted tuples for consistent deduplication.
+  - Converts parameter signatures into comparable tuples (including name, kind, default, annotation, direction, role, dtypes, and rank) and collapses duplicates via `GHOST_REF_CONSOLIDATION_SEMIGROUP`, selecting the shortest canonical `api_path` as the primary reference while accumulating `aliases`.
+- **Domain Metadata Hashing (`typeclasses._domain_meta_to_key`):** Recursively converts arbitrary domain metadata dictionaries into deterministic sorted tuples for consistent canonical hashing (`GHOST_REF_CANONICAL_HASH`).
 - **Offline Mode (`is_offline_mode` / `ML_SNAPSHOTS_OFFLINE`):** Enforces purely local execution, bypassing remote network calls or version checks in air-gapped or sandboxed environments.
 
 ---
@@ -306,21 +306,21 @@ The MCP server (`mcp/protocol.py`, `mcp/registry.py`, `mcp/schemas.py`, `mcp/cac
 |:---|:---|:---|
 | `get_api_signature` | Retrieve ground-truth parameter types, defaults, and return specifications | `framework`, `api_path`, `version` |
 | `search_apis` | Search operations and mnemonics by keyword or prefix | `framework`, `query`, `limit`, `version` |
-| `check_hallucination` | Verify whether an API path or keyword arguments represent LLM hallucinations | `framework`, `api_path`, `kwargs`, `args_count`, `strict_kwargs` |
+| `check_hallucination` | Verify whether an API path or keyword arguments represent LLM hallucinations | `framework`, `api_path`, `kwargs`, `args_count`, `version`, `strict_kwargs`, `kwarg_values` |
 | `explain_anti_pattern` | Provide canonical migration advice and rationale for flagged anti-patterns | `framework`, `api_path`, `hallucinated_argument`, `passed_value` |
 | `check_code_block` | Batch verify an entire code block for invalid APIs, kwargs, and hardware rules | `code`, `framework`, `version`, `sm_arch`, `gfx_arch` |
 | `translate_concept_arguments` | Translate arguments across frameworks using concept parameter mapping schemas | `concept`, `source_framework`, `target_framework`, `source_kwargs` |
 | `check_sass_instruction` | Validate SASS instruction legality, modifiers, and operands on target SM | `mnemonic`, `operands`, `modifiers`, `sm_arch`, `control_codes` |
 | `check_rdna_instruction` | Validate AMD RDNA instruction legality on target GFX architecture | `mnemonic`, `operands`, `encoding`, `gfx_arch`, `modifiers`, `wave_size` |
-| `check_ptx_instruction` | Validate PTX instruction, types, vector widths, and state space on SM | `mnemonic`, `types`, `operands`, `state_space`, `scope`, `sm_arch` |
-| `check_mlir_op` | Validate MLIR dialect operation against ODS traits, operands, and attributes | `op_name`, `operands_count`, `attributes`, `operand_types`, `regions` |
+| `check_ptx_instruction` | Validate PTX instruction, types, vector widths, and state space on SM | `mnemonic`, `types`, `operands`, `state_space`, `scope`, `vector_width`, `sm_arch` |
+| `check_mlir_op` | Validate MLIR dialect operation against ODS traits, operands, and attributes | `op_name`, `operands_count`, `attributes`, `operand_types`, `result_types`, `regions` |
 | `check_stablehlo_op` | Validate StableHLO operation attributes and region constraints | `op_name`, `operands_count`, `attributes`, `structured_attributes` |
 | `check_wgsl_op` | Validate WebGPU WGSL shader operation against specification | `op_name`, `inputs_count`, `attributes` |
 | `check_onnx_op` | Validate ONNX operator inputs, domain, and attributes | `op_name`, `domain`, `inputs_count`, `attributes` |
 | `check_metal_op` | Validate Apple Metal MSL compute operation and address space | `op_name`, `address_space`, `inputs_count`, `attributes` |
 | `check_wasm_instruction` | Validate WebAssembly 2.0 / SIMD instruction and operand count | `mnemonic`, `operands_count`, `attributes` |
 | `check_webgl_op` | Validate WebGL 2.0 / GLSL ES 3.00 operation and arguments | `op_name`, `inputs_count`, `attributes` |
-| `check_cpp_op` | Validate C++20/23 / PyBind11 runtime operation | `op_name`, `inputs_count`, `attributes` |
+| `check_cpp_op` | Validate C++17 / PyBind11 runtime operation | `op_name`, `inputs_count`, `attributes` |
 | `check_array_api_op` | Validate Python Array API Standard operation | `op_name`, `inputs_count`, `attributes` |
 | `check_scipy_op` | Validate SciPy scientific computing operation | `op_name`, `inputs_count`, `attributes` |
 | `check_torchvision_op` | Validate TorchVision computer vision operation | `op_name`, `inputs_count`, `attributes` |
@@ -390,9 +390,9 @@ The command-line interface (`cli/parser.py`, `cli/resolver.py`, and `cli/command
 Resolves snapshot identifiers (e.g. `torch`, `torch_v2.4.0.json`, or custom paths) across a cascading hierarchy:
 1. Exact file path or `.json` suffix.
 2. Custom paths defined in `ML_SNAPSHOTS_PATH`.
-3. Local cache directory (`~/.cache/ml_ecosystem_snapshots/snapshots`).
+3. Package-bundled `src/ml_ecosystem_snapshots/snapshots/` and `frameworks/`.
 4. Project repository root `snapshots/`.
-5. Package-bundled `src/ml_ecosystem_snapshots/snapshots/` and `frameworks/`.
+5. Local cache directory (`~/.cache/ml_ecosystem_snapshots/snapshots`).
 6. Current working directory `snapshots/`.
 
 ### CLI Subcommands Overview
@@ -433,3 +433,19 @@ Resolves snapshot identifiers (e.g. `torch`, `torch_v2.4.0.json`, or custom path
 | `check-grain` | Validate Grain (`grain` / `grain.python`) datasets, samplers, and loaders |
 | `check-orbax` | Validate Orbax Checkpoint and Orbax Export managers, handlers, and args |
 | `check-optax` | Validate Optax optimizers, gradient transformations, losses, and schedules |
+
+---
+
+## 11. Pure Functional Core, Explicit Typeclasses & Phantom Proofs (`identifiers.py`, `typeclasses.py`, `proofs.py`)
+
+Aligned with `ml-switcheroo-ir` v0.0.8, `ml-ecosystem-snapshots` separates its **Pure Functional Core** from its **Imperative Shell** (`cli/`, `mcp/`, `tools/`, `scripts/`):
+
+- **Deep Immutability**: Domain and report schemas across `models.py`, `diff.py`, `compliance/models.py`, `grounding/models.py`, `mcp/protocol.py`, `c_extension_sig.py`, and `introspection/sanitize.py` enforce `pydantic.ConfigDict(frozen=True)` and immutable `tuple[..., ...]` sequence fields.
+- **Total Outcomes (`Result[E, A]` & `Validation[E, A]`)**: Core SDK functions (`extract_snapshot`, `extract_snapshot_isolated`, `write_snapshot`, `load_json_data`, `fetch_url`, `hydrate_ghost_ref`, `validate_snapshot_envelope`, `generate_stubs`, `resolve_snapshot_path`, `validate_broadcast_shapes`, `validate_matmul_shapes`) return explicit `Ok` / `Err` outcomes rather than raising exceptions for domain/I/O failures. Batch operations (`extract_all_snapshots`, `hydrate_ghost_refs`, `prove_hydrated_refs`, `prove_determinism_verified`, `prove_compliance_verified`) accumulate *all* diagnostics via applicative `Validation` (`Valid` / `Invalid`).
+- **Validated `NewType` Identifiers (`identifiers.py`)**: `FrameworkId`, `SnapshotVersion`, `ApiPath`, `CategoryName`, and `Sha256Hex` wrap validated strings via total `parse_*` smart constructors paired with explicit `Eq`, `Ord` (including `API_PATH_LEN_LEX_ORD`), and `HashableWitness` dictionaries.
+- **Explicit Typeclass Witnesses (`typeclasses.py`)**:
+  - `DIFF_RESULT_SEMIGROUP` & `DIFF_RESULT_MONOID`: Associatively combine `DiffResult` values via sorted deduplicated set union across symbol-change tuples and rectangular-band `(old_lhs, new_rhs)` composition across `metadata_changed` transitions, with `DiffResult()` as left/right identity.
+  - `COMPLIANCE_REPORT_MONOID`, `SNIPPET_REPORT_MONOID`, & `CODE_BLOCK_RESULT_MONOID`: Fold per-module, per-line, and per-snippet verification results via `INT_SUM_MONOID`, `BOOL_ALL_MONOID`, and `tuple_monoid()`.
+  - `GHOST_REF_CANONICAL_HASH` & `GHOST_REF_CONSOLIDATION_SEMIGROUP`: Consolidate structurally equivalent `GhostRef` aliases without mutating input models.
+  - `SNAPSHOT_ENVELOPE_JSON_CODEC`, `GHOST_REF_JSON_CODEC`, `DIFF_CHANGELOG_PRETTY`, `STUB_MODULE_PRETTY`, & `make_namespace_align_endo`: Explicit `JsonCodec`, `Pretty`, and `Endo[str]` witnesses.
+- **Proof-Carrying Phantom Phases (`proofs.py`)**: `ProvenSnapshot[PhaseT]` tracks static verification invariants across `EnvelopeValidPhase` (`prove_envelope_valid`), `HydratedRefsPhase` (`prove_hydrated_refs`), `DeterminismVerifiedPhase` (`prove_determinism_verified`), and `ComplianceVerifiedPhase` (`prove_compliance_verified`), deep-cloning the underlying `SnapshotEnvelope` at minting time.

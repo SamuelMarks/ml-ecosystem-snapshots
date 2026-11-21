@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 import typing
 
+import typing_extensions
 from ml_switcheroo_ir.schema.ghost import ExtendedGhostRef
+from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
 
 from ml_ecosystem_snapshots.c_extension_sig import CExtensionSignature
 from ml_ecosystem_snapshots.exceptions import SnapshotError
@@ -123,7 +125,15 @@ def _resolve_c_ext_and_aten_sig(
     Returns:
         Tuple of `(c_ext_params, is_exact_aten)`.
     """
-    c_ext_params = ctx.active_extract_c_ext_sig(target, ctx.name)
+    c_ext_params: CExtensionSignature | None = None
+    c_ext_res = ctx.active_extract_c_ext_sig(target, ctx.name)
+    if isinstance(c_ext_res, Ok):
+        c_ext_params = c_ext_res.value
+    elif isinstance(c_ext_res, Err):
+        c_ext_params = None
+    else:
+        typing_extensions.assert_never(c_ext_res)
+
     is_exact_aten = False
     if _is_torch_symbol(ctx.name, target, ctx.api_path):
         try:
@@ -141,7 +151,7 @@ def _resolve_c_ext_and_aten_sig(
                     c_ext_params = aten_sig
                     is_exact_aten = True
                 elif not c_ext_params.overloads and aten_sig.overloads:
-                    c_ext_params.overloads = aten_sig.overloads
+                    c_ext_params = c_ext_params.model_copy(update={"overloads": aten_sig.overloads})
                     is_exact_aten = True
         except (
             ImportError,
@@ -209,8 +219,7 @@ def _extract_params_from_c_ext(
         sig_completeness = "exact" if is_exact_aten else "heuristic"
         if (returns_type is None or returns_type == "NoneType") and c_ext_params.returns_type:
             returns_type = ctx.active_sanitize_type_str(c_ext_params.returns_type)
-        for idx in range(len(c_ext_params)):
-            p_item = c_ext_params[idx]
+        for p_item in c_ext_params.params:
             pn = p_item.name
             pk = p_item.kind
             pd = p_item.default
@@ -251,8 +260,7 @@ def _build_c_ext_overload_ref(
     """
     ov_raw_tuples: list[RawParamTuple] = []
     ov_has_varargs = False
-    for idx in range(len(ov)):
-        p_item = ov[idx]
+    for p_item in ov.params:
         pn = p_item.name
         pk = p_item.kind
         pd = p_item.default

@@ -209,7 +209,7 @@ def _check_python_calls(
                     framework=fw,
                     target=api_name,
                     reason=res.reason or "Invalid API call",
-                    invalid_kwargs=list(res.invalid_kwargs),
+                    invalid_kwargs=tuple(res.invalid_kwargs),
                 )
             )
     return total_analyzed, findings
@@ -323,21 +323,30 @@ def verify_code_block(
     Returns:
         Structured `CodeBlockCheckResult` report.
     """
-    findings: list[CodeBlockFinding] = []
-    total_analyzed = 0
+    from ml_ecosystem_snapshots.typeclasses import CODE_BLOCK_RESULT_MONOID
 
+    parts: list[CodeBlockCheckResult] = []
     is_explicit_non_python = framework in ("nvidia_sass", "amd_rdna", "mlir", "stablehlo")
     parsed_as_python = False
+    py_analyzed = 0
 
     if not is_explicit_non_python:
         try:
             tree = ast.parse(code)
             parsed_as_python = True
-            total_analyzed, findings = _check_python_calls(tree, framework, call_checker)
+            py_analyzed, py_findings = _check_python_calls(tree, framework, call_checker)
+            parts.append(
+                CodeBlockCheckResult(
+                    total_analyzed=py_analyzed,
+                    hallucinations_detected=len(py_findings),
+                    is_valid=len(py_findings) == 0,
+                    findings=tuple(py_findings),
+                )
+            )
         except SyntaxError:
             parsed_as_python = False
 
-    if not parsed_as_python or (total_analyzed == 0 and any(p in code for p in ("%", "R", "v_", "s_"))):
+    if not parsed_as_python or (py_analyzed == 0 and any(p in code for p in ("%", "R", "v_", "s_"))):
         for lineno, raw_line in enumerate(code.splitlines(), start=1):
             line = raw_line.strip()
             if not line or line.startswith(("//", "#", ";", "/*")):
@@ -352,16 +361,17 @@ def verify_code_block(
                 sass_checker=sass_checker,
                 rdna_checker=rdna_checker,
             )
-            total_analyzed += inc
-            if finding is not None:
-                findings.append(finding)
+            line_findings = (finding,) if finding is not None else ()
+            parts.append(
+                CodeBlockCheckResult(
+                    total_analyzed=inc,
+                    hallucinations_detected=len(line_findings),
+                    is_valid=len(line_findings) == 0,
+                    findings=line_findings,
+                )
+            )
 
-    return CodeBlockCheckResult(
-        total_analyzed=total_analyzed,
-        hallucinations_detected=len(findings),
-        is_valid=len(findings) == 0,
-        findings=findings,
-    )
+    return CODE_BLOCK_RESULT_MONOID.mconcat(parts)
 
 
 __all__ = ["verify_code_block"]

@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import re
 
+from ml_switcheroo_ir.typeclasses.outcome import value_or
+
 from ml_ecosystem_snapshots.network_env import fetch_url
 
 LLVM_NVPTX_BASE_URL = "https://raw.githubusercontent.com/llvm/llvm-project/main/llvm/lib/Target/NVPTX"
@@ -33,7 +35,7 @@ def fetch_nvptx_td_file(filename: str, local_dir: str | None = None) -> str:
                 return f.read()
 
     url = f"{LLVM_NVPTX_BASE_URL}/{filename}"
-    return fetch_url(url, timeout=15) or ""
+    return value_or(fetch_url(url, timeout=15), "")
 
 
 def tokenize_nvptx_td_defs(content: str) -> list[tuple[str, str]]:

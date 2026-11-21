@@ -12,7 +12,6 @@ from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
 )
 
-from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.models import JsonValue
 
 _LOGGER = logging.getLogger(__name__)
@@ -328,12 +327,12 @@ def _collect_matching_scoped_items(
     Returns:
         Filtered list of raw symbol dictionaries.
     """
-    from ml_ecosystem_snapshots.models import ensure_json_dict, ensure_json_list
+    from ml_ecosystem_snapshots.models import json_dict_or_empty, json_tuple_or_empty
 
-    categories = ensure_json_dict(raw_categories, "scoped prompt categories")
+    categories = json_dict_or_empty(raw_categories)
     matching_items: list[dict[str, JsonValue]] = []
     for _cat, raw_items in sorted(categories.items()):
-        for raw_it in ensure_json_list(raw_items, "scoped prompt items"):
+        for raw_it in json_tuple_or_empty(raw_items):
             if not isinstance(raw_it, dict):
                 continue
             item = dict(raw_it)
@@ -403,6 +402,8 @@ def export_scoped_prompt_context(
     Returns:
         Structured Markdown string containing an index summary followed by detailed signatures.
     """
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
     from ml_ecosystem_snapshots.serialization.repository import (
         resolve_repository_snapshot,
@@ -414,10 +415,11 @@ def export_scoped_prompt_context(
 
     hydrated_refs: list[GhostRef] = []
     for item in matching_items[:max_symbols]:
-        try:
-            hydrated_refs.append(GhostInspector.hydrate(item))
-        except (SnapshotError, ValueError, TypeError, LookupError):
-            _LOGGER.debug("Skipping unhydratable prompt item", exc_info=True)
+        hyd_res = GhostInspector.hydrate(item)
+        if isinstance(hyd_res, Ok):
+            hydrated_refs.append(hyd_res.value)
+        else:
+            _LOGGER.debug("Skipping unhydratable prompt item: %s", hyd_res.error)
 
     index_lines = _build_scoped_index_lines(framework, matching_items)
 

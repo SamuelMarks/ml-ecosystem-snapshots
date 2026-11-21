@@ -117,6 +117,8 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
     assert p.model_extra is not None
     assert p.model_extra["custom_ir_tag"] == "llvm_lowered"
 
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
     from ml_ecosystem_snapshots.models import JsonValue
 
     ref_data: dict[str, JsonValue] = {
@@ -127,7 +129,7 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
         "custom_backend_meta": {"cost": 10},
     }
     # 2. Polymorphic hydration
-    py_ref = GhostInspector.hydrate(ref_data)
+    py_ref = raise_on_err(GhostInspector.hydrate(ref_data))
     assert isinstance(py_ref, GhostPythonRef)
     assert py_ref.domain_type == "python"
     assert py_ref.model_extra is not None
@@ -144,7 +146,7 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
         "instruction_modifiers": [".SAT", ".FTZ"],
         "supported_architectures": ["sm_80", "sm_90"],
     }
-    isa_ref = GhostInspector.hydrate(isa_data)
+    isa_ref = raise_on_err(GhostInspector.hydrate(isa_data))
     assert isinstance(isa_ref, GhostIsaRef)
     assert isa_ref.domain_type == "isa"
     assert isa_ref.predicate_guards == ["@P0", "@!P0"]
@@ -164,7 +166,7 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
         "regions": {"body": []},
         "successors": ["bb1"],
     }
-    mlir_ref = GhostInspector.hydrate(mlir_data)
+    mlir_ref = raise_on_err(GhostInspector.hydrate(mlir_data))
     assert isinstance(mlir_ref, GhostMlirRef)
     assert mlir_ref.domain_type == "mlir"
     assert mlir_ref.traits == ["SameOperandsAndResultType", "Commutative"]
@@ -178,12 +180,14 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
         "api_path": "generic.op",
         "kind": "function",
     }
-    base_ref = GhostInspector.hydrate(base_data)
+    base_ref = raise_on_err(GhostInspector.hydrate(base_data))
     assert isinstance(base_ref, ExtendedGhostRef)
 
 
 def test_raw_dumps_hydration_synthesis() -> None:
     """Test GhostInspector.hydrate synthesis on raw ISA and MLIR dictionary dumps."""
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
     from ml_ecosystem_snapshots.models import JsonValue
 
     # 3. Raw dumps hydration synthesis
@@ -193,7 +197,7 @@ def test_raw_dumps_hydration_synthesis() -> None:
         "operands": [["R", "R"], ["R"]],
         "modifiers": ["FTZ"],
     }
-    raw_isa_ref = GhostInspector.hydrate(raw_isa_data)
+    raw_isa_ref = raise_on_err(GhostInspector.hydrate(raw_isa_data))
     assert isinstance(raw_isa_ref, GhostIsaRef)
     assert raw_isa_ref.name == "FADD_RAW"
     assert raw_isa_ref.environment_tags == ["sm_80", "sm_90"]
@@ -203,11 +207,11 @@ def test_raw_dumps_hydration_synthesis() -> None:
         "architecture": "sm_70",
         "operands": [["R"]],
     }
-    raw_str_ref = GhostInspector.hydrate(raw_isa_str)
+    raw_str_ref = raise_on_err(GhostInspector.hydrate(raw_isa_str))
     assert raw_str_ref.environment_tags == ["sm_70"]
 
     raw_isa_no_ops: dict[str, JsonValue] = {"mnemonic": "NOP"}
-    raw_nop_ref = GhostInspector.hydrate(raw_isa_no_ops)
+    raw_nop_ref = raise_on_err(GhostInspector.hydrate(raw_isa_no_ops))
     assert isinstance(raw_nop_ref, GhostIsaRef)
     assert len(raw_nop_ref.params) == 0
 
@@ -217,7 +221,7 @@ def test_raw_dumps_hydration_synthesis() -> None:
         "attributes": ["b"],
         "results": [{"name": "out", "type": "tensor"}],
     }
-    raw_mlir_ref = GhostInspector.hydrate(raw_mlir_data)
+    raw_mlir_ref = raise_on_err(GhostInspector.hydrate(raw_mlir_data))
     assert isinstance(raw_mlir_ref, GhostMlirRef)
     assert raw_mlir_ref.name == "op"
 
@@ -227,6 +231,6 @@ def test_raw_dumps_hydration_synthesis() -> None:
         "attributes": [{"name": "attr"}],
         "results": ["res"],
     }
-    raw_mlir_dict_ref = GhostInspector.hydrate(raw_mlir_dict_data)
+    raw_mlir_dict_ref = raise_on_err(GhostInspector.hydrate(raw_mlir_dict_data))
     assert isinstance(raw_mlir_dict_ref, GhostMlirRef)
     assert raw_mlir_dict_ref.name == "op2"

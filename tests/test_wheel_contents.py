@@ -35,7 +35,7 @@ def _populate_missing_exhaustive_json(req: str, target_file: str) -> None:
         )
 
         with open(target_file, "w", encoding="utf-8") as f:
-            json.dump([r.model_dump() for r in get_canonical_fallback_sass()], f, indent=2)
+            json.dump([r.model_dump(mode="json") for r in get_canonical_fallback_sass()], f, indent=2)
     elif req == "amd_rdna_exhaustive.json":
         from ml_ecosystem_snapshots.frameworks.amd_rdna import (
             get_canonical_fallback_rdna,
@@ -121,11 +121,13 @@ def test_wheel_packaging_and_data_assets(tmp_path: os.PathLike[str]) -> None:
     os.chdir(proj_dir)
     try:
         whl_filename = build_wheel(str(tmp_path))
+        assert "0.0.8" in whl_filename
         whl_path = os.path.join(str(tmp_path), whl_filename)
         assert os.path.isfile(whl_path)
 
         with zipfile.ZipFile(whl_path, "r") as zf:
             namelist = zf.namelist()
+            assert "ml_ecosystem_snapshots-0.0.8.dist-info/METADATA" in namelist
 
             # 1. Zero database leakage assertion
             db_artifacts = [

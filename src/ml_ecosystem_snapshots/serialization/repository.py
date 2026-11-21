@@ -1,48 +1,102 @@
-"""Thread-safe snapshot repository, file resolution, and caching layer."""
+"""Thread-safe snapshot repository, closed source ADTs, and caching layer."""
 
 from __future__ import annotations
 
+import enum
 import json
 import logging
 import os
 import threading
 import typing
 
-from ml_ecosystem_snapshots.api import (
-    FRAMEWORK_COLLECTORS as _DEFAULT_COLLECTORS,
-)
-from ml_ecosystem_snapshots.api import (
-    CollectorFn,
-)
-from ml_ecosystem_snapshots.api import (
-    extract_snapshot as _default_extract_snapshot,
-)
-from ml_ecosystem_snapshots.exceptions import SnapshotError
-from ml_ecosystem_snapshots.models import JsonValue
+import pydantic
+import typing_extensions
+from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Result
+
+from ml_ecosystem_snapshots.exceptions import SnapshotError, SnapshotNotFoundError
+from ml_ecosystem_snapshots.models import JsonValue, WireSerializableProtocol
 from ml_ecosystem_snapshots.network_env import (
     get_custom_snapshots_paths,
     is_offline_mode,
 )
+from ml_ecosystem_snapshots.registry import (
+    FRAMEWORK_COLLECTORS as _DEFAULT_COLLECTORS,
+)
+from ml_ecosystem_snapshots.registry import (
+    CollectorFn,
+)
+
+
+def _default_extract_snapshot(
+    framework_name: str,
+    include_nonpublic: bool = False,
+) -> ExtractedSnapshotPayload:
+    """Delegate live snapshot extraction lazily to `ml_ecosystem_snapshots.api.extract_snapshot`.
+
+    Args:
+        framework_name: Target framework identifier.
+        include_nonpublic: Whether to include non-public symbols.
+
+    Returns:
+        `Result[SnapshotError, ProvenSnapshot[EnvelopeValidPhase]]` from `extract_snapshot`.
+    """
+    from ml_ecosystem_snapshots.api import extract_snapshot
+
+    return extract_snapshot(framework_name, include_nonpublic=include_nonpublic)
+
 
 _LOGGER = logging.getLogger(__name__)
 
 
+class SnapshotSource(str, enum.Enum):
+    """Closed enumeration of snapshot resolution origins."""
+
+    BUNDLED_PACKAGE = "bundled_package"
+    CUSTOM_PATH = "custom_path"
+    LOCAL_CACHE = "local_cache"
+    RUNTIME_INTROSPECTION = "runtime_introspection"
+    NOT_FOUND = "not_found"
+
+
+class ResolvedSnapshot(pydantic.BaseModel):
+    """Immutable resolved snapshot payload paired with its `SnapshotSource` and version.
+
+    Attributes:
+        payload: Categorized snapshot dictionary.
+        source: Origin `SnapshotSource` variant.
+        version: Resolved snapshot version string (or `'unknown'`).
+    """
+
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
+
+    payload: dict[str, JsonValue]
+    source: SnapshotSource
+    version: str
+
+
+ExtractedSnapshotPayload: typing_extensions.TypeAlias = (
+    "Result[SnapshotError, WireSerializableProtocol | dict[str, JsonValue]]"
+    " | WireSerializableProtocol"
+    " | dict[str, JsonValue]"
+)
+
+
 class ExtractSnapshotFn(typing.Protocol):
-    """Protocol for framework snapshot extraction callable."""
+    """Protocol for framework snapshot extraction callables."""
 
     def __call__(
         self,
         framework_name: str,
         include_nonpublic: bool = False,
-    ) -> dict[str, JsonValue]:
-        """Extract a framework snapshot dictionary.
+    ) -> ExtractedSnapshotPayload:
+        """Extract a framework snapshot dictionary or `Result` of `ProvenSnapshot`.
 
         Args:
             framework_name: Target framework identifier.
             include_nonpublic: Whether to include non-public symbols.
 
         Returns:
-            Extracted snapshot dictionary.
+            Extracted snapshot payload or `Result`.
         """
         ...
 
@@ -103,13 +157,13 @@ def _matches_snapshot_filename(
 
 
 def _coerce_snapshot_json_payload(data: JsonValue) -> dict[str, JsonValue] | None:
-    """Normalize a raw JSON payload into a categorized snapshot dictionary.
+    """Normalize a raw JSON payload purely into a categorized snapshot dictionary.
 
     Args:
         data: Parsed JSON value from a snapshot file.
 
     Returns:
-        Normalized dictionary containing a `'categories'` mapping, or None if unrecognized.
+        Fresh dictionary containing a `'categories'` mapping, or `None` if unrecognized.
     """
     if isinstance(data, dict) and "categories" in data:
         return dict(data)
@@ -127,21 +181,21 @@ def _coerce_snapshot_json_payload(data: JsonValue) -> dict[str, JsonValue] | Non
 def _load_bundled_snapshot(
     clean_fw: str,
     version: str | None,
-    custom_paths: list[str],
+    custom_paths: typing.Sequence[str],
     anchor_file: str | None = None,
     logger: logging.Logger | None = None,
-) -> tuple[dict[str, JsonValue] | None, str]:
+) -> tuple[dict[str, JsonValue] | None, SnapshotSource]:
     """Scan custom, bundled, and local cache directories for a matching snapshot JSON file.
 
     Args:
         clean_fw: Normalized lowercase framework identifier.
         version: Optional version constraint string.
-        custom_paths: List of custom snapshot search directory paths.
+        custom_paths: Sequence of custom snapshot search directory paths.
         anchor_file: Optional file path whose parent directory contains `snapshots/` and `frameworks/`.
         logger: Optional logger instance for diagnostic messages.
 
     Returns:
-        Tuple of `(loaded_snapshot_dict_or_none, source_kind_label)`.
+        Tuple of `(loaded_snapshot_dict_or_none, SnapshotSource)`.
     """
     from ml_ecosystem_snapshots.index import get_cache_dir
 
@@ -149,15 +203,13 @@ def _load_bundled_snapshot(
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(anchor_file or __file__)))
     clean_ver = version.lstrip("vV") if version else None
 
-    custom_dirs: list[tuple[str, str]] = [(cd, "custom_path") for cd in custom_paths]
-    candidates: list[tuple[str, str]] = custom_dirs + [
-        (os.path.join(base_dir, "snapshots"), "bundled_package"),
-        (os.path.join(base_dir, "frameworks"), "bundled_package"),
-        (os.path.join(get_cache_dir(), "snapshots"), "local_cache"),
+    custom_dirs: list[tuple[str, SnapshotSource]] = [(cd, SnapshotSource.CUSTOM_PATH) for cd in custom_paths]
+    candidates: list[tuple[str, SnapshotSource]] = custom_dirs + [
+        (os.path.join(base_dir, "snapshots"), SnapshotSource.BUNDLED_PACKAGE),
+        (os.path.join(base_dir, "frameworks"), SnapshotSource.BUNDLED_PACKAGE),
+        (os.path.join(get_cache_dir(), "snapshots"), SnapshotSource.LOCAL_CACHE),
     ]
-    loaded_data: dict[str, JsonValue] | None = None
-    source_kind = "not_found"
-    for candidate_dir, source_label in candidates:
+    for candidate_dir, source_kind in candidates:
         if os.path.isdir(candidate_dir):
             candidate_files = sorted(
                 (f for f in os.listdir(candidate_dir) if f.endswith(".json")),
@@ -168,13 +220,30 @@ def _load_bundled_snapshot(
                     try:
                         with open(os.path.join(candidate_dir, fname), encoding="utf-8") as f:
                             loaded_data = _coerce_snapshot_json_payload(json.load(f))
-                            source_kind = source_label
-                            break
+                            if loaded_data:
+                                return loaded_data, source_kind
                     except (OSError, ValueError) as exc:
                         active_logger.debug("Skipping unreadable snapshot file %s: %s", fname, exc)
-            if loaded_data:
-                break
-    return loaded_data, source_kind
+    return None, SnapshotSource.NOT_FOUND
+
+
+def _unwrap_extracted_snapshot_dict(
+    raw_extracted: ExtractedSnapshotPayload,
+) -> Result[SnapshotError, dict[str, JsonValue]]:
+    """Normalize an `ExtractedSnapshotPayload` into `Result[SnapshotError, dict[str, JsonValue]]`.
+
+    Args:
+        raw_extracted: Result, `WireSerializableProtocol`, or dictionary from an extractor hook.
+
+    Returns:
+        `Ok(dict)` or `Err(SnapshotError)`.
+    """
+    if isinstance(raw_extracted, Err):
+        return raw_extracted
+    inner = raw_extracted.value if isinstance(raw_extracted, Ok) else raw_extracted
+    if isinstance(inner, WireSerializableProtocol):
+        return Ok(inner.to_wire_dict())
+    return Ok(dict(inner))
 
 
 class SnapshotRuntimeContext:
@@ -207,6 +276,20 @@ class SnapshotRuntimeContext:
         self.logger = logger
 
 
+_STATIC_DOMAIN_TARGETS: typing.Final[frozenset[str]] = frozenset(
+    {
+        "nvidia_sass",
+        "amd_rdna",
+        "mlir",
+        "stablehlo",
+        "nvidia_ptx",
+        "html_dsl",
+        "latex_dsl",
+        "tikz",
+    }
+)
+
+
 def load_or_extract_snapshot(
     framework: str,
     version: str | None = None,
@@ -214,14 +297,14 @@ def load_or_extract_snapshot(
     active_cache: dict[str, dict[str, JsonValue]] | None = None,
     runtime_ctx: SnapshotRuntimeContext | None = None,
 ) -> dict[str, JsonValue]:
-    """Retrieve or build a cached snapshot for a target framework.
+    """Retrieve or build a cached snapshot for a target framework without mutating loaded dicts.
 
     Args:
-        framework: Name of the framework (e.g. 'torch', 'jax', 'nvidia_sass').
-        version: Optional framework version (e.g. '2.4.0').
+        framework: Name of the framework (e.g. `'torch'`, `'jax'`, `'nvidia_sass'`).
+        version: Optional framework version (e.g. `'2.4.0'`).
         prefer_bundled: Optional flag controlling whether bundled on-disk snapshots are checked first.
         active_cache: Optional backing store dictionary (defaults to `_DEFAULT_SNAPSHOT_STORE`).
-        runtime_ctx: Optional `SnapshotRuntimeContext` specifying extractor, collectors, anchor, offline hook, and logger.
+        runtime_ctx: Optional `SnapshotRuntimeContext` specifying runtime hooks.
 
     Returns:
         Categorized snapshot dictionary.
@@ -235,7 +318,7 @@ def load_or_extract_snapshot(
     cache_key = f"{clean_fw}@{version}" if version else clean_fw
     if cache_key not in store:
         loaded_data: dict[str, JsonValue] | None = None
-        source_kind = "not_found"
+        source_kind = SnapshotSource.NOT_FOUND
         use_bundled = (
             prefer_bundled
             if prefer_bundled is not None
@@ -251,30 +334,22 @@ def load_or_extract_snapshot(
             )
 
         if loaded_data:
-            loaded_data["_snapshot_source"] = source_kind
-            store[cache_key] = loaded_data
+            store[cache_key] = {**loaded_data, "_snapshot_source": source_kind.value}
         elif (
             ctx.active_extract is not None
             and clean_fw in collectors
-            and (
-                not ctx.offline_fn()
-                or clean_fw
-                in (
-                    "nvidia_sass",
-                    "amd_rdna",
-                    "mlir",
-                    "stablehlo",
-                    "nvidia_ptx",
-                    "html_dsl",
-                    "latex_dsl",
-                    "tikz",
-                )
-            )
+            and (not ctx.offline_fn() or clean_fw in _STATIC_DOMAIN_TARGETS)
         ):
             try:
-                extracted = ctx.active_extract(clean_fw)
-                extracted["_snapshot_source"] = "runtime_introspection"
-                store[cache_key] = extracted
+                ext_res = _unwrap_extracted_snapshot_dict(ctx.active_extract(clean_fw))
+                if isinstance(ext_res, Ok):
+                    store[cache_key] = {
+                        **ext_res.value,
+                        "_snapshot_source": SnapshotSource.RUNTIME_INTROSPECTION.value,
+                    }
+                else:
+                    active_logger.debug("Runtime snapshot extraction failed for %s: %s", clean_fw, ext_res.error)
+                    store[cache_key] = {"categories": {}}
             except (
                 ImportError,
                 AttributeError,
@@ -375,7 +450,7 @@ class SnapshotRepository:
         """Retrieve or load a snapshot for a target framework.
 
         Args:
-            framework: Framework name (e.g. 'torch', 'jax', 'nvidia_sass').
+            framework: Framework name (e.g. `'torch'`, `'jax'`, `'nvidia_sass'`).
             version: Optional version constraint.
             prefer_bundled: Optional flag to prefer bundled snapshots over live introspection.
 
@@ -391,6 +466,31 @@ class SnapshotRepository:
             snap = loader(framework=framework, version=version, prefer_bundled=prefer_bundled)
             self._store[cache_key] = snap
             return snap
+
+    def resolve_result(
+        self,
+        framework: str,
+        version: str | None = None,
+        prefer_bundled: bool | None = None,
+    ) -> Result[SnapshotNotFoundError, ResolvedSnapshot]:
+        """Resolve a framework snapshot totally into `Result[SnapshotNotFoundError, ResolvedSnapshot]`.
+
+        Args:
+            framework: Framework name.
+            version: Optional version constraint.
+            prefer_bundled: Optional flag to prefer bundled snapshots.
+
+        Returns:
+            `Ok(ResolvedSnapshot)` when categories are non-empty, else `Err(SnapshotNotFoundError)`.
+        """
+        snap = self.get(framework=framework, version=version, prefer_bundled=prefer_bundled)
+        raw_cats = snap.get("categories")
+        if not isinstance(raw_cats, dict) or not raw_cats:
+            return Err(SnapshotNotFoundError(f"Snapshot not found or empty for framework {framework!r}."))
+        raw_src = str(snap.get("_snapshot_source") or SnapshotSource.BUNDLED_PACKAGE.value)
+        src = {m.value: m for m in SnapshotSource}.get(raw_src, SnapshotSource.BUNDLED_PACKAGE)
+        ver = str(snap.get("version") or version or "unknown")
+        return Ok(ResolvedSnapshot(payload=dict(snap), source=src, version=ver))
 
     def put(
         self,
@@ -408,7 +508,7 @@ class SnapshotRepository:
         clean_fw = framework.lower().strip()
         cache_key = f"{clean_fw}@{version}" if version else clean_fw
         with self._lock:
-            self._store[cache_key] = data
+            self._store[cache_key] = dict(data)
 
     def preload(
         self,
@@ -453,9 +553,12 @@ def resolve_repository_snapshot(
 __all__ = [
     "DEFAULT_SNAPSHOT_REPOSITORY",
     "ExtractSnapshotFn",
+    "ExtractedSnapshotPayload",
+    "ResolvedSnapshot",
     "SnapshotLoaderFn",
     "SnapshotRepository",
     "SnapshotRuntimeContext",
+    "SnapshotSource",
     "clear_snapshot_cache",
     "get_cached_snapshot",
     "load_or_extract_snapshot",

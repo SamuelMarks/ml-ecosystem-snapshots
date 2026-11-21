@@ -95,16 +95,26 @@ def cmd_capture(args: argparse.Namespace) -> None:
         if unsupported:
             print(f"Warning: The following frameworks are unsupported and will be skipped: {', '.join(unsupported)}")
 
+    import typing_extensions
+    from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
+
     with Progress() as progress:
         task = progress.add_task("[cyan]Scanning frameworks...", total=len(target_fws))
         for fw in target_fws:
             progress.update(task, description=f"[cyan]Scanning {fw}...")
-            snapshot_data = extract_snapshot(fw, include_nonpublic=args.include_nonpublic)
-            if snapshot_data:
-                path = write_snapshot(fw, snapshot_data, args.out_dir)
-                progress.console.print(f"[green]Saved snapshot to {path}[/green]")
-            else:
+            snap_res = extract_snapshot(fw, include_nonpublic=args.include_nonpublic)
+            if isinstance(snap_res, Ok):
+                write_res = write_snapshot(fw, snap_res.value, args.out_dir)
+                if isinstance(write_res, Ok):
+                    progress.console.print(f"[green]Saved snapshot to {write_res.value}[/green]")
+                elif isinstance(write_res, Err):
+                    progress.console.print(f"[red]Failed to save {fw}: {write_res.error}[/red]")
+                else:
+                    typing_extensions.assert_never(write_res)
+            elif isinstance(snap_res, Err):
                 progress.console.print(f"[yellow]Skipping {fw}, not installed or no components found.[/yellow]")
+            else:
+                typing_extensions.assert_never(snap_res)
             progress.advance(task)
 
 
@@ -114,15 +124,17 @@ def cmd_list_snapshots(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command line arguments.
     """
+    del args
     from ml_ecosystem_snapshots.index import get_cache_dir
     from ml_ecosystem_snapshots.network_env import get_custom_snapshots_paths
 
     pkg_dir = _get_pkg_dir()
-    snapshots_dirs = get_custom_snapshots_paths() + [
+    snapshots_dirs = (
+        *get_custom_snapshots_paths(),
         os.path.join(get_cache_dir(), "snapshots"),
         os.path.join(pkg_dir, "snapshots"),
         os.path.join(pkg_dir, "frameworks"),
-    ]
+    )
     found_snapshots: list[DiscoveredSnapshot] = []
     seen_files: set[str] = set()
     for d in snapshots_dirs:

@@ -13,36 +13,36 @@ from ml_ecosystem_snapshots.models import JsonValue
 
 
 class JsonRpcError(pydantic.BaseModel):
-    """Typed JSON-RPC 2.0 error payload."""
+    """Immutable JSON-RPC 2.0 error payload."""
 
-    model_config = pydantic.ConfigDict(extra="forbid")
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
     code: int
     message: str
 
 
 class JsonRpcContentItem(pydantic.BaseModel):
-    """Typed MCP content block item within `JsonRpcResult`."""
+    """Immutable MCP content block item within `JsonRpcResult`."""
 
-    model_config = pydantic.ConfigDict(extra="forbid")
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
     type: str = "text"
     text: str = ""
 
 
 class JsonRpcResult(pydantic.BaseModel):
-    """Typed JSON-RPC 2.0 result payload for `tools/list` and `tools/call`."""
+    """Immutable JSON-RPC 2.0 result payload for `tools/list` and `tools/call`."""
 
-    model_config = pydantic.ConfigDict(extra="allow")
+    model_config = pydantic.ConfigDict(extra="allow", frozen=True)
 
-    tools: list[dict[str, JsonValue]] | None = None
-    content: list[JsonRpcContentItem] | None = None
+    tools: tuple[dict[str, JsonValue], ...] | None = None
+    content: tuple[JsonRpcContentItem, ...] | None = None
 
 
 class JsonRpcRequest(pydantic.BaseModel):
-    """Typed JSON-RPC 2.0 request envelope."""
+    """Immutable JSON-RPC 2.0 request envelope."""
 
-    model_config = pydantic.ConfigDict(extra="allow")
+    model_config = pydantic.ConfigDict(extra="allow", frozen=True)
 
     jsonrpc: str = "2.0"
     id: int | str | None = None
@@ -51,9 +51,9 @@ class JsonRpcRequest(pydantic.BaseModel):
 
 
 class JsonRpcResponse(pydantic.BaseModel):
-    """Typed JSON-RPC 2.0 response envelope."""
+    """Immutable JSON-RPC 2.0 response envelope."""
 
-    model_config = pydantic.ConfigDict(extra="forbid")
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
     jsonrpc: str = "2.0"
     id: int | str | None = None

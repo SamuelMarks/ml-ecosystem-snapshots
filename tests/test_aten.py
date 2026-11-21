@@ -116,8 +116,10 @@ def test_extract_snapshot_aten(mock_torch_module: types.ModuleType) -> None:
     Args:
         mock_torch_module: Scoped `torch` module fixture.
     """
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
     assert mock_torch_module is not None
-    snap = extract_snapshot("aten")
+    snap = raise_on_err(extract_snapshot("aten")).to_wire_dict()
     assert snap.get("target") == "aten"
     cats = snap.get("categories", {})
     assert isinstance(cats, dict)

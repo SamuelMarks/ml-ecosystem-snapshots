@@ -406,9 +406,10 @@ def test_all_new_snapshots_exist_and_nonempty(tmp_path: Path) -> None:
                 and not f.endswith(("_ops.json", "_exhaustive.json"))
             ]
         if not matching:
-            snap = extract_snapshot(prefix)
-            assert snap, f"Failed to extract snapshot for target: {prefix}"
-            written_path = write_snapshot(prefix, snap, str(tmp_path))
+            from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
+            proven = raise_on_err(extract_snapshot(prefix))
+            written_path = raise_on_err(write_snapshot(prefix, proven, str(tmp_path)))
             matching = [written_path]
 
         assert len(matching) > 0, f"Missing snapshot for target: {prefix}"

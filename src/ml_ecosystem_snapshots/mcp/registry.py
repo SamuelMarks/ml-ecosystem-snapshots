@@ -437,7 +437,7 @@ def dispatch_tool_call(
     payload = res.model_dump(exclude_none=True) if isinstance(res, pydantic.BaseModel) else res
     return JsonRpcResponse(
         id=msg_id,
-        result=JsonRpcResult(content=[JsonRpcContentItem(type="text", text=json.dumps(payload, indent=2))]),
+        result=JsonRpcResult(content=(JsonRpcContentItem(type="text", text=json.dumps(payload, indent=2)),)),
     )
 
 
@@ -461,10 +461,10 @@ def handle_mcp_message(
     params = dict(raw_params) if isinstance(raw_params, dict) else {}
 
     if method == "tools/list":
-        tools_list = [dict(t) for t in get_mcp_tools_list()]
+        tools_tuple = tuple(dict(t) for t in get_mcp_tools_list())
         return JsonRpcResponse(
             id=msg_id,
-            result=JsonRpcResult(tools=tools_list),
+            result=JsonRpcResult(tools=tools_tuple),
         )
 
     if method == "tools/call":

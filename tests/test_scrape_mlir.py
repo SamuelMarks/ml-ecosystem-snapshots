@@ -472,14 +472,14 @@ def test_parse_llvm_tblgen_json() -> None:
     assert addf.attributes[0]["name"] == "fastmath"
     assert len(addf.results) == 2
     assert addf.results[0]["name"] == "result"
-    assert addf.regions == ["body"]
+    assert addf.regions == ("body",)
     assert "Commutative" in addf.traits
 
     list_op = next(o for o in ops if o.class_name == "ListOp")
     assert list_op.api_path == "arith.list"
     assert len(list_op.operands) == 2
     assert len(list_op.attributes) == 1
-    assert list_op.regions == ["region0"]
+    assert list_op.regions == ("region0",)
     assert "Elementwise" in list_op.traits
 
     raw_custom = next(o for o in ops if o.class_name == "RawCustomOp")
@@ -674,12 +674,14 @@ def test_scrape_mlir_main_entrypoint(mocker: pytest_mock.MockerFixture) -> None:
     import importlib.util
     import runpy
 
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
     spec = importlib.util.find_spec("ml_ecosystem_snapshots.tools.scrape_mlir")
     assert spec is not None and spec.origin is not None
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
     mocker.patch(
         "ml_ecosystem_snapshots.network_env.fetch_url",
-        return_value="<html></html>",
+        return_value=Ok("<html></html>"),
     )
     res = runpy.run_path(spec.origin, run_name="__main__")
     assert "main" in res

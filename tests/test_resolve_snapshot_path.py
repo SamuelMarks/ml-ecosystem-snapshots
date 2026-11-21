@@ -1,4 +1,4 @@
-"""Unit tests and verification suite for resolve snapshot path."""
+"""Tests for total `Result`-returning `resolve_snapshot_path`."""
 
 from __future__ import annotations
 
@@ -6,7 +6,10 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
+
 from ml_ecosystem_snapshots.cli import resolve_snapshot_path
+from ml_ecosystem_snapshots.exceptions import SnapshotNotFoundError
 
 
 def test_resolve_snapshot_path_existing_file(tmp_path: Path) -> None:
@@ -15,11 +18,9 @@ def test_resolve_snapshot_path_existing_file(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    file_path = Path(os.path.join(tmp_path, "my_snapshot.json"))
-    file_path.touch()
-
-    resolved = resolve_snapshot_path(str(file_path))
-    assert resolved == str(file_path)
+    f = Path(os.path.join(tmp_path, "test.json"))
+    f.touch()
+    assert resolve_snapshot_path(str(f)) == Ok(str(f))
 
 
 def test_resolve_snapshot_path_append_json(tmp_path: Path) -> None:
@@ -28,13 +29,10 @@ def test_resolve_snapshot_path_append_json(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    file_path = Path(os.path.join(tmp_path, "my_snapshot.json"))
-    file_path.touch()
-
-    # Try resolving without .json extension
-    base_path = str(Path(os.path.join(tmp_path, "my_snapshot")))
-    resolved = resolve_snapshot_path(base_path)
-    assert resolved == str(file_path)
+    f = Path(os.path.join(tmp_path, "test.json"))
+    f.touch()
+    path_without_ext = str(Path(os.path.join(tmp_path, "test")))
+    assert resolve_snapshot_path(path_without_ext) == Ok(str(f))
 
 
 def test_resolve_snapshot_path_fallback_to_repo(tmp_path: Path) -> None:
@@ -43,7 +41,6 @@ def test_resolve_snapshot_path_fallback_to_repo(tmp_path: Path) -> None:
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    # Mock __file__ so repo root points to our temp directory
     pkg_dir = Path(os.path.join(Path(os.path.join(tmp_path, "src")), "ml_ecosystem_snapshots"))
     pkg_dir.mkdir(parents=True)
 
@@ -57,33 +54,23 @@ def test_resolve_snapshot_path_fallback_to_repo(tmp_path: Path) -> None:
         "ml_ecosystem_snapshots.cli.__file__",
         str(Path(os.path.join(pkg_dir, "cli.py"))),
     ):
-        # Providing just the basename
-        resolved = resolve_snapshot_path("jax_v0.4.30.json")
-        assert resolved == str(target_file)
-
-        # Providing a path that doesn't exist locally, but basename matches
-        resolved = resolve_snapshot_path("./some_other_dir/jax_v0.4.30.json")
-        assert resolved == str(target_file)
-
-        # Providing basename without .json
-        resolved = resolve_snapshot_path("jax_v0.4.30")
-        assert resolved == str(target_file)
-
-        # Providing just prefix
-        resolved = resolve_snapshot_path("jax")
-        assert resolved == str(target_file)
+        assert resolve_snapshot_path("jax_v0.4.30.json") == Ok(str(target_file))
+        assert resolve_snapshot_path("./some_other_dir/jax_v0.4.30.json") == Ok(str(target_file))
+        assert resolve_snapshot_path("jax_v0.4.30") == Ok(str(target_file))
+        assert resolve_snapshot_path("jax") == Ok(str(target_file))
 
 
 def test_resolve_snapshot_path_not_found(tmp_path: Path) -> None:
-    """Verify resolve snapshot path not found behavior.
+    """Verify resolve snapshot path returns Err(SnapshotNotFoundError) when missing.
 
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    # Should just return the input path if nothing works
+    del tmp_path
     with patch("ml_ecosystem_snapshots.cli.__file__", "/tmp/does_not_exist/cli.py"):
         resolved = resolve_snapshot_path("missing_framework")
-        assert resolved == "missing_framework"
+        assert isinstance(resolved, Err)
+        assert isinstance(resolved.error, SnapshotNotFoundError)
 
 
 def test_resolve_multiple_matches(tmp_path: Path) -> None:
@@ -106,7 +93,7 @@ def test_resolve_multiple_matches(tmp_path: Path) -> None:
         str(Path(os.path.join(pkg_dir, "cli.py"))),
     ):
         res = resolve_snapshot_path("torch")
-        assert res == str(Path(os.path.join(snapshots_dir, "torch-2.0.json")))
+        assert res == Ok(str(Path(os.path.join(snapshots_dir, "torch-2.0.json"))))
 
 
 def test_resolve_no_matches_in_existing_dir(tmp_path: Path) -> None:
@@ -126,7 +113,8 @@ def test_resolve_no_matches_in_existing_dir(tmp_path: Path) -> None:
         str(Path(os.path.join(pkg_dir, "cli.py"))),
     ):
         res = resolve_snapshot_path("nonexistent_framework")
-        assert res == "nonexistent_framework"
+        assert isinstance(res, Err)
+        assert isinstance(res.error, SnapshotNotFoundError)
 
 
 def test_resolve_snapshot_path_from_pkg_snapshots(tmp_path: Path) -> None:
@@ -146,17 +134,9 @@ def test_resolve_snapshot_path_from_pkg_snapshots(tmp_path: Path) -> None:
         "ml_ecosystem_snapshots.cli.__file__",
         str(Path(os.path.join(pkg_dir, "cli.py"))),
     ):
-        # Exact match with json extension
-        resolved = resolve_snapshot_path("flax_v0.8.0.json")
-        assert resolved == str(target_file)
-
-        # Match without json extension
-        resolved = resolve_snapshot_path("flax_v0.8.0")
-        assert resolved == str(target_file)
-
-        # Prefix match
-        resolved = resolve_snapshot_path("flax")
-        assert resolved == str(target_file)
+        assert resolve_snapshot_path("flax_v0.8.0.json") == Ok(str(target_file))
+        assert resolve_snapshot_path("flax_v0.8.0") == Ok(str(target_file))
+        assert resolve_snapshot_path("flax") == Ok(str(target_file))
 
 
 def test_resolve_snapshot_path_from_pkg_frameworks(tmp_path: Path) -> None:
@@ -176,8 +156,7 @@ def test_resolve_snapshot_path_from_pkg_frameworks(tmp_path: Path) -> None:
         "ml_ecosystem_snapshots.cli.__file__",
         str(Path(os.path.join(pkg_dir, "cli.py"))),
     ):
-        resolved = resolve_snapshot_path("amd_rdna_exhaustive.json")
-        assert resolved == str(target_file)
+        assert resolve_snapshot_path("amd_rdna_exhaustive.json") == Ok(str(target_file))
 
 
 def test_resolve_snapshot_path_from_cwd_snapshots(tmp_path: Path) -> None:
@@ -204,10 +183,8 @@ def test_resolve_snapshot_path_from_cwd_snapshots(tmp_path: Path) -> None:
         ),
         patch(
             "ml_ecosystem_snapshots.network_env.get_custom_snapshots_paths",
-            return_value=[],
+            return_value=(),
         ),
     ):
-        resolved = resolve_snapshot_path("custom_v1.0.0.json")
-        assert resolved == str(target_file)
-        resolved_prefix = resolve_snapshot_path("custom")
-        assert resolved_prefix == str(target_file)
+        assert resolve_snapshot_path("custom_v1.0.0.json") == Ok(str(target_file))
+        assert resolve_snapshot_path("custom") == Ok(str(target_file))

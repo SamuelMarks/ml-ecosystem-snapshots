@@ -178,7 +178,7 @@ def explain_python_anti_pattern(
         is_known_anti_pattern=False,
         canonical_argument=None,
         explanation=f"Argument '{hallucinated_argument}' is not recognized in {framework} for '{api_path}'.",
-        canonical_params=canonical_params,
+        canonical_params=tuple(canonical_params),
         canonical_example=f"{api_path}(...)",
     )
 

@@ -1,16 +1,20 @@
 """ML-Switcheroo IR API Snapshot Extractor.
 
 Dynamically introspects live `ml_switcheroo_ir` public classes, protocols,
-exceptions, enums, and graph transformation functions so the IR snapshot stays
-in strict 1-to-1 parity with the installed `ml_switcheroo_ir` package.
+typeclasses, identifiers, proofs, exceptions, enums, constants, and graph
+transformation functions so the IR snapshot stays in strict 1-to-1 parity
+with the installed `ml_switcheroo_ir` package.
 """
 
 from __future__ import annotations
 
 import enum
 import inspect
+import typing
 
 import ml_switcheroo_ir as ir
+import pydantic
+import typing_extensions
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
     GhostRef,
@@ -24,85 +28,227 @@ from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     get_runtime_signature,
 )
 from ml_ecosystem_snapshots.introspection.sanitize import (
+    default_value_or_none,
     sanitize_param_default,
     sanitize_type_str,
 )
 
 IR_EXPORTED_SYMBOLS: tuple[str, ...] = (
-    "LogicalGraph",
-    "IRGraph",
-    "LogicalNode",
-    "IRNode",
-    "TensorSpec",
-    "TensorShape",
-    "LogicalEdge",
-    "LogicalMesh",
-    "LogicalAxis",
-    "PartitionSpec",
-    "NodeDict",
-    "DType",
-    "EdgeList",
-    "VersionedOutputList",
-    "AutodiffSentinelProtocol",
-    "DTypeLikeProtocol",
-    "DeviceLikeProtocol",
-    "SymbolicNodeProtocol",
-    "SymbolicIntWrapperProtocol",
-    "CustomRuleHandleProtocol",
-    "LoopOptionsProtocol",
-    "MeshLikeProtocol",
+    "ALL_DIALECT_CATALOG_WITNESSES",
+    "ARRAY_API_REGISTRY",
+    "ATEN_REGISTRY",
+    "CANONICAL_OPTIMIZE_PIPELINE",
+    "CHEX_REGISTRY",
+    "CSE_PASS",
+    "DCE_PASS",
+    "GRAIN_REGISTRY",
+    "MLIR_REGISTRY",
+    "ODL_CATALOG",
+    "OPTAX_REGISTRY",
+    "ORBAX_REGISTRY",
+    "SHAPE_CONSTANT_PROP_PASS",
+    "AcyclicSortedPhase",
     "ArrayBufferProtocol",
-    "SubgraphLikeProtocol",
-    "ZeroTangent",
-    "NoTangent",
-    "SymNode",
-    "Polynomial",
-    "SymInt",
-    "SymVar",
-    "SymConst",
-    "SymBinaryOp",
-    "SymUnaryOp",
-    "SymPiecewise",
-    "WebRTCSignalingTopology",
-    "WebRTCPeerConfig",
-    "PipelineTopologyConfig",
-    "MicrobatchSplittingConfig",
-    "MeshMappingConfig",
-    "StageCommunicationConfig",
-    "DependencyConfig",
-    "PipelineScheduleConfig",
-    "SchedulePhaseConfig",
-    "SymbolicSolver",
-    "SymbolicConstraintTracker",
-    "ShapeTracker",
-    "ParameterTranslationEngine",
+    "AttrTerm",
+    "AttributeValue",
+    "AutodiffSentinelProtocol",
     "BaseFrontend",
-    "GraphFrontend",
+    "BoundedLattice",
+    "Codec",
+    "CodecError",
     "CompilerBackend",
+    "CustomRuleHandleProtocol",
     "CyclicGraphError",
-    "ShapeMismatchError",
+    "DType",
+    "DTypeLikeProtocol",
+    "DependencyConfig",
+    "DeviceLikeProtocol",
     "DiagnosticSeverity",
+    "DialectCatalogWitness",
+    "DialectDomain",
+    "DimensionType",
+    "DimensionValue",
+    "EdgeList",
+    "Endo",
+    "EndoRewrite",
+    "Eq",
+    "Err",
+    "ExtendedGhostRef",
+    "GhostOverload",
+    "GhostParam",
+    "GraphFrontend",
+    "GraphTransformPass",
+    "GroundedPhase",
     "GroundingDiagnostic",
     "GroundingReport",
-    "eliminate_dead_nodes",
+    "HashableWitness",
+    "IRGraph",
+    "IRNode",
+    "InitializerValue",
+    "Invalid",
+    "JsonCodec",
+    "LogicalAxis",
+    "LogicalEdge",
+    "LogicalGraph",
+    "LogicalMesh",
+    "LogicalNode",
+    "LoopOptionsProtocol",
+    "MeshAxisName",
+    "MeshLikeProtocol",
+    "MeshMappingConfig",
+    "MicrobatchSplittingConfig",
+    "Monoid",
+    "NoTangent",
+    "NodeDict",
+    "NodeId",
+    "NonBoolInt",
+    "NonNegativeInt",
+    "Ok",
+    "OpName",
+    "Ord",
+    "Ordering",
+    "ParameterTranslationEngine",
+    "PartialIso",
+    "PartitionSpec",
+    "PipelineScheduleConfig",
+    "PipelineTopologyConfig",
+    "Polynomial",
+    "PortRef",
+    "PositiveInt",
+    "Pretty",
+    "ProvenGraph",
+    "PythonExprEmit",
+    "QualifiedOpKey",
+    "RecursiveFold",
+    "Result",
+    "Ring",
+    "SchedulePhaseConfig",
+    "SchemaValidPhase",
+    "Semigroup",
+    "Semiring",
+    "ShapeMetadataType",
+    "ShapeMismatchError",
+    "ShapeTracker",
+    "ShardingValidPhase",
+    "SsaValueName",
+    "StageCommunicationConfig",
+    "SubgraphLikeProtocol",
+    "SymBinaryOp",
+    "SymCondition",
+    "SymConst",
+    "SymExpr",
+    "SymInt",
+    "SymNode",
+    "SymPiecewise",
+    "SymUnaryOp",
+    "SymVar",
+    "SymbolicConstraintTracker",
+    "SymbolicDimProtocol",
+    "SymbolicIntWrapperProtocol",
+    "SymbolicNodeProtocol",
+    "SymbolicSolver",
+    "TensorShape",
+    "TensorSpec",
+    "Valid",
+    "Validation",
+    "VersionedOutputList",
+    "WebRTCPeerConfig",
+    "WebRTCSignalingTopology",
+    "ZeroTangent",
+    "broadcast_dimension",
+    "broadcast_shapes",
+    "compose_passes",
     "eliminate_common_subexpressions",
-    "propagate_shapes_and_constants",
+    "eliminate_dead_nodes",
+    "embed_attribute_value",
     "estimate_communication_volume",
     "estimate_graph_communication_volume",
-    "topological_sort",
-    "export_to_python",
     "export_schemas",
-    "get_json_schema",
+    "export_to_python",
+    "fixpoint_graph_pass",
     "generate_typescript_definitions",
     "get_abstract_op",
-    "broadcast_shapes",
-    "broadcast_dimension",
+    "get_catalog_path",
+    "get_json_schema",
+    "graph_from_dict_result",
+    "graph_from_json_result",
+    "is_dynamic_dimension",
+    "is_non_bool_int",
+    "is_symbolic_dimension",
     "matmul_shape",
     "normalize_axis",
+    "normalize_dimension_tuple",
+    "normalize_dtype",
+    "normalize_optional_dtype",
+    "project_attribute_value",
+    "propagate_shapes_and_constants",
+    "prove_acyclic_sorted",
+    "prove_grounded",
+    "prove_schema_valid",
+    "prove_sharding_valid",
+    "topological_sort",
 )
 
-_NON_SIGNATURE_TYPES: frozenset[str] = frozenset({"DType", "DiagnosticSeverity", "CyclicGraphError"})
+_NON_SIGNATURE_TYPES: frozenset[str] = frozenset({"DType", "DiagnosticSeverity", "Ordering", "CyclicGraphError"})
 _INITIAL_IR_MEMBERS: dict[str, LivePythonTarget] = get_member_dict(ir)
+
+
+class _IrSymbolVariant(pydantic.BaseModel):
+    """Frozen base model for `ml_switcheroo_ir` symbol classification variants."""
+
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
+
+    target: LivePythonTarget
+
+
+class _IrClassSymbol(_IrSymbolVariant):
+    """Exported `ml_switcheroo_ir` class or protocol with an inspectable constructor signature."""
+
+
+class _IrFunctionSymbol(_IrSymbolVariant):
+    """Exported `ml_switcheroo_ir` function or callable `GraphTransformPass` instance."""
+
+
+class _IrEnumOrExceptionSymbol(_IrSymbolVariant):
+    """Exported `ml_switcheroo_ir` enum or C-backed exception without an explicit Python constructor."""
+
+
+class _IrTypeAliasOrNewTypeSymbol(_IrSymbolVariant):
+    """Exported `ml_switcheroo_ir` `TypeAlias` union, generic alias, or `NewType` wrapper."""
+
+
+class _IrConstantWitnessSymbol(_IrSymbolVariant):
+    """Exported `ml_switcheroo_ir` module-level catalog registry or frozen witness constant."""
+
+
+_IrSymbolClassification: typing_extensions.TypeAlias = (
+    "_IrClassSymbol"
+    " | _IrFunctionSymbol"
+    " | _IrEnumOrExceptionSymbol"
+    " | _IrTypeAliasOrNewTypeSymbol"
+    " | _IrConstantWitnessSymbol"
+)
+
+
+def _classify_ir_symbol(name: str, target: LivePythonTarget) -> _IrSymbolClassification:
+    """Classify a live `ml_switcheroo_ir` export into a closed `_IrSymbolClassification` variant.
+
+    Args:
+        name: Public symbol name in `ml_switcheroo_ir`.
+        target: Runtime symbol value retrieved from `ml_switcheroo_ir`.
+
+    Returns:
+        Disjoint `_IrSymbolClassification` sum-type instance.
+    """
+    if typing.get_origin(target) is not None or "__supertype__" in get_member_dict(target):
+        return _IrTypeAliasOrNewTypeSymbol.model_construct(target=target)
+    if isinstance(target, enum.EnumMeta) or name in _NON_SIGNATURE_TYPES:
+        return _IrEnumOrExceptionSymbol.model_construct(target=target)
+    if isinstance(target, type):
+        return _IrClassSymbol.model_construct(target=target)
+    if callable(target):
+        return _IrFunctionSymbol.model_construct(target=target)
+    return _IrConstantWitnessSymbol.model_construct(target=target)
 
 
 def _build_ir_ghost_param(param: inspect.Parameter) -> GhostParam:
@@ -122,8 +268,7 @@ def _build_ir_ghost_param(param: inspect.Parameter) -> GhostParam:
 
     default_str: str | None = None
     if param.default is not inspect.Parameter.empty:
-        sanitized_def, _factory, _mandatory = sanitize_param_default(param.default)
-        default_str = sanitized_def if sanitized_def is not None else "..."
+        default_str = default_value_or_none(sanitize_param_default(param.default), unrepresentable_token="...")
 
     return GhostParam(
         name=param.name,
@@ -133,29 +278,65 @@ def _build_ir_ghost_param(param: inspect.Parameter) -> GhostParam:
     )
 
 
+def _extract_summary_doc(name: str, target: LivePythonTarget, fallback_prefix: str) -> str:
+    """Extract a single-line summary docstring for `target` with a deterministic fallback.
+
+    Args:
+        name: Public symbol name.
+        target: Runtime symbol object.
+        fallback_prefix: Prefix used when `inspect.getdoc(target)` is unavailable.
+
+    Returns:
+        Non-empty summary documentation line.
+    """
+    raw_doc = inspect.getdoc(target)
+    if raw_doc:
+        return raw_doc.splitlines()[0].strip()
+    return f"{fallback_prefix} {name}."
+
+
 def _inspect_ir_symbol(name: str, target: LivePythonTarget) -> GhostRef:
     """Build a `GhostRef` for a single exported `ml_switcheroo_ir` symbol.
 
     Args:
         name: Public symbol name in `ml_switcheroo_ir`.
-        target: Runtime class, enum, protocol, or function object.
+        target: Runtime class, enum, protocol, type alias, constant, or function object.
 
     Returns:
         Constructed `GhostRef` with live parameters, return type, and docstring.
     """
-    is_cls = isinstance(target, type) or isinstance(target, enum.EnumMeta)
-    kind = "class" if is_cls else "function"
-    raw_doc = inspect.getdoc(target) if (is_cls or callable(target)) else None
-    summary_doc = raw_doc.splitlines()[0].strip() if raw_doc else f"IR symbol {name}."
-
+    classified = _classify_ir_symbol(name, target)
+    kind: str
+    summary_doc: str
     params: list[GhostParam] = []
     returns_type: str | None = None
-    if name not in _NON_SIGNATURE_TYPES and callable(target):
-        sig = get_runtime_signature(target)
+
+    if isinstance(classified, _IrClassSymbol):
+        cls_target = classified.target
+        kind = "class"
+        summary_doc = _extract_summary_doc(name, cls_target, "IR class")
+        sig = get_runtime_signature(cls_target)
         params = [_build_ir_ghost_param(p) for p in sig.parameters.values()]
-        if not is_cls and sig.return_annotation is not inspect.Parameter.empty:
+    elif isinstance(classified, _IrFunctionSymbol):
+        fn_target = classified.target
+        kind = "function"
+        summary_doc = _extract_summary_doc(name, fn_target, "IR function")
+        sig = get_runtime_signature(fn_target)
+        params = [_build_ir_ghost_param(p) for p in sig.parameters.values()]
+        if sig.return_annotation is not inspect.Parameter.empty:
             raw_ret = sig.return_annotation if isinstance(sig.return_annotation, str) else str(sig.return_annotation)
             returns_type = sanitize_type_str(raw_ret)
+    elif isinstance(classified, _IrEnumOrExceptionSymbol):
+        kind = "class"
+        summary_doc = _extract_summary_doc(name, classified.target, "IR symbol")
+    elif isinstance(classified, _IrTypeAliasOrNewTypeSymbol):
+        kind = "class"
+        summary_doc = f"IR type definition {name}."
+    elif isinstance(classified, _IrConstantWitnessSymbol):
+        kind = "class"
+        summary_doc = _extract_summary_doc(name, classified.target, "IR constant")
+    else:
+        typing_extensions.assert_never(classified)
 
     return GhostRef(
         name=name,
@@ -184,4 +365,12 @@ def collect_api(category: SemanticTier, include_nonpublic: bool = False) -> list
     return [_inspect_ir_symbol(sym, members[sym]) for sym in IR_EXPORTED_SYMBOLS]
 
 
-__all__ = ["IR_EXPORTED_SYMBOLS", "collect_api"]
+extract_ir_summary_doc = _extract_summary_doc
+inspect_ir_symbol = _inspect_ir_symbol
+
+__all__ = [
+    "IR_EXPORTED_SYMBOLS",
+    "collect_api",
+    "extract_ir_summary_doc",
+    "inspect_ir_symbol",
+]

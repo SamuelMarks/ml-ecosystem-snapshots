@@ -12,6 +12,7 @@ from unittest import mock
 
 import pytest
 import pytest_mock
+from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, raise_on_err
 
 from ml_ecosystem_snapshots.index import IndexedSymbolRecord
 from ml_ecosystem_snapshots.mcp_server import (
@@ -381,8 +382,13 @@ def test_handle_mcp_message_check_code_block() -> None:
     }
     resp = handle_mcp_message(msg)
     assert resp.result is not None
-    assert '"hallucinations_detected": 1' in ensure_present(ensure_present(resp.result).content)[0].text
-    assert '"is_valid": false' in ensure_present(ensure_present(resp.result).content)[0].text
+    assert (
+        '"hallucinations_detected": 1'
+        in raise_on_err(ensure_present(raise_on_err(ensure_present(resp.result)).content))[0].text
+    )
+    assert (
+        '"is_valid": false' in raise_on_err(ensure_present(raise_on_err(ensure_present(resp.result)).content))[0].text
+    )
 
 
 def test_mcp_server_disk_and_index_fallbacks(mocker: pytest_mock.MockerFixture, tmp_path: Path) -> None:
@@ -835,7 +841,7 @@ v_add_f32 v0, v1, v2
     }
     resp = handle_mcp_message(req)
     assert resp.id == 42
-    assert '"is_valid": true' in ensure_present(ensure_present(resp.result).content)[0].text
+    assert '"is_valid": true' in raise_on_err(ensure_present(raise_on_err(ensure_present(resp.result)).content))[0].text
 
 
 def test_shape_and_dtype_grounding(mocker: pytest_mock.MockerFixture) -> None:
@@ -1079,7 +1085,10 @@ def test_explain_anti_pattern_tool(mocker: pytest_mock.MockerFixture) -> None:
     resp = handle_mcp_message(msg)
     assert resp.id == 101
     assert resp.result is not None
-    assert '"canonical_argument": "dim"' in ensure_present(ensure_present(resp.result).content)[0].text
+    assert (
+        '"canonical_argument": "dim"'
+        in raise_on_err(ensure_present(raise_on_err(ensure_present(resp.result)).content))[0].text
+    )
 
 
 def test_mcp_edge_error_handling(mocker: pytest_mock.MockerFixture) -> None:
@@ -1167,7 +1176,7 @@ def test_mcp_edge_error_handling(mocker: pytest_mock.MockerFixture) -> None:
     # 1. explain_anti_pattern with unknown framework and API (sig is None)
     res_none_sig = explain_anti_pattern("nonexistent_fw", "nonexistent.op", "bad_arg")
     assert res_none_sig.is_known_anti_pattern is False
-    assert res_none_sig.canonical_params == []
+    assert res_none_sig.canonical_params == ()
 
     # 2. check_hallucination: logical/bitwise op with non-float dtype followed by float dtype (714->713)
     res_dup_dtype = check_hallucination(
@@ -1550,33 +1559,31 @@ def test_extended_dtypes_normalization() -> None:
     assert normalize_dtype_name("str") == "string"
 
     # Bitwidths
-    assert get_dtype_bitwidth("qint8") == 8
-    assert get_dtype_bitwidth("qint4") == 4
-    assert get_dtype_bitwidth("int2") == 2
-    assert get_dtype_bitwidth("float8_e4m3b11fnuz") == 8
-    assert get_dtype_bitwidth("float32") == 32
+    assert get_dtype_bitwidth("qint8") == Ok(8)
+    assert get_dtype_bitwidth("qint4") == Ok(4)
+    assert get_dtype_bitwidth("int2") == Ok(2)
+    assert get_dtype_bitwidth("float8_e4m3b11fnuz") == Ok(8)
+    assert get_dtype_bitwidth("float32") == Ok(32)
 
     # Memory estimation
-    assert estimate_tensor_memory_bytes([2, 4], "int4") == 4.0
-    assert estimate_tensor_memory_bytes([10], "int2") == 2.5
-    assert estimate_tensor_memory_bytes([10], "float32") == 40.0
+    assert estimate_tensor_memory_bytes([2, 4], "int4") == Ok(4.0)
+    assert estimate_tensor_memory_bytes([10], "int2") == Ok(2.5)
+    assert estimate_tensor_memory_bytes([10], "float32") == Ok(40.0)
 
     # Operator dtype validation
-    ok, err = validate_dtype_for_op("sin", "float32")
-    assert ok is True
-    assert err is None
+    res_sin = validate_dtype_for_op("sin", "float32")
+    assert isinstance(res_sin, Ok)
 
-    ok_q, err_q = validate_dtype_for_op("sin", "qint8")
-    assert ok_q is False
-    assert "not supported for transcendental" in (err_q or "")
+    res_q = validate_dtype_for_op("sin", "qint8")
+    assert isinstance(res_q, Err)
+    assert "not supported for transcendental" in res_q.error
 
-    ok_c, err_c = validate_dtype_for_op("cholesky", "int32")
-    assert ok_c is False
-    assert "not supported for transcendental" in (err_c or "")
+    res_c = validate_dtype_for_op("cholesky", "int32")
+    assert isinstance(res_c, Err)
+    assert "not supported for transcendental" in res_c.error
 
-    ok_b, err_b = validate_dtype_for_op("bitwise_and", "int32")
-    assert ok_b is True
-    assert err_b is None
+    res_b = validate_dtype_for_op("bitwise_and", "int32")
+    assert isinstance(res_b, Ok)
 
 
 def testmatches_rank_constraint_variants() -> None:
@@ -1638,7 +1645,7 @@ def test_all_14_mcp_tools_dispatch() -> None:
         "params": {},
     }
     resp_list = handle_mcp_message(tools_list_msg)
-    tool_names = {t["name"] for t in ensure_present(ensure_present(resp_list.result).tools)}
+    tool_names = {t["name"] for t in raise_on_err(ensure_present(raise_on_err(ensure_present(resp_list.result)).tools))}
     assert len(tool_names) == 29
 
     # Test tools/call dispatch for all domain check tools

@@ -114,7 +114,9 @@ def test_collect_api_inspection_exception_handled() -> None:
 
 def test_extract_snapshot_scipy() -> None:
     """Verify full snapshot extraction for scipy target."""
-    snap = extract_snapshot("scipy")
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
+    snap = raise_on_err(extract_snapshot("scipy")).to_wire_dict()
     assert snap.get("target") == "scipy"
     cats = snap.get("categories", {})
     assert isinstance(cats, dict)

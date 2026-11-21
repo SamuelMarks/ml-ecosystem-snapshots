@@ -6,7 +6,7 @@ import re
 import typing
 
 from ml_ecosystem_snapshots.grounding.models import IsaCheckResult
-from ml_ecosystem_snapshots.models import JsonValue, ensure_json_dict, ensure_json_list
+from ml_ecosystem_snapshots.models import JsonValue, json_dict_or_empty, json_tuple_or_empty
 
 
 def _parse_sass_mnemonic_and_modifiers(
@@ -51,11 +51,11 @@ def _find_sass_instruction_record(
     Returns:
         Matching instruction dictionary, or None if not found.
     """
-    raw_cats = ensure_json_dict(snap.get("categories") or {})
+    raw_cats = json_dict_or_empty(snap.get("categories") or {})
     for _cat, raw_items in raw_cats.items():
-        items = ensure_json_list(raw_items)
+        items = json_tuple_or_empty(raw_items)
         for raw_item in items:
-            item = ensure_json_dict(raw_item)
+            item = json_dict_or_empty(raw_item)
             name = str(item.get("mnemonic") or item.get("name") or "")
             if name and name.upper() == target_name:
                 return dict(item)
@@ -178,7 +178,7 @@ def verify_sass_instruction(
         return IsaCheckResult(
             is_valid=False,
             mnemonic_exists=False,
-            errors=[f"Instruction mnemonic '{target_name}' does not exist in SASS ISA."],
+            errors=(f"Instruction mnemonic '{target_name}' does not exist in SASS ISA.",),
         )
 
     raw_meta = inst.get("domain_metadata")
@@ -231,9 +231,9 @@ def verify_sass_instruction(
     return IsaCheckResult(
         is_valid=len(errors) == 0,
         mnemonic_exists=True,
-        supported_architectures=supported_archs,
-        valid_modifiers=valid_modifiers,
-        errors=errors,
+        supported_architectures=tuple(supported_archs),
+        valid_modifiers=tuple(valid_modifiers),
+        errors=tuple(errors),
     )
 
 
@@ -252,11 +252,11 @@ def _find_rdna_instruction_record(
     Returns:
         Matched instruction dictionary, or None if not found.
     """
-    raw_cats = ensure_json_dict(snap.get("categories") or {})
+    raw_cats = json_dict_or_empty(snap.get("categories") or {})
     for _cat, raw_items in raw_cats.items():
-        items = ensure_json_list(raw_items)
+        items = json_tuple_or_empty(raw_items)
         for raw_item in items:
-            item = ensure_json_dict(raw_item)
+            item = json_dict_or_empty(raw_item)
             name = str(item.get("mnemonic") or item.get("name") or "").lower()
             if name in (target_name, base_target):
                 return dict(item)
@@ -352,7 +352,7 @@ def verify_rdna_instruction(
         return IsaCheckResult(
             is_valid=False,
             mnemonic_exists=False,
-            errors=[f"Instruction mnemonic '{target_name}' does not exist in RDNA ISA."],
+            errors=(f"Instruction mnemonic '{target_name}' does not exist in RDNA ISA.",),
         )
 
     if extracted_suffix:
@@ -400,8 +400,8 @@ def verify_rdna_instruction(
         is_valid=len(errors) == 0,
         mnemonic_exists=True,
         encoding=actual_encoding,
-        supported_architectures=supported_archs,
-        errors=errors,
+        supported_architectures=tuple(supported_archs),
+        errors=tuple(errors),
     )
 
 
@@ -439,7 +439,7 @@ def verify_ptx_instruction(
         return IsaCheckResult(
             is_valid=False,
             mnemonic_exists=False,
-            errors=[f"Instruction mnemonic '{mnemonic}' does not exist in PTX ISA."],
+            errors=(f"Instruction mnemonic '{mnemonic}' does not exist in PTX ISA.",),
         )
 
     errors = validate_ptx_instruction(
@@ -454,14 +454,14 @@ def verify_ptx_instruction(
 
     inst_meta = ptx_db[clean_mnem]
     raw_supp_types = inst_meta.get("supported_types")
-    supp_types = [str(t) for t in raw_supp_types] if isinstance(raw_supp_types, list) else []
+    supp_types = tuple(str(t) for t in raw_supp_types) if isinstance(raw_supp_types, (list, tuple)) else ()
     return IsaCheckResult(
         is_valid=len(errors) == 0,
         mnemonic_exists=True,
         category=str(inst_meta.get("category") or "instruction"),
         min_sm=str(inst_meta.get("min_sm") or "sm_50"),
         supported_types=supp_types,
-        errors=errors,
+        errors=tuple(errors),
     )
 
 

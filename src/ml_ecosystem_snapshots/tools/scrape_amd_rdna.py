@@ -79,10 +79,13 @@ def fetch_td_file(filename: str, local_dir: str | None = None, use_cache: bool =
             pass
 
     url = f"{LLVM_REPO_BASE}/{filename}"
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
     from ml_ecosystem_snapshots.network_env import fetch_url
 
-    content = fetch_url(url)
-    if content is not None:
+    content_res = fetch_url(url)
+    if isinstance(content_res, Ok):
+        content = content_res.value
         if use_cache:
             try:
                 os.makedirs(cache_dir, exist_ok=True)
@@ -98,7 +101,6 @@ def fetch_td_file(filename: str, local_dir: str | None = None, use_cache: bool =
                 OSError,
                 ImportError,
                 RuntimeError,
-                Exception,
             ):
                 pass
         return content
@@ -285,8 +287,8 @@ def resolve_td_instruction_info(def_name: str, class_name: str, mnemonic: str) -
         mnemonic=mnemonic,
         architecture=_resolve_rdna_architecture(cls_df),
         encoding=encoding,
-        modifiers=modifiers,
-        operands=operands,
+        modifiers=tuple(modifiers),
+        operands=tuple(operands),
     )
 
 
@@ -422,8 +424,8 @@ def parse_llvm_tblgen_json(
                 architecture=arch,
                 description=f"AMD RDNA {clean_mnemonic} instruction.",
                 encoding=encoding,
-                modifiers=list(sorted(list(set(modifiers)))),
-                operands=operands_list,
+                modifiers=tuple(sorted(set(modifiers))),
+                operands=tuple(operands_list),
             )
         )
 
@@ -474,7 +476,7 @@ def scrape_amd_rdna(
             inst_enc[base_name] = instr.encoding or "Unknown"
             inst_arch[base_name] = (
                 ",".join(instr.architecture)
-                if isinstance(instr.architecture, list)
+                if isinstance(instr.architecture, tuple)
                 else str(instr.architecture or "GFX10+")
             )
 
@@ -504,8 +506,8 @@ def scrape_amd_rdna(
                 architecture=inst_arch[mnemonic],
                 description=f"AMD RDNA {mnemonic} instruction.",
                 encoding=inst_enc[mnemonic],
-                modifiers=list(sorted(list(inst_mods[mnemonic]))),
-                operands=inst_ops[mnemonic],
+                modifiers=tuple(sorted(inst_mods[mnemonic])),
+                operands=tuple(inst_ops[mnemonic]),
             )
         )
 

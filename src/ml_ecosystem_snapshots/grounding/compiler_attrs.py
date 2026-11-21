@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import typing
 
-from ml_ecosystem_snapshots.models import JsonValue, ensure_json_dict, ensure_json_list
+from ml_ecosystem_snapshots.models import JsonValue, json_dict_or_empty, json_tuple_or_empty
 
 
 def _extract_mlir_operands_and_attrs(
@@ -24,7 +24,7 @@ def _extract_mlir_operands_and_attrs(
     if isinstance(raw_operands, list):
         operands = [dict(o) if isinstance(o, dict) else str(o) for o in raw_operands]
     else:
-        raw_params = ensure_json_list(inst.get("params") or [])
+        raw_params = json_tuple_or_empty(inst.get("params") or [])
         operands = [
             dict(p)
             for p in raw_params
@@ -351,11 +351,11 @@ def _find_mlir_op_record(
     Returns:
         Matching operation record dictionary, or None if not found.
     """
-    raw_cats = ensure_json_dict(snap.get("categories") or {})
+    raw_cats = json_dict_or_empty(snap.get("categories") or {})
     for _cat_name, raw_items in raw_cats.items():
-        items = ensure_json_list(raw_items)
+        items = json_tuple_or_empty(raw_items)
         for raw_item in items:
-            item = ensure_json_dict(raw_item)
+            item = json_dict_or_empty(raw_item)
             path = item.get("api_path") or item.get("name")
             if path == target_op:
                 return dict(item)

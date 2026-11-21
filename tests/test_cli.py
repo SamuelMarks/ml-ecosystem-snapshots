@@ -717,7 +717,7 @@ def test_cli_check_commands_end_to_end(
     with monkeypatch.context() as mp:
         mp.setattr(
             "ml_ecosystem_snapshots.cli.commands.verify_isa.verify_ptx_instruction",
-            lambda *_a, **_kw: IsaCheckResult(is_valid=True, min_sm=None, supported_types=[], errors=[]),
+            lambda *_a, **_kw: IsaCheckResult(is_valid=True, min_sm=None, supported_types=(), errors=()),
         )
         mp.setattr("sys.argv", ["ml-snapshots", "check-ptx", "dummy_valid"])
         main()
@@ -734,6 +734,12 @@ def test_cli_check_commands_end_to_end(
     with pytest.raises(SystemExit):
         main()
     assert "Error: Instruction mnemonic must be specified." in capsys.readouterr().out
+
+    monkeypatch.setattr("sys.argv", ["ml-snapshots", "check-ptx", "--help"])
+    with pytest.raises(SystemExit) as ptx_help_exc:
+        main()
+    assert ptx_help_exc.value.code == 0
+    assert "%r0,%r1,%r2" in capsys.readouterr().out
 
     monkeypatch.setattr("sys.argv", ["ml-snapshots", "check-onnx", "Add", "--inputs", "2"])
     main()

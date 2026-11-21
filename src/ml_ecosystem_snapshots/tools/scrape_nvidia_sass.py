@@ -12,7 +12,7 @@ from collections import defaultdict
 from ml_ecosystem_snapshots.models import (
     IsaInstructionRecordModel,
     JsonValue,
-    ensure_json_dict,
+    json_dict_or_empty,
 )
 
 
@@ -116,10 +116,10 @@ def _build_sorted_sass_records(
         result.append(
             IsaInstructionRecordModel(
                 mnemonic=mnemonic,
-                architecture=list(resolve_instruction_architectures(mnemonic)),
+                architecture=tuple(resolve_instruction_architectures(mnemonic)),
                 description=f"NVIDIA SASS {mnemonic} instruction.",
-                modifiers=list(sorted(list(inst_mods[mnemonic]))),
-                operands=list(inst_ops[mnemonic]),
+                modifiers=tuple(sorted(inst_mods[mnemonic])),
+                operands=tuple(inst_ops[mnemonic]),
             )
         )
     return result
@@ -212,8 +212,8 @@ def parse_cuda_binary_utilities(
     inst_ops: dict[str, list[JsonValue]] = defaultdict(list)
 
     for _key, raw_val in data.items():
-        val = ensure_json_dict(raw_val, "SASS instruction entry")
-        parsed = ensure_json_dict(val.get("parsed", {}), "SASS parsed instruction")
+        val = json_dict_or_empty(raw_val)
+        parsed = json_dict_or_empty(val.get("parsed", {}))
         raw_base = parsed.get("base_name")
         if isinstance(raw_base, str) and raw_base:
             base_name = raw_base
@@ -223,7 +223,7 @@ def parse_cuda_binary_utilities(
             sig: list[JsonValue] = []
             raw_pops = parsed.get("operands", [])
             for raw_op in raw_pops if isinstance(raw_pops, list) else []:
-                op = ensure_json_dict(raw_op, "SASS operand")
+                op = json_dict_or_empty(raw_op)
                 sig.append(_classify_cuda_utility_operand(op))
 
             if sig not in inst_ops[base_name]:
@@ -526,15 +526,15 @@ def _append_sass_catalog_entry(
     """
     if mnemonic not in seen:
         seen.add(mnemonic)
-        mod_list = [str(m) for m in modifiers] if isinstance(modifiers, list) else []
-        op_list = list(operands) if isinstance(operands, list) else []
+        mod_tuple = tuple(str(m) for m in modifiers) if isinstance(modifiers, list) else ()
+        op_tuple = tuple(operands) if isinstance(operands, list) else ()
         catalog.append(
             IsaInstructionRecordModel(
                 mnemonic=mnemonic,
-                architecture=list(resolve_instruction_architectures(mnemonic)),
+                architecture=tuple(resolve_instruction_architectures(mnemonic)),
                 description=str(description or f"NVIDIA SASS {mnemonic} instruction."),
-                modifiers=mod_list,
-                operands=op_list,
+                modifiers=mod_tuple,
+                operands=op_tuple,
             )
         )
 

@@ -22,6 +22,7 @@ from unittest.mock import patch
 import pytest
 import pytest_mock
 from ml_switcheroo_ir.schema.ghost import GhostParam, GhostRef, ParameterKind
+from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, raise_on_err
 
 from ml_ecosystem_snapshots.compliance import score_compliance
 from ml_ecosystem_snapshots.diff import diff_snapshots
@@ -355,11 +356,10 @@ def relu(input: Any, inplace: bool = False) -> Any: ...
 class Linear:
     def __init__(self, in_features: int, out_features: int) -> None: ...
 """
-    assert validate_pyi_stub(valid_stub) is True
+    assert isinstance(validate_pyi_stub(valid_stub), Ok)
 
     invalid_stub = """def bad_syntax(::: invalid: ..."""
-    with pytest.raises(SyntaxError):
-        validate_pyi_stub(invalid_stub)
+    assert isinstance(validate_pyi_stub(invalid_stub), Err)
 
 
 def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
@@ -372,7 +372,7 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
     list_req: dict[str, JsonValue] = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
     list_resp = handle_mcp_message(list_req)
     assert list_resp.id == 1
-    tools = ensure_present(ensure_present(list_resp.result).tools)
+    tools = raise_on_err(ensure_present(raise_on_err(ensure_present(list_resp.result)).tools))
     tool_names = [t["name"] for t in tools]
     assert "get_api_signature" in tool_names
     assert "search_apis" in tool_names
@@ -445,7 +445,9 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
     }
     call_sig_resp = handle_mcp_message(call_sig_req)
     assert call_sig_resp.id == 2
-    assert "torch.add" in ensure_present(ensure_present(call_sig_resp.result).content)[0].text
+    assert (
+        "torch.add" in raise_on_err(ensure_present(raise_on_err(ensure_present(call_sig_resp.result)).content))[0].text
+    )
 
     call_search_req: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
@@ -458,7 +460,10 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
     }
     call_search_resp = handle_mcp_message(call_search_req)
     assert call_search_resp.id == 3
-    assert "torch.add" in ensure_present(ensure_present(call_search_resp.result).content)[0].text
+    assert (
+        "torch.add"
+        in raise_on_err(ensure_present(raise_on_err(ensure_present(call_search_resp.result)).content))[0].text
+    )
 
     call_check_req: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
@@ -475,7 +480,7 @@ def test_mcp_server_protocol(mocker: pytest_mock.MockerFixture) -> None:
     }
     call_check_resp = handle_mcp_message(call_check_req)
     assert call_check_resp.id == 4
-    assert "axis" in ensure_present(ensure_present(call_check_resp.result).content)[0].text
+    assert "axis" in raise_on_err(ensure_present(raise_on_err(ensure_present(call_check_resp.result)).content))[0].text
 
     # Test unknown tool
     unknown_tool_req: dict[str, JsonValue] = {
@@ -1149,7 +1154,7 @@ def test_check_mlir_op_variadic_operands(mocker: pytest_mock.MockerFixture) -> N
     # operands_count is 3 != len(operands) (which is 1), but has_variadic is True
     res = check_mlir_op("test.variadic_op", operands_count=3)
     assert res.is_valid is True
-    assert res.errors == []
+    assert res.errors == ()
 
 
 def test_check_mlir_op_structured_attributes_and_type_constraints(
@@ -1955,7 +1960,7 @@ def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         },
     }
     resp_sig = handle_mcp_message(msg_sig)
-    assert "sdpa" in ensure_present(ensure_present(resp_sig.result).content)[0].text
+    assert "sdpa" in raise_on_err(ensure_present(raise_on_err(ensure_present(resp_sig.result)).content))[0].text
 
     msg_search: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
@@ -1971,7 +1976,10 @@ def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         },
     }
     resp_search = handle_mcp_message(msg_search)
-    assert "scaled_dot_product_attention" in ensure_present(ensure_present(resp_search.result).content)[0].text
+    assert (
+        "scaled_dot_product_attention"
+        in raise_on_err(ensure_present(raise_on_err(ensure_present(resp_search.result)).content))[0].text
+    )
 
     msg_chk: dict[str, JsonValue] = {
         "jsonrpc": "2.0",
@@ -1988,7 +1996,10 @@ def test_mcp_server_versioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         },
     }
     resp_chk = handle_mcp_message(msg_chk)
-    assert '"is_hallucinated": false' in ensure_present(ensure_present(resp_chk.result).content)[0].text
+    assert (
+        '"is_hallucinated": false'
+        in raise_on_err(ensure_present(raise_on_err(ensure_present(resp_chk.result)).content))[0].text
+    )
 
 
 def test_opaque_c_extension_guardrails(mocker: pytest_mock.MockerFixture) -> None:
@@ -2358,7 +2369,7 @@ def test_translate_concept_arguments_norm_rpc_and_edge_cases() -> None:
     }
     resp = handle_mcp_message(mcp_msg)
     assert resp.id == 88
-    content = json.loads(ensure_present(ensure_present(resp.result).content)[0].text)
+    content = json.loads(raise_on_err(ensure_present(raise_on_err(ensure_present(resp.result)).content))[0].text)
     assert content["translated_kwargs"]["lhs"] == "A"
 
     # 9. Full branch coverage for unmapped/identity/empty branches
@@ -2506,4 +2517,4 @@ def test_hallucination_accepted_kwargs_bounded_vs_unconstrained(
         kwargs=["dropout_rate", "hallucinated_param"],
     )
     assert invalid_res.is_hallucinated is True
-    assert invalid_res.invalid_kwargs == ["hallucinated_param"]
+    assert invalid_res.invalid_kwargs == ("hallucinated_param",)

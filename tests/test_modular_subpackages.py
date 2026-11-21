@@ -8,6 +8,7 @@ import typing
 
 from ml_ecosystem_snapshots.introspection import (
     GhostInspector,
+    LiteralDefault,
     extract_accepted_kwargs_from_ast,
     preload_griffe_cache,
     sanitize_param_default,
@@ -145,11 +146,13 @@ def test_introspection_and_serialization_subpackages() -> None:
         return kwargs.get("alpha")
 
     assert extract_accepted_kwargs_from_ast(sample_kw) == ["alpha"]
-    assert sanitize_param_default(42) == ("42", None, False)
+    assert sanitize_param_default(42) == LiteralDefault(value_repr="42")
     assert sanitize_type_str("Optional[int]") == "int | None"
     assert unwrap_decorated_target(sample_kw) is sample_kw
     preload_griffe_cache(frameworks=[])
     assert GhostInspector is not None
+
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
 
     raw: dict[str, JsonValue] = {
         "name": "op",
@@ -157,7 +160,7 @@ def test_introspection_and_serialization_subpackages() -> None:
         "kind": "function",
         "params": [],
     }
-    hydrated = hydrate_ghost_ref(raw)
+    hydrated = raise_on_err(hydrate_ghost_ref(raw))
     assert hydrated.api_path == "pkg.op"
     assert hydrated.schema_version == "2.0.0"
 

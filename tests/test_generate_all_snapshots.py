@@ -9,8 +9,10 @@ import runpy
 import sys
 
 import pytest
+from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Result
 
 import scripts.generate_all_snapshots as generate_all_snapshots
+from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.models import JsonValue
 
 
@@ -48,19 +50,19 @@ def test_main_success(
         """
         makedirs_calls.append((path, exist_ok))
 
-    def fake_extract(fw: str) -> dict[str, JsonValue]:
+    def fake_extract(fw: str) -> Result[SnapshotError, dict[str, JsonValue]]:
         """Record extract_snapshot invocation.
 
         Args:
             fw: Framework identifier.
 
         Returns:
-            Dummy snapshot dictionary.
+            `Ok` wrapping dummy snapshot dictionary.
         """
         extract_calls.append(fw)
-        return {"mock": "data"}
+        return Ok({"mock": "data"})
 
-    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> str:
+    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> Result[SnapshotError, str]:
         """Record write_snapshot invocation.
 
         Args:
@@ -69,10 +71,10 @@ def test_main_success(
             out_dir: Output directory path.
 
         Returns:
-            Dummy written path.
+            `Ok` wrapping dummy written path.
         """
         write_calls.append((fw, data, out_dir))
-        return os.path.join(out_dir, f"{fw}.json")
+        return Ok(os.path.join(out_dir, f"{fw}.json"))
 
     monkeypatch.setattr(sys, "argv", ["generate_all_snapshots.py"])
     monkeypatch.setattr(os, "makedirs", fake_makedirs)
@@ -102,7 +104,7 @@ def test_main_failure(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Test the main function when snapshot extraction fails.
+    """Test the main function when snapshot extraction or write fails via Err and exception.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
@@ -119,23 +121,27 @@ def test_main_failure(
             exist_ok: Whether existing directory is allowed.
         """
 
-    def fake_extract(fw: str) -> dict[str, JsonValue]:
-        """Raise an error during snapshot extraction.
+    def fake_extract(fw: str) -> Result[SnapshotError, dict[str, JsonValue]]:
+        """Fail via Err, write Err, or raised RuntimeError depending on fw.
 
         Args:
             fw: Framework identifier.
 
         Raises:
-            RuntimeError: Simulated extraction failure.
+            RuntimeError: Simulated extraction failure on first framework.
 
         Returns:
-            Never returns.
+            `Err` or `Ok` outcome.
         """
         extract_calls.append(fw)
-        raise RuntimeError("Mock exception")
+        if len(extract_calls) == 1:
+            raise RuntimeError("Mock exception")
+        if len(extract_calls) == 2:
+            return Err(SnapshotError("Mock extract Err"))
+        return Ok({"data": 1})
 
-    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> str:
-        """Record unexpected write calls.
+    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> Result[SnapshotError, str]:
+        """Return Err on write to exercise write failure branch.
 
         Args:
             fw: Framework identifier.
@@ -143,12 +149,13 @@ def test_main_failure(
             out_dir: Output directory.
 
         Returns:
-            Dummy path.
+            `Err(SnapshotError)`.
         """
+        del data, out_dir
         write_calls.append(fw)
-        return ""
+        return Err(SnapshotError("Mock write Err"))
 
-    monkeypatch.setattr(sys, "argv", ["generate_all_snapshots.py"])
+    monkeypatch.setattr(sys, "argv", ["generate_all_snapshots.py", "torch", "jax", "flax"])
     monkeypatch.setattr(os, "makedirs", fake_makedirs)
     monkeypatch.setattr(generate_all_snapshots, "extract_snapshot", fake_extract)
     monkeypatch.setattr(generate_all_snapshots, "write_snapshot", fake_write)
@@ -156,14 +163,13 @@ def test_main_failure(
     with pytest.raises(SystemExit):
         generate_all_snapshots.main()
 
-    frameworks = generate_all_snapshots.all_frameworks
-    assert extract_calls == list(frameworks)
-    assert write_calls == []
+    assert extract_calls == ["torch", "jax", "flax"]
+    assert write_calls == ["flax"]
 
     captured = capsys.readouterr()
-    for fw in frameworks:
-        assert f"Building snapshot for {fw}..." in captured.out
     assert "  -> Failed: Mock exception" in captured.out
+    assert "  -> Failed: Mock extract Err" in captured.out
+    assert "  -> Failed: Mock write Err" in captured.out
 
 
 def test_sys_path_insert() -> None:
@@ -198,19 +204,19 @@ def test_main_custom_args_and_isolated_success(
             exist_ok: Whether existing directory is allowed.
         """
 
-    def fake_extract_iso(fw: str) -> dict[str, JsonValue]:
+    def fake_extract_iso(fw: str) -> Result[SnapshotError, dict[str, JsonValue]]:
         """Record isolated extraction call.
 
         Args:
             fw: Framework identifier.
 
         Returns:
-            Dummy snapshot payload.
+            `Ok` wrapping dummy snapshot payload.
         """
         iso_calls.append(fw)
-        return {"custom": "snap"}
+        return Ok({"custom": "snap"})
 
-    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> str:
+    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> Result[SnapshotError, str]:
         """Record write call.
 
         Args:
@@ -219,10 +225,11 @@ def test_main_custom_args_and_isolated_success(
             out_dir: Output directory.
 
         Returns:
-            Dummy path.
+            `Ok` wrapping dummy path.
         """
+        del data, out_dir
         write_calls.append(fw)
-        return ""
+        return Ok("")
 
     monkeypatch.setattr(sys, "argv", ["generate_all_snapshots.py", "torch", "jax"])
     monkeypatch.setenv("ISOLATE_EXTRACTION", "1")
@@ -239,7 +246,7 @@ def test_main_custom_args_and_isolated_success(
 def test_main_isolated_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test main function when isolated extraction returns empty snapshot and falls back to in-process.
+    """Test main function when isolated extraction returns Err and falls back to in-process.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
@@ -256,31 +263,31 @@ def test_main_isolated_fallback(
             exist_ok: Whether existing directory is allowed.
         """
 
-    def fake_extract_iso(fw: str) -> dict[str, JsonValue]:
-        """Return empty dict to trigger fallback.
+    def fake_extract_iso(fw: str) -> Result[SnapshotError, dict[str, JsonValue]]:
+        """Return Err to trigger fallback.
 
         Args:
             fw: Framework identifier.
 
         Returns:
-            Empty dict.
+            `Err(SnapshotError)`.
         """
         iso_calls.append(fw)
-        return {}
+        return Err(SnapshotError("iso failed"))
 
-    def fake_extract(fw: str) -> dict[str, JsonValue]:
+    def fake_extract(fw: str) -> Result[SnapshotError, dict[str, JsonValue]]:
         """Return fallback snapshot payload.
 
         Args:
             fw: Framework identifier.
 
         Returns:
-            Fallback payload.
+            `Ok` wrapping fallback payload.
         """
         extract_calls.append(fw)
-        return {"fallback": "data"}
+        return Ok({"fallback": "data"})
 
-    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> str:
+    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> Result[SnapshotError, str]:
         """Record write call.
 
         Args:
@@ -289,10 +296,11 @@ def test_main_isolated_fallback(
             out_dir: Output directory.
 
         Returns:
-            Dummy path.
+            `Ok` wrapping dummy path.
         """
+        del data, out_dir
         write_calls.append(fw)
-        return ""
+        return Ok("")
 
     monkeypatch.setattr(sys, "argv", ["generate_all_snapshots.py", "torch"])
     monkeypatch.setenv("ISOLATE_EXTRACTION", "1")
@@ -321,19 +329,19 @@ def test_generate_all_snapshots_main_entrypoint(
     extract_calls: list[str] = []
     write_calls: list[str] = []
 
-    def fake_extract(fw: str) -> dict[str, JsonValue]:
+    def fake_extract(fw: str) -> Result[SnapshotError, dict[str, JsonValue]]:
         """Record extract_snapshot call from __main__.
 
         Args:
             fw: Framework identifier.
 
         Returns:
-            Empty categories dict.
+            `Ok` wrapping empty categories dict.
         """
         extract_calls.append(fw)
-        return {"categories": {}}
+        return Ok({"categories": {}})
 
-    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> str:
+    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> Result[SnapshotError, str]:
         """Record write_snapshot call from __main__.
 
         Args:
@@ -342,10 +350,11 @@ def test_generate_all_snapshots_main_entrypoint(
             out_dir: Output directory.
 
         Returns:
-            Dummy path.
+            `Ok` wrapping dummy path.
         """
+        del data, out_dir
         write_calls.append(fw)
-        return ""
+        return Ok("")
 
     monkeypatch.setattr(sys, "argv", ["generate_all_snapshots.py", "tikz"])
     monkeypatch.setattr(api_mod, "extract_snapshot", fake_extract)

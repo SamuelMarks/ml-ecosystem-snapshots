@@ -66,14 +66,16 @@ def test_wgsl_op_properties_and_roles() -> None:
 
 def test_extract_snapshot_wgsl_envelope() -> None:
     """Test end-to-end WGSL snapshot extraction and envelope validation."""
-    snap = extract_snapshot("wgsl")
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
+    snap = raise_on_err(extract_snapshot("wgsl")).to_wire_dict()
     assert snap.get("version") == "draft-2024"
     assert "categories" in snap
     cats = snap["categories"]
     assert isinstance(cats, dict)
     assert "operations" in cats
 
-    env = validate_snapshot_envelope(snap)
+    env = raise_on_err(validate_snapshot_envelope(snap))
     assert isinstance(env, SnapshotEnvelope)
 
 
@@ -115,7 +117,7 @@ def test_check_wgsl_shader_compliance() -> None:
     res = check_wgsl_shader_compliance(shader_code)
     assert res.is_compliant is True
     assert res.verified_ops >= 3
-    assert res.errors == []
+    assert res.errors == ()
 
     res_err = check_wgsl_shader_compliance("storageStore(1);")
     assert res_err.is_compliant is False

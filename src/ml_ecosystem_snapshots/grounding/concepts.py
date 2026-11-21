@@ -13,7 +13,7 @@ from ml_ecosystem_snapshots.grounding._concept_catalog import (
     DEFAULT_CONCEPT_MAP,
 )
 from ml_ecosystem_snapshots.grounding.models import ConceptTranslationResult
-from ml_ecosystem_snapshots.models import JsonValue, ensure_json_dict, ensure_json_list
+from ml_ecosystem_snapshots.models import JsonValue, json_dict_or_empty, json_tuple_or_empty
 
 
 def load_concept_map(
@@ -94,7 +94,7 @@ def _resolve_concept_translation_schema(
     raw_pt = active_alias_map.get("_parameter_translations")
     if not isinstance(raw_pt, dict):
         raw_pt = DEFAULT_CONCEPT_MAP.get("_parameter_translations", {})
-    param_translations: dict[str, JsonValue] = dict(ensure_json_dict(raw_pt))
+    param_translations: dict[str, JsonValue] = json_dict_or_empty(raw_pt)
 
     schema_key: str | None = None
     if c_clean in param_translations:
@@ -122,8 +122,7 @@ def _resolve_concept_translation_schema(
         schema_key = "normalization"
 
     if schema_key is not None:
-        raw_entry = ensure_json_dict(param_translations.get(schema_key))
-        return dict(raw_entry)
+        return json_dict_or_empty(param_translations.get(schema_key))
     return None
 
 
@@ -145,7 +144,7 @@ def _resolve_role_source_keys(
         return [str(k) for k in raw_src_keys]
     all_keys: list[str] = []
     for raw_aliases in fw_map.values():
-        aliases = ensure_json_list(raw_aliases)
+        aliases = json_tuple_or_empty(raw_aliases)
         all_keys.extend(str(a) for a in aliases)
     return all_keys
 
@@ -169,9 +168,9 @@ def _apply_concept_role_translations(
     """
     translated: dict[str, JsonValue] = {}
     mapped_keys: set[str] = set()
-    roles = ensure_json_dict(schema.get("roles"))
+    roles = json_dict_or_empty(schema.get("roles"))
     for _role, raw_fw_map in roles.items():
-        fw_map = ensure_json_dict(raw_fw_map)
+        fw_map = json_dict_or_empty(raw_fw_map)
         src_keys = _resolve_role_source_keys(fw_map, s_fw)
         for sk in src_keys:
             if sk in source_kwargs:
@@ -188,7 +187,7 @@ def _apply_concept_role_translations(
 
     raw_defaults = schema.get("defaults")
     if isinstance(raw_defaults, dict) and t_fw in raw_defaults:
-        tgt_def = ensure_json_dict(raw_defaults[t_fw])
+        tgt_def = json_dict_or_empty(raw_defaults[t_fw])
         translated.update(tgt_def)
     return translated, mapped_keys
 

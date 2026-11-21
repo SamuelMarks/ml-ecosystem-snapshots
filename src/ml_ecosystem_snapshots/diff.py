@@ -1,69 +1,87 @@
-"""Snapshot Diffing Module.
-
-Provides functions to diff two snapshots and detect additions, removals,
-and signature changes.
-"""
+"""Pure snapshot diffing module with closed signature-change ADTs and immutable results."""
 
 from __future__ import annotations
 
+import enum
 import typing
 
 import pydantic
+import typing_extensions
 from ml_switcheroo_ir.schema.ghost import SnapshotEnvelope
 
-from ml_ecosystem_snapshots.compliance import ParamSignatureTuple
+from ml_ecosystem_snapshots.compliance.models import ParamSignatureTuple
 from ml_ecosystem_snapshots.models import (
     JsonValue,
     ScalarValue,
-    ensure_json_dict,
-    ensure_json_list,
+    WireSerializableProtocol,
+    json_dict_or_empty,
+    json_tuple_or_empty,
 )
+
+_NL: typing.Final[str] = chr(10)
+
+
+class SignatureChangeKind(str, enum.Enum):
+    """Closed classification of symbol signature evolution between two snapshots."""
+
+    UNCHANGED = "unchanged"
+    NON_BREAKING = "non_breaking"
+    BREAKING = "breaking"
 
 
 class DiffResult(pydantic.BaseModel):
-    """Result of diffing two snapshots."""
+    """Deeply immutable result of diffing two snapshots."""
 
-    model_config = pydantic.ConfigDict(extra="forbid")
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
-    added: list[str] = pydantic.Field(default_factory=list, description="List of added api_paths.")
-    removed: list[str] = pydantic.Field(default_factory=list, description="List of removed api_paths.")
-    signature_changed: list[str] = pydantic.Field(
-        default_factory=list, description="List of api_paths with changed signatures."
+    added: tuple[str, ...] = pydantic.Field(default=(), description="Tuple of added api_paths.")
+    removed: tuple[str, ...] = pydantic.Field(default=(), description="Tuple of removed api_paths.")
+    signature_changed: tuple[str, ...] = pydantic.Field(
+        default=(), description="Tuple of api_paths with changed signatures."
     )
-    breaking_signature_changed: list[str] = pydantic.Field(
-        default_factory=list,
-        description="List of api_paths with breaking signature changes.",
+    breaking_signature_changed: tuple[str, ...] = pydantic.Field(
+        default=(),
+        description="Tuple of api_paths with breaking signature changes.",
     )
-    non_breaking_signature_changed: list[str] = pydantic.Field(
-        default_factory=list,
-        description="List of api_paths with non-breaking signature changes.",
+    non_breaking_signature_changed: tuple[str, ...] = pydantic.Field(
+        default=(),
+        description="Tuple of api_paths with non-breaking signature changes.",
     )
     metadata_changed: dict[str, tuple[str | None, str | None]] = pydantic.Field(
         default_factory=dict,
-        description="List of top-level metadata differences: (old_value, new_value).",
+        description="Mapping of top-level metadata differences: (old_value, new_value).",
     )
-    deprecated_capabilities: list[str] = pydantic.Field(
-        default_factory=list,
-        description="List of deprecated or removed microarchitecture capabilities.",
+    deprecated_capabilities: tuple[str, ...] = pydantic.Field(
+        default=(),
+        description="Tuple of deprecated or removed microarchitecture capabilities.",
     )
-    overloads_changed: list[str] = pydantic.Field(
-        default_factory=list,
-        description="List of api_paths with modified, added, or removed overloads.",
+    overloads_changed: tuple[str, ...] = pydantic.Field(
+        default=(),
+        description="Tuple of api_paths with modified, added, or removed overloads.",
     )
 
 
-def _extract_string_set(meta: dict[str, JsonValue], key: str) -> set[str]:
-    """Extract a set of strings from a metadata list field.
+DiffableSnapshotInput: typing_extensions.TypeAlias = (
+    "SnapshotEnvelope"
+    " | WireSerializableProtocol"
+    " | typing.Mapping[str, JsonValue]"
+    " | typing.Sequence[typing.Mapping[str, JsonValue]]"
+    " | ScalarValue"
+)
+
+
+def _extract_string_set(meta: typing.Mapping[str, JsonValue], key: str) -> frozenset[str]:
+    """Extract an immutable frozenset of strings from a metadata sequence field.
 
     Args:
         meta: Domain metadata dictionary.
-        key: Key inside `meta` holding a list of items.
+        key: Key inside `meta` holding a list or tuple of items.
 
     Returns:
-        Set of stringified elements, or an empty set if absent/non-list.
+        Frozenset of stringified elements, or empty frozenset if absent/non-sequence.
     """
     raw = meta.get(key)
-    return {str(x) for x in raw} if isinstance(raw, list) else set()
+    return frozenset(str(x) for x in raw) if isinstance(raw, (list, tuple)) else frozenset()
 
 
 def _has_breaking_metadata_or_return_change(
@@ -71,8 +89,8 @@ def _has_breaking_metadata_or_return_change(
     meta2: dict[str, JsonValue] | None,
     ret1: JsonValue,
     ret2: JsonValue,
-    ov1: list[dict[str, JsonValue]] | None,
-    ov2: list[dict[str, JsonValue]] | None,
+    ov1: typing.Sequence[dict[str, JsonValue]] | None,
+    ov2: typing.Sequence[dict[str, JsonValue]] | None,
 ) -> bool:
     """Check whether domain metadata, return type, or overload counts changed incompatibly.
 
@@ -81,8 +99,8 @@ def _has_breaking_metadata_or_return_change(
         meta2: Optional new domain metadata dictionary.
         ret1: Optional old return type annotation.
         ret2: Optional new return type annotation.
-        ov1: Optional old list of overload signatures.
-        ov2: Optional new list of overload signatures.
+        ov1: Optional old sequence of overload signatures.
+        ov2: Optional new sequence of overload signatures.
 
     Returns:
         True if metadata, return type, or overload count indicates a breaking change.
@@ -101,16 +119,16 @@ def _has_breaking_metadata_or_return_change(
 
 
 def _has_breaking_positional_order_change(
-    p1_list: list[dict[str, JsonValue]],
-    p2_list: list[dict[str, JsonValue]],
-    p1_map: dict[str, dict[str, JsonValue]],
-    p2_map: dict[str, dict[str, JsonValue]],
+    p1_list: typing.Sequence[dict[str, JsonValue]],
+    p2_list: typing.Sequence[dict[str, JsonValue]],
+    p1_map: typing.Mapping[str, dict[str, JsonValue]],
+    p2_map: typing.Mapping[str, dict[str, JsonValue]],
 ) -> bool:
     """Check if any old parameter was removed or positional ordering shifted.
 
     Args:
-        p1_list: Old parameter dictionary list.
-        p2_list: New parameter dictionary list.
+        p1_list: Old parameter dictionary sequence.
+        p2_list: New parameter dictionary sequence.
         p1_map: Mapping of old parameter names to definitions.
         p2_map: Mapping of new parameter names to definitions.
 
@@ -165,26 +183,26 @@ def _is_param_breaking_change(
 
 
 def _is_breaking_change(
-    p1_list: list[dict[str, JsonValue]],
-    p2_list: list[dict[str, JsonValue]],
+    p1_list: typing.Sequence[dict[str, JsonValue]],
+    p2_list: typing.Sequence[dict[str, JsonValue]],
     meta1: dict[str, JsonValue] | None = None,
     meta2: dict[str, JsonValue] | None = None,
     ret1: JsonValue = None,
     ret2: JsonValue = None,
-    ov1: list[dict[str, JsonValue]] | None = None,
-    ov2: list[dict[str, JsonValue]] | None = None,
+    ov1: typing.Sequence[dict[str, JsonValue]] | None = None,
+    ov2: typing.Sequence[dict[str, JsonValue]] | None = None,
 ) -> bool:
     """Determine if a signature change is backwards-incompatible.
 
     Args:
-        p1_list: Old parameter list.
-        p2_list: New parameter list.
+        p1_list: Old parameter sequence.
+        p2_list: New parameter sequence.
         meta1: Optional old domain metadata (modifiers, architectures).
         meta2: Optional new domain metadata.
         ret1: Optional old return type annotation.
         ret2: Optional new return type annotation.
-        ov1: Optional old list of overload signatures.
-        ov2: Optional new list of overload signatures.
+        ov1: Optional old sequence of overload signatures.
+        ov2: Optional new sequence of overload signatures.
 
     Returns:
         True if breaking, False otherwise.
@@ -201,32 +219,44 @@ def _is_breaking_change(
     return any(_is_param_breaking_change(p1_map.get(name), p2) for name, p2 in p2_map.items())
 
 
-def _flatten_snapshot(
-    snap: (
-        SnapshotEnvelope
-        | typing.Mapping[str, JsonValue]
-        | typing.Sequence[typing.Mapping[str, JsonValue]]
-        | ScalarValue
-    ),
-) -> dict[str, dict[str, JsonValue]]:
-    """Flatten a snapshot dictionary or list into a mapping of API paths to items.
+def _project_diff_mapping(snap: DiffableSnapshotInput) -> dict[str, JsonValue] | None:
+    """Project a `SnapshotEnvelope`, `WireSerializableProtocol`, or `Mapping` into a plain dict.
 
     Args:
-        snap: The snapshot dictionary, envelope, or list.
+        snap: Input snapshot value.
+
+    Returns:
+        Dictionary representation if mapping-like, otherwise `None`.
+    """
+    if isinstance(snap, SnapshotEnvelope):
+        dumped: dict[str, JsonValue] = snap.model_dump()
+        return dumped
+    if isinstance(snap, WireSerializableProtocol):
+        return snap.to_wire_dict()
+    if isinstance(snap, typing.Mapping):
+        return dict(snap)
+    return None
+
+
+def _flatten_snapshot(snap: DiffableSnapshotInput) -> dict[str, dict[str, JsonValue]]:
+    """Flatten a snapshot dictionary, envelope, `ProvenSnapshot`, or sequence into `api_path -> item`.
+
+    Args:
+        snap: Snapshot envelope, `ProvenSnapshot`, dictionary, or sequence of items.
 
     Returns:
         Mapping of API path or mnemonic strings to symbol item dictionaries.
     """
     flattened: dict[str, dict[str, JsonValue]] = {}
     categories_dict: dict[str, list[dict[str, JsonValue]]] = {}
-    if isinstance(snap, list):
-        categories_dict = {"all": [dict(x) for x in snap if isinstance(x, dict)]}
-    elif isinstance(snap, dict):
-        raw_cats = ensure_json_dict(snap.get("categories", {}), "snapshot categories")
+
+    projected = _project_diff_mapping(snap)
+    if projected is not None:
+        raw_cats = json_dict_or_empty(projected.get("categories", {}))
         for cat_k, cat_v in raw_cats.items():
-            categories_dict[str(cat_k)] = [
-                dict(x) for x in ensure_json_list(cat_v, "category items") if isinstance(x, dict)
-            ]
+            categories_dict[str(cat_k)] = [dict(x) for x in json_tuple_or_empty(cat_v) if isinstance(x, dict)]
+    elif isinstance(snap, (list, tuple)):
+        categories_dict = {"all": [dict(x) for x in snap if isinstance(x, typing.Mapping)]}
 
     for items in categories_dict.values():
         for item in items:
@@ -236,14 +266,14 @@ def _flatten_snapshot(
     return flattened
 
 
-def _param_sig_tuple(p: dict[str, JsonValue]) -> ParamSignatureTuple:
+def _param_sig_tuple(p: typing.Mapping[str, JsonValue]) -> ParamSignatureTuple:
     """Convert a parameter dictionary to a tuple for signature comparison.
 
     Args:
-        p: The parameter dictionary.
+        p: Parameter dictionary mapping.
 
     Returns:
-        A 4-tuple representation `(name, kind, default, annotation)`.
+        4-tuple representation `(name, kind, default, annotation)`.
     """
     raw_def = p.get("default")
     raw_ann = p.get("annotation")
@@ -255,42 +285,35 @@ def _param_sig_tuple(p: dict[str, JsonValue]) -> ParamSignatureTuple:
     )
 
 
-def _extract_dict_list(raw: JsonValue) -> list[dict[str, JsonValue]]:
-    """Extract a list of dictionaries from a raw JSON value.
+def _extract_dict_tuple(raw: JsonValue) -> tuple[dict[str, JsonValue], ...]:
+    """Extract an immutable tuple of dictionaries from a raw JSON value.
 
     Args:
-        raw: Raw JSON field value expected to be a list of dicts.
+        raw: Raw JSON field value expected to be a sequence of dicts.
 
     Returns:
-        Filtered list of dictionaries, or empty list when not a list.
+        Filtered tuple of dictionaries, or empty tuple when not a sequence.
     """
-    return [dict(x) for x in raw if isinstance(x, dict)] if isinstance(raw, list) else []
+    return tuple(dict(x) for x in raw if isinstance(x, dict)) if isinstance(raw, (list, tuple)) else ()
 
 
-def _compare_existing_symbol(
-    display_path: str,
-    item1: dict[str, JsonValue],
-    item2: dict[str, JsonValue],
-    signature_changed: list[str],
-    breaking_signature_changed: list[str],
-    non_breaking_signature_changed: list[str],
-    overloads_changed: list[str],
-) -> None:
-    """Compare two versions of a symbol and record signature or overload changes.
+def _classify_symbol_change(
+    item1: typing.Mapping[str, JsonValue],
+    item2: typing.Mapping[str, JsonValue],
+) -> tuple[SignatureChangeKind, bool]:
+    """Purely classify signature evolution and overload delta between two symbol versions.
 
     Args:
-        display_path: Formatted symbol path for reporting.
         item1: Older symbol dictionary.
         item2: Newer symbol dictionary.
-        signature_changed: Accumulator for changed signatures.
-        breaking_signature_changed: Accumulator for breaking signature changes.
-        non_breaking_signature_changed: Accumulator for non-breaking signature changes.
-        overloads_changed: Accumulator for changed overloads.
+
+    Returns:
+        Tuple of `(SignatureChangeKind, has_overload_change)`.
     """
-    p1 = _extract_dict_list(item1.get("params"))
-    p2 = _extract_dict_list(item2.get("params"))
-    sig1 = [_param_sig_tuple(p) for p in p1]
-    sig2 = [_param_sig_tuple(p) for p in p2]
+    p1 = _extract_dict_tuple(item1.get("params"))
+    p2 = _extract_dict_tuple(item2.get("params"))
+    sig1 = tuple(_param_sig_tuple(p) for p in p1)
+    sig2 = tuple(_param_sig_tuple(p) for p in p2)
 
     raw_m1 = item1.get("domain_metadata")
     raw_m2 = item2.get("domain_metadata")
@@ -298,41 +321,26 @@ def _compare_existing_symbol(
     meta2 = dict(raw_m2) if isinstance(raw_m2, dict) else None
     ret1 = item1.get("returns_type") or item1.get("returns")
     ret2 = item2.get("returns_type") or item2.get("returns")
-    ov1 = _extract_dict_list(item1.get("overloads"))
-    ov2 = _extract_dict_list(item2.get("overloads"))
+    ov1 = _extract_dict_tuple(item1.get("overloads"))
+    ov2 = _extract_dict_tuple(item2.get("overloads"))
 
     is_sig_diff = sig1 != sig2
     is_meta_diff = bool(meta1 and meta2 and meta1 != meta2)
     is_ret_diff = ret1 != ret2 and (ret1 is not None or ret2 is not None)
     is_ov_diff = ov1 != ov2
 
-    if is_ov_diff:
-        overloads_changed.append(display_path)
+    if not (is_sig_diff or is_meta_diff or is_ret_diff or is_ov_diff):
+        return SignatureChangeKind.UNCHANGED, False
 
-    if is_sig_diff or is_meta_diff or is_ret_diff or is_ov_diff:
-        signature_changed.append(display_path)
-        target_list = (
-            breaking_signature_changed
-            if _is_breaking_change(p1, p2, meta1, meta2, ret1, ret2, ov1, ov2)
-            else non_breaking_signature_changed
-        )
-        target_list.append(display_path)
+    if _is_breaking_change(p1, p2, meta1, meta2, ret1, ret2, ov1, ov2):
+        return SignatureChangeKind.BREAKING, is_ov_diff
+    return SignatureChangeKind.NON_BREAKING, is_ov_diff
 
 
 def _diff_envelope_metadata(
-    snap1: (
-        SnapshotEnvelope
-        | typing.Mapping[str, JsonValue]
-        | typing.Sequence[typing.Mapping[str, JsonValue]]
-        | ScalarValue
-    ),
-    snap2: (
-        SnapshotEnvelope
-        | typing.Mapping[str, JsonValue]
-        | typing.Sequence[typing.Mapping[str, JsonValue]]
-        | ScalarValue
-    ),
-) -> tuple[dict[str, tuple[str | None, str | None]], list[str]]:
+    snap1: DiffableSnapshotInput,
+    snap2: DiffableSnapshotInput,
+) -> tuple[dict[str, tuple[str | None, str | None]], tuple[str, ...]]:
     """Compare top-level metadata fields and environment capability tags between two snapshots.
 
     Args:
@@ -343,9 +351,11 @@ def _diff_envelope_metadata(
         Tuple of `(metadata_changed, deprecated_capabilities)`.
     """
     metadata_changed: dict[str, tuple[str | None, str | None]] = {}
-    deprecated_capabilities: list[str] = []
+    deprecated_capabilities: tuple[str, ...] = ()
 
-    if isinstance(snap1, dict) and isinstance(snap2, dict):
+    dict1 = _project_diff_mapping(snap1)
+    dict2 = _project_diff_mapping(snap2)
+    if dict1 is not None and dict2 is not None:
         for meta_k in (
             "schema_version",
             "version",
@@ -353,45 +363,35 @@ def _diff_envelope_metadata(
             "source_type",
             "target",
         ):
-            v1 = snap1.get(meta_k)
-            v2 = snap2.get(meta_k)
+            v1 = dict1.get(meta_k)
+            v2 = dict2.get(meta_k)
             if v1 != v2 and (v1 is not None or v2 is not None):
                 metadata_changed[meta_k] = (
                     str(v1) if v1 is not None else None,
                     str(v2) if v2 is not None else None,
                 )
 
-        env1 = _extract_string_set(snap1, "environment_tags")
-        env2 = _extract_string_set(snap2, "environment_tags")
+        env1 = _extract_string_set(dict1, "environment_tags")
+        env2 = _extract_string_set(dict2, "environment_tags")
         dep_envs = env1 - env2
         if dep_envs:
-            deprecated_capabilities.extend(sorted(dep_envs))
+            deprecated_capabilities = tuple(sorted(dep_envs))
 
     return metadata_changed, deprecated_capabilities
 
 
 def diff_snapshots(
-    snap1: (
-        SnapshotEnvelope
-        | typing.Mapping[str, JsonValue]
-        | typing.Sequence[typing.Mapping[str, JsonValue]]
-        | ScalarValue
-    ),
-    snap2: (
-        SnapshotEnvelope
-        | typing.Mapping[str, JsonValue]
-        | typing.Sequence[typing.Mapping[str, JsonValue]]
-        | ScalarValue
-    ),
+    snap1: DiffableSnapshotInput,
+    snap2: DiffableSnapshotInput,
 ) -> DiffResult:
-    """Diff two snapshots to find changes.
+    """Purely diff two snapshots into a frozen `DiffResult`.
 
     Args:
-        snap1: The older snapshot data.
-        snap2: The newer snapshot data.
+        snap1: Older snapshot envelope, `ProvenSnapshot`, dict, or list.
+        snap2: Newer snapshot envelope, `ProvenSnapshot`, dict, or list.
 
     Returns:
-        A DiffResult containing the differences.
+        Frozen `DiffResult` containing sorted immutable change tuples.
     """
     flat1 = _flatten_snapshot(snap1)
     flat2 = _flatten_snapshot(snap2)
@@ -407,16 +407,22 @@ def diff_snapshots(
         display_path = path if item2.get("is_public", True) else f"{path} (non-public)"
         if path not in flat1:
             added.append(display_path)
+            continue
+
+        change_kind, has_ov_diff = _classify_symbol_change(flat1[path], item2)
+        if has_ov_diff:
+            overloads_changed.append(display_path)
+
+        if change_kind is SignatureChangeKind.UNCHANGED:
+            pass
+        elif change_kind is SignatureChangeKind.BREAKING:
+            signature_changed.append(display_path)
+            breaking_signature_changed.append(display_path)
+        elif change_kind is SignatureChangeKind.NON_BREAKING:
+            signature_changed.append(display_path)
+            non_breaking_signature_changed.append(display_path)
         else:
-            _compare_existing_symbol(
-                display_path,
-                flat1[path],
-                item2,
-                signature_changed,
-                breaking_signature_changed,
-                non_breaking_signature_changed,
-                overloads_changed,
-            )
+            typing_extensions.assert_never(change_kind)
 
     for path, item1 in flat1.items():
         if path not in flat2:
@@ -426,42 +432,42 @@ def diff_snapshots(
     metadata_changed, deprecated_capabilities = _diff_envelope_metadata(snap1, snap2)
 
     return DiffResult(
-        added=sorted(added),
-        removed=sorted(removed),
-        signature_changed=sorted(signature_changed),
-        breaking_signature_changed=sorted(breaking_signature_changed),
-        non_breaking_signature_changed=sorted(non_breaking_signature_changed),
+        added=tuple(sorted(added)),
+        removed=tuple(sorted(removed)),
+        signature_changed=tuple(sorted(signature_changed)),
+        breaking_signature_changed=tuple(sorted(breaking_signature_changed)),
+        non_breaking_signature_changed=tuple(sorted(non_breaking_signature_changed)),
         metadata_changed=metadata_changed,
         deprecated_capabilities=deprecated_capabilities,
-        overloads_changed=sorted(overloads_changed),
+        overloads_changed=tuple(sorted(overloads_changed)),
     )
 
 
-def _append_changelog_section(lines: list[str], heading: str, items: list[str]) -> None:
-    """Append a markdown bullet list section to `lines` when `items` is non-empty.
+def _render_changelog_section(heading: str, items: typing.Sequence[str]) -> tuple[str, ...]:
+    """Purely render a markdown bullet list section when `items` is non-empty.
 
     Args:
-        lines: Mutable list of markdown lines.
         heading: Section heading title (without `## ` prefix).
-        items: List of code-formatted item strings to render.
+        items: Sequence of code-formatted item strings to render.
+
+    Returns:
+        Immutable tuple of markdown lines (empty when `items` is empty).
     """
-    if items:
-        lines.append(f"## {heading}")
-        for item in items:
-            lines.append(f"- `{item}`")
-        lines.append("")
+    if not items:
+        return ()
+    return (f"## {heading}", *(f"- `{item}`" for item in items), "")
 
 
 def generate_changelog(diff: DiffResult) -> str:
-    """Generate a markdown changelog from a DiffResult.
+    """Purely render a markdown changelog string from a `DiffResult`.
 
     Args:
-        diff: The DiffResult to generate a changelog for.
+        diff: Frozen `DiffResult` instance to format.
 
     Returns:
-        A markdown formatted changelog string.
+        Markdown-formatted changelog report.
     """
-    lines = ["# Changelog Report", ""]
+    header_lines: tuple[str, ...] = ("# Changelog Report", "")
 
     has_changes = bool(
         diff.added
@@ -472,24 +478,35 @@ def generate_changelog(diff: DiffResult) -> str:
         or diff.overloads_changed
     )
     if not has_changes:
-        lines.append("No changes detected.")
-        return "\n".join(lines)
+        return _NL.join((*header_lines, "No changes detected."))
 
-    if diff.metadata_changed:
-        lines.append("## Metadata Changes")
-        for k, (old_v, new_v) in sorted(diff.metadata_changed.items()):
-            lines.append(f"- **{k}**: `{old_v}` -> `{new_v}`")
-        lines.append("")
+    meta_lines: tuple[str, ...] = (
+        (
+            "## Metadata Changes",
+            *(f"- **{k}**: `{old_v}` -> `{new_v}`" for k, (old_v, new_v) in sorted(diff.metadata_changed.items())),
+            "",
+        )
+        if diff.metadata_changed
+        else ()
+    )
 
-    sections: list[tuple[str, list[str]]] = [
+    sections: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("Deprecated Capabilities", diff.deprecated_capabilities),
         ("Added", diff.added),
         ("Removed (Breaking)", diff.removed),
         ("Breaking Signature Changes", diff.breaking_signature_changed),
         ("Non-Breaking Signature Changes", diff.non_breaking_signature_changed),
         ("Overload Changes", diff.overloads_changed),
-    ]
-    for heading, items in sections:
-        _append_changelog_section(lines, heading, items)
+    )
+    section_lines = tuple(line for heading, items in sections for line in _render_changelog_section(heading, items))
 
-    return "\n".join(lines).strip() + "\n"
+    return _NL.join((*header_lines, *meta_lines, *section_lines)).strip() + _NL
+
+
+__all__ = [
+    "DiffResult",
+    "DiffableSnapshotInput",
+    "SignatureChangeKind",
+    "diff_snapshots",
+    "generate_changelog",
+]

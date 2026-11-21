@@ -258,8 +258,10 @@ def test_extract_snapshot_grain(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
     monkeypatch.setenv("ML_SNAPSHOTS_OFFLINE", "1")
-    snap = extract_snapshot("grain")
+    snap = raise_on_err(extract_snapshot("grain")).to_wire_dict()
     assert snap.get("target") == "grain"
-    snap_alias = extract_snapshot("pygrain")
+    snap_alias = raise_on_err(extract_snapshot("pygrain")).to_wire_dict()
     assert snap_alias.get("target") == "pygrain"

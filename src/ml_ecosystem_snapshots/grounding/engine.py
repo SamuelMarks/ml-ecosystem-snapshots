@@ -6,6 +6,7 @@ import logging
 import os
 import threading
 
+from ml_switcheroo_ir.typeclasses.outcome import Ok
 from ml_switcheroo_ir.validation.core import compute_levenshtein
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
@@ -142,19 +143,54 @@ class GroundingEngine:
             symbol_index: Target full-path and name symbol index.
             short_index: Target lowercase short-name and mnemonic index.
         """
+        hyd_res = GhostInspector.hydrate(item)
+        if not isinstance(hyd_res, Ok):
+            _LOGGER.debug("Skipping invalid GhostRef item during indexing: %s", hyd_res.error)
+            return
+        ref = hyd_res.value
+        if ref.api_path:
+            symbol_index[ref.api_path] = ref
+        if ref.name:
+            symbol_index[ref.name] = ref
+            short_index[ref.name.lower()] = ref
+        mnemonic = item.get("mnemonic")
+        if mnemonic:
+            symbol_index[str(mnemonic)] = ref
+            short_index[str(mnemonic).lower()] = ref
+
+    def _load_fallback_live_items(self, norm_target: str) -> list[dict[str, JsonValue]]:
+        """Extract raw snapshot items via live `extract_snapshot` when disk/repo caches are empty.
+
+        Args:
+            norm_target: Normalized lowercase target framework name.
+
+        Returns:
+            List of extracted raw item dictionaries (empty on unsupported or failed extraction).
+        """
         try:
-            ref = GhostInspector.hydrate(item)
-            if ref.api_path:
-                symbol_index[ref.api_path] = ref
-            if ref.name:
-                symbol_index[ref.name] = ref
-                short_index[ref.name.lower()] = ref
-            mnemonic = item.get("mnemonic")
-            if mnemonic:
-                symbol_index[str(mnemonic)] = ref
-                short_index[str(mnemonic).lower()] = ref
-        except (AttributeError, TypeError, ValueError, KeyError) as exc:
-            _LOGGER.debug("Skipping invalid GhostRef item during indexing: %s", exc)
+            from ml_ecosystem_snapshots.api import (
+                FRAMEWORK_COLLECTORS,
+                extract_snapshot,
+            )
+
+            if norm_target not in FRAMEWORK_COLLECTORS:
+                return []
+            snap_res = extract_snapshot(norm_target)
+            if isinstance(snap_res, Ok):
+                return _extract_raw_items(snap_res.value.to_wire_dict())
+            if isinstance(snap_res, dict):
+                return _extract_raw_items(snap_res)
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+            ImportError,
+            OSError,
+            RuntimeError,
+        ) as exc:
+            _LOGGER.debug("Fallback snapshot extraction failed for %s: %s", norm_target, exc)
+        return []
 
     def load_target(self, target: str) -> dict[str, ExtendedGhostRef]:
         """Lazily load and index all symbols for a target framework or ISA.
@@ -175,40 +211,18 @@ class GroundingEngine:
             short_index: dict[str, ExtendedGhostRef] = {}
 
             for file_path in files:
-                raw_data = load_json_data(file_path)
-                for item in _extract_raw_items(raw_data):
-                    self._index_item(item, symbol_index, short_index)
+                raw_res = load_json_data(file_path)
+                if isinstance(raw_res, Ok):
+                    for item in _extract_raw_items(raw_res.value):
+                        self._index_item(item, symbol_index, short_index)
 
             if not symbol_index and self._repository is not None:
-                repo_snap = self._repository.get(norm_target)
-                for item in _extract_raw_items(repo_snap):
+                for item in _extract_raw_items(self._repository.get(norm_target)):
                     self._index_item(item, symbol_index, short_index)
 
             if not symbol_index:
-                try:
-                    from ml_ecosystem_snapshots.api import (
-                        FRAMEWORK_COLLECTORS,
-                        extract_snapshot,
-                    )
-
-                    if norm_target in FRAMEWORK_COLLECTORS:
-                        snap = extract_snapshot(norm_target)
-                        for item in _extract_raw_items(snap):
-                            self._index_item(item, symbol_index, short_index)
-                except (
-                    AttributeError,
-                    TypeError,
-                    ValueError,
-                    KeyError,
-                    ImportError,
-                    OSError,
-                    RuntimeError,
-                ) as exc:
-                    _LOGGER.debug(
-                        "Fallback snapshot extraction failed for %s: %s",
-                        norm_target,
-                        exc,
-                    )
+                for item in self._load_fallback_live_items(norm_target):
+                    self._index_item(item, symbol_index, short_index)
 
             self._target_cache[norm_target] = symbol_index
             self._short_name_cache[norm_target] = short_index

@@ -217,7 +217,7 @@ def test_check_file_detects_phantom_type_checking_and_dunders(tmp_path: Path) ->
     joined = chr(10).join(check_file(str(sample)))
     assert "banned phantom 'if TYPE_CHECKING:' block inside class 'PhantomDict'" in joined
     assert "banned non-protocol dunder method '__getitem__' on class 'CosplayModel'" in joined
-    assert "CExtensionSignature" not in joined
+    assert "banned non-protocol dunder method '__getitem__' on class 'CExtensionSignature'" in joined
 
 
 def test_lint_directories_and_main(

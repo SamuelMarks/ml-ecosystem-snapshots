@@ -391,10 +391,10 @@ def parse_nvptx_td_content(content: str) -> list[IsaInstructionRecordModel]:
                 mnemonic=mnemonic,
                 category="instruction",
                 description=f"PTX {mnemonic} instruction parsed from TableGen.",
-                supported_types=[".b32", ".b64"],
-                vector_widths=[],
-                state_spaces=[],
-                operands=[],
+                supported_types=(".b32", ".b64"),
+                vector_widths=(),
+                state_spaces=(),
+                operands=(),
                 min_sm="sm_50",
             )
         )

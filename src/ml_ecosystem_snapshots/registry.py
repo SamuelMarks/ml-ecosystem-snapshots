@@ -43,21 +43,21 @@ class ProvenanceMetadata(pydantic.BaseModel):
     source_type: str = "python_package"
     upstream_commit: str | None = None
     upstream_version: str = ""
-    supported_microarchitectures: list[str] | None = None
+    supported_microarchitectures: tuple[str, ...] | None = None
     resolution_mode: typing.Literal["static_spec", "live_module", "exhaustive_json", "pkg_alias"] = "static_spec"
     dist_name: str | None = None
     live_module: str | None = None
     griffe_fallback_module: str | None = None
     emit_in_envelope: bool = False
 
-    def items(self) -> list[tuple[str, str | list[str]]]:
-        """Return envelope-emitted provenance metadata key-value pairs.
+    def items(self) -> tuple[tuple[str, str | list[str]], ...]:
+        """Return envelope-emitted provenance metadata key-value pairs as an immutable tuple.
 
         Returns:
-            List of `(key, value)` pairs for `SnapshotEnvelope` headers.
+            Tuple of `(key, value)` pairs for `SnapshotEnvelope` headers.
         """
         if not self.emit_in_envelope:
-            return []
+            return ()
         res: list[tuple[str, str | list[str]]] = [
             ("source_type", self.source_type),
             ("upstream_version", self.upstream_version),
@@ -71,7 +71,7 @@ class ProvenanceMetadata(pydantic.BaseModel):
                     list(self.supported_microarchitectures),
                 )
             )
-        return res
+        return tuple(res)
 
 
 def _is_collector_callable(val: LivePythonTarget) -> typing_extensions.TypeGuard[CollectorFn]:
@@ -332,7 +332,7 @@ COLLECTOR_REGISTRY: dict[str, CollectorFn] = FRAMEWORK_COLLECTORS
 FRAMEWORK_PROVENANCE_METADATA: dict[str, ProvenanceMetadata] = {
     # Exhaustive JSON-backed hardware ISA and compiler IR specifications
     "nvidia_sass": ProvenanceMetadata(
-        supported_microarchitectures=[
+        supported_microarchitectures=(
             "sm_70",
             "sm_75",
             "sm_80",
@@ -340,7 +340,7 @@ FRAMEWORK_PROVENANCE_METADATA: dict[str, ProvenanceMetadata] = {
             "sm_89",
             "sm_90",
             "sm_100",
-        ],
+        ),
         source_type="binary_disassembly",
         upstream_commit="cuda-12.6-toolkit",
         upstream_version="12.6.0",
@@ -348,7 +348,7 @@ FRAMEWORK_PROVENANCE_METADATA: dict[str, ProvenanceMetadata] = {
         emit_in_envelope=True,
     ),
     "nvidia_ptx": ProvenanceMetadata(
-        supported_microarchitectures=[
+        supported_microarchitectures=(
             "sm_50",
             "sm_60",
             "sm_70",
@@ -358,7 +358,7 @@ FRAMEWORK_PROVENANCE_METADATA: dict[str, ProvenanceMetadata] = {
             "sm_89",
             "sm_90",
             "sm_100",
-        ],
+        ),
         source_type="tablegen",
         upstream_commit="cuda-12.6",
         upstream_version="8.5",
@@ -366,14 +366,14 @@ FRAMEWORK_PROVENANCE_METADATA: dict[str, ProvenanceMetadata] = {
         emit_in_envelope=True,
     ),
     "amd_rdna": ProvenanceMetadata(
-        supported_microarchitectures=[
+        supported_microarchitectures=(
             "GFX9/CDNA",
             "GFX10/RDNA1",
             "GFX10.3/RDNA2",
             "GFX11/RDNA3",
             "GFX11.5",
             "GFX12/RDNA4",
-        ],
+        ),
         source_type="tablegen",
         upstream_commit="llvm-project-19.1.0",
         upstream_version="19.1.0",
@@ -438,13 +438,13 @@ FRAMEWORK_PROVENANCE_METADATA: dict[str, ProvenanceMetadata] = {
     ),
     # Live module version fallbacks
     "ir": ProvenanceMetadata(
-        upstream_version="0.0.7",
+        upstream_version="0.0.8",
         resolution_mode="live_module",
         live_module="ml_switcheroo_ir",
         dist_name="ml-switcheroo-ir",
     ),
     "ml_switcheroo_ir": ProvenanceMetadata(
-        upstream_version="0.0.7",
+        upstream_version="0.0.8",
         resolution_mode="live_module",
         live_module="ml_switcheroo_ir",
         dist_name="ml-switcheroo-ir",

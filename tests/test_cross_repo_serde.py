@@ -71,6 +71,8 @@ def test_ghost_protocol_v2_models_instantiation() -> None:
 
 def test_hydrate_ghost_ref_v2_roundtrip() -> None:
     """Verify hydrate_ghost_ref validates v2.0.0 structures with zero information loss."""
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
     v2_dict: dict[str, JsonValue] = {
         "name": "relu",
         "api_path": "torch.nn.functional.relu",
@@ -82,7 +84,7 @@ def test_hydrate_ghost_ref_v2_roundtrip() -> None:
         ],
     }
 
-    upgraded = hydrate_ghost_ref(v2_dict)
+    upgraded = raise_on_err(hydrate_ghost_ref(v2_dict))
     assert isinstance(upgraded, ExtendedGhostRef)
     assert upgraded.name == "relu"
     assert upgraded.api_path == "torch.nn.functional.relu"
@@ -90,7 +92,7 @@ def test_hydrate_ghost_ref_v2_roundtrip() -> None:
 
     # Test roundtrip serialization to JSON and back
     json_str = upgraded.model_dump_json()
-    re_parsed = hydrate_ghost_ref(json.loads(json_str))
+    re_parsed = raise_on_err(hydrate_ghost_ref(json.loads(json_str)))
     assert re_parsed.name == upgraded.name
     assert len(re_parsed.params) == len(upgraded.params)
 
@@ -108,7 +110,7 @@ def test_hydrate_ghost_ref_v2_roundtrip() -> None:
         "attributes": [{"name": "attr", "type": ""}, {"name": "attr2", "type": "i32"}],
         "returns": [{"name": "res", "type": ""}, {"name": "res2", "type": "f32"}],
     }
-    hydrated_legacy = hydrate_ghost_ref(legacy_op_dict)
+    hydrated_legacy = raise_on_err(hydrate_ghost_ref(legacy_op_dict))
     assert hydrated_legacy.returns is not None
     assert hydrated_legacy.returns[0].type == "Value"
     assert hydrated_legacy.returns[1].type == "f32"
@@ -166,9 +168,11 @@ def test_exhaustive_snapshot_loading_serde() -> None:
         assert isinstance(records, list)
         assert len(records) > 0, f"Snapshot {fname} is empty"
 
+        from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
         for raw_item in records[:10]:
             assert isinstance(raw_item, dict)
-            ref = hydrate_ghost_ref(raw_item)
+            ref = raise_on_err(hydrate_ghost_ref(raw_item))
             mnemonic_extra = ref.model_extra.get("mnemonic") if ref.model_extra else None
             assert bool(ref.name or mnemonic_extra)
             # Re-serialize to verify schema integrity
@@ -179,6 +183,7 @@ def test_exhaustive_snapshot_loading_serde() -> None:
 def test_cross_repo_dtype_coverage() -> None:
     """Verify all ml_switcheroo_ir DType variants are supported and roundtrip serialized."""
     import ml_switcheroo_ir as ir
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
 
     from ml_ecosystem_snapshots.compliance import DTYPE_BITWIDTHS, get_dtype_bitwidth
     from ml_ecosystem_snapshots.mcp_server import normalize_dtype_name
@@ -189,8 +194,9 @@ def test_cross_repo_dtype_coverage() -> None:
     for dt_str in all_ir_dtypes:
         norm = normalize_dtype_name(dt_str)
         assert norm in DTYPE_BITWIDTHS, f"DType {dt_str} missing from DTYPE_BITWIDTHS"
-        bitwidth = get_dtype_bitwidth(norm)
-        assert bitwidth in (2, 4, 8, 16, 32, 64, 128)
+        bitwidth_res = get_dtype_bitwidth(norm)
+        assert isinstance(bitwidth_res, Ok)
+        assert int(bitwidth_res.value) in (2, 4, 8, 16, 32, 64, 128)
 
     # Roundtrip param with all dtypes
     param = ExtendedGhostParam(
@@ -206,11 +212,13 @@ def test_cross_repo_dtype_coverage() -> None:
 
 def test_hydrate_ghost_ref_minimal_custom_op_default_kind() -> None:
     """Verify hydrate_ghost_ref defaults kind to 'function' for minimal custom op entries."""
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
     minimal_entry = {
         "name": "FlashAttention",
         "api_path": "ml.switcheroo.custom.FlashAttention",
     }
-    hydrated = hydrate_ghost_ref(minimal_entry)
+    hydrated = raise_on_err(hydrate_ghost_ref(minimal_entry))
     assert isinstance(hydrated, ExtendedGhostRef)
     assert hydrated.name == "FlashAttention"
     assert hydrated.api_path == "ml.switcheroo.custom.FlashAttention"
@@ -220,6 +228,6 @@ def test_hydrate_ghost_ref_minimal_custom_op_default_kind() -> None:
         "mnemonic": "add",
         "operands": [{"name": "d", "role": "dst"}, "src0"],
     }
-    hydrated_ptx = hydrate_ghost_ref(ptx_entry)
+    hydrated_ptx = raise_on_err(hydrate_ghost_ref(ptx_entry))
     assert isinstance(hydrated_ptx, GhostIsaRef)
     assert len(hydrated_ptx.params) == 2

@@ -227,8 +227,6 @@ def test_generate_stubs_list_and_non_dict(tmp_path: Path) -> None:
     Args:
         tmp_path: Pytest temporary directory fixture.
     """
-    import pytest
-
     from ml_ecosystem_snapshots.stubs import validate_pyi_stub
 
     # Test snapshot_data as list
@@ -259,9 +257,11 @@ def test_generate_stubs_list_and_non_dict(tmp_path: Path) -> None:
     generate_stubs(invalid_data, str(invalid_out_dir))
     assert not list(invalid_out_dir.glob("**/*.pyi"))
 
-    # Test validate_pyi_stub raising SyntaxError
-    with pytest.raises(SyntaxError):
-        validate_pyi_stub("def invalid syntax ::::")
+    from ml_switcheroo_ir.typeclasses.outcome import Err
+
+    # Test validate_pyi_stub returning Err(SnapshotSchemaError)
+    stub_res = validate_pyi_stub("def invalid syntax ::::")
+    assert isinstance(stub_res, Err)
 
 
 def test_generate_stubs_overloads_and_dsl(tmp_path: Path) -> None:

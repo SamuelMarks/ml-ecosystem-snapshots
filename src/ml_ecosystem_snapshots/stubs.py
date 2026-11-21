@@ -1,7 +1,4 @@
-"""Ghost Type Stubs Generator.
-
-Generate .pyi stub files from snapshot JSON data.
-"""
+"""Pure Ghost `.pyi` stub renderer and total AST verifier."""
 
 from __future__ import annotations
 
@@ -10,9 +7,14 @@ import os
 import typing
 from pathlib import Path
 
+import typing_extensions
 from ml_switcheroo_ir.schema.ghost import SnapshotEnvelope
+from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Result, traverse_result
 
-from ml_ecosystem_snapshots.models import JsonValue
+from ml_ecosystem_snapshots.exceptions import SnapshotError, SnapshotSchemaError
+from ml_ecosystem_snapshots.models import JsonValue, ScalarValue, WireSerializableProtocol
+
+_NL: typing.Final[str] = chr(10)
 
 _SAFE_DEFAULT_AST_NODES = (
     ast.List,
@@ -25,15 +27,23 @@ _SAFE_DEFAULT_AST_NODES = (
     ast.BinOp,
 )
 
+StubSnapshotInput: typing_extensions.TypeAlias = (
+    "SnapshotEnvelope"
+    " | WireSerializableProtocol"
+    " | typing.Mapping[str, JsonValue]"
+    " | typing.Sequence[typing.Mapping[str, JsonValue]]"
+    " | ScalarValue"
+)
+
 
 def _sanitize_default(default_str: str) -> str:
-    """Sanitize complex or un-importable default values for stubs.
+    """Sanitize complex or un-importable default values for `.pyi` stubs.
 
     Args:
-        default_str: The default value string to sanitize.
+        default_str: Default value string to sanitize.
 
     Returns:
-        The sanitized string.
+        Sanitized Python expression string safe for `.pyi` stubs.
     """
     if default_str == "<unrepresentable>":
         return "..."
@@ -53,10 +63,10 @@ def _param_field(p: typing.Mapping[str, JsonValue], key: str) -> str | None:
 
     Args:
         p: Parameter mapping.
-        key: Field name ('name', 'annotation', 'default', or 'kind').
+        key: Field name (`'name'`, `'annotation'`, `'default'`, or `'kind'`).
 
     Returns:
-        String value or None.
+        String value or `None`.
     """
     val = p.get(key)
     return str(val) if val is not None else None
@@ -67,15 +77,15 @@ def _format_param_list(
     has_varargs: bool = False,
     is_method: bool = False,
 ) -> str:
-    """Format a list of parameter definitions into a Python signature string.
+    """Format a sequence of parameter definitions into a Python `.pyi` signature string.
 
     Args:
         params: Sequence of parameter dictionary definitions.
         has_varargs: Whether to append generic varargs if none are present.
-        is_method: Whether this signature belongs to a method requiring 'self'.
+        is_method: Whether this signature belongs to a method requiring `'self'`.
 
     Returns:
-        A comma-separated parameter string for def statements.
+        Comma-separated parameter string for `def` statements.
     """
     param_strs: list[str] = []
     if is_method and not any(_param_field(p, "name") in ("self", "cls") for p in params):
@@ -119,7 +129,7 @@ def _extract_param_dicts(raw_params: JsonValue) -> list[dict[str, JsonValue]]:
     Returns:
         List of parameter dictionaries.
     """
-    if not isinstance(raw_params, list):
+    if not isinstance(raw_params, (list, tuple)):
         return []
     return [dict(p) for p in raw_params if isinstance(p, dict)]
 
@@ -133,42 +143,46 @@ def _extract_overload_dicts(raw_overloads: JsonValue) -> list[dict[str, JsonValu
     Returns:
         List of overload dictionaries.
     """
-    if not isinstance(raw_overloads, list):
+    if not isinstance(raw_overloads, (list, tuple)):
         return []
     return [dict(ov) for ov in raw_overloads if isinstance(ov, dict)]
 
 
 def _extract_stub_categories(
-    snapshot_data: (
-        SnapshotEnvelope | typing.Mapping[str, JsonValue] | typing.Sequence[typing.Mapping[str, JsonValue]]
-    ),
+    snapshot_data: StubSnapshotInput,
 ) -> dict[str, list[dict[str, JsonValue]]]:
-    """Normalize snapshot input into a dictionary of category item lists.
+    """Normalize snapshot input purely into a dictionary of category item lists.
 
     Args:
-        snapshot_data: The snapshot dictionary, envelope, or list of items.
+        snapshot_data: Snapshot envelope, `ProvenSnapshot`, dictionary, or sequence of items.
 
     Returns:
         Mapping from category name to list of symbol dictionaries.
     """
     categories_dict: dict[str, list[dict[str, JsonValue]]] = {}
-    if isinstance(snapshot_data, list):
-        return {"all": [dict(x) for x in snapshot_data if isinstance(x, dict)]}
-    if not isinstance(snapshot_data, (typing.Mapping, SnapshotEnvelope)):
+    if isinstance(snapshot_data, (list, tuple)):
+        return {"all": [dict(x) for x in snapshot_data if isinstance(x, typing.Mapping)]}
+
+    raw_snap: typing.Mapping[str, JsonValue]
+    if isinstance(snapshot_data, SnapshotEnvelope):
+        raw_snap = snapshot_data.model_dump()
+    elif isinstance(snapshot_data, WireSerializableProtocol):
+        raw_snap = snapshot_data.to_wire_dict()
+    elif isinstance(snapshot_data, typing.Mapping):
+        raw_snap = snapshot_data
+    else:
         return categories_dict
-    raw_snap: typing.Mapping[str, JsonValue] = (
-        snapshot_data.model_dump() if isinstance(snapshot_data, SnapshotEnvelope) else snapshot_data
-    )
+
     raw_cats = raw_snap.get("categories", {})
     if isinstance(raw_cats, dict):
         for cat_k, cat_v in raw_cats.items():
-            if isinstance(cat_v, list):
+            if isinstance(cat_v, (list, tuple)):
                 categories_dict[str(cat_k)] = [dict(x) for x in cat_v if isinstance(x, dict)]
     return categories_dict
 
 
 def _partition_stub_symbols(
-    categories_dict: dict[str, list[dict[str, JsonValue]]],
+    categories_dict: typing.Mapping[str, typing.Sequence[dict[str, JsonValue]]],
     include_nonpublic: bool,
 ) -> tuple[
     dict[str, list[tuple[str, dict[str, JsonValue]]]],
@@ -188,7 +202,7 @@ def _partition_stub_symbols(
 
     for items in categories_dict.values():
         for item in items:
-            if not include_nonpublic and not item.get("is_public", True):
+            if not include_nonpublic and item.get("is_public") is False:
                 continue
 
             api_path = str(item.get("api_path") or item.get("name") or item.get("mnemonic") or "")
@@ -220,14 +234,14 @@ def _format_return_annotation(ret_val: JsonValue, fallback: str = "Incomplete") 
         fallback: Fallback return type name when `ret_val` is absent or `'Any'`.
 
     Returns:
-        Formatted ` -> <type>` string.
+        Formatted `' -> <type>'` string.
     """
     return f" -> {ret_val}" if ret_val and ret_val != "Any" else f" -> {fallback}"
 
 
 def _render_callable_stub_lines(
     func_name: str,
-    item: dict[str, JsonValue],
+    item: typing.Mapping[str, JsonValue],
     indent: str = "",
     is_method: bool = False,
     overload_fallback_ret: str = "Incomplete",
@@ -262,17 +276,17 @@ def _render_callable_stub_lines(
 
 
 def _render_module_stub_lines(
-    mod_items: list[tuple[str, dict[str, JsonValue]]],
-    mod_class_methods: dict[str, list[tuple[str, dict[str, JsonValue]]]],
-) -> list[str]:
-    """Render the complete list of `.pyi` lines for a single module.
+    mod_items: typing.Sequence[tuple[str, dict[str, JsonValue]]],
+    mod_class_methods: typing.Mapping[str, typing.Sequence[tuple[str, dict[str, JsonValue]]]],
+) -> tuple[str, ...]:
+    """Purely render the complete tuple of `.pyi` lines for a single module.
 
     Args:
         mod_items: Top-level `(obj_name, item)` pairs belonging to the module.
         mod_class_methods: Mapping of class names to `(method_name, item)` pairs in the module.
 
     Returns:
-        List of `.pyi` source lines for the module.
+        Immutable tuple of `.pyi` source lines for the module.
     """
     lines = ["import typing", "from _typeshed import Incomplete", ""]
     handled_classes: set[str] = set()
@@ -291,7 +305,7 @@ def _render_module_stub_lines(
                     overload_fallback_ret="None",
                 )
             )
-            for m_name, m_item in mod_class_methods.get(obj_name, []):
+            for m_name, m_item in mod_class_methods.get(obj_name, ()):
                 lines.extend(_render_callable_stub_lines(m_name, m_item, indent="    ", is_method=True))
             lines.append("")
         else:
@@ -305,63 +319,106 @@ def _render_module_stub_lines(
                 lines.extend(_render_callable_stub_lines(m_name, m_item, indent="    ", is_method=True))
             lines.append("")
 
-    return lines
+    return tuple(lines)
+
+
+def validate_pyi_stub(
+    stub_content: str,
+    context: str = "<generated stub>",
+) -> Result[SnapshotSchemaError, ast.Module]:
+    """Validate totally that a `.pyi` stub compiles into a valid Python `ast.Module`.
+
+    Args:
+        stub_content: Source content of the `.pyi` stub file.
+        context: Optional module/file label included in error diagnostics.
+
+    Returns:
+        `Ok(ast.Module)` if syntactically valid Python, else `Err(SnapshotSchemaError)`.
+    """
+    try:
+        return Ok(ast.parse(stub_content, filename=context))
+    except SyntaxError as exc:
+        return Err(SnapshotSchemaError(f"Invalid .pyi stub syntax in {context}: {exc}"))
+
+
+def render_stub_modules(
+    snapshot_data: StubSnapshotInput,
+    include_nonpublic: bool = False,
+) -> Result[SnapshotSchemaError, tuple[tuple[str, str], ...]]:
+    """Purely render and AST-validate `(module_name, pyi_source)` pairs without touching disk.
+
+    Args:
+        snapshot_data: Snapshot envelope, `ProvenSnapshot`, dictionary, or sequence of items.
+        include_nonpublic: Whether to generate stubs for non-public symbols.
+
+    Returns:
+        `Ok(tuple[(module_name, stub_text), ...])` if every module compiles cleanly,
+        or `Err(SnapshotSchemaError)` on invalid syntax.
+    """
+    categories_dict = _extract_stub_categories(snapshot_data)
+    modules, class_methods = _partition_stub_symbols(categories_dict, include_nonpublic)
+    all_modules = sorted(m for m in (set(modules.keys()) | set(class_methods.keys())) if m)
+
+    def _build_and_validate(mod_name: str) -> Result[SnapshotSchemaError, tuple[str, str]]:
+        """Render and validate a single module stub.
+
+        Args:
+            mod_name: Dotted module name.
+
+        Returns:
+            `Ok((mod_name, stub_content))` or `Err(SnapshotSchemaError)`.
+        """
+        lines = _render_module_stub_lines(
+            modules.get(mod_name, ()),
+            class_methods.get(mod_name, {}),
+        )
+        stub_content = _NL.join(lines) + _NL
+        val_res = validate_pyi_stub(stub_content, context=f"{mod_name}.__init__.pyi")
+        if isinstance(val_res, Err):
+            return val_res
+        return Ok((mod_name, stub_content))
+
+    return traverse_result(all_modules, _build_and_validate)
 
 
 def generate_stubs(
-    snapshot_data: (
-        SnapshotEnvelope | typing.Mapping[str, JsonValue] | typing.Sequence[typing.Mapping[str, JsonValue]]
-    ),
-    output_dir: str,
+    snapshot_data: StubSnapshotInput,
+    output_dir: str | Path,
     include_nonpublic: bool = False,
-) -> None:
-    """Generate .pyi stub files from a snapshot dictionary.
+) -> Result[SnapshotError, tuple[str, ...]]:
+    """Generate and write `.pyi` stub files totally into `Result[SnapshotError, tuple[str, ...]]`.
 
     Args:
-        snapshot_data: The snapshot dictionary, envelope, or list.
-        output_dir: The base directory where stubs should be written.
+        snapshot_data: Snapshot envelope, `ProvenSnapshot`, dictionary, or sequence of items.
+        output_dir: Base directory where `.pyi` stub packages should be written.
         include_nonpublic: Whether to generate stubs for non-public components.
-    """
-    out_path = Path(output_dir)
-    out_path.mkdir(parents=True, exist_ok=True)
-
-    categories_dict = _extract_stub_categories(snapshot_data)
-    modules, class_methods = _partition_stub_symbols(categories_dict, include_nonpublic)
-    all_modules = sorted(set(modules.keys()) | set(class_methods.keys()))
-
-    for module_name in all_modules:
-        if not module_name:
-            continue
-
-        module_path = Path(os.path.join(out_path, module_name.replace(".", os.sep)))
-        module_path.mkdir(parents=True, exist_ok=True)
-        init_file = Path(os.path.join(module_path, "__init__.pyi"))
-
-        lines = _render_module_stub_lines(
-            modules.get(module_name, []),
-            class_methods.get(module_name, {}),
-        )
-        stub_content = "\n".join(lines) + "\n"
-        validate_pyi_stub(stub_content)
-
-        with open(init_file, "w", encoding="utf-8") as f:
-            f.write(stub_content)
-
-
-def validate_pyi_stub(stub_content: str) -> bool:
-    """Validate that a generated .pyi stub compiles into valid Python AST.
-
-    Args:
-        stub_content: The string content of the .pyi stub file.
 
     Returns:
-        True if the stub compiles without syntax errors.
-
-    Raises:
-        SyntaxError: If the stub content is syntactically invalid.
+        `Ok(tuple_of_written_paths)` on success, or `Err(SnapshotError)` on syntax or I/O error.
     """
+    rendered_res = render_stub_modules(snapshot_data, include_nonpublic=include_nonpublic)
+    if isinstance(rendered_res, Err):
+        return rendered_res
+
     try:
-        ast.parse(stub_content)
-    except SyntaxError as e:
-        raise SyntaxError(str(e)) from e
-    return True
+        out_path = Path(output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
+        written: list[str] = []
+        for module_name, stub_content in rendered_res.value:
+            module_path = Path(os.path.join(out_path, module_name.replace(".", os.sep)))
+            module_path.mkdir(parents=True, exist_ok=True)
+            init_file = Path(os.path.join(module_path, "__init__.pyi"))
+            with open(init_file, "w", encoding="utf-8", newline=_NL) as f:
+                f.write(stub_content)
+            written.append(str(init_file))
+        return Ok(tuple(written))
+    except OSError as exc:
+        return Err(SnapshotError(f"Failed to write .pyi stubs to '{output_dir}': {exc}"))
+
+
+__all__ = [
+    "StubSnapshotInput",
+    "generate_stubs",
+    "render_stub_modules",
+    "validate_pyi_stub",
+]

@@ -14,6 +14,7 @@
 6. [Hardware ISA, Compiler IR & Domain CLI Verification](#6-hardware-isa-compiler-ir--domain-cli-verification)
 7. [Anti-Hallucination Grounding SDK (Python)](#7-anti-hallucination-grounding-sdk-python)
 8. [Model Context Protocol (MCP) Server](#8-model-context-protocol-mcp-server)
+9. [Pure Functional SDK: Outcomes, Typeclasses & Phantom Proofs](#9-pure-functional-sdk-outcomes-typeclasses--phantom-proofs)
 
 ---
 
@@ -155,10 +156,10 @@ The `check` subcommand performs cleanroom verification of candidate framework im
 Test the compliance of a custom JAX wrapper against a reference JAX snapshot:
 
 ```bash
-ml_ecosystem_snapshots check
-    jax
-    ~/repos/ml-switcheroo/src/ml_switcheroo/frameworks/jax.py
-    --reference-prefix jax
+ml_ecosystem_snapshots check \
+    jax \
+    ~/repos/ml-switcheroo/src/ml_switcheroo/frameworks/jax.py \
+    --reference-prefix jax \
     --target-prefix ml_switcheroo.frameworks.jax
 ```
 
@@ -186,10 +187,10 @@ Missing APIs (2):
 Test an independent project like `onnx9000-jax`:
 
 ```bash
-ml_ecosystem_snapshots check
-    jax
-    ~/repos/ml-switcheroo/onnx9000/packages/python/onnx9000-jax
-    --reference-prefix jax
+ml_ecosystem_snapshots check \
+    jax \
+    ~/repos/ml-switcheroo/onnx9000/packages/python/onnx9000-jax \
+    --reference-prefix jax \
     --target-prefix onnx9000.jax
 ```
 
@@ -213,7 +214,7 @@ ADDED: 14
 REMOVED: 2
   - torch.legacy_op
 SIGNATURE CHANGED: 5
-  * torch.sum
+  ~ torch.sum
 ```
 
 ### Generating a Markdown Changelog
@@ -329,8 +330,8 @@ Validate RDNA/CDNA instructions, wave sizes, modifiers, and GFX generations:
 # Verify RDNA3 dual-issue instruction
 ml_ecosystem_snapshots check-rdna v_dual_fmac_f32 --gfx-arch GFX11/RDNA3
 
-# Verify vector addition with operand modifiers
-ml_ecosystem_snapshots check-rdna v_add_f32 --operands v0,v1,v2 --modifiers clamp --gfx-arch GFX10.3/RDNA2
+# Verify vector fused multiply-add (VOP3) with clamp modifier
+ml_ecosystem_snapshots check-rdna v_fma_f32 --operands v0,v1,v2,v3 --modifiers clamp --gfx-arch GFX10.3/RDNA2
 
 # Verify an entire RDNA assembly file
 ml_ecosystem_snapshots check-rdna --file kernel.s --gfx-arch GFX11/RDNA3
@@ -354,8 +355,8 @@ Validate StableHLO operations against dimension number and region constraints:
 
 ```bash
 # Verify stablehlo.dot_general with mandatory dot_dimension_numbers attribute
-ml_ecosystem_snapshots check-stablehlo stablehlo.dot_general
-    --operands-count 2
+ml_ecosystem_snapshots check-stablehlo stablehlo.dot_general \
+    --operands-count 2 \
     --attributes dot_dimension_numbers
 
 # Verify an entire StableHLO text file
@@ -370,8 +371,8 @@ Validate PTX instructions, type qualifiers, state spaces, scopes, and SM capabil
 # Verify global-memory float load on Ampere
 ml_ecosystem_snapshots check-ptx ld --types .f32 --state-space .global --sm-arch sm_80
 
-# Verify an entire PTX source file
-ml_ecosystem_snapshots check-ptx --file kernel.ptx --sm-arch sm_90
+# Verify Hopper asynchronous warpgroup MMA instruction
+ml_ecosystem_snapshots check-ptx wgmma.mma_async --types .f16 --sm-arch sm_90
 ```
 
 ### WebGPU WGSL Shader Verification (`check-wgsl`)
@@ -392,7 +393,7 @@ Validate operations across 17 specialized specifications (`check-onnx`, `check-m
 
 ```bash
 # Validate ONNX operator inputs and attributes
-ml_ecosystem_snapshots check-onnx Conv --inputs-count 2 --attributes kernel_shape,strides
+ml_ecosystem_snapshots check-onnx Conv --inputs-count 3 --attributes kernel_shape,strides
 
 # Validate Apple Metal MSL operation and address space
 ml_ecosystem_snapshots check-metal atomic_fetch_add_explicit --address-space device --inputs-count 3
@@ -401,8 +402,8 @@ ml_ecosystem_snapshots check-metal atomic_fetch_add_explicit --address-space dev
 ml_ecosystem_snapshots check-wasm i32x4.add --operands-count 2
 
 # Validate ATen, NCCL, FlashAttention, Array API, and JAX ecosystem operations
-ml_ecosystem_snapshots check-aten aten::add.Tensor --inputs-count 2 --attributes alpha
-ml_ecosystem_snapshots check-nccl ncclAllReduce --inputs-count 6
+ml_ecosystem_snapshots check-aten add --inputs-count 2 --attributes alpha
+ml_ecosystem_snapshots check-nccl all_reduce --inputs-count 3 --attributes op
 ml_ecosystem_snapshots check-flash-attention flash_attn_func --inputs-count 3 --attributes causal,softmax_scale
 ml_ecosystem_snapshots check-array-api matmul --inputs-count 2
 ml_ecosystem_snapshots check-optax adamw --attributes learning_rate,weight_decay
@@ -421,7 +422,6 @@ from ml_ecosystem_snapshots.grounding import (
     validate_sass_instruction,
     validate_rdna_instruction,
     validate_stablehlo_op,
-    validate_mlir_op,
 )
 
 # Initialize in-memory grounding engine (searches bundled and cached snapshots)
@@ -491,7 +491,7 @@ if not hlo_report.is_grounded:
 
 ## 8. Model Context Protocol (MCP) Server
 
-The MCP server connects AI coding agents directly to ground-truth signatures and hardware rules via standard JSON-RPC 2.0.
+The MCP server connects AI coding agents directly to ground-truth signatures and hardware rules via standard JSON-RPC 2.0 (exposing 29 tools across Python APIs, SASS/RDNA/PTX ISAs, MLIR/StableHLO/WGSL, and 17 ecosystem domains — see `README.md` or `tools/list` for the complete catalog).
 
 ### Starting the Server
 
@@ -563,7 +563,7 @@ ml_ecosystem_snapshots mcp
     "content": [
       {
         "type": "text",
-        "text": "{\n  \"is_valid\": false,\n  \"hallucinations\": [\n    {\n      \"field\": \"kwargs.axis\",\n      \"message\": \"Unexpected keyword argument 'axis'.\",\n      \"suggested_fix\": \"dim\"\n    }\n  ]\n}"
+        "text": "{\n  \"api_exists\": true,\n  \"is_hallucinated\": true,\n  \"invalid_kwargs\": [\n    \"axis\"\n  ],\n  \"canonical_params\": [\n    \"dim\",\n    \"dtype\",\n    \"input\",\n    \"keepdim\"\n  ],\n  \"has_unconstrained_kwargs\": false,\n  \"reason\": \"Invalid/hallucinated keyword arguments: axis\",\n  \"snapshot_source\": \"bundled_package\",\n  \"signature_completeness\": \"exact\",\n  \"is_c_extension\": false\n}"
       }
     ]
   }
@@ -602,7 +602,7 @@ ml_ecosystem_snapshots mcp
     "content": [
       {
         "type": "text",
-        "text": "{\n  \"target_framework\": \"jax\",\n  \"translated_kwargs\": {\n    \"axis\": [1, 2],\n    \"keepdims\": true\n  }\n}"
+        "text": "{\n  \"concept\": \"reduce_sum\",\n  \"source_framework\": \"torch\",\n  \"target_framework\": \"jax\",\n  \"translated_kwargs\": {\n    \"axis\": [\n      1,\n      2\n    ],\n    \"keepdims\": true\n  },\n  \"unmapped_kwargs\": {}\n}"
       }
     ]
   }
@@ -636,9 +636,53 @@ ml_ecosystem_snapshots mcp
     "content": [
       {
         "type": "text",
-        "text": "{\n  \"total_analyzed\": 2,\n  \"hallucinations_detected\": 1,\n  \"is_valid\": false,\n  \"findings\": [\n    {\n      \"call\": \"torch.sum\",\n      \"argument\": \"axis\",\n      \"message\": \"Hallucinated keyword argument 'axis' for 'torch.sum'.\",\n      \"suggested_fix\": \"dim\"\n    }\n  ]\n}"
+        "text": "{\n  \"total_analyzed\": 2,\n  \"hallucinations_detected\": 1,\n  \"is_valid\": false,\n  \"findings\": [\n    {\n      \"line\": 2,\n      \"type\": \"api_hallucination\",\n      \"framework\": \"torch\",\n      \"target\": \"torch.sum\",\n      \"reason\": \"Invalid/hallucinated keyword arguments: axis\",\n      \"invalid_kwargs\": [\n        \"axis\"\n      ]\n    }\n  ]\n}"
       }
     ]
   }
 }
+```
+
+---
+
+## 9. Pure Functional SDK: Outcomes, Typeclasses & Phantom Proofs
+
+All core extraction, serialization, hydration, stub generation, and shape/dtype verification APIs return total `Result[E, A]` (`Ok` / `Err`) or error-accumulating `Validation[E, A]` (`Valid` / `Invalid`) values and operate on deeply immutable frozen Pydantic models.
+
+```python
+from ml_ecosystem_snapshots import (
+    COMPLIANCE_REPORT_MONOID,
+    DIFF_RESULT_MONOID,
+    SNAPSHOT_ENVELOPE_JSON_CODEC,
+    Invalid,
+    Ok,
+    Valid,
+    extract_snapshot,
+    prove_determinism_verified,
+    prove_hydrated_refs,
+)
+from ml_ecosystem_snapshots.serialization import hydrate_ghost_refs
+
+# 1. Total extraction + JSON Codec round-trip
+res = extract_snapshot("ir")
+if isinstance(res, Ok):
+    proven_env = res.value
+    encoded = SNAPSHOT_ENVELOPE_JSON_CODEC.encode(proven_env.envelope)
+    decoded = SNAPSHOT_ENVELOPE_JSON_CODEC.decode(encoded)
+    assert isinstance(decoded, Ok)
+
+    # 2. Mint HydratedRefsPhase and DeterminismVerifiedPhase proofs
+    hydrated = prove_hydrated_refs(proven_env)
+    if isinstance(hydrated, Valid):
+        det = prove_determinism_verified(hydrated.value)
+        assert isinstance(det, Valid)
+
+# 3. Multi-error applicative Validation across malformed GhostRef payloads
+batch_val = hydrate_ghost_refs(["not_a_dict", {"schema_version": "9.9.9"}])
+if isinstance(batch_val, Invalid):
+    print(f"Accumulated {len(batch_val.errors)} schema errors without short-circuiting.")
+
+# 4. Monoidal aggregation of diffs and compliance reports
+empty_diff = DIFF_RESULT_MONOID.empty()
+empty_compliance = COMPLIANCE_REPORT_MONOID.empty()
 ```

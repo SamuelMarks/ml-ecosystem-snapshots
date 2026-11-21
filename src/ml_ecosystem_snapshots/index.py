@@ -19,6 +19,7 @@ import tempfile
 import typing
 
 import pydantic
+from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
 
 from .exceptions import SnapshotError, SnapshotSchemaError
 from .models import JsonValue, ensure_json_dict
@@ -28,9 +29,9 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class IndexedSymbolRecord(pydantic.BaseModel):
-    """Typed record for an indexed symbol returned by `search_index` or `lookup_symbol`."""
+    """Immutable record for an indexed symbol returned by `search_index` or `lookup_symbol`."""
 
-    model_config = pydantic.ConfigDict(extra="forbid")
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
     api_path: str = ""
     framework: str = ""
@@ -323,10 +324,7 @@ def _extract_snapshot_symbol_items(
         Flat list of symbol definition dictionaries.
     """
     if isinstance(data, list):
-        items: list[dict[str, JsonValue]] = []
-        for raw_elem in data:
-            items.append(dict(ensure_json_dict(raw_elem)))
-        return items
+        return [dict(raw_elem) for raw_elem in data if isinstance(raw_elem, dict)]
 
     raw_cats = data.get("categories")
     if isinstance(raw_cats, dict):
@@ -461,11 +459,12 @@ def get_available_snapshot_files() -> list[str]:
     """
     found: list[str] = []
     base_dir = os.path.dirname(__file__)
-    search_dirs = get_custom_snapshots_paths() + [
+    search_dirs = (
+        *get_custom_snapshots_paths(),
         os.path.join(base_dir, "snapshots"),
         os.path.join(base_dir, "frameworks"),
         os.path.join(get_cache_dir(), "snapshots"),
-    ]
+    )
     for sdir in search_dirs:
         if os.path.isdir(sdir):
             for fname in sorted(os.listdir(sdir)):
@@ -552,7 +551,7 @@ def search_index(
         for r in rows:
             try:
                 raw_parsed: JsonValue = json.loads(r["json_data"])
-                parsed = ensure_json_dict(raw_parsed)
+                parsed = raise_on_err(ensure_json_dict(raw_parsed))
                 results.append(IndexedSymbolRecord.from_raw_dict(parsed, framework=str(r["framework"] or "")))
             except (json.JSONDecodeError, ValueError, TypeError, LookupError, sqlite3.Error, SnapshotError) as exc:
                 _LOGGER.debug("Skipping malformed indexed symbol row: %s", exc)
@@ -599,7 +598,7 @@ def lookup_symbol(
         row = cur.fetchone()
         if row:
             raw_sym: JsonValue = json.loads(row["json_data"])
-            parsed_sym = ensure_json_dict(raw_sym)
+            parsed_sym = raise_on_err(ensure_json_dict(raw_sym))
             return IndexedSymbolRecord.from_raw_dict(parsed_sym, framework=str(row["framework"] or clean_fw))
         return None
 

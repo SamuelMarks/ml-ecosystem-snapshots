@@ -524,7 +524,7 @@ def test_validate_python_call(tmp_path: Path) -> None:
     # Overloads (dict & object) and accepted_kwargs coverage
     from ml_switcheroo_ir.schema.ghost import ParameterKind
 
-    from ml_ecosystem_snapshots.models import ExtendedGhostRef, GhostParam, GhostRef
+    from ml_ecosystem_snapshots.models import ExtendedGhostRef, GhostParam
 
     mock_ref = ExtendedGhostRef.model_validate(
         {
@@ -696,24 +696,25 @@ def test_grounding_engine_tie_break_and_hydrate_failure(tmp_path: Path, monkeypa
     assert prim_eng.load_target("prim") == {}
 
     # Test hydrate exception handling
+    from ml_switcheroo_ir.typeclasses.outcome import Err, Result
+
+    from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+    from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
     orig_hydrate = GhostInspector.hydrate
 
-    def bad_hydrate(d: dict[str, JsonValue]) -> GhostRef:
+    def bad_hydrate(d: dict[str, JsonValue]) -> Result[SnapshotSchemaError, ExtendedGhostRef]:
         """Simulate failure during GhostInspector.hydrate.
 
         Args:
             d: Dictionary to hydrate.
 
         Returns:
-            Hydrated GhostRef.
-
-        Raises:
-            ValueError: If dictionary name is 'fail'.
+            `Err(SnapshotSchemaError)` when `name == 'fail'`, else `orig_hydrate(d)`.
         """
         if d.get("name") == "fail":
-            raise ValueError("simulated hydrate failure")
+            return Err(SnapshotSchemaError("simulated hydrate failure"))
         return orig_hydrate(d)
 
     monkeypatch.setattr(GhostInspector, "hydrate", bad_hydrate)
@@ -801,24 +802,25 @@ def test_grounding_engine_collector_fallback(tmp_path: Path, monkeypatch: pytest
             }
         }
 
+    from ml_switcheroo_ir.typeclasses.outcome import Err, Result
+
+    from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
+    from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
     orig_hydrate = GhostInspector.hydrate
 
-    def bad_hydrate(d: dict[str, JsonValue]) -> GhostRef:
-        """Simulate hydrate error for item named fail.
+    def bad_hydrate(d: dict[str, JsonValue]) -> Result[SnapshotSchemaError, ExtendedGhostRef]:
+        """Simulate total hydrate Err for item named fail.
 
         Args:
             d: Dictionary to hydrate.
 
         Returns:
-            Hydrated GhostRef.
-
-        Raises:
-            ValueError: If item is named 'fail'.
+            `Err(SnapshotSchemaError)` when `name == 'fail'`, else `orig_hydrate(d)`.
         """
         if d.get("name") == "fail":
-            raise ValueError("simulated error")
+            return Err(SnapshotSchemaError("simulated error"))
         return orig_hydrate(d)
 
     monkeypatch.setattr(GhostInspector, "hydrate", bad_hydrate)

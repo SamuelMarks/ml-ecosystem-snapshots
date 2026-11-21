@@ -6,7 +6,7 @@ import json
 import re
 import typing
 
-from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel, ensure_json_dict
+from ml_ecosystem_snapshots.models import JsonValue, TableGenRecordModel, json_dict_or_empty
 from ml_ecosystem_snapshots.tools.mlir_tablegen import (
     TableGenASTParser,
     _extract_brace_block,
@@ -520,19 +520,19 @@ def _build_stablehlo_record(
         kind="function",
         is_public=True,
         has_varargs=False,
-        environment_tags=["cpu", "cuda", "rocm", "tpu"],
-        aliases=[],
-        overloads=[],
-        params=[ensure_json_dict(p) for p in params],
-        operands=[ensure_json_dict(o) for o in operands],
-        attributes=[ensure_json_dict(a) for a in attributes],
-        results=[ensure_json_dict(r) for r in results],
+        environment_tags=("cpu", "cuda", "rocm", "tpu"),
+        aliases=(),
+        overloads=(),
+        params=tuple(json_dict_or_empty(p) for p in params),
+        operands=tuple(json_dict_or_empty(o) for o in operands),
+        attributes=tuple(json_dict_or_empty(a) for a in attributes),
+        results=tuple(json_dict_or_empty(r) for r in results),
         returns_type=returns_type,
         returns_description=None,
-        raises=[],
+        raises=(),
         docstring=docstring,
-        traits=[str(t) for t in traits],
-        regions=[ensure_json_dict(rg) if isinstance(rg, dict) else str(rg) for rg in regions],
+        traits=tuple(str(t) for t in traits),
+        regions=tuple(json_dict_or_empty(rg) if isinstance(rg, dict) else str(rg) for rg in regions),
         verification_rules=dict(verification_rules),
         region_signatures=dict(region_signatures),
     )

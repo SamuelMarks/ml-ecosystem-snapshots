@@ -22,7 +22,7 @@ from ml_ecosystem_snapshots.grounding.models import (
     DomainOpCheckResult,
     GroundingReport,
 )
-from ml_ecosystem_snapshots.models import JsonValue, ensure_json_list
+from ml_ecosystem_snapshots.models import JsonValue, json_tuple_or_empty
 
 
 def _normalize_domain_op_name(
@@ -153,9 +153,9 @@ def _extract_domain_op_signature(
         exp_inputs = list(matched.inputs)
         exp_attrs = [a.name for a in matched.attributes if a.name]
         return exp_inputs, exp_attrs
-    raw_inputs = ensure_json_list(matched.get("inputs"))
+    raw_inputs = json_tuple_or_empty(matched.get("inputs"))
     exp_inputs = [str(i) for i in raw_inputs]
-    raw_attrs = ensure_json_list(matched.get("attributes"))
+    raw_attrs = json_tuple_or_empty(matched.get("attributes"))
     exp_attrs = [str(a.get("name")) for a in raw_attrs if isinstance(a, dict) and a.get("name")]
     return exp_inputs, exp_attrs
 
@@ -300,7 +300,7 @@ def verify_domain_op_generic(
                 if domain is not None
                 else f"Unknown {config.unknown_label}: '{op_name}'"
             )
-            return DomainOpCheckResult(is_valid=False, op_exists=False, errors=[not_found_msg])
+            return DomainOpCheckResult(is_valid=False, op_exists=False, errors=(not_found_msg,))
         exp_inputs, exp_attrs = _extract_domain_op_signature(config, matched)
         matched_addr = _read_domain_record_address_space(matched)
 
@@ -316,9 +316,9 @@ def verify_domain_op_generic(
     return DomainOpCheckResult(
         is_valid=len(errors) == 0,
         op_exists=True,
-        expected_inputs=exp_inputs,
-        expected_attributes=exp_attrs,
-        errors=errors,
+        expected_inputs=tuple(exp_inputs),
+        expected_attributes=tuple(exp_attrs),
+        errors=tuple(errors),
     )
 
 
@@ -357,7 +357,7 @@ def _domain_result_to_grounding_report(
             suggested_fix=suggested,
         )
         return report
-    raw_errs = res.errors if isinstance(res, DomainOpCheckResult) else ensure_json_list(res.get("errors", []))
+    raw_errs = res.errors if isinstance(res, DomainOpCheckResult) else json_tuple_or_empty(res.get("errors", []))
     for err in raw_errs:
         report.add_diagnostic(field=err_field, message=str(err), severity=DiagnosticSeverity.ERROR)
     return report

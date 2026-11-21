@@ -18,7 +18,10 @@ import warnings
 import pydantic
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier
 
-from ml_ecosystem_snapshots.c_extension_sig import CExtensionSignature
+from ml_ecosystem_snapshots.c_extension_sig import (
+    CExtensionSignature,
+    build_c_extension_signature,
+)
 from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
@@ -160,8 +163,9 @@ def _get_activation_names() -> set[str]:
     names: set[str] = set()
     try:
         import torch.nn.modules.activation as act_mod
+        from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
 
-        nn_mod = ensure_present(nn, "torch.nn")
+        nn_mod = raise_on_err(ensure_present(nn, "torch.nn"))
         for name, obj in get_all_members(act_mod):
             if inspect.isclass(obj) and issubclass(obj, nn_mod.Module):
                 names.add(name)
@@ -1153,16 +1157,16 @@ def extract_aten_c_extension_signature(
             filtered = filtered[1:]
         return [(p.name, p.kind, p.default, p.annotation) for p in filtered]
 
-    overload_objs = [
-        CExtensionSignature(
+    overload_objs = tuple(
+        build_c_extension_signature(
             params=to_param_tuples(ov.params),
             returns_type=ov.returns_type,
-            overloads=[],
+            overloads=(),
         )
         for ov in secondary
-    ]
+    )
 
-    return CExtensionSignature(
+    return build_c_extension_signature(
         params=to_param_tuples(primary.params),
         returns_type=primary.returns_type,
         overloads=overload_objs,

@@ -9,7 +9,7 @@ import typing
 
 from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.grounding._concept_catalog import DEFAULT_CONCEPT_MAP
-from ml_ecosystem_snapshots.models import JsonValue, ensure_json_dict, ensure_json_list
+from ml_ecosystem_snapshots.models import JsonValue, json_dict_or_empty, json_tuple_or_empty
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ def lookup_api_signature_in_snapshot(
             if cached_sym is not None:
                 if isinstance(cached_sym, IndexedSymbolRecord):
                     return dict(cached_sym.data)
-                return dict(ensure_json_dict(cached_sym))
+                return json_dict_or_empty(cached_sym)
         except (
             ImportError,
             OSError,
@@ -56,15 +56,15 @@ def lookup_api_signature_in_snapshot(
         ) as exc:
             _LOGGER.debug("Index symbol lookup fallback for %s.%s: %s", framework, api_path, exc)
 
-    raw_cats = ensure_json_dict(snap.get("categories") or {})
+    raw_cats = json_dict_or_empty(snap.get("categories") or {})
     for _cat, raw_items in raw_cats.items():
-        items = ensure_json_list(raw_items)
+        items = json_tuple_or_empty(raw_items)
         for raw_item in items:
-            item = ensure_json_dict(raw_item)
+            item = json_dict_or_empty(raw_item)
             if item.get("api_path") == api_path or item.get("name") == api_path or item.get("mnemonic") == api_path:
                 return dict(item)
             raw_aliases = item.get("aliases")
-            if isinstance(raw_aliases, list) and api_path in raw_aliases:
+            if isinstance(raw_aliases, (list, tuple)) and api_path in raw_aliases:
                 return dict(item)
     return None
 
@@ -88,7 +88,7 @@ def _collect_concept_alias_targets(
     for concept_key, fw_map in concept_map.items():
         if concept_key != "_parameter_translations" and isinstance(fw_map, dict):
             if q_lower == concept_key or (len(q_lower) >= 3 and q_lower in concept_key):
-                raw_targets = ensure_json_list(fw_map.get(clean_fw, []))
+                raw_targets = json_tuple_or_empty(fw_map.get(clean_fw, []))
                 concept_targets.extend([str(t) for t in raw_targets])
     return concept_targets
 
@@ -155,11 +155,11 @@ def _scan_snapshot_categories(
         List of all discovered API paths in the snapshot (for fuzzy fallback).
     """
     all_paths: list[str] = []
-    raw_cats = ensure_json_dict(snap.get("categories") or {})
+    raw_cats = json_dict_or_empty(snap.get("categories") or {})
     for _cat, raw_items in raw_cats.items():
-        items = ensure_json_list(raw_items)
+        items = json_tuple_or_empty(raw_items)
         for item_val in items:
-            raw_item = ensure_json_dict(item_val)
+            raw_item = json_dict_or_empty(item_val)
             raw_path = raw_item.get("api_path") or raw_item.get("name") or raw_item.get("mnemonic") or ""
             path_str = str(raw_path)
             if path_str:

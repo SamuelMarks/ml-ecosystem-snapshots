@@ -14,12 +14,13 @@ from ml_switcheroo_ir.schema.ghost import (
     GhostPythonRef,
     GhostRef,
 )
+from ml_switcheroo_ir.typeclasses.outcome import Result
 
 from ml_ecosystem_snapshots.c_extension_sig import (
     CExtensionSignature,
     extract_c_extension_signature,
 )
-from ml_ecosystem_snapshots.exceptions import SnapshotError
+from ml_ecosystem_snapshots.exceptions import SnapshotError, SnapshotSchemaError
 from ml_ecosystem_snapshots.introspection.ast_kwargs import (
     extract_accepted_kwargs_from_ast,
 )
@@ -78,7 +79,6 @@ from ml_ecosystem_snapshots.introspection.torch_inspector import (
 )
 from ml_ecosystem_snapshots.introspection.unwrap import unwrap_decorated_target
 from ml_ecosystem_snapshots.models import JsonValue, ScalarValue
-from ml_ecosystem_snapshots.serialization.hydration import hydrate_ghost_ref
 from ml_ecosystem_snapshots.utils import (
     extract_griffe_docstring_metadata,
     get_framework_docstring_parser,
@@ -451,15 +451,17 @@ class GhostInspector:
     @staticmethod
     def hydrate(
         data: (typing.Mapping[str, JsonValue | typing.Sequence[JsonValue | GhostParam]] | ScalarValue),
-    ) -> ExtendedGhostRef:
-        """Create a GhostRef from a dictionary (JSON snapshot).
+    ) -> Result[SnapshotSchemaError, ExtendedGhostRef]:
+        """Create a `GhostRef` totally from a dictionary payload wrapped in `Result`.
 
         Args:
-            data: The dictionary data.
+            data: Candidate dictionary payload.
 
         Returns:
-            The hydrated ExtendedGhostRef or specialized polymorphic GhostRef object.
+            `Ok(ExtendedGhostRef)` on valid schema, else `Err(SnapshotSchemaError)`.
         """
+        from ml_ecosystem_snapshots.serialization.hydration import hydrate_ghost_ref
+
         return hydrate_ghost_ref(data)
 
 

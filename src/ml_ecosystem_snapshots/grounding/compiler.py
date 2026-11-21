@@ -294,7 +294,7 @@ def verify_mlir_op(
         return IrCheckResult(
             is_valid=False,
             op_exists=False,
-            errors=[f"Operation '{target_op}' does not exist in dialect snapshot."],
+            errors=(f"Operation '{target_op}' does not exist in dialect snapshot.",),
         )
 
     operands, exp_attrs, diags = _validate_dialect_operation(
@@ -310,9 +310,9 @@ def verify_mlir_op(
     return IrCheckResult(
         is_valid=len(diags) == 0,
         op_exists=True,
-        expected_operands=operands,
-        expected_attributes=exp_attrs,
-        errors=[msg for _fld, msg, _fix in diags],
+        expected_operands=tuple(operands),
+        expected_attributes=tuple(exp_attrs),
+        errors=tuple(msg for _fld, msg, _fix in diags),
     )
 
 

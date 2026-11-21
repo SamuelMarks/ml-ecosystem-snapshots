@@ -2,10 +2,8 @@
 
 Ghost Core: Introspection Abstraction Layer.
 
-This module provides the data structures required to decouple framework
-analysis from the live environment. It enables the system to operate in
-"Ghost Mode" (WASM/CI) by working against cached snapshots instead of
-requiring heavy libraries (Torch/TensorFlow) to be installed.
+This module provides deeply immutable data structures and total `Result`-returning
+JSON guards required to decouple framework analysis from the live environment.
 """
 
 from __future__ import annotations
@@ -60,11 +58,27 @@ from ml_switcheroo_ir.schema.ghost import (
 from ml_switcheroo_ir.schema.ghost import (
     SnapshotEnvelope as SnapshotEnvelope,
 )
+from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Result, value_or
 from ml_switcheroo_ir.types import JsonScalar as ScalarValue
+
+from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
 
 JsonValue: typing_extensions.TypeAlias = pydantic.JsonValue
 
 SCHEMA_VERSION: typing.Final[str] = "2.0.0"
+
+
+@typing.runtime_checkable
+class WireSerializableProtocol(typing.Protocol):
+    """Protocol for verified snapshot wrappers exposing a deterministic wire dictionary."""
+
+    def to_wire_dict(self) -> dict[str, JsonValue]:
+        """Project this verified snapshot wrapper into a JSON-serializable wire dictionary.
+
+        Returns:
+            JSON-serializable snapshot dictionary.
+        """
+        ...
 
 
 class SymbolKind(str, enum.Enum):
@@ -102,8 +116,8 @@ class CanonicalAttrSpec(pydantic.BaseModel):
     name: str
     type: str = "any"
     required: bool = False
-    default: ScalarValue | list[ScalarValue] = None
-    options: list[ScalarValue] | None = None
+    default: ScalarValue | tuple[ScalarValue, ...] = None
+    options: tuple[ScalarValue, ...] | None = None
 
 
 class CanonicalOpSpec(pydantic.BaseModel):
@@ -115,10 +129,10 @@ class CanonicalOpSpec(pydantic.BaseModel):
     mnemonic: str = ""
     api_path: str = ""
     kind: str = "function"
-    params: list[RawParamSpec] = pydantic.Field(default_factory=list)
-    inputs: list[str] = pydantic.Field(default_factory=list)
-    outputs: list[str] = pydantic.Field(default_factory=list)
-    attributes: list[CanonicalAttrSpec] = pydantic.Field(default_factory=list)
+    params: tuple[RawParamSpec, ...] = ()
+    inputs: tuple[str, ...] = ()
+    outputs: tuple[str, ...] = ()
+    attributes: tuple[CanonicalAttrSpec, ...] = ()
     docstring: str | None = None
     description: str | None = None
     category: str | None = None
@@ -127,36 +141,36 @@ class CanonicalOpSpec(pydantic.BaseModel):
 
 
 class SnapshotSymbolModel(ExtendedGhostRef):
-    """Runtime-validated snapshot symbol model extending `ExtendedGhostRef`."""
+    """Immutable runtime-validated snapshot symbol model extending `ExtendedGhostRef`."""
 
-    model_config = pydantic.ConfigDict(extra="allow")
+    model_config = pydantic.ConfigDict(extra="allow", frozen=True)
 
-    kwargs: list[str] = pydantic.Field(default_factory=list)
+    kwargs: tuple[str, ...] = ()
 
 
 class IsaInstructionRecordModel(pydantic.BaseModel):
-    """Runtime-validated hardware ISA instruction record (NVIDIA SASS, PTX, AMD RDNA)."""
+    """Immutable runtime-validated hardware ISA instruction record (NVIDIA SASS, PTX, AMD RDNA)."""
 
-    model_config = pydantic.ConfigDict(extra="allow")
+    model_config = pydantic.ConfigDict(extra="allow", frozen=True)
 
     mnemonic: str = ""
     category: str = ""
     description: str = ""
     encoding: str | None = None
-    architecture: str | list[str] | None = None
+    architecture: str | tuple[str, ...] | None = None
     min_sm: str | None = None
-    modifiers: list[str] = pydantic.Field(default_factory=list)
-    operands: list[JsonValue] = pydantic.Field(default_factory=list)
-    supported_types: list[str] = pydantic.Field(default_factory=list)
-    vector_widths: list[str] = pydantic.Field(default_factory=list)
-    state_spaces: list[str] = pydantic.Field(default_factory=list)
-    scopes: list[str] = pydantic.Field(default_factory=list)
+    modifiers: tuple[str, ...] = ()
+    operands: tuple[JsonValue, ...] = ()
+    supported_types: tuple[str, ...] = ()
+    vector_widths: tuple[str, ...] = ()
+    state_spaces: tuple[str, ...] = ()
+    scopes: tuple[str, ...] = ()
 
 
 class TableGenRecordModel(pydantic.BaseModel):
-    """Runtime-validated MLIR / StableHLO TableGen operation record."""
+    """Immutable runtime-validated MLIR / StableHLO TableGen operation record."""
 
-    model_config = pydantic.ConfigDict(extra="allow")
+    model_config = pydantic.ConfigDict(extra="allow", frozen=True)
 
     api_path: str = ""
     name: str = ""
@@ -165,87 +179,106 @@ class TableGenRecordModel(pydantic.BaseModel):
     kind: str = "function"
     is_public: bool = True
     has_varargs: bool = False
-    environment_tags: list[str] = pydantic.Field(default_factory=list)
-    aliases: list[str] = pydantic.Field(default_factory=list)
-    overloads: list[dict[str, JsonValue]] = pydantic.Field(default_factory=list)
-    params: list[dict[str, JsonValue]] = pydantic.Field(default_factory=list)
-    operands: list[dict[str, JsonValue]] = pydantic.Field(default_factory=list)
-    attributes: list[dict[str, JsonValue]] = pydantic.Field(default_factory=list)
-    results: list[dict[str, JsonValue]] = pydantic.Field(default_factory=list)
+    environment_tags: tuple[str, ...] = ()
+    aliases: tuple[str, ...] = ()
+    overloads: tuple[dict[str, JsonValue], ...] = ()
+    params: tuple[dict[str, JsonValue], ...] = ()
+    operands: tuple[dict[str, JsonValue], ...] = ()
+    attributes: tuple[dict[str, JsonValue], ...] = ()
+    results: tuple[dict[str, JsonValue], ...] = ()
     returns_type: str | None = None
     returns_description: str | None = None
-    raises: list[str] = pydantic.Field(default_factory=list)
+    raises: tuple[str, ...] = ()
     docstring: str | None = None
     description: str | None = None
     summary: str | None = None
-    traits: list[str] = pydantic.Field(default_factory=list)
-    regions: list[dict[str, JsonValue] | str] = pydantic.Field(default_factory=list)
+    traits: tuple[str, ...] = ()
+    regions: tuple[dict[str, JsonValue] | str, ...] = ()
     verification_rules: dict[str, JsonValue] = pydantic.Field(default_factory=dict)
     region_signatures: dict[str, JsonValue] = pydantic.Field(default_factory=dict)
     assembly_format: str | None = None
 
 
-def ensure_json_dict(value: JsonValue, context: str = "JSON object") -> dict[str, JsonValue]:
-    """Validate at runtime that `value` is a JSON dictionary, surviving `python -O`.
+def ensure_json_dict(
+    value: JsonValue,
+    context: str = "JSON object",
+) -> Result[SnapshotSchemaError, dict[str, JsonValue]]:
+    """Validate totally at runtime that `value` is a JSON dictionary.
 
     Args:
         value: Parsed JSON value to validate.
         context: Human-readable context included in error diagnostics.
 
     Returns:
-        Validated shallow dictionary mapping strings to `JsonValue`.
-
-    Raises:
-        SnapshotSchemaError: If `value` is not a `dict`.
+        `Ok(dict)` if `value` is a `dict`, else `Err(SnapshotSchemaError)`.
     """
-    from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
-
     if not isinstance(value, dict):
-        raise SnapshotSchemaError(f"Expected {context} to be a dict, got {value!r}.")
-    return value
+        return Err(SnapshotSchemaError(f"Expected {context} to be a dict, got {value!r}."))
+    return Ok(value)
 
 
-def ensure_json_list(value: JsonValue, context: str = "JSON array") -> list[JsonValue]:
-    """Validate at runtime that `value` is a JSON list, surviving `python -O`.
+def ensure_json_list(
+    value: JsonValue,
+    context: str = "JSON array",
+) -> Result[SnapshotSchemaError, tuple[JsonValue, ...]]:
+    """Validate totally at runtime that `value` is a JSON array, returning an immutable `tuple`.
 
     Args:
         value: Parsed JSON value to validate.
         context: Human-readable context included in error diagnostics.
 
     Returns:
-        Validated list of `JsonValue` items.
-
-    Raises:
-        SnapshotSchemaError: If `value` is not a `list`.
+        `Ok(tuple)` if `value` is a `list`, else `Err(SnapshotSchemaError)`.
     """
-    from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
-
     if not isinstance(value, list):
-        raise SnapshotSchemaError(f"Expected {context} to be a list, got {value!r}.")
-    return value
+        return Err(SnapshotSchemaError(f"Expected {context} to be a list, got {value!r}."))
+    return Ok(tuple(value))
 
 
 _PresentT = typing.TypeVar("_PresentT")
 
 
-def ensure_present(value: _PresentT | None, context: str = "required value") -> _PresentT:
-    """Validate at runtime that `value` is not `None`, surviving `python -O`.
+def ensure_present(
+    value: _PresentT | None,
+    context: str = "required value",
+) -> Result[SnapshotSchemaError, _PresentT]:
+    """Validate totally at runtime that `value` is not `None`.
 
     Args:
         value: Optional value expected to be populated.
         context: Human-readable context included in error diagnostics.
 
     Returns:
-        Non-`None` value of type `_PresentT`.
-
-    Raises:
-        SnapshotSchemaError: If `value` is `None`.
+        `Ok(value)` if non-`None`, else `Err(SnapshotSchemaError)`.
     """
-    from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
-
     if value is None:
-        raise SnapshotSchemaError(f"Expected {context} to be non-None.")
-    return value
+        return Err(SnapshotSchemaError(f"Expected {context} to be non-None."))
+    return Ok(value)
+
+
+def json_dict_or_empty(value: JsonValue) -> dict[str, JsonValue]:
+    """Fold `ensure_json_dict(value)` to a dictionary or `{}` when `value` is non-dict.
+
+    Args:
+        value: Candidate JSON value.
+
+    Returns:
+        Shallow copy of `value` when a `dict`, otherwise an empty dictionary `{}`.
+    """
+    res = ensure_json_dict(value)
+    return dict(value_or(res, {}))
+
+
+def json_tuple_or_empty(value: JsonValue) -> tuple[JsonValue, ...]:
+    """Fold `ensure_json_list(value)` to an immutable `tuple` or `()` when `value` is non-list.
+
+    Args:
+        value: Candidate JSON value.
+
+    Returns:
+        Immutable tuple of `JsonValue` items when `value` is a `list`, otherwise `()`.
+    """
+    return value_or(ensure_json_list(value), ())
 
 
 __all__ = [
@@ -274,7 +307,10 @@ __all__ = [
     "SnapshotSymbolModel",
     "SymbolKind",
     "TableGenRecordModel",
+    "WireSerializableProtocol",
     "ensure_json_dict",
     "ensure_json_list",
     "ensure_present",
+    "json_dict_or_empty",
+    "json_tuple_or_empty",
 ]

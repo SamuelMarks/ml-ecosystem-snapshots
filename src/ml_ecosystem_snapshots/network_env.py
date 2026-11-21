@@ -1,16 +1,54 @@
-"""Environment, network, and JSON streaming utilities for ml_ecosystem_snapshots."""
+"""Environment, network, compression ADTs, and JSON streaming utilities."""
 
 from __future__ import annotations
 
+import enum
+import gzip
 import json
 import os
+import types
 import typing
 from pathlib import Path
 
+from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Result
+
 from ml_ecosystem_snapshots.exceptions import OfflineModeNetworkError, SnapshotError
-from ml_ecosystem_snapshots.models import JsonValue
+from ml_ecosystem_snapshots.models import JsonValue, ScalarValue
 
 ZSTD_MAGIC_HEADER: bytes = b"\x28\xb5\x2f\xfd"
+
+
+class CompressionFormat(str, enum.Enum):
+    """Closed enumeration of supported snapshot compression codecs."""
+
+    NONE = "none"
+    GZIP = "gzip"
+    ZSTD = "zstd"
+
+
+def parse_compression_format(
+    raw: str | CompressionFormat | None,
+) -> Result[SnapshotError, CompressionFormat]:
+    """Parse an optional compression label into a closed `CompressionFormat` variant.
+
+    Args:
+        raw: Optional compression format string (`'none'`, `'gzip'`, `'gz'`, `'zstd'`, `'zst'`) or enum.
+
+    Returns:
+        `Ok(CompressionFormat)` if recognized, else `Err(SnapshotError)`.
+    """
+    if raw is None:
+        return Ok(CompressionFormat.NONE)
+    if isinstance(raw, CompressionFormat):
+        return Ok(raw)
+    cleaned = raw.strip().lower()
+    if cleaned in ("", "none"):
+        return Ok(CompressionFormat.NONE)
+    if cleaned in ("gzip", "gz"):
+        return Ok(CompressionFormat.GZIP)
+    if cleaned in ("zstd", "zst"):
+        return Ok(CompressionFormat.ZSTD)
+    return Err(SnapshotError(f"Unsupported compression format: {raw!r}."))
 
 
 @typing.runtime_checkable
@@ -45,38 +83,32 @@ class ZstdDecompressorProtocol(typing.Protocol):
 
 @typing.runtime_checkable
 class ZstdModuleProtocol(typing.Protocol):
-    """Protocol for the `zstandard` compression module."""
+    """Protocol for the `zstandard` compression module.
 
-    def ZstdCompressor(self) -> ZstdCompressorProtocol:
-        """Instantiate a Zstandard compressor.
+    Attributes:
+        ZstdCompressor: Zero-argument callable constructing a `ZstdCompressorProtocol`.
+        ZstdDecompressor: Zero-argument callable constructing a `ZstdDecompressorProtocol`.
+    """
 
-        Returns:
-            Compressor instance.
-        """
-
-    def ZstdDecompressor(self) -> ZstdDecompressorProtocol:
-        """Instantiate a Zstandard decompressor.
-
-        Returns:
-            Decompressor instance.
-        """
+    ZstdCompressor: typing.Callable[[], ZstdCompressorProtocol]
+    ZstdDecompressor: typing.Callable[[], ZstdDecompressorProtocol]
 
 
 def is_offline_mode() -> bool:
     """Check if offline mode is explicitly enabled via environment variable.
 
     Returns:
-        True if ML_SNAPSHOTS_OFFLINE is set to a truthy value.
+        True if `ML_SNAPSHOTS_OFFLINE` is set to a truthy value.
     """
     val = os.environ.get("ML_SNAPSHOTS_OFFLINE", "").strip().lower()
     return val in ("1", "true", "yes", "on", "enable", "enabled")
 
 
-def get_custom_snapshots_paths() -> list[str]:
+def get_custom_snapshots_paths() -> tuple[str, ...]:
     """Retrieve custom snapshot directory paths configured via environment variables.
 
     Returns:
-        List of directory paths specified in ML_SNAPSHOTS_PATH.
+        Immutable tuple of directory paths specified in `ML_SNAPSHOTS_PATH`.
     """
     paths: list[str] = []
     raw = os.environ.get("ML_SNAPSHOTS_PATH")
@@ -85,64 +117,85 @@ def get_custom_snapshots_paths() -> list[str]:
             p_clean = p.strip()
             if p_clean and os.path.isdir(p_clean) and p_clean not in paths:
                 paths.append(p_clean)
-    return paths
+    return tuple(paths)
 
 
-def load_zstandard_module() -> ZstdModuleProtocol:
-    """Import and validate the optional `zstandard` compression module.
+def _import_optional_module(module_name: str) -> types.ModuleType | ScalarValue:
+    """Import an optional runtime module by name.
+
+    Args:
+        module_name: Dotted module name to import.
 
     Returns:
-        Validated `ZstdModuleProtocol` module object.
-
-    Raises:
-        SnapshotError: If `zstandard` is not installed or lacks compressor/decompressor classes.
+        Imported runtime module object (or custom `sys.modules` entry).
     """
     import importlib
 
+    return importlib.import_module(module_name)
+
+
+def load_zstandard_module() -> Result[SnapshotError, ZstdModuleProtocol]:
+    """Import and validate the optional `zstandard` compression module without raising.
+
+    Returns:
+        `Ok(ZstdModuleProtocol)` if available and valid, else `Err(SnapshotError)`.
+    """
     try:
-        mod = importlib.import_module("zstandard")
-    except ImportError as exc:
-        raise SnapshotError("zstandard package is required for .zst snapshot compression.") from exc
+        mod = _import_optional_module("zstandard")
+    except ImportError:
+        return Err(SnapshotError("zstandard package is required for .zst snapshot compression."))
     if not isinstance(mod, ZstdModuleProtocol):
-        raise SnapshotError("Installed 'zstandard' module does not satisfy ZstdModuleProtocol.")
-    return mod
+        return Err(SnapshotError("Installed 'zstandard' module does not satisfy ZstdModuleProtocol."))
+    return Ok(mod)
 
 
-def load_json_data(file_path: str | Path) -> JsonValue:
-    """Load JSON data from a plain .json, compressed .json.gz, or .json.zst file.
+def _load_zst_json_data(path_str: str) -> Result[SnapshotError, JsonValue]:
+    """Load and decode a `.zst` JSON file, supporting plain-UTF8 fallback when unframed.
+
+    Args:
+        path_str: Path to the `.zst` file.
+
+    Returns:
+        `Ok(JsonValue)` on success, else `Err(SnapshotError)`.
+    """
+    with open(path_str, "rb") as bf:
+        raw_bytes = bf.read()
+    if not raw_bytes.startswith(ZSTD_MAGIC_HEADER):
+        try:
+            plain_zst: JsonValue = json.loads(raw_bytes.decode("utf-8"))
+            return Ok(plain_zst)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            pass
+    zstd_res = load_zstandard_module()
+    if isinstance(zstd_res, Err):
+        return zstd_res
+    decompressed: bytes = zstd_res.value.ZstdDecompressor().decompress(raw_bytes)
+    res_zst: JsonValue = json.loads(decompressed.decode("utf-8"))
+    return Ok(res_zst)
+
+
+def load_json_data(file_path: str | Path) -> Result[SnapshotError, JsonValue]:
+    """Load JSON data totally from a plain `.json`, `.json.gz`, or `.json.zst` file.
 
     Args:
         file_path: Absolute or relative path to the snapshot file.
 
     Returns:
-        Deserialized JSON object (dict, list, or primitive).
-
-    Raises:
-        SnapshotError: If a binary `.zst` frame cannot be decompressed due to missing `zstandard`.
+        `Ok(JsonValue)` on success, or `Err(SnapshotError)` on I/O, compression, or decode failure.
     """
     path_str = str(file_path)
-    if path_str.endswith(".gz"):
-        import gzip
-
-        with gzip.open(path_str, "rt", encoding="utf-8") as f:
-            res_gz: JsonValue = json.load(f)
-            return res_gz
-    if path_str.endswith(".zst"):
-        with open(path_str, "rb") as bf:
-            raw_bytes = bf.read()
-        if not raw_bytes.startswith(ZSTD_MAGIC_HEADER):
-            try:
-                plain_zst: JsonValue = json.loads(raw_bytes.decode("utf-8"))
-                return plain_zst
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                pass
-        zstd = load_zstandard_module()
-        decompressed: bytes = zstd.ZstdDecompressor().decompress(raw_bytes)
-        res_zst: JsonValue = json.loads(decompressed.decode("utf-8"))
-        return res_zst
-    with open(path_str, encoding="utf-8") as f:
-        res_plain: JsonValue = json.load(f)
-        return res_plain
+    try:
+        if path_str.endswith(".gz"):
+            with gzip.open(path_str, "rt", encoding="utf-8") as f:
+                res_gz: JsonValue = json.load(f)
+                return Ok(res_gz)
+        if path_str.endswith(".zst"):
+            return _load_zst_json_data(path_str)
+        with open(path_str, encoding="utf-8") as f:
+            res_plain: JsonValue = json.load(f)
+            return Ok(res_plain)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        return Err(SnapshotError(f"Failed to load JSON data from '{path_str}': {exc}"))
 
 
 def _iter_dict_items(items: JsonValue) -> typing.Iterator[dict[str, JsonValue]]:
@@ -169,9 +222,12 @@ def stream_snapshot_items(
         file_path: Absolute or relative path to the snapshot file.
 
     Yields:
-        Individual item dictionaries parsed from categories or items lists.
+        Individual item dictionaries parsed from `categories` or `items` lists.
     """
-    data = load_json_data(file_path)
+    data_res = load_json_data(file_path)
+    if isinstance(data_res, Err):
+        return
+    data = data_res.value
     if isinstance(data, list):
         yield from _iter_dict_items(data)
     elif isinstance(data, dict):
@@ -182,36 +238,34 @@ def stream_snapshot_items(
         yield from _iter_dict_items(data.get("items", []))
 
 
-def fetch_url(url: str, timeout: int = 10, strict_offline: bool = False) -> str | None:
-    """Fetch content from a URL with timeout.
+def fetch_url(url: str, timeout: int = 10, strict_offline: bool = False) -> Result[SnapshotError, str]:
+    """Fetch UTF-8 content from a URL totally into a `Result[SnapshotError, str]`.
 
     Args:
-        url: The URL to fetch.
+        url: Target HTTP/HTTPS URL to fetch.
         timeout: Timeout in seconds.
-        strict_offline: Whether to raise `OfflineModeNetworkError` if offline mode is active.
+        strict_offline: Preserved flag; offline mode always yields `Err(OfflineModeNetworkError)`.
 
     Returns:
-        The decoded string content, or None on failure.
-
-    Raises:
-        OfflineModeNetworkError: If `strict_offline` is True and `is_offline_mode()` is True.
+        `Ok(decoded_text)` on success, `Err(OfflineModeNetworkError)` when offline mode is active,
+        or `Err(SnapshotError)` on network/decode error.
     """
     import urllib.error
     import urllib.request
 
+    del strict_offline
     if is_offline_mode():
-        if strict_offline:
-            raise OfflineModeNetworkError(f"Outbound network request to '{url}' blocked in offline mode.")
-        return None
+        return Err(OfflineModeNetworkError(f"Outbound network request to '{url}' blocked in offline mode."))
 
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
-            return str(response.read().decode("utf-8"))
-    except urllib.error.URLError:
-        return None
+            return Ok(str(response.read().decode("utf-8")))
+    except (urllib.error.URLError, OSError, UnicodeDecodeError) as exc:
+        return Err(SnapshotError(f"Failed to fetch URL '{url}': {exc}"))
 
 
 __all__ = [
+    "CompressionFormat",
     "ZSTD_MAGIC_HEADER",
     "ZstdCompressorProtocol",
     "ZstdDecompressorProtocol",
@@ -221,5 +275,6 @@ __all__ = [
     "is_offline_mode",
     "load_json_data",
     "load_zstandard_module",
+    "parse_compression_format",
     "stream_snapshot_items",
 ]

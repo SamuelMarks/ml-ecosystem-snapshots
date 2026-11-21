@@ -176,26 +176,28 @@ def test_ghost_inspector_aten_overload_and_factory_default(
     Args:
         mocker: Pytest mocker fixture.
     """
-    from ml_ecosystem_snapshots.c_extension_sig import CExtensionSignature
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
 
-    existing_overload = CExtensionSignature(
+    from ml_ecosystem_snapshots.c_extension_sig import build_c_extension_signature
+
+    existing_overload = build_c_extension_signature(
         params=[
             ("y", "POSITIONAL_OR_KEYWORD", "<factory_default>", "float"),
             ("z", "POSITIONAL_OR_KEYWORD", "1.0", "float"),
         ]
     )
-    existing_sig = CExtensionSignature(
+    existing_sig = build_c_extension_signature(
         params=[("x", "POSITIONAL_OR_KEYWORD", None, "int")],
         overloads=[existing_overload],
     )
-    aten_sig = CExtensionSignature(
+    aten_sig = build_c_extension_signature(
         params=[("x", "POSITIONAL_OR_KEYWORD", None, "int")],
-        overloads=[CExtensionSignature(params=[("z", "POSITIONAL_OR_KEYWORD", None, "str")])],
+        overloads=[build_c_extension_signature(params=[("z", "POSITIONAL_OR_KEYWORD", None, "str")])],
     )
 
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
-        return_value=existing_sig,
+        return_value=Ok(existing_sig),
     )
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.torch.extract_aten_c_extension_signature",
@@ -221,13 +223,13 @@ def test_ghost_inspector_aten_overload_and_factory_default(
     assert p0.default_factory == "<factory_default>"
 
     # Also test when c_ext_params has no overloads and aten_sig supplies overloads
-    sig_without_overloads = CExtensionSignature(
+    sig_without_overloads = build_c_extension_signature(
         params=[("x", "POSITIONAL_OR_KEYWORD", None, "int")],
-        overloads=[],
+        overloads=(),
     )
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
-        return_value=sig_without_overloads,
+        return_value=Ok(sig_without_overloads),
     )
     ref_merged = GhostInspector.inspect(dummy_torch_fn, "torch.dummy_torch_fn")
     assert ref_merged.overloads is not None
@@ -266,6 +268,10 @@ def test_ghost_inspector_aten_none(mocker: pytest_mock.MockerFixture) -> None:
     Args:
         mocker: Pytest mocker fixture.
     """
+    from ml_switcheroo_ir.typeclasses.outcome import Err
+
+    from ml_ecosystem_snapshots.exceptions import CExtensionSignatureError
+
     mocker.patch("inspect.signature", side_effect=TypeError("no python signature"))
     mocker.patch(
         "ml_ecosystem_snapshots.frameworks.torch.extract_aten_c_extension_signature",
@@ -273,7 +279,7 @@ def test_ghost_inspector_aten_none(mocker: pytest_mock.MockerFixture) -> None:
     )
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
-        return_value=None,
+        return_value=Err(CExtensionSignatureError("none")),
     )
 
     def dummy_torch_fn() -> None:
@@ -303,7 +309,9 @@ def test_ghost_inspector_hydrate_variations() -> None:
             ExtendedGhostParam(name="y", kind=ParameterKind.POSITIONAL_ONLY),
         ],
     }
-    hydrated = GhostInspector.hydrate(data)
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
+    hydrated = raise_on_err(GhostInspector.hydrate(data))
     assert len(hydrated.params) == 2
     assert hydrated.params[0].name == "x"
     assert hydrated.params[0].kind == ParameterKind.POSITIONAL_OR_KEYWORD
@@ -388,6 +396,8 @@ def test_ghostref_from_obj_griffe_import_error(monkeypatch: pytest.MonkeyPatch) 
 
 def test_extended_ghost_ref_dict_with_non_string_default() -> None:
     """Verify `GhostInspector.hydrate` coerces non-string numeric defaults into canonical strings."""
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
     from ml_ecosystem_snapshots.models import JsonValue
 
     data: dict[str, JsonValue] = {
@@ -396,7 +406,7 @@ def test_extended_ghost_ref_dict_with_non_string_default() -> None:
         "kind": "function",
         "params": [{"name": "a", "default": 123, "kind": "POSITIONAL_OR_KEYWORD"}],
     }
-    ref = GhostInspector.hydrate(data)
+    ref = raise_on_err(GhostInspector.hydrate(data))
     assert ref.name == "foo"
     assert len(ref.params) == 1
     assert ref.params[0].default == "123"

@@ -339,8 +339,10 @@ def test_extract_snapshot_optax(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
     monkeypatch.setenv("ML_SNAPSHOTS_OFFLINE", "1")
-    snap = extract_snapshot("optax")
+    snap = raise_on_err(extract_snapshot("optax")).to_wire_dict()
     assert snap.get("target") == "optax"
     cats = snap.get("categories", {})
     assert isinstance(cats, dict)

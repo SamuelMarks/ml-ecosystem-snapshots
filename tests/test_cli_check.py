@@ -73,17 +73,19 @@ def test_cmd_check(
         reference_prefix="r_pref",
     )
 
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
     mock_extract = mocker.patch(
         "ml_ecosystem_snapshots.compliance.extract_target_refs",
-        return_value=["mock_ref"],
+        return_value=Ok(("mock_ref",)),
     )
     mock_score = mocker.patch(
         "ml_ecosystem_snapshots.compliance.score_compliance",
         return_value=ComplianceScoreReport(
             score_percentage=75.5,
-            matched=["mod.func1", "mod.func2", "other.func3"],
-            missing=["mod.func4"],
-            mismatched=[ComplianceMismatchEntry(api_path="other.func5", expected=[], actual=[])],
+            matched=("mod.func1", "mod.func2", "other.func3"),
+            missing=("mod.func4",),
+            mismatched=(ComplianceMismatchEntry(api_path="other.func5", expected=(), actual=()),),
         ),
     )
 
@@ -102,7 +104,7 @@ def test_cmd_check(
         "r_pref",
         alignment_rule=CLI_ALIGNMENT_PRESETS["default"],
     )
-    mock_score.assert_called_once_with(json.loads(MOCK_JSON), ["mock_ref"])
+    mock_score.assert_called_once_with(json.loads(MOCK_JSON), ("mock_ref",))
 
     args_zero = argparse.Namespace(
         snapshot_json=str(snap_file),
@@ -146,20 +148,22 @@ def test_cmd_check_pagination(
         reference_prefix="r_pref",
     )
 
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.extract_target_refs",
-        return_value=[],
+        return_value=Ok(()),
     )
 
     # Generate > 20 missing and mismatched
-    missing = [f"mod.func{i}" for i in range(25)]
-    mismatched = [ComplianceMismatchEntry(api_path=f"mod.func{i}", expected=[], actual=[]) for i in range(30, 55)]
+    missing = tuple(f"mod.func{i}" for i in range(25))
+    mismatched = tuple(ComplianceMismatchEntry(api_path=f"mod.func{i}", expected=(), actual=()) for i in range(30, 55))
 
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.score_compliance",
         return_value=ComplianceScoreReport(
             score_percentage=0.0,
-            matched=[],
+            matched=(),
             missing=missing,
             mismatched=mismatched,
         ),
@@ -183,6 +187,8 @@ def test_cmd_check_no_missing_mismatched(
         tmp_path: Pytest temporary directory fixture.
         capsys: Pytest stdout/stderr capture fixture.
     """
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
     snap_file = tmp_path / "dummy.json"
     snap_file.write_text('{"categories": {}}', encoding="utf-8")
     args = argparse.Namespace(
@@ -194,15 +200,15 @@ def test_cmd_check_no_missing_mismatched(
 
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.extract_target_refs",
-        return_value=[],
+        return_value=Ok(()),
     )
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.score_compliance",
         return_value=ComplianceScoreReport(
             score_percentage=100.0,
-            matched=["mod.func1"],
-            missing=[],
-            mismatched=[],
+            matched=("mod.func1",),
+            missing=(),
+            mismatched=(),
         ),
     )
 
@@ -262,16 +268,18 @@ def test_cmd_check_output_formatting(
     snap_file = Path(os.path.join(tmp_path, "snap.json"))
     snap_file.write_text(json.dumps(snapshot))
 
+    from ml_switcheroo_ir.typeclasses.outcome import Ok
+
     mocker.patch(
         "ml_ecosystem_snapshots.cli.resolver.resolve_snapshot_path",
-        return_value=str(snap_file),
+        return_value=Ok(str(snap_file)),
     )
-    mocker.patch("ml_ecosystem_snapshots.compliance.extract_target_refs", return_value=[])
+    mocker.patch("ml_ecosystem_snapshots.compliance.extract_target_refs", return_value=Ok(()))
     mocker.patch(
         "ml_ecosystem_snapshots.compliance.score_compliance",
         return_value=ComplianceScoreReport(
             score_percentage=0.0,
-            missing=["torch.nn.func", "torch.nn.mod", "torch.func"],
+            missing=("torch.nn.func", "torch.nn.mod", "torch.func"),
         ),
     )
 
@@ -305,8 +313,8 @@ def test_cmd_check_sass_no_modifiers(mocker: pytest_mock.MockerFixture, capsys: 
         "ml_ecosystem_snapshots.cli.commands.verify_isa.verify_sass_instruction",
         return_value=IsaCheckResult(
             is_valid=True,
-            supported_architectures=["sm_80"],
-            valid_modifiers=[],
+            supported_architectures=("sm_80",),
+            valid_modifiers=(),
         ),
     )
     args = argparse.Namespace(
@@ -335,7 +343,7 @@ def test_cmd_check_rdna_no_encoding(mocker: pytest_mock.MockerFixture, capsys: p
         "ml_ecosystem_snapshots.cli.commands.verify_isa.verify_rdna_instruction",
         return_value=IsaCheckResult(
             is_valid=True,
-            supported_architectures=["gfx1100"],
+            supported_architectures=("gfx1100",),
             encoding=None,
         ),
     )
@@ -374,7 +382,7 @@ def test_cmd_check_non_python_auto_detect(
             is_compliant=True,
             total_instructions=2,
             verified_instructions=2,
-            errors=[],
+            errors=(),
         ),
     )
     mocker.patch(
@@ -398,7 +406,7 @@ def test_cmd_check_non_python_auto_detect(
             is_compliant=False,
             total_instructions=2,
             verified_instructions=1,
-            errors=["Bad opcode"],
+            errors=("Bad opcode",),
         ),
     )
     with pytest.raises(SystemExit):
@@ -411,7 +419,7 @@ def test_cmd_check_non_python_auto_detect(
             is_compliant=True,
             total_instructions=3,
             verified_instructions=3,
-            errors=[],
+            errors=(),
         ),
     )
     mocker.patch(
@@ -435,7 +443,7 @@ def test_cmd_check_non_python_auto_detect(
             is_compliant=False,
             total_instructions=3,
             verified_instructions=2,
-            errors=["Bad reg"],
+            errors=("Bad reg",),
         ),
     )
     with pytest.raises(SystemExit):
@@ -448,7 +456,7 @@ def test_cmd_check_non_python_auto_detect(
             is_compliant=True,
             total_ops=4,
             verified_ops=4,
-            errors=[],
+            errors=(),
         ),
     )
     mocker.patch(
@@ -472,7 +480,7 @@ def test_cmd_check_non_python_auto_detect(
             is_compliant=False,
             total_ops=4,
             verified_ops=2,
-            errors=["Unknown dialect op"],
+            errors=("Unknown dialect op",),
         ),
     )
     with pytest.raises(SystemExit):

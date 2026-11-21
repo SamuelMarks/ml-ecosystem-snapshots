@@ -286,8 +286,10 @@ def test_extract_snapshot_orbax(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
+    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+
     monkeypatch.setenv("ML_SNAPSHOTS_OFFLINE", "1")
-    snap = extract_snapshot("orbax")
+    snap = raise_on_err(extract_snapshot("orbax")).to_wire_dict()
     assert snap.get("target") == "orbax"
-    snap_cp = extract_snapshot("orbax_checkpoint")
+    snap_cp = raise_on_err(extract_snapshot("orbax_checkpoint")).to_wire_dict()
     assert snap_cp.get("target") == "orbax_checkpoint"
