@@ -24,6 +24,11 @@ jobs:
       with:
         version: "latest"
 
+    - name: Prefetch GitHub release wheels via authenticated REST API
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: python3 scripts/prefetch_github_wheels.py
+
     - name: Install dependencies
       run: |
         uv pip install --system pre-commit

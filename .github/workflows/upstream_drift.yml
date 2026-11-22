@@ -19,10 +19,19 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.4.0
+        with:
+          version: "latest"
+
+      - name: Prefetch GitHub release wheels via authenticated REST API
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/prefetch_github_wheels.py
+
       - name: Install dependencies
         run: |
-          pip install --upgrade pip requests
-          pip install -e .
+          uv pip install --system requests -e .
 
       - name: Query Upstream PyPI Versions and Git Tags
         id: check_versions

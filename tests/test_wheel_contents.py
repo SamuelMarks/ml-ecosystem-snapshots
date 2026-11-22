@@ -260,6 +260,23 @@ def test_ci_and_release_workflow_inline_python_contracts() -> None:
     )
 
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for rel_workflow in (
+        ".github/workflows/ci.yml",
+        ".github/workflows/bot.yml",
+        ".github/workflows/release.yml",
+        ".github/workflows/snapshots_matrix.yml",
+        ".github/workflows/upstream_drift.yml",
+    ):
+        wf_path = os.path.join(root_dir, rel_workflow)
+        with open(wf_path, encoding="utf-8") as fp:
+            wf_content = fp.read()
+        assert "scripts/prefetch_github_wheels.py" in wf_content, (
+            f"Missing authenticated GitHub wheel prefetch step in {rel_workflow}"
+        )
+        assert "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in wf_content, (
+            f"Missing GITHUB_TOKEN binding for wheel prefetch in {rel_workflow}"
+        )
+
     for rel_workflow in (".github/workflows/ci.yml", ".github/workflows/release.yml"):
         wf_path = os.path.join(root_dir, rel_workflow)
         with open(wf_path, encoding="utf-8") as fp:
