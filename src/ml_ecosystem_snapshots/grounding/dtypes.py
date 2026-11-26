@@ -580,6 +580,63 @@ def _validate_candidate_shapes(
     return shape_errors
 
 
+def extract_tensor_spec_metadata(
+    spec: TensorSpec,
+) -> tuple[str, int, tuple[int | str, ...]]:
+    """Project a Tier-0 `TensorSpec` into `(normalized_dtype, rank, shape_tuple)`.
+
+    Args:
+        spec: `ml_switcheroo_ir.types.TensorSpec` instance.
+
+    Returns:
+        Tuple `(normalized_dtype, rank, shape_dims_tuple)`.
+    """
+    dt_str = normalize_dtype_name(spec.dtype.value)
+    dims_list: list[int | str] = []
+    for dim in spec.shape:
+        if isinstance(dim, int) and not isinstance(dim, bool):
+            dims_list.append(dim)
+        else:
+            dims_list.append(str(dim))
+    return (dt_str, len(dims_list), tuple(dims_list))
+
+
+def coerce_ir_attribute_to_json(val: AttributeValue) -> JsonValue:
+    """Convert an `ml_switcheroo_ir.types.AttributeValue` into a JSON-compatible `JsonValue`.
+
+    Args:
+        val: IR node attribute value.
+
+    Returns:
+        JSON-compatible scalar, list, or dictionary value.
+    """
+    from ml_switcheroo_ir.types import DType, TensorSpec
+
+    out: JsonValue
+    if isinstance(val, DType):
+        out = normalize_dtype_name(val.value)
+    elif val is None or isinstance(val, (bool, int, float, str)):
+        out = val
+    elif isinstance(val, bytes):
+        out = val.decode("utf-8", errors="replace")
+    elif isinstance(val, TensorSpec):
+        dt_name, _rk, sh_tup = extract_tensor_spec_metadata(val)
+        out = {"dtype": dt_name, "shape": list(sh_tup)}
+    elif isinstance(val, pydantic.BaseModel):
+        out = val.model_dump(mode="json")
+    elif isinstance(val, typing.Mapping):
+        out = {str(k): coerce_ir_attribute_to_json(v) for k, v in val.items()}
+    elif isinstance(val, typing.Sequence):
+        out = [coerce_ir_attribute_to_json(item) for item in val]
+    else:
+        out = str(val)
+    return out
+
+
+if typing.TYPE_CHECKING:
+    from ml_switcheroo_ir.types import AttributeValue, TensorSpec
+
+
 __all__ = [
     "CallConstraintOptions",
     "CallOptionValue",
@@ -589,6 +646,8 @@ __all__ = [
     "_validate_candidate_dtypes_and_ranks",
     "_validate_candidate_enums_and_literals",
     "_validate_candidate_shapes",
+    "coerce_ir_attribute_to_json",
+    "extract_tensor_spec_metadata",
     "matches_rank_constraint",
     "normalize_dtype_name",
 ]

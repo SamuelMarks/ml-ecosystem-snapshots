@@ -123,8 +123,9 @@ def test_ghost_inspector_c_extension(mocker: pytest_mock.MockerFixture) -> None:
 
 def test_ghost_inspector_hydrate() -> None:
     """Verify ghost inspector hydrate behavior."""
-    from ml_switcheroo_ir.typeclasses.outcome import Err, raise_on_err
+    from ml_switcheroo_ir.typeclasses.outcome import Err
 
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
     from ml_ecosystem_snapshots.models import JsonValue
 
     data: dict[str, JsonValue] = {
@@ -708,8 +709,7 @@ def test_extended_ghost_param_allowed_values() -> None:
 
 def test_ghost_isa_ref_hydrate_overloads() -> None:
     """Test GhostInspector.hydrate creates overloads for multi-signature instructions."""
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
-
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
     from ml_ecosystem_snapshots.models import JsonValue
 
     raw_data: dict[str, JsonValue] = {
@@ -937,7 +937,7 @@ def test_ghost_instruction_and_operation_refs() -> None:
     assert len(op.operands or []) == 2
     assert len(op.returns or []) == 1
 
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
     # 3. Hydrate with domain_type="instruction" and "operation"
     hydrated_inst = raise_on_err(
@@ -1007,10 +1007,10 @@ def test_ghost_inspector_griffe_param_not_in_cdd(
 
 
 def test_ensure_json_dict_and_list() -> None:
-    """Verify `ensure_json_dict`, `ensure_json_list`, and `ensure_present` return total `Ok` / `Err(SnapshotSchemaError)`."""
+    """Verify `ensure_json_dict`, `ensure_json_list`, and `ensure_present` return total `Ok` / `Err(SnapshotEnvelopeFault)`."""
     from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
 
-    from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
+    from ml_ecosystem_snapshots.errors import SnapshotEnvelopeFault
     from ml_ecosystem_snapshots.models import ensure_json_dict, ensure_json_list, ensure_present
 
     assert ensure_json_dict({"k": 1}) == Ok({"k": 1})
@@ -1018,14 +1018,14 @@ def test_ensure_json_dict_and_list() -> None:
     assert ensure_present("ok") == Ok("ok")
 
     bad_dict = ensure_json_dict("not_a_dict")
-    assert isinstance(bad_dict, Err) and isinstance(bad_dict.error, SnapshotSchemaError)
-    assert "dict" in str(bad_dict.error)
+    assert isinstance(bad_dict, Err) and isinstance(bad_dict.error, SnapshotEnvelopeFault)
+    assert "dict" in bad_dict.error.reason
 
     bad_list = ensure_json_list({"not": "a_list"})
-    assert isinstance(bad_list, Err) and isinstance(bad_list.error, SnapshotSchemaError)
-    assert "list" in str(bad_list.error)
+    assert isinstance(bad_list, Err) and isinstance(bad_list.error, SnapshotEnvelopeFault)
+    assert "list" in bad_list.error.reason
 
     none_val: str | None = None
     bad_pres = ensure_present(none_val)
-    assert isinstance(bad_pres, Err) and isinstance(bad_pres.error, SnapshotSchemaError)
+    assert isinstance(bad_pres, Err) and isinstance(bad_pres.error, SnapshotEnvelopeFault)
     assert "non-None" in str(bad_pres.error)

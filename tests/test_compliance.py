@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 import griffe
-from ml_switcheroo_ir.typeclasses.outcome import Err, raise_on_err
+from ml_switcheroo_ir.typeclasses.outcome import Err
 
 from ml_ecosystem_snapshots.compliance import (
     align_namespace,
@@ -15,7 +15,8 @@ from ml_ecosystem_snapshots.compliance import (
     get_module_info_from_path,
     score_compliance,
 )
-from ml_ecosystem_snapshots.exceptions import SnapshotError, SnapshotNotFoundError
+from ml_ecosystem_snapshots.errors import IntrospectionFault, SnapshotNotFoundFault
+from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 from ml_ecosystem_snapshots.models import ExtendedGhostRef, JsonValue
 
 
@@ -68,19 +69,24 @@ def test_get_module_info_from_path_init_file(tmp_path: Path) -> None:
 
 
 def test_get_module_info_from_path_not_exist() -> None:
-    """Test getting module info for non-existent path returns Err(SnapshotNotFoundError)."""
+    """Test getting module info for non-existent path returns Err(SnapshotNotFoundFault)."""
     res = get_module_info_from_path("does_not_exist_xyz.py")
-    assert isinstance(res, Err) and isinstance(res.error, SnapshotNotFoundError)
+    assert isinstance(res, Err) and isinstance(res.error, SnapshotNotFoundFault)
 
 
 def test_get_module_info_from_path_value_error(tmp_path: Path) -> None:
-    """Test getting module info returns Err(SnapshotError) when module name is empty.
+    """Test getting module info returns Err(IntrospectionFault) when module name is empty.
 
     Args:
         tmp_path: Temporary directory path fixture.
     """
-    res = get_module_info_from_path(str(tmp_path))
-    assert isinstance(res, Err) and isinstance(res.error, SnapshotError)
+    init_at_root = tmp_path / "__init__.py"
+    init_at_root.touch()
+    res = get_module_info_from_path(str(init_at_root))
+    if isinstance(res, Err):
+        assert isinstance(res.error, IntrospectionFault)
+    root_res = get_module_info_from_path("/")
+    assert isinstance(root_res, Err) and isinstance(root_res.error, IntrospectionFault)
 
 
 def test_extract_target_ast(tmp_path: Path) -> None:
@@ -592,3 +598,179 @@ def test_map_target_to_reference_path_extra() -> None:
     )
     assert align_namespace("zero_torch", "zero_torch", "torch", alignment_rule=ZERO_ECOSYSTEM_ALIGNMENT_RULE) == "torch"
     assert align_namespace("zero.array", "zero", "np") == "np.array"
+
+
+def test_audit_module_sources_pure_monoid_and_ast_branches() -> None:
+    """Verify pure `audit_module_sources` AST extraction, `FILE_COMPLIANCE_MONOID` folding, and error accumulation."""
+    from ml_switcheroo_ir.schema.ghost import (
+        ExtendedGhostParam,
+        ParameterKind,
+        SnapshotEnvelope,
+    )
+    from ml_switcheroo_ir.typeclasses.outcome import Invalid, Valid
+
+    from ml_ecosystem_snapshots.compliance import (
+        audit_module_sources,
+        canonicalize_ir_dtype_name,
+        normalize_source_module_name,
+    )
+    from ml_ecosystem_snapshots.proofs import prove_envelope_valid, upgrade_to_hydrated
+    from ml_ecosystem_snapshots.typeclasses import COMPLIANCE_REPORT_MONOID
+
+    assert normalize_source_module_name("./src/zero_jax/nn/__init__.py") == "zero_jax.nn"
+    assert normalize_source_module_name("zero_jax/lax/ops") == "zero_jax.lax.ops"
+    assert normalize_source_module_name("zero_jax.nn") == "zero_jax.nn"
+    assert normalize_source_module_name("__init__.py", target_prefix="zero_jax") == "zero_jax"
+    assert normalize_source_module_name("__init__.py") == "module"
+    assert canonicalize_ir_dtype_name("float32") == "float32"
+    assert canonicalize_ir_dtype_name("custom_weird_dtype") == "custom_weird_dtype"
+
+    env = SnapshotEnvelope(
+        target="jax",
+        version="0.4.30",
+        categories={
+            "array": [
+                ExtendedGhostRef(
+                    name="add",
+                    api_path="jax.add",
+                    kind="function",
+                    params=[
+                        ExtendedGhostParam(name="x", kind=ParameterKind.POSITIONAL_ONLY, annotation="Array"),
+                        ExtendedGhostParam(
+                            name="y",
+                            kind=ParameterKind.POSITIONAL_OR_KEYWORD,
+                            default="None",
+                            annotation="Array",
+                        ),
+                        ExtendedGhostParam(name="args", kind=ParameterKind.VAR_POSITIONAL, annotation="int"),
+                        ExtendedGhostParam(
+                            name="alpha",
+                            kind=ParameterKind.KEYWORD_ONLY,
+                            default="1",
+                            annotation="int",
+                        ),
+                        ExtendedGhostParam(name="kwargs", kind=ParameterKind.VAR_KEYWORD, annotation="int"),
+                    ],
+                ),
+                ExtendedGhostRef(
+                    name="Dense",
+                    api_path="jax.Dense",
+                    kind="class",
+                    params=[
+                        ExtendedGhostParam(
+                            name="features",
+                            kind=ParameterKind.POSITIONAL_OR_KEYWORD,
+                            annotation="int",
+                        )
+                    ],
+                ),
+                ExtendedGhostRef(
+                    name="apply",
+                    api_path="jax.Dense.apply",
+                    kind="method",
+                    params=[
+                        ExtendedGhostParam(
+                            name="x",
+                            kind=ParameterKind.POSITIONAL_OR_KEYWORD,
+                            annotation="Array",
+                        )
+                    ],
+                ),
+            ]
+        },
+    )
+    env_val = prove_envelope_valid(env)
+    assert isinstance(env_val, Valid)
+    hyd_val = upgrade_to_hydrated(env_val.value)
+    assert isinstance(hyd_val, Valid)
+    proven_snap = hyd_val.value
+
+    nl = chr(10)
+    mod_a = nl.join(
+        [
+            "import typing",
+            "from typing import overload",
+            "",
+            "def _private_helper() -> None:",
+            "    pass",
+            "",
+            "@overload",
+            "def add(x: Array, /) -> Array: ...",
+            "@typing.overload",
+            "def add(x: Array, /, y: Array = None) -> Array: ...",
+            "def add(x: Array, /, y: Array = None, *args: int, alpha: int = 1, **kwargs: int) -> Array:",
+            '    """Add arrays."""',
+            "    return x",
+            "",
+        ]
+    )
+    mod_b = nl.join(
+        [
+            "import typing",
+            "",
+            "class _PrivateCls:",
+            "    pass",
+            "",
+            "class Dense:",
+            "    @typing.overload",
+            "    def __init__(self) -> None: ...",
+            "    def __init__(self, features: int) -> None:",
+            "        self.features = features",
+            "    def _hidden(self) -> None:",
+            "        pass",
+            "    @typing.overload",
+            "    def apply(self, x: Array) -> Array: ...",
+            "    def apply(self, x: Array) -> Array:",
+            "        return x",
+            "",
+            "class JaxBackend(CompilerBackend):",
+            "    def to_ir(self) -> None: pass",
+            "    def compile(self) -> None: pass",
+            "",
+            "class JaxAdapter(FrameworkAdapter):",
+            "    def convert_tensor(self) -> None: pass",
+            "",
+            "OPS = {'Add': add}",
+            "",
+        ]
+    )
+    # Duplicate definition in a second module also tests seen_paths deduplication
+    mod_dup = "def add(x: Array, /, y: Array = None, *args: int, alpha: int = 1, **kwargs: int) -> Array: return x"
+
+    audit_ok = audit_module_sources(
+        {
+            "src/zero_jax/__init__.py": mod_a,
+            "zero_jax.py": mod_dup,
+            "zero_jax/__init__.py": mod_b,
+        },
+        proven_snap,
+    )
+    assert isinstance(audit_ok, Valid)
+    rep = audit_ok.value
+    assert rep.score_percentage == 100.0
+    assert rep.found_ir is True
+    assert rep.ir_score == (2, 5)
+    assert rep.found_fw is True
+    assert rep.fw_score == (1, 4)
+
+    # Monoid identity and combination laws on ComplianceReport
+    empty_rep = COMPLIANCE_REPORT_MONOID.empty()
+    assert COMPLIANCE_REPORT_MONOID.semigroup.combine(empty_rep, rep) == rep
+    assert COMPLIANCE_REPORT_MONOID.semigroup.combine(rep, empty_rep) == rep
+
+    # Fallback prefix when sources is empty
+    empty_sources_ok = audit_module_sources({}, proven_snap)
+    assert isinstance(empty_sources_ok, Valid)
+    assert empty_sources_ok.value.score_percentage == 0.0
+
+    # Accumulates multiple SyntaxErrors across sources into NonEmpty[SnapshotDomainError]
+    bad_audit = audit_module_sources(
+        {
+            "zero_jax/a.py": "def broken1(:" + nl,
+            "zero_jax/b.py": "def broken2(:" + nl,
+        },
+        proven_snap,
+        target_prefix="zero_jax",
+    )
+    assert isinstance(bad_audit, Invalid)
+    assert len(bad_audit.errors) == 2

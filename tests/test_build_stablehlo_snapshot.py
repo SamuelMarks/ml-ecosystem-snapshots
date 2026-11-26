@@ -847,12 +847,12 @@ def test_extract_ops_tablegen_failure_fallback(
     """
     from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
 
-    from ml_ecosystem_snapshots.exceptions import SnapshotError
+    from ml_ecosystem_snapshots.errors import OfflineNetworkFault
 
     mock_urlopen = mocker.patch(
         "ml_ecosystem_snapshots.network_env.fetch_url",
         side_effect=[
-            Err(SnapshotError("td failed")),
+            Err(OfflineNetworkFault(url="https://td", operation="fetch_failed: td failed")),
             Ok(
                 "# StableHLO Spec\n### abs\n#### Semantics\nAbs op.\n#### Inputs\n| (I1) | `x` | tensor | (C1) |\n#### Outputs\n| `res` | tensor | (C1) |\n"
             ),
@@ -891,11 +891,11 @@ def test_build_stablehlo_snapshot_fetch_fail(monkeypatch: pytest.MonkeyPatch) ->
     """
     from ml_switcheroo_ir.typeclasses.outcome import Err
 
-    from ml_ecosystem_snapshots.exceptions import SnapshotError
+    from ml_ecosystem_snapshots.errors import OfflineNetworkFault
 
     monkeypatch.setattr(
         "ml_ecosystem_snapshots.network_env.fetch_url",
-        lambda _url, timeout=10: Err(SnapshotError("unreachable")),
+        lambda _url, timeout=10: Err(OfflineNetworkFault(url="https://spec", operation="fetch_failed: unreachable")),
     )
     with pytest.raises(RuntimeError, match="StableHLO"):
         build_stablehlo_snapshot.extract_ops(source_content=None)

@@ -71,7 +71,7 @@ def test_ghost_protocol_v2_models_instantiation() -> None:
 
 def test_hydrate_ghost_ref_v2_roundtrip() -> None:
     """Verify hydrate_ghost_ref validates v2.0.0 structures with zero information loss."""
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
     v2_dict: dict[str, JsonValue] = {
         "name": "relu",
@@ -168,7 +168,7 @@ def test_exhaustive_snapshot_loading_serde() -> None:
         assert isinstance(records, list)
         assert len(records) > 0, f"Snapshot {fname} is empty"
 
-        from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+        from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
         for raw_item in records[:10]:
             assert isinstance(raw_item, dict)
@@ -212,7 +212,7 @@ def test_cross_repo_dtype_coverage() -> None:
 
 def test_hydrate_ghost_ref_minimal_custom_op_default_kind() -> None:
     """Verify hydrate_ghost_ref defaults kind to 'function' for minimal custom op entries."""
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
     minimal_entry = {
         "name": "FlashAttention",

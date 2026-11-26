@@ -9,7 +9,7 @@ from ml_switcheroo_ir.schema.ghost import ParameterKind
 from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
 
 from ml_ecosystem_snapshots.c_extension_sig import build_c_extension_signature
-from ml_ecosystem_snapshots.exceptions import CExtensionSignatureError
+from ml_ecosystem_snapshots.errors import CExtensionParseFault
 from ml_ecosystem_snapshots.introspection.inspector import (
     GhostInspector,
     to_parameter_kind,
@@ -71,7 +71,7 @@ def test_ghost_inspector_opaque_c_extension_none_env_tags() -> None:
         patch("inspect.signature", side_effect=ValueError),
         patch(
             "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
-            return_value=Err(CExtensionSignatureError("no doc")),
+            return_value=Err(CExtensionParseFault(signature_text="", offset=None, reason="no doc")),
         ),
         patch(
             "ml_ecosystem_snapshots.frameworks.torch.extract_aten_c_extension_signature",

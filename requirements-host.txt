@@ -1,3 +1,4 @@
+ml-switcheroo-ir @ https://github.com/SamuelMarks/ml-switcheroo-ir/releases/download/v0.0.9/ml_switcheroo_ir-0.0.9-py3-none-any.whl
 chex
 grain
 optax

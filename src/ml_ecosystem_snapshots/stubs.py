@@ -11,8 +11,11 @@ import typing_extensions
 from ml_switcheroo_ir.schema.ghost import SnapshotEnvelope
 from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Result, traverse_result
 
-from ml_ecosystem_snapshots.exceptions import SnapshotError, SnapshotSchemaError
+from ml_ecosystem_snapshots.errors import SnapshotDomainError, SnapshotEnvelopeFault
 from ml_ecosystem_snapshots.models import JsonValue, ScalarValue, WireSerializableProtocol
+
+if typing.TYPE_CHECKING:
+    from ml_ecosystem_snapshots.proofs import EnvelopeAndHydratedPhase, ProvenSnapshot
 
 _NL: typing.Final[str] = chr(10)
 
@@ -28,7 +31,8 @@ _SAFE_DEFAULT_AST_NODES = (
 )
 
 StubSnapshotInput: typing_extensions.TypeAlias = (
-    "SnapshotEnvelope"
+    "ProvenSnapshot[EnvelopeAndHydratedPhase]"
+    " | SnapshotEnvelope"
     " | WireSerializableProtocol"
     " | typing.Mapping[str, JsonValue]"
     " | typing.Sequence[typing.Mapping[str, JsonValue]]"
@@ -72,12 +76,41 @@ def _param_field(p: typing.Mapping[str, JsonValue], key: str) -> str | None:
     return str(val) if val is not None else None
 
 
+def _format_single_param(p: typing.Mapping[str, JsonValue]) -> str:
+    """Format a single parameter dictionary into a `.pyi` parameter declaration.
+
+    Args:
+        p: Parameter dictionary definition.
+
+    Returns:
+        Formatted parameter snippet for a `.pyi` signature.
+    """
+    p_name = _param_field(p, "name")
+    p_anno = _param_field(p, "annotation")
+    p_default = _param_field(p, "default")
+    p_kind = _param_field(p, "kind")
+
+    if p_kind == "VAR_POSITIONAL":
+        return f"*{p_name}"
+    if p_kind == "VAR_KEYWORD":
+        return f"**{p_name}"
+
+    p_str = str(p_name)
+    p_str += f": {p_anno}" if p_anno and p_anno != "Any" else ": Incomplete"
+    if p_default is not None:
+        p_str += f" = {_sanitize_default(str(p_default))}"
+    return p_str
+
+
 def _format_param_list(
     params: typing.Sequence[typing.Mapping[str, JsonValue]],
     has_varargs: bool = False,
     is_method: bool = False,
 ) -> str:
     """Format a sequence of parameter definitions into a Python `.pyi` signature string.
+
+    Preserves `/` after `POSITIONAL_ONLY` parameters and `*` before `KEYWORD_ONLY`
+    parameters so generated `.pyi` stubs remain syntactically valid Python.
 
     Args:
         params: Sequence of parameter dictionary definitions.
@@ -91,30 +124,29 @@ def _format_param_list(
     if is_method and not any(_param_field(p, "name") in ("self", "cls") for p in params):
         param_strs.append("self")
 
+    in_pos_only = False
+    seen_star_or_vararg = False
+
     for p in params:
-        p_name = _param_field(p, "name")
-        p_anno = _param_field(p, "annotation")
-        p_default = _param_field(p, "default")
         p_kind = _param_field(p, "kind")
+        if in_pos_only and p_kind != "POSITIONAL_ONLY":
+            param_strs.append("/")
+            in_pos_only = False
 
-        if p_kind == "VAR_POSITIONAL":
-            p_str = f"*{p_name}"
-        elif p_kind == "VAR_KEYWORD":
-            p_str = f"**{p_name}"
-        else:
-            p_str = str(p_name)
-            if p_anno and p_anno != "Any":
-                p_str += f": {p_anno}"
-            else:
-                p_str += ": Incomplete"
+        if p_kind == "POSITIONAL_ONLY":
+            in_pos_only = True
+        elif p_kind == "VAR_POSITIONAL":
+            seen_star_or_vararg = True
+        elif p_kind == "KEYWORD_ONLY" and not seen_star_or_vararg:
+            param_strs.append("*")
+            seen_star_or_vararg = True
 
-            if p_default is not None:
-                sanitized = _sanitize_default(str(p_default))
-                p_str += f" = {sanitized}"
+        param_strs.append(_format_single_param(p))
 
-        param_strs.append(p_str)
+    if in_pos_only:
+        param_strs.append("/")
 
-    if has_varargs and not any(_param_field(p, "kind") == "VAR_POSITIONAL" for p in params):
+    if has_varargs and not seen_star_or_vararg:
         param_strs.append("*args: Incomplete")
 
     return ", ".join(param_strs)
@@ -165,7 +197,7 @@ def _extract_stub_categories(
 
     raw_snap: typing.Mapping[str, JsonValue]
     if isinstance(snapshot_data, SnapshotEnvelope):
-        raw_snap = snapshot_data.model_dump()
+        raw_snap = snapshot_data.model_dump(mode="json")
     elif isinstance(snapshot_data, WireSerializableProtocol):
         raw_snap = snapshot_data.to_wire_dict()
     elif isinstance(snapshot_data, typing.Mapping):
@@ -325,7 +357,7 @@ def _render_module_stub_lines(
 def validate_pyi_stub(
     stub_content: str,
     context: str = "<generated stub>",
-) -> Result[SnapshotSchemaError, ast.Module]:
+) -> Result[SnapshotEnvelopeFault, ast.Module]:
     """Validate totally that a `.pyi` stub compiles into a valid Python `ast.Module`.
 
     Args:
@@ -333,40 +365,40 @@ def validate_pyi_stub(
         context: Optional module/file label included in error diagnostics.
 
     Returns:
-        `Ok(ast.Module)` if syntactically valid Python, else `Err(SnapshotSchemaError)`.
+        `Ok(ast.Module)` if syntactically valid Python, else `Err(SnapshotEnvelopeFault)`.
     """
     try:
         return Ok(ast.parse(stub_content, filename=context))
     except SyntaxError as exc:
-        return Err(SnapshotSchemaError(f"Invalid .pyi stub syntax in {context}: {exc}"))
+        return Err(SnapshotEnvelopeFault(reason=f"Invalid .pyi stub syntax in {context}: {exc}"))
 
 
 def render_stub_modules(
     snapshot_data: StubSnapshotInput,
     include_nonpublic: bool = False,
-) -> Result[SnapshotSchemaError, tuple[tuple[str, str], ...]]:
+) -> Result[SnapshotEnvelopeFault, tuple[tuple[str, str], ...]]:
     """Purely render and AST-validate `(module_name, pyi_source)` pairs without touching disk.
 
     Args:
-        snapshot_data: Snapshot envelope, `ProvenSnapshot`, dictionary, or sequence of items.
+        snapshot_data: `ProvenSnapshot[EnvelopeAndHydratedPhase]`, `SnapshotEnvelope`, dict, or sequence.
         include_nonpublic: Whether to generate stubs for non-public symbols.
 
     Returns:
         `Ok(tuple[(module_name, stub_text), ...])` if every module compiles cleanly,
-        or `Err(SnapshotSchemaError)` on invalid syntax.
+        or `Err(SnapshotEnvelopeFault)` on invalid syntax.
     """
     categories_dict = _extract_stub_categories(snapshot_data)
     modules, class_methods = _partition_stub_symbols(categories_dict, include_nonpublic)
     all_modules = sorted(m for m in (set(modules.keys()) | set(class_methods.keys())) if m)
 
-    def _build_and_validate(mod_name: str) -> Result[SnapshotSchemaError, tuple[str, str]]:
+    def _build_and_validate(mod_name: str) -> Result[SnapshotEnvelopeFault, tuple[str, str]]:
         """Render and validate a single module stub.
 
         Args:
             mod_name: Dotted module name.
 
         Returns:
-            `Ok((mod_name, stub_content))` or `Err(SnapshotSchemaError)`.
+            `Ok((mod_name, stub_content))` or `Err(SnapshotEnvelopeFault)`.
         """
         lines = _render_module_stub_lines(
             modules.get(mod_name, ()),
@@ -385,16 +417,16 @@ def generate_stubs(
     snapshot_data: StubSnapshotInput,
     output_dir: str | Path,
     include_nonpublic: bool = False,
-) -> Result[SnapshotError, tuple[str, ...]]:
-    """Generate and write `.pyi` stub files totally into `Result[SnapshotError, tuple[str, ...]]`.
+) -> Result[SnapshotDomainError, tuple[str, ...]]:
+    """Generate and write `.pyi` stub files totally into `Result[SnapshotDomainError, tuple[str, ...]]`.
 
     Args:
-        snapshot_data: Snapshot envelope, `ProvenSnapshot`, dictionary, or sequence of items.
+        snapshot_data: `ProvenSnapshot[EnvelopeAndHydratedPhase]`, `SnapshotEnvelope`, dict, or sequence.
         output_dir: Base directory where `.pyi` stub packages should be written.
         include_nonpublic: Whether to generate stubs for non-public components.
 
     Returns:
-        `Ok(tuple_of_written_paths)` on success, or `Err(SnapshotError)` on syntax or I/O error.
+        `Ok(tuple_of_written_paths)` on success, or `Err(SnapshotDomainError)` on syntax or I/O error.
     """
     rendered_res = render_stub_modules(snapshot_data, include_nonpublic=include_nonpublic)
     if isinstance(rendered_res, Err):
@@ -413,7 +445,7 @@ def generate_stubs(
             written.append(str(init_file))
         return Ok(tuple(written))
     except OSError as exc:
-        return Err(SnapshotError(f"Failed to write .pyi stubs to '{output_dir}': {exc}"))
+        return Err(SnapshotEnvelopeFault(reason=f"Failed to write .pyi stubs to '{output_dir}': {exc}"))
 
 
 __all__ = [

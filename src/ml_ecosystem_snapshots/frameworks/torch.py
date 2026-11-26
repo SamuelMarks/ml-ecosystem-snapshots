@@ -163,9 +163,10 @@ def _get_activation_names() -> set[str]:
     names: set[str] = set()
     try:
         import torch.nn.modules.activation as act_mod
-        from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
 
-        nn_mod = raise_on_err(ensure_present(nn, "torch.nn"))
+        from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary
+
+        nn_mod = raise_snapshot_boundary(ensure_present(nn, "torch.nn"))
         for name, obj in get_all_members(act_mod):
             if inspect.isclass(obj) and issubclass(obj, nn_mod.Module):
                 names.add(name)

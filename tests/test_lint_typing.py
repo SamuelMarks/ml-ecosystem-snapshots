@@ -220,6 +220,31 @@ def test_check_file_detects_phantom_type_checking_and_dunders(tmp_path: Path) ->
     assert "banned non-protocol dunder method '__getitem__' on class 'CExtensionSignature'" in joined
 
 
+def test_check_file_bans_noqa_inside_src(tmp_path: Path) -> None:
+    """Verify `check_file` flags lowercase and uppercase `# noqa` comments inside `src/`.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    noqa_tag = "no" + "qa"
+    upper_noqa_tag = "NO" + "QA"
+    target = src_dir / "noqa_check.py"
+    target.write_text(
+        chr(10).join(
+            [
+                f"x: int = 1  # {noqa_tag}: F401",
+                f"y: int = 2  # {upper_noqa_tag}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    violations = check_file(str(target))
+    assert len(violations) == 2
+    assert all("banned noqa suppression comment" in v for v in violations)
+
+
 def test_lint_directories_and_main(
     tmp_path: Path,
     mocker: pytest_mock.MockerFixture,

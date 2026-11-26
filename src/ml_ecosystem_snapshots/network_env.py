@@ -12,7 +12,11 @@ from pathlib import Path
 
 from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Result
 
-from ml_ecosystem_snapshots.exceptions import OfflineModeNetworkError, SnapshotError
+from ml_ecosystem_snapshots.errors import (
+    OfflineNetworkFault,
+    SnapshotDomainError,
+    SnapshotEnvelopeFault,
+)
 from ml_ecosystem_snapshots.models import JsonValue, ScalarValue
 
 ZSTD_MAGIC_HEADER: bytes = b"\x28\xb5\x2f\xfd"
@@ -28,14 +32,14 @@ class CompressionFormat(str, enum.Enum):
 
 def parse_compression_format(
     raw: str | CompressionFormat | None,
-) -> Result[SnapshotError, CompressionFormat]:
+) -> Result[SnapshotDomainError, CompressionFormat]:
     """Parse an optional compression label into a closed `CompressionFormat` variant.
 
     Args:
         raw: Optional compression format string (`'none'`, `'gzip'`, `'gz'`, `'zstd'`, `'zst'`) or enum.
 
     Returns:
-        `Ok(CompressionFormat)` if recognized, else `Err(SnapshotError)`.
+        `Ok(CompressionFormat)` if recognized, else `Err(SnapshotEnvelopeFault)`.
     """
     if raw is None:
         return Ok(CompressionFormat.NONE)
@@ -48,7 +52,7 @@ def parse_compression_format(
         return Ok(CompressionFormat.GZIP)
     if cleaned in ("zstd", "zst"):
         return Ok(CompressionFormat.ZSTD)
-    return Err(SnapshotError(f"Unsupported compression format: {raw!r}."))
+    return Err(SnapshotEnvelopeFault(reason=f"Unsupported compression format: {raw!r}."))
 
 
 @typing.runtime_checkable
@@ -134,29 +138,29 @@ def _import_optional_module(module_name: str) -> types.ModuleType | ScalarValue:
     return importlib.import_module(module_name)
 
 
-def load_zstandard_module() -> Result[SnapshotError, ZstdModuleProtocol]:
+def load_zstandard_module() -> Result[SnapshotDomainError, ZstdModuleProtocol]:
     """Import and validate the optional `zstandard` compression module without raising.
 
     Returns:
-        `Ok(ZstdModuleProtocol)` if available and valid, else `Err(SnapshotError)`.
+        `Ok(ZstdModuleProtocol)` if available and valid, else `Err(SnapshotEnvelopeFault)`.
     """
     try:
         mod = _import_optional_module("zstandard")
     except ImportError:
-        return Err(SnapshotError("zstandard package is required for .zst snapshot compression."))
+        return Err(SnapshotEnvelopeFault(reason="zstandard package is required for .zst snapshot compression."))
     if not isinstance(mod, ZstdModuleProtocol):
-        return Err(SnapshotError("Installed 'zstandard' module does not satisfy ZstdModuleProtocol."))
+        return Err(SnapshotEnvelopeFault(reason="Installed 'zstandard' module does not satisfy ZstdModuleProtocol."))
     return Ok(mod)
 
 
-def _load_zst_json_data(path_str: str) -> Result[SnapshotError, JsonValue]:
+def _load_zst_json_data(path_str: str) -> Result[SnapshotDomainError, JsonValue]:
     """Load and decode a `.zst` JSON file, supporting plain-UTF8 fallback when unframed.
 
     Args:
         path_str: Path to the `.zst` file.
 
     Returns:
-        `Ok(JsonValue)` on success, else `Err(SnapshotError)`.
+        `Ok(JsonValue)` on success, else `Err(SnapshotDomainError)`.
     """
     with open(path_str, "rb") as bf:
         raw_bytes = bf.read()
@@ -174,14 +178,14 @@ def _load_zst_json_data(path_str: str) -> Result[SnapshotError, JsonValue]:
     return Ok(res_zst)
 
 
-def load_json_data(file_path: str | Path) -> Result[SnapshotError, JsonValue]:
+def load_json_data(file_path: str | Path) -> Result[SnapshotDomainError, JsonValue]:
     """Load JSON data totally from a plain `.json`, `.json.gz`, or `.json.zst` file.
 
     Args:
         file_path: Absolute or relative path to the snapshot file.
 
     Returns:
-        `Ok(JsonValue)` on success, or `Err(SnapshotError)` on I/O, compression, or decode failure.
+        `Ok(JsonValue)` on success, or `Err(SnapshotDomainError)` on I/O, compression, or decode failure.
     """
     path_str = str(file_path)
     try:
@@ -195,7 +199,7 @@ def load_json_data(file_path: str | Path) -> Result[SnapshotError, JsonValue]:
             res_plain: JsonValue = json.load(f)
             return Ok(res_plain)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
-        return Err(SnapshotError(f"Failed to load JSON data from '{path_str}': {exc}"))
+        return Err(SnapshotEnvelopeFault(reason=f"Failed to load JSON data from '{path_str}': {exc}"))
 
 
 def _iter_dict_items(items: JsonValue) -> typing.Iterator[dict[str, JsonValue]]:
@@ -238,30 +242,30 @@ def stream_snapshot_items(
         yield from _iter_dict_items(data.get("items", []))
 
 
-def fetch_url(url: str, timeout: int = 10, strict_offline: bool = False) -> Result[SnapshotError, str]:
-    """Fetch UTF-8 content from a URL totally into a `Result[SnapshotError, str]`.
+def fetch_url(url: str, timeout: int = 10, strict_offline: bool = False) -> Result[SnapshotDomainError, str]:
+    """Fetch UTF-8 content from a URL totally into a `Result[SnapshotDomainError, str]`.
 
     Args:
         url: Target HTTP/HTTPS URL to fetch.
         timeout: Timeout in seconds.
-        strict_offline: Preserved flag; offline mode always yields `Err(OfflineModeNetworkError)`.
+        strict_offline: Preserved flag; offline mode always yields `Err(OfflineNetworkFault)`.
 
     Returns:
-        `Ok(decoded_text)` on success, `Err(OfflineModeNetworkError)` when offline mode is active,
-        or `Err(SnapshotError)` on network/decode error.
+        `Ok(decoded_text)` on success, `Err(OfflineNetworkFault)` when offline mode is active
+        or when network/decode I/O fails.
     """
     import urllib.error
     import urllib.request
 
     del strict_offline
     if is_offline_mode():
-        return Err(OfflineModeNetworkError(f"Outbound network request to '{url}' blocked in offline mode."))
+        return Err(OfflineNetworkFault(url=url, operation="offline_blocked"))
 
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
             return Ok(str(response.read().decode("utf-8")))
     except (urllib.error.URLError, OSError, UnicodeDecodeError) as exc:
-        return Err(SnapshotError(f"Failed to fetch URL '{url}': {exc}"))
+        return Err(OfflineNetworkFault(url=url, operation=f"fetch_failed: {exc}"))
 
 
 __all__ = [

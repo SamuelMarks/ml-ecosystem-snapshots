@@ -20,19 +20,19 @@ from ml_switcheroo_ir.schema.ghost import (
     OperandDirection,
     ParameterKind,
 )
-from ml_switcheroo_ir.typeclasses.algebra import Monoid, tuple_monoid
+from ml_switcheroo_ir.typeclasses.algebra import NonEmpty
 from ml_switcheroo_ir.typeclasses.outcome import (
     Err,
     Ok,
     Result,
+    Valid,
     Validation,
-    map_err,
-    result_to_validation,
+    invalid_one,
     traverse_result,
-    traverse_validation,
+    traverse_validation_ne,
 )
 
-from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
+from ml_ecosystem_snapshots.errors import SnapshotDomainError, SnapshotEnvelopeFault
 from ml_ecosystem_snapshots.models import SCHEMA_VERSION, JsonValue, ScalarValue
 
 
@@ -87,14 +87,14 @@ def _extract_isa_operand_signatures(
 
 def _hydrate_isa_ref(
     data: typing.Mapping[str, JsonValue | typing.Sequence[JsonValue | GhostParam]],
-) -> Result[SnapshotSchemaError, GhostIsaRef]:
+) -> Result[SnapshotEnvelopeFault, GhostIsaRef]:
     """Hydrate a dictionary with ISA mnemonic and operand signatures into a `Result` of `GhostIsaRef`.
 
     Args:
         data: Raw dictionary describing an ISA instruction.
 
     Returns:
-        `Ok(GhostIsaRef)` on success, or `Err(SnapshotSchemaError)` if validation fails.
+        `Ok(GhostIsaRef)` on success, or `Err(SnapshotEnvelopeFault)` if validation fails.
     """
     name = str(data.get("name") or data["mnemonic"])
     desc = str(data.get("description") or f"ISA {name} instruction.")
@@ -156,14 +156,14 @@ def _hydrate_isa_ref(
 
 def _hydrate_legacy_mlir_ref(
     data: typing.Mapping[str, JsonValue | typing.Sequence[JsonValue | GhostParam]],
-) -> Result[SnapshotSchemaError, GhostMlirRef]:
+) -> Result[SnapshotEnvelopeFault, GhostMlirRef]:
     """Hydrate a dictionary with MLIR `attributes` or `results` into a `Result` of `GhostMlirRef`.
 
     Args:
         data: Raw dictionary describing an MLIR operation without `domain_type == 'mlir'`.
 
     Returns:
-        `Ok(GhostMlirRef)` on success, or `Err(SnapshotSchemaError)` if validation fails.
+        `Ok(GhostMlirRef)` on success, or `Err(SnapshotEnvelopeFault)` if validation fails.
     """
     api_path = str(data.get("api_path") or "mlir.op")
     name = str(data.get("name") or api_path.split(".")[-1])
@@ -230,14 +230,14 @@ def _hydrate_legacy_mlir_ref(
     )
 
 
-def _normalize_single_v2_param(p: JsonValue | GhostParam) -> Result[SnapshotSchemaError, ExtendedGhostParam]:
+def _normalize_single_v2_param(p: JsonValue | GhostParam) -> Result[SnapshotEnvelopeFault, ExtendedGhostParam]:
     """Validate and normalize a single v2.0.0 parameter dictionary or `GhostParam` totally.
 
     Args:
         p: Raw parameter dictionary or `GhostParam` model instance.
 
     Returns:
-        `Ok(ExtendedGhostParam)` on success, or `Err(SnapshotSchemaError)` on legacy v1.x or invalid schema.
+        `Ok(ExtendedGhostParam)` on success, or `Err(SnapshotEnvelopeFault)` on legacy v1.x or invalid schema.
     """
     try:
         if not isinstance(p, dict):
@@ -247,8 +247,8 @@ def _normalize_single_v2_param(p: JsonValue | GhostParam) -> Result[SnapshotSche
         has_legacy_rank = "rank" in p_dict and p_dict["rank"] is not None and "rank_constraint" not in p_dict
         if has_legacy_dtypes or has_legacy_rank:
             return Err(
-                SnapshotSchemaError(
-                    "Legacy v1.x 'dtypes'/'rank' fields are not supported; use 'allowed_dtypes'/'rank_constraint'."
+                SnapshotEnvelopeFault(
+                    reason="Legacy v1.x 'dtypes'/'rank' fields are not supported; use 'allowed_dtypes'/'rank_constraint'."
                 )
             )
         p_dict.pop("dtypes", None)
@@ -257,7 +257,7 @@ def _normalize_single_v2_param(p: JsonValue | GhostParam) -> Result[SnapshotSche
             p_dict["default"] = str(p_dict["default"])
         return Ok(ExtendedGhostParam.model_validate(p_dict))
     except (ValueError, TypeError) as exc:
-        return Err(SnapshotSchemaError(f"Invalid GhostRef parameter schema: {exc}"))
+        return Err(SnapshotEnvelopeFault(reason=f"Invalid GhostRef parameter schema: {exc}"))
 
 
 def _normalize_v2_typed_lists(
@@ -305,21 +305,26 @@ HydratableInput: typing_extensions.TypeAlias = (
 
 def _hydrate_v2_ref_mapping(
     data: typing.Mapping[str, JsonValue | typing.Sequence[JsonValue | GhostParam]],
-) -> Result[SnapshotSchemaError, ExtendedGhostRef]:
+) -> Result[SnapshotEnvelopeFault, ExtendedGhostRef]:
     """Hydrate a validated v2.0.0 `GhostRef` dictionary mapping into `ExtendedGhostRef`.
 
     Args:
         data: Mapping representing a standard v2.0.0 `GhostRef`.
 
     Returns:
-        `Ok(ExtendedGhostRef)` on valid schema, else `Err(SnapshotSchemaError)`.
+        `Ok(ExtendedGhostRef)` on valid schema, else `Err(SnapshotEnvelopeFault)`.
     """
     raw_domain_type = data.get("domain_type")
     ref_cls: type[ExtendedGhostRef] = _DOMAIN_REF_CLASSES.get(str(raw_domain_type), ExtendedGhostRef)
 
     raw_version = data.get("schema_version", SCHEMA_VERSION)
     if raw_version != SCHEMA_VERSION:
-        return Err(SnapshotSchemaError(f"Unsupported schema_version '{raw_version}'; expected '{SCHEMA_VERSION}'."))
+        return Err(
+            SnapshotEnvelopeFault(
+                reason=f"Unsupported schema_version '{raw_version}'; expected '{SCHEMA_VERSION}'.",
+                schema_version=str(raw_version),
+            )
+        )
 
     base_copy: dict[str, JsonValue | typing.Sequence[JsonValue | GhostParam]] = dict(data)
     base_copy["schema_version"] = SCHEMA_VERSION
@@ -339,22 +344,22 @@ def _hydrate_v2_ref_mapping(
     try:
         return Ok(ref_cls.model_validate(normalized_data))
     except (ValueError, TypeError) as exc:
-        return Err(SnapshotSchemaError(f"Invalid GhostRef schema: {exc}"))
+        return Err(SnapshotEnvelopeFault(reason=f"Invalid GhostRef schema: {exc}", schema_version=SCHEMA_VERSION))
 
 
 def hydrate_ghost_ref(
     data: HydratableInput,
-) -> Result[SnapshotSchemaError, ExtendedGhostRef]:
-    """Hydrate a dictionary payload totally into `Result[SnapshotSchemaError, ExtendedGhostRef]`.
+) -> Result[SnapshotEnvelopeFault, ExtendedGhostRef]:
+    """Hydrate a dictionary payload totally into `Result[SnapshotEnvelopeFault, ExtendedGhostRef]`.
 
     Args:
         data: Dictionary representation of a ghost reference.
 
     Returns:
-        `Ok(ExtendedGhostRef)` on valid schema, else `Err(SnapshotSchemaError)`.
+        `Ok(ExtendedGhostRef)` on valid schema, else `Err(SnapshotEnvelopeFault)`.
     """
     if not isinstance(data, typing.Mapping):
-        return Err(SnapshotSchemaError("GhostRef payload must be a dictionary."))
+        return Err(SnapshotEnvelopeFault(reason="GhostRef payload must be a dictionary."))
 
     if "mnemonic" in data and ("name" not in data or "operands" in data):
         return _hydrate_isa_ref(data)
@@ -369,36 +374,36 @@ def hydrate_ghost_ref(
     return _hydrate_v2_ref_mapping(data)
 
 
-_SCHEMA_ERR_TUPLE_MONOID: typing.Final[Monoid[tuple[SnapshotSchemaError, ...]]] = tuple_monoid()
-
-
 def _hydrate_one_validation(
     item: HydratableInput,
-) -> Validation[tuple[SnapshotSchemaError, ...], ExtendedGhostRef]:
-    """Lift `hydrate_ghost_ref` into an error-accumulating `Validation` value.
+) -> Validation[NonEmpty[SnapshotDomainError], ExtendedGhostRef]:
+    """Lift `hydrate_ghost_ref` into a `NonEmpty` error-accumulating `Validation` value.
 
     Args:
         item: Candidate raw dictionary payload.
 
     Returns:
-        `Valid(ExtendedGhostRef)` or `Invalid((SnapshotSchemaError,))`.
+        `Valid(ExtendedGhostRef)` or `Invalid(NonEmpty[SnapshotDomainError])`.
     """
-    return result_to_validation(map_err(hydrate_ghost_ref(item), lambda err: (err,)))
+    res = hydrate_ghost_ref(item)
+    if isinstance(res, Ok):
+        return Valid(res.value)
+    return invalid_one(res.error)
 
 
 def hydrate_ghost_refs(
     items: typing.Sequence[HydratableInput],
-) -> Validation[tuple[SnapshotSchemaError, ...], tuple[ExtendedGhostRef, ...]]:
-    """Hydrate a sequence of raw payloads, accumulating all schema errors via `Validation`.
+) -> Validation[NonEmpty[SnapshotDomainError], tuple[ExtendedGhostRef, ...]]:
+    """Hydrate a sequence of raw payloads, accumulating all schema errors into `NonEmpty`.
 
     Args:
         items: Sequence of raw `GhostRef` dictionary payloads.
 
     Returns:
         `Valid(tuple[ExtendedGhostRef, ...])` when every item succeeds, or
-        `Invalid(tuple[SnapshotSchemaError, ...])` collecting every schema error.
+        `Invalid(NonEmpty[SnapshotDomainError])` collecting every schema error.
     """
-    return traverse_validation(_SCHEMA_ERR_TUPLE_MONOID.semigroup, items, _hydrate_one_validation)
+    return traverse_validation_ne(items, _hydrate_one_validation)
 
 
 __all__ = ["HydratableInput", "hydrate_ghost_ref", "hydrate_ghost_refs"]

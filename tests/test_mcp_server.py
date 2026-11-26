@@ -12,8 +12,9 @@ from unittest import mock
 
 import pytest
 import pytest_mock
-from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, raise_on_err
+from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
 
+from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 from ml_ecosystem_snapshots.index import IndexedSymbolRecord
 from ml_ecosystem_snapshots.mcp_server import (
     CONCEPT_ALIAS_MAP,
@@ -1800,3 +1801,20 @@ def test_injectable_snapshot_repository_across_mcp_tools(
         repository=constrained_repo,
     )
     assert tool_res_rank_dict.error is None
+
+
+def test_mcp_server_main_entrypoint(mocker: pytest_mock.MockerFixture) -> None:
+    """Test executing `ml_ecosystem_snapshots.mcp_server` as `__main__` starts the stdio loop.
+
+    Args:
+        mocker: Pytest mocker fixture.
+    """
+    import importlib.util
+    import runpy
+
+    spec = importlib.util.find_spec("ml_ecosystem_snapshots.mcp_server")
+    assert spec is not None and spec.origin is not None
+    mock_loop = mocker.patch("ml_ecosystem_snapshots.mcp.protocol.run_stdio_loop")
+    ns = runpy.run_path(spec.origin, run_name="__main__")
+    assert "run_mcp_server" in ns
+    mock_loop.assert_called_once()

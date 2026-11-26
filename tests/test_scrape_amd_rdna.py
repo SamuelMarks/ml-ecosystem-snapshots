@@ -487,8 +487,6 @@ def test_fetch_amdgpu_td_file_cache_and_network_edge_cases(monkeypatch: pytest.M
 
     from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
 
-    from ml_ecosystem_snapshots.exceptions import SnapshotError
-
     monkeypatch.setattr("ml_ecosystem_snapshots.network_env.fetch_url", lambda _url: Ok("def V_ADD_F32;"))
 
     def deny_makedirs(*args: str | int, **kwargs: bool | int) -> None:
@@ -508,8 +506,10 @@ def test_fetch_amdgpu_td_file_cache_and_network_edge_cases(monkeypatch: pytest.M
     assert scrape_amd_rdna.fetch_td_file("UncachedFakeInst.td", use_cache=True) == "def V_ADD_F32;"
     assert scrape_amd_rdna.fetch_td_file("UncachedFakeInst.td", use_cache=False) == "def V_ADD_F32;"
 
+    from ml_ecosystem_snapshots.errors import OfflineNetworkFault
+
     monkeypatch.setattr(
         "ml_ecosystem_snapshots.network_env.fetch_url",
-        lambda _url: Err(SnapshotError("missing")),
+        lambda _url: Err(OfflineNetworkFault(url="https://x", operation="missing")),
     )
     assert scrape_amd_rdna.fetch_td_file("UncachedMissingInst.td", use_cache=True) == ""

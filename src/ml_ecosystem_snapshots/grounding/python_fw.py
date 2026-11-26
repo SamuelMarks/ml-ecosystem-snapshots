@@ -6,7 +6,6 @@ import typing
 
 import pydantic
 import typing_extensions
-from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
 
 from ml_ecosystem_snapshots.grounding.dtypes import (
     CallConstraintOptions,
@@ -15,7 +14,11 @@ from ml_ecosystem_snapshots.grounding.dtypes import (
     _validate_candidate_enums_and_literals,
     _validate_candidate_shapes,
 )
-from ml_ecosystem_snapshots.grounding.engine import GroundingEngine
+from ml_ecosystem_snapshots.grounding.engine import (
+    GroundingEngine,
+    GroundingEngineInput,
+    coerce_grounding_engine,
+)
 from ml_ecosystem_snapshots.grounding.models import (
     DiagnosticSeverity,
     GroundingReport,
@@ -30,6 +33,7 @@ from ml_ecosystem_snapshots.models import (
     json_dict_or_empty,
     json_tuple_or_empty,
 )
+from ml_ecosystem_snapshots.proofs import EnvelopeAndHydratedPhase, ProvenSnapshot
 
 
 def _extract_cand_params(cand: dict[str, JsonValue]) -> list[dict[str, JsonValue]]:
@@ -476,7 +480,7 @@ def validate_python_call(
     api_path: str,
     args: typing.Sequence[JsonValue],
     kwargs: typing.Mapping[str, JsonValue],
-    engine: GroundingEngine | None = None,
+    engine: GroundingEngineInput = None,
     **options: _PythonCallOptionValue,
 ) -> GroundingReport:
     """Verify a Python framework API call against the ground-truth offline snapshot.
@@ -489,7 +493,7 @@ def validate_python_call(
         api_path: Fully qualified API symbol path (e.g., 'torch.sum', 'jax.numpy.mean').
         args: List of positional arguments provided to the call.
         kwargs: Dictionary of keyword arguments provided to the call.
-        engine: Optional GroundingEngine instance.
+        engine: Optional `GroundingEngine` or `ProvenSnapshot[EnvelopeAndHydratedPhase]`.
         **options: Optional keyword arguments (`arg_dtypes`, `kwarg_dtypes`, `arg_ranks`,
             `kwarg_ranks`, `arg_shapes`, `kwarg_shapes`) specifying tensor metadata.
 
@@ -497,7 +501,7 @@ def validate_python_call(
         GroundingReport containing validation status, diagnostics, and suggested fixes.
     """
     opts = PythonCallValidationOptions.model_validate(options)
-    eng = engine or GroundingEngine()
+    eng = coerce_grounding_engine(engine)
     clean_fw = framework.lower().strip()
 
     report = GroundingReport(
@@ -588,7 +592,7 @@ def validate_python_call(
 def verify_python_call(
     framework: str,
     api_path: str,
-    sig: typing.Mapping[str, JsonValue] | None,
+    sig: ProvenSnapshot[EnvelopeAndHydratedPhase] | typing.Mapping[str, JsonValue] | None,
     snapshot_source: str = "not_found",
     kwargs: list[str] | None = None,
     args_count: int | None = None,
@@ -601,7 +605,7 @@ def verify_python_call(
     Args:
         framework: Target framework name (e.g. torch, jax).
         api_path: Canonical API path (e.g. torch.sum, jax.numpy.mean).
-        sig: Resolved signature dictionary from snapshot or `None` if API does not exist.
+        sig: `ProvenSnapshot[EnvelopeAndHydratedPhase]`, resolved signature dict, or `None`.
         snapshot_source: Provenance label for the backing snapshot.
         kwargs: Optional list of keyword argument names passed by generated code.
         args_count: Optional number of positional arguments passed.
@@ -612,13 +616,23 @@ def verify_python_call(
     Returns:
         Structured `HallucinationCheckResult` report.
     """
+    resolved_sig: typing.Mapping[str, JsonValue] | None
+    if isinstance(sig, ProvenSnapshot):
+        eng = GroundingEngine.from_proven_snapshot(sig)
+        found_ref = eng.get_symbol(framework, api_path)
+        resolved_sig = found_ref.model_dump() if found_ref is not None else None
+        if snapshot_source == "not_found":
+            snapshot_source = "proven_snapshot"
+    else:
+        resolved_sig = sig
+
     if kwargs is None and kwarg_values is not None:
         kwargs = list(kwarg_values.keys())
     raw_ver = extra_constraints.get("version")
     ver_label = str(raw_ver) if isinstance(raw_ver, str) and raw_ver else "any"
     filtered_constraints = {k: v for k, v in extra_constraints.items() if k != "version"}
     opts = CallConstraintOptions.model_validate(filtered_constraints)
-    if sig is None:
+    if resolved_sig is None:
         if snapshot_source == "not_found":
             reason = (
                 f"API '{api_path}' could not be verified: no local ground-truth snapshot for framework "
@@ -637,8 +651,8 @@ def verify_python_call(
             snapshot_source=snapshot_source,
         )
 
-    candidates: list[dict[str, JsonValue]] = [dict(sig)]
-    raw_overloads = sig.get("overloads")
+    candidates: list[dict[str, JsonValue]] = [dict(resolved_sig)]
+    raw_overloads = resolved_sig.get("overloads")
     if isinstance(raw_overloads, (list, tuple)) and raw_overloads:
         candidates.extend(json_dict_or_empty(ov) for ov in raw_overloads)
 
@@ -663,7 +677,9 @@ def verify_python_call(
             fewest_errors = err_count
             best_result = res
 
-    return raise_on_err(ensure_present(best_result, "overload candidate evaluation result"))
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary
+
+    return raise_snapshot_boundary(ensure_present(best_result, "overload candidate evaluation result"))
 
 
 __all__ = [

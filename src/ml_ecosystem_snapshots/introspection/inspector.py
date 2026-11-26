@@ -20,7 +20,8 @@ from ml_ecosystem_snapshots.c_extension_sig import (
     CExtensionSignature,
     extract_c_extension_signature,
 )
-from ml_ecosystem_snapshots.exceptions import SnapshotError, SnapshotSchemaError
+from ml_ecosystem_snapshots.errors import SnapshotEnvelopeFault
+from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.introspection.ast_kwargs import (
     extract_accepted_kwargs_from_ast,
 )
@@ -451,14 +452,14 @@ class GhostInspector:
     @staticmethod
     def hydrate(
         data: (typing.Mapping[str, JsonValue | typing.Sequence[JsonValue | GhostParam]] | ScalarValue),
-    ) -> Result[SnapshotSchemaError, ExtendedGhostRef]:
+    ) -> Result[SnapshotEnvelopeFault, ExtendedGhostRef]:
         """Create a `GhostRef` totally from a dictionary payload wrapped in `Result`.
 
         Args:
             data: Candidate dictionary payload.
 
         Returns:
-            `Ok(ExtendedGhostRef)` on valid schema, else `Err(SnapshotSchemaError)`.
+            `Ok(ExtendedGhostRef)` on valid schema, else `Err(SnapshotEnvelopeFault)`.
         """
         from ml_ecosystem_snapshots.serialization.hydration import hydrate_ghost_ref
 

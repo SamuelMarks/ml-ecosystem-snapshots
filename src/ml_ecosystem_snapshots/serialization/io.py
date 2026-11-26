@@ -12,7 +12,7 @@ from pathlib import Path
 import typing_extensions
 from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Result
 
-from ml_ecosystem_snapshots.exceptions import SnapshotError, SnapshotSchemaError
+from ml_ecosystem_snapshots.errors import SnapshotDomainError, SnapshotEnvelopeFault
 from ml_ecosystem_snapshots.models import (
     SCHEMA_VERSION,
     JsonValue,
@@ -56,8 +56,8 @@ def write_snapshot(
     snapshot_data: SnapshotEnvelope | WireSerializableProtocol | typing.Mapping[str, JsonValue],
     output_dir: str,
     compress: str | CompressionFormat | None = None,
-) -> Result[SnapshotError, str]:
-    """Write a snapshot dictionary or envelope to disk totally into `Result[SnapshotError, str]`.
+) -> Result[SnapshotDomainError, str]:
+    """Write a snapshot dictionary or envelope to disk totally into `Result[SnapshotDomainError, str]`.
 
     Args:
         framework_name: Framework identifier used in the output filename.
@@ -66,7 +66,7 @@ def write_snapshot(
         compress: Optional compression algorithm (`'none'`, `'gzip'`, `'gz'`, `'zstd'`, `'zst'`).
 
     Returns:
-        `Ok(written_file_path)` on success, or `Err(SnapshotError)` on invalid compression or I/O failure.
+        `Ok(written_file_path)` on success, or `Err(SnapshotDomainError)` on invalid compression or I/O failure.
     """
     fmt_res = parse_compression_format(compress)
     if isinstance(fmt_res, Err):
@@ -106,24 +106,24 @@ def write_snapshot(
             return Ok(str(file_path))
         typing_extensions.assert_never(fmt)
     except (OSError, TypeError, ValueError) as exc:
-        return Err(SnapshotError(f"Failed to write snapshot for '{framework_name}': {exc}"))
+        return Err(SnapshotEnvelopeFault(reason=f"Failed to write snapshot for '{framework_name}': {exc}"))
 
 
 def validate_snapshot_envelope(
     snapshot_dict: SnapshotEnvelope | typing.Mapping[str, JsonValue] | ScalarValue,
-) -> Result[SnapshotSchemaError, SnapshotEnvelope]:
-    """Validate and normalize a snapshot payload totally into `Result[SnapshotSchemaError, SnapshotEnvelope]`.
+) -> Result[SnapshotEnvelopeFault, SnapshotEnvelope]:
+    """Validate and normalize a snapshot payload totally into `Result[SnapshotEnvelopeFault, SnapshotEnvelope]`.
 
     Args:
         snapshot_dict: Candidate `SnapshotEnvelope` or raw snapshot dictionary.
 
     Returns:
-        `Ok(SnapshotEnvelope)` if valid, else `Err(SnapshotSchemaError)`.
+        `Ok(SnapshotEnvelope)` if valid, else `Err(SnapshotEnvelopeFault)`.
     """
     if isinstance(snapshot_dict, SnapshotEnvelope):
         return Ok(snapshot_dict.model_copy(deep=True))
     if not isinstance(snapshot_dict, typing.Mapping):
-        return Err(SnapshotSchemaError("Snapshot must be a dictionary."))
+        return Err(SnapshotEnvelopeFault(reason="Snapshot must be a dictionary."))
 
     target = snapshot_dict.get("target") or "unknown"
     envelope_data = dict(snapshot_dict)
@@ -133,14 +133,22 @@ def validate_snapshot_envelope(
         envelope_data["schema_version"] = SCHEMA_VERSION
     elif raw_ver != SCHEMA_VERSION:
         return Err(
-            SnapshotSchemaError(f"Unsupported envelope schema_version '{raw_ver}'; expected '{SCHEMA_VERSION}'.")
+            SnapshotEnvelopeFault(
+                reason=f"Unsupported envelope schema_version '{raw_ver}'; expected '{SCHEMA_VERSION}'.",
+                schema_version=str(raw_ver),
+            )
         )
     if "generated_at" not in envelope_data or not envelope_data["generated_at"]:
         envelope_data["generated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     try:
         return Ok(SnapshotEnvelope.model_validate(envelope_data))
     except (ValueError, TypeError) as exc:
-        return Err(SnapshotSchemaError(f"Invalid snapshot envelope schema: {exc}"))
+        return Err(
+            SnapshotEnvelopeFault(
+                reason=f"Invalid snapshot envelope schema: {exc}",
+                schema_version=SCHEMA_VERSION,
+            )
+        )
 
 
 __all__ = [

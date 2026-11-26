@@ -252,17 +252,17 @@ def _strip_sphinx_stage(raw: str) -> str:
 
 
 def _unwrap_class_tag_stage(raw: str) -> str:
-    """Unwrap `<class 'pkg.Type'>` tags to `pkg.Type` (`Endo[str]` stage 2).
+    """Unwrap `<class 'pkg.Type'>` and `<enum 'EnumType'>` tags (`Endo[str]` stage 2).
 
     Args:
         raw: Input type annotation string.
 
     Returns:
-        String with `<class '...'>` wrappers removed.
+        String with `<class '...'>` and `<enum '...'>` wrappers removed.
     """
     if not raw:
         return raw
-    return re.sub(r"<class '([^']+)'>", r"\1", raw)
+    return re.sub(r"<(?:class|enum) '([^']+)'>", r"\1", raw)
 
 
 def _scrub_memory_addr_stage(raw: str) -> str:

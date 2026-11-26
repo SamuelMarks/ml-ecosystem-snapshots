@@ -85,6 +85,8 @@ def main() -> None:
     """Generate and save API snapshots for supported ML frameworks."""
     from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
 
+    from ml_ecosystem_snapshots.errors import format_snapshot_error
+
     os.makedirs(os.path.join("src", "ml_ecosystem_snapshots", "snapshots"), exist_ok=True)
     frameworks = sys.argv[1:] if len(sys.argv) > 1 else all_frameworks
     use_isolated = os.environ.get("ISOLATE_EXTRACTION", "0") == "1"
@@ -99,7 +101,7 @@ def main() -> None:
             else:
                 snap_res = extract_snapshot(fw)
             if isinstance(snap_res, Err):
-                print(f"  -> Failed: {snap_res.error}")
+                print(f"  -> Failed: {format_snapshot_error(snap_res.error)}")
                 has_error = True
                 continue
             write_res = write_snapshot(
@@ -110,7 +112,7 @@ def main() -> None:
             if isinstance(write_res, Ok):
                 print("  -> Saved")
             else:
-                print(f"  -> Failed: {write_res.error}")
+                print(f"  -> Failed: {format_snapshot_error(write_res.error)}")
                 has_error = True
         except (
             SnapshotError,

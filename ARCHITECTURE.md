@@ -1,6 +1,12 @@
 # Architecture
 
-The `ml_ecosystem_snapshots` library is engineered to solve a critical foundational problem: **Introspecting dynamic, C-extension heavy Machine Learning frameworks, compiler intermediate representations (IR), and hardware instruction set architectures (ISAs) safely, deterministically, and offline**, then serializing that structural data into lightweight, type-safe schemas that power anti-hallucination grounding engines, transpilers, IDE stubs, and Model Context Protocol (MCP) servers.
+The `ml_ecosystem_snapshots` library (**Tier 1** in the ecosystem dependency DAG, layered directly atop **Tier 0** `ml-switcheroo-ir` `v0.0.9`) is engineered to solve a critical foundational problem: **Introspecting dynamic, C-extension heavy Machine Learning frameworks, compiler intermediate representations (IR), and hardware instruction set architectures (ISAs) safely, deterministically, and offline**, then serializing that structural data into lightweight, type-safe schemas that power anti-hallucination grounding engines, transpilers, IDE stubs, and Model Context Protocol (MCP) servers.
+
+## 0. Ecosystem Repository Taxonomy (`Tier 0` & `Tier 1`)
+
+The ecosystem enforces a strictly layered, acyclic dependency DAG:
+- **Tier 0 (`ml-switcheroo-ir` `v0.0.9`)**: Zero-internal-dependency algebraic IR foundation providing `LogicalGraph`, `FrozenLogicalGraph`, `GhostRef` / `SnapshotEnvelope`, explicit typeclasses (`Eq`, `Ord`, `Semigroup`, `Monoid`, `NonEmpty`, `Result`, `Validation`, `Codec`, `Pretty`, `Endo`), `IrDomainError`, `ProvenGraph`, and `FILE_COMPLIANCE_MONOID`.
+- **Tier 1 (`ml-ecosystem-snapshots` `v0.0.9`)**: Canonical ground-truth snapshot extraction, closed `SnapshotDomainError` ADT, covariant cumulative `ProvenSnapshot[_SnapshotPhaseT_co]` proofs, pure `audit_module_sources` compliance scoring, and canonical `ground_proven_graph` verification consumed downstream by `ml-switcheroo` and `zero-*`.
 
 ---
 
@@ -13,10 +19,12 @@ All models inherit from Pydantic V2 schemas defined in `ml_ecosystem_snapshots.m
 ```mermaid
 classDiagram
     class GhostOverload {
-        +List~GhostParam~ params
+        +List~ExtendedGhostParam_or_GhostParam~ params
+        +str return_annotation
         +str returns_type
-        +str returns_description
         +str docstring
+        +bool has_varargs
+        +List~str~ accepted_kwargs
     }
 
     class GhostRef {
@@ -25,21 +33,23 @@ classDiagram
         +str kind
         +str docstring
         +List~GhostParam~ params
+        +bool has_varargs
+        +str schema_version
+        +bool is_public
+        +bool is_c_extension
+        +List~str~ accepted_kwargs
+        +List~str~ aliases
         +str returns_type
         +str returns_description
         +List~str~ raises
-        +List~GhostOverload_or_GhostRef~ overloads
         +List~str~ environment_tags
-        +List~str~ aliases
-        +bool is_public
+        +List~GhostOverload_or_GhostRef~ overloads
     }
 
     class ExtendedGhostRef {
         +List~GhostResult~ returns
         +Dict~str, JsonValue~ domain_metadata
         +str signature_completeness
-        +bool is_c_extension
-        +List~str~ accepted_kwargs
     }
 
     class GhostPythonRef {
@@ -47,22 +57,24 @@ classDiagram
     }
 
     class GhostIsaRef {
-        +Literal["isa"] domain_type
+        +Literal["isa", "instruction"] domain_type
         +List~str~ predicate_guards
         +Dict~str, str~ register_classes
-        +Dict~str, JsonValue~ control_codes
+        +IsaControlCodesSpec control_codes
         +List~str~ instruction_modifiers
         +Dict~str, JsonValue~ structured_modifiers
-        +List~Dict~ structured_operands
-        +Dict~str, JsonValue~ vopd_profile
+        +List~IsaStructuredOperandSpec~ structured_operands
+        +VopdProfileSpec vopd_profile
         +List~str~ condition_codes
         +List~str~ supported_architectures
+        +List~List~str~~ operand_signatures
+        +float issue_rate
     }
 
     class GhostMlirRef {
-        +Literal["mlir"] domain_type
+        +Literal["mlir", "operation"] domain_type
         +List~str~ traits
-        +List~ExtendedGhostParam~ operands
+        +List~ExtendedGhostParam_or_GhostParam~ operands
         +Dict~str, JsonValue~ attributes
         +Dict~str, JsonValue~ regions
         +List~str~ successors
@@ -95,20 +107,18 @@ classDiagram
 - **`GhostParam` & `ExtendedGhostParam`**: Represents an individual parameter or operand. Extends standard Python parameter signatures with:
   - `direction`: `OperandDirection` (`READ`, `WRITE`, `READ_WRITE`, `PREDICATE`) for hardware instructions.
   - `role`: `IRParameterRole` (`OPERAND`, `ATTRIBUTE`, `RESULT`, `SUCCESSOR`, `REGION`) for compiler IRs.
-  - `dtypes` & `allowed_dtypes`: Explicit lists of allowed tensor data types (e.g. `["float32", "bfloat16"]`).
-  - `rank`: Expected tensor rank or dimensionality constraints.
+  - `allowed_dtypes` & `allowed_values`: Explicit lists of allowed tensor data types (e.g. `["float32", "bfloat16"]`) and discrete enum/literal values.
+  - `rank_constraint`, `is_contracting_dim`, `is_mandatory`, `default_factory`, & `constraints`: Tensor rank constraints, contracting-dimension markers, and structured `LogicConstraint` rules.
   - `default`: Sanitized literal default value representation.
-- **`GhostOverload`**: Lightweight parameter-signature variant model stored alongside full `GhostRef` entries inside `GhostRef.overloads` (`list[dict[str, JsonValue] | GhostOverload | GhostRef] | None`).
+- **`GhostOverload`**: Lightweight parameter-signature variant model (`params`, `return_annotation`, `returns_type`, `docstring`, `has_varargs`, `accepted_kwargs`) stored alongside full `GhostRef` entries inside `GhostRef.overloads` (`list[dict[str, JsonValue] | GhostOverload | GhostRef] | None`).
 - **`GhostResult`**: Models structured SSA output returns for compiler IR operations (SSA result name, MLIR type like `tensor<?x?xf32>`, and description).
-- **`ExtendedGhostRef`**: Adds first-class support for:
+- **`ExtendedGhostRef`**: Inherits core metadata (`is_c_extension`, `accepted_kwargs`, `has_varargs`, `schema_version`, `aliases`, `overloads`) from `GhostRef` and adds first-class support for:
   - `returns`: List of `GhostResult` objects, supporting multi-result SSA operations.
   - `domain_metadata`: Structured `dict[str, JsonValue]` holding domain-specific attributes (control code schedules, operand signatures, traits).
   - `signature_completeness`: Classification of signature certainty (`exact`, `heuristic`, or `opaque`).
-  - `is_c_extension`: Flag identifying symbols originating from compiled C/C++ extensions.
-  - `accepted_kwargs`: Explicit list of recognized keyword arguments extracted from function ASTs that accept generic `**kwargs`.
 - **`GhostPythonRef` (`domain_type="python"`)**: High-level Python ML frameworks (PyTorch, JAX, TensorFlow, Keras, Flax NNX, HuggingFace, scikit-learn, etc.).
-- **`GhostIsaRef` (`GhostInstructionRef`, `domain_type="isa"`)**: GPU assembly instruction sets (NVIDIA SASS, AMD RDNA/CDNA, NVIDIA PTX).
-- **`GhostMlirRef` (`GhostOperationRef`, `domain_type="mlir"`)**: Compiler intermediate representations (Core MLIR dialects and StableHLO).
+- **`GhostIsaRef` (`GhostInstructionRef`, `domain_type: Literal["isa", "instruction"]`)**: GPU assembly instruction sets (NVIDIA SASS, AMD RDNA/CDNA, NVIDIA PTX).
+- **`GhostMlirRef` (`GhostOperationRef`, `domain_type: Literal["mlir", "operation"]`)**: Compiler intermediate representations (Core MLIR dialects and StableHLO).
 - **`SnapshotEnvelope`**: Provenance container capturing schema version (`2.0.0`), upstream commit hash, target version, microarchitecture capabilities, host build environment, generation timestamp, and categorized symbol maps.
 
 ---
@@ -133,7 +143,7 @@ graph TD
         REG -->|StableHLO, Core MLIR| IR_COL[TableGen / ODS Parsers]
 
         PY_COL --> GI[introspection/inspector.py: GhostInspector.inspect]
-        GI --> UNWRAP[runtime_boundary.py: Decorator Unwrapping]
+        GI --> UNWRAP[unwrap.py: Decorator Unwrapping]
         UNWRAP --> CDD[cdd_inspector.py: cdd-python AST & Docstrings]
         UNWRAP --> GRIFFE[griffe_inspector.py: Types & Overloads]
         UNWRAP --> RUNTIME[live_inspector.py: Runtime Signature Fallback]
@@ -188,13 +198,13 @@ graph TD
 
 Introspecting modern ML libraries is complicated by heavy metaclasses, dynamically injected C++ operators, JIT decorators (`@torch.compile`, `@jax.jit`), and runtime-generated docstrings. `GhostInspector` (`introspection/inspector.py`), coordinated with `introspection/runtime_boundary.py`, `c_extension_sig.py`, and `utils.py`, executes an eight-tiered resolution strategy:
 
-1. **Decorator Unwrapping (`introspection/runtime_boundary.py`):** Recursively unwrap nested wrapper objects up to 10 layers deep in a centralized runtime boundary module (`__wrapped__`, `_python_function`, `_original_fn`, `__original_fn`, `_orig_mod`).
+1. **Decorator Unwrapping (`introspection/unwrap.py`):** Recursively unwraps nested wrapper objects up to 10 layers deep (`unwrap_decorated_target`, delegating runtime inspection to `introspection/runtime_boundary.py`) across `__wrapped__`, `_python_function`, `_original_fn`, `__original_fn`, and `_orig_mod`.
 2. **`cdd-python` Static AST Parsing (`introspection/cdd_inspector.py`):** Parses the module AST statically without importing dynamic metaclasses. Extracts structured docstring sections (`params`, `returns`, `raises`), converts parameter defaults into literal AST nodes, and validates Sphinx/reST documentation.
 3. **`griffe` AST Engine (`introspection/griffe_inspector.py`):** Complements `cdd-python` by resolving complex PEP-585 / PEP-604 type annotations, resolving module-level `@typing.overload` stacks, and preserving `VAR_POSITIONAL` (`*args`) and `VAR_KEYWORD` (`**kwargs`) parameter roles across Google, NumPy, and Sphinx docstring conventions.
 4. **Runtime Signature Fallback (`introspection/live_inspector.py`):** Standard runtime signature extraction via `get_runtime_signature` for pure-Python targets and `@runtime_checkable` `typing.Protocol` contracts when static AST parsing is inapplicable.
 5. **C-Extension & PyBind11 Docstring Synthesizer (`c_extension_sig.py:extract_c_extension_signature`):**
    - For compiled native functions (e.g. `torch.relu`, `aten::`, `c10::`) that raise `ValueError: no signature found for builtin`, docstrings are parsed with specialized regular expressions.
-   - `_normalize_c_sig_args` translates C++ type syntax (e.g., `const Tensor & self, bool inplace=False`) into valid Python parameter signatures (`self: "Tensor" = False`) and unparses them into AST nodes.
+   - `normalize_c_sig_args` translates C++ type syntax (e.g., `const Tensor & self, bool inplace=False`) into valid Python parameter signatures (`self: "Tensor" = False`) and unparses them into AST nodes.
    - Automatically handles numbered overload sets embedded in native docstrings.
 6. **AST Keyword Visitor (`introspection/ast_kwargs.py:KwargAccessVisitor`):**
    - When a function signature ends with generic `**kwargs`, the inspector walks the AST of the function body.
@@ -215,11 +225,11 @@ The extraction engine manages lifecycle, concurrency, declarative provenance met
 - **Subprocess Isolation (`extract_snapshot_isolated`):**
   - High-performance ML libraries (PyTorch with CUDA, JAX with Metal, TensorFlow) often initialize non-resettable hardware driver states upon import.
   - `extract_snapshot_isolated` runs the collection logic in an isolated child Python process via `subprocess.run`. This guarantees that memory pre-allocation locks, C++ symbol collisions, and segmentation faults do not pollute or crash the parent process.
-- **Concurrent Semantic Tier Processing:** Framework collection functions accept a `SemanticTier` filter (`ARRAY_API`, `NEURAL`, `OPTIMIZER`, `LOSS`, `ACTIVATION`, `EXTRAS`, `DISTRIBUTED`, `DATA`, `HUB`, `METRIC`, `UTIL`, `SCHEDULER`, `MODEL`, `INITIALIZER`, `DATALOADER`). A `ThreadPoolExecutor` distributes tier extraction across threads.
+- **Concurrent Semantic Tier Processing:** Framework collection functions accept a `SemanticTier` filter (`ARRAY_API`, `NEURAL`, `NEURAL_OPS`, `EXTRAS`, `LOSS`, `OPTIMIZER`, `LAYER`, `ACTIVATION`, `METRIC`, `UTIL`, `SCHEDULER`, `MODEL`, `INITIALIZER`, `DATALOADER`). A `ThreadPoolExecutor` distributes tier extraction across threads.
 - **Deterministic Alias Deduplication (`consolidate_aliases`):**
   - Resolves duplicate functions exposed across multiple modules (e.g., `torch.add` vs `torch.Tensor.add`).
   - Converts parameter signatures into comparable tuples (including name, kind, default, annotation, direction, role, dtypes, and rank) and collapses duplicates via `GHOST_REF_CONSOLIDATION_SEMIGROUP`, selecting the shortest canonical `api_path` as the primary reference while accumulating `aliases`.
-- **Domain Metadata Hashing (`typeclasses._domain_meta_to_key`):** Recursively converts arbitrary domain metadata dictionaries into deterministic sorted tuples for consistent canonical hashing (`GHOST_REF_CANONICAL_HASH`).
+- **Canonical Signature Hashing (`typeclasses.ghost_ref_canonical_key`):** Deterministically serializes `domain_metadata` (via key-sorted JSON) alongside structural parameter and return signatures for consistent canonical hashing (`GHOST_REF_CANONICAL_HASH`).
 - **Offline Mode (`is_offline_mode` / `ML_SNAPSHOTS_OFFLINE`):** Enforces purely local execution, bypassing remote network calls or version checks in air-gapped or sandboxed environments.
 
 ---
@@ -263,7 +273,7 @@ The extraction engine manages lifecycle, concurrency, declarative provenance met
 
 ### E. Core MLIR Dialects Schema (`frameworks/mlir.py`)
 - **Domain Type:** `GhostMlirRef` (`domain_type="mlir"`)
-- **TableGen ODS Source:** Parsed directly from LLVM TableGen definitions across 9 core dialects: `arith`, `math`, `tensor`, `linalg`, `scf`, `func`, `memref`, `gpu`, and `vector`.
+- **TableGen ODS Source:** Parsed from LLVM TableGen definitions across 9 core ML dialects (`arith`, `math`, `tensor`, `linalg`, `scf`, `func`, `memref`, `gpu`, and `vector`) via `tools/scrape_mlir.py` (with 6 core dialects currently bundled in `mlir_v19.1.0.json` and extended `llvm`/`nvvm`/`rocdl` dialect support in `frameworks/mlir.py`).
 - **Traits & Constraints:** Verification traits (`SameOperandsAndResultType`, `Commutative`) and ODS type constraints (`AnyTensor`, `RankedTensorOf`, `AnyFloat`, `Index`).
 
 ### F. Domain-Specific DSLs (`frameworks/html_dsl.py`, `latex_dsl.py`, `tikz.py`)
@@ -286,7 +296,7 @@ The Grounding SDK provides programmatic, high-speed validation for LLM-generated
   - Verifies positional argument count against parameter specifications.
   - Flags hallucinated keyword arguments.
   - Provides automated cross-framework translations (e.g. flagging `axis` in `torch.sum` and recommending `dim`).
-- **Compiler IR & Shader Verification (`validate_stablehlo_op`, `validate_mlir_op`, `verify_wgsl_op`):**
+- **Compiler IR & Shader Verification (`validate_stablehlo_op`, `validate_mlir_op`, `validate_wgsl_op`):**
   - Verifies SSA operand counts, mandatory attributes (e.g., `dot_dimension_numbers` on `stablehlo.dot_general`), and WebGPU WGSL storage/barrier operations.
 - **Hardware ISA Verification (`validate_sass_instruction`, `validate_rdna_instruction`, `verify_ptx_instruction`):**
   - Confirms instruction availability on the target microarchitecture (e.g., verifying `WGMMA` on `sm_90`, `v_dual_fmac` on `GFX11`, or PTX state spaces/vector widths on target SM).
@@ -313,8 +323,8 @@ The MCP server (`mcp/protocol.py`, `mcp/registry.py`, `mcp/schemas.py`, `mcp/cac
 | `check_sass_instruction` | Validate SASS instruction legality, modifiers, and operands on target SM | `mnemonic`, `operands`, `modifiers`, `sm_arch`, `control_codes` |
 | `check_rdna_instruction` | Validate AMD RDNA instruction legality on target GFX architecture | `mnemonic`, `operands`, `encoding`, `gfx_arch`, `modifiers`, `wave_size` |
 | `check_ptx_instruction` | Validate PTX instruction, types, vector widths, and state space on SM | `mnemonic`, `types`, `operands`, `state_space`, `scope`, `vector_width`, `sm_arch` |
-| `check_mlir_op` | Validate MLIR dialect operation against ODS traits, operands, and attributes | `op_name`, `operands_count`, `attributes`, `operand_types`, `result_types`, `regions` |
-| `check_stablehlo_op` | Validate StableHLO operation attributes and region constraints | `op_name`, `operands_count`, `attributes`, `structured_attributes` |
+| `check_mlir_op` | Validate MLIR dialect operation against ODS traits, operands, and attributes | `op_name`, `operands_count`, `attributes`, `operand_types`, `result_types`, `structured_attributes`, `regions` |
+| `check_stablehlo_op` | Validate StableHLO operation attributes and region constraints | `op_name`, `operands_count`, `attributes`, `operand_types`, `result_types`, `structured_attributes`, `regions` |
 | `check_wgsl_op` | Validate WebGPU WGSL shader operation against specification | `op_name`, `inputs_count`, `attributes` |
 | `check_onnx_op` | Validate ONNX operator inputs, domain, and attributes | `op_name`, `domain`, `inputs_count`, `attributes` |
 | `check_metal_op` | Validate Apple Metal MSL compute operation and address space | `op_name`, `address_space`, `inputs_count`, `attributes` |
@@ -436,16 +446,17 @@ Resolves snapshot identifiers (e.g. `torch`, `torch_v2.4.0.json`, or custom path
 
 ---
 
-## 11. Pure Functional Core, Explicit Typeclasses & Phantom Proofs (`identifiers.py`, `typeclasses.py`, `proofs.py`)
+## 11. Pure Functional Core, Closed Error ADTs, Explicit Typeclasses & Cumulative Proofs (`errors.py`, `identifiers.py`, `typeclasses.py`, `proofs.py`)
 
-Aligned with `ml-switcheroo-ir` v0.0.8, `ml-ecosystem-snapshots` separates its **Pure Functional Core** from its **Imperative Shell** (`cli/`, `mcp/`, `tools/`, `scripts/`):
+Aligned with **Tier 0** `ml-switcheroo-ir` v0.0.9 (`ir_v0.0.9.json`), **Tier 1** `ml-ecosystem-snapshots` v0.0.9 separates its **Pure Functional Core** from its **Imperative Shell** (`cli/`, `mcp/`, `tools/`, `scripts/`):
 
+- **Closed Algebraic `SnapshotDomainError` ADT (`errors.py` & `exceptions.py`)**: Replaces open OOP exception trees with 11 frozen `@dataclass(frozen=True)` variants (`SnapshotNotFoundFault`, `SnapshotEnvelopeFault`, `IdentifierValidationFault`, `HydrationBatchFault`, `DeterminismLeakFault`, `IntrospectionFault`, `CExtensionParseFault`, `ComplianceThresholdFault`, `GroundingBatchFault`, `OfflineNetworkFault`, and compositional `UpstreamIrFault`), paired with `SNAPSHOT_DOMAIN_ERROR_EQ`, `SNAPSHOT_DOMAIN_ERROR_PRETTY`, and `assert_never`-verified `format_snapshot_error`. Imperative CLI/MCP edges unwrap via `raise_snapshot_boundary` / `raise_validation_boundary` into `SnapshotError(domain_error)`.
 - **Deep Immutability**: Domain and report schemas across `models.py`, `diff.py`, `compliance/models.py`, `grounding/models.py`, `mcp/protocol.py`, `c_extension_sig.py`, and `introspection/sanitize.py` enforce `pydantic.ConfigDict(frozen=True)` and immutable `tuple[..., ...]` sequence fields.
-- **Total Outcomes (`Result[E, A]` & `Validation[E, A]`)**: Core SDK functions (`extract_snapshot`, `extract_snapshot_isolated`, `write_snapshot`, `load_json_data`, `fetch_url`, `hydrate_ghost_ref`, `validate_snapshot_envelope`, `generate_stubs`, `resolve_snapshot_path`, `validate_broadcast_shapes`, `validate_matmul_shapes`) return explicit `Ok` / `Err` outcomes rather than raising exceptions for domain/I/O failures. Batch operations (`extract_all_snapshots`, `hydrate_ghost_refs`, `prove_hydrated_refs`, `prove_determinism_verified`, `prove_compliance_verified`) accumulate *all* diagnostics via applicative `Validation` (`Valid` / `Invalid`).
-- **Validated `NewType` Identifiers (`identifiers.py`)**: `FrameworkId`, `SnapshotVersion`, `ApiPath`, `CategoryName`, and `Sha256Hex` wrap validated strings via total `parse_*` smart constructors paired with explicit `Eq`, `Ord` (including `API_PATH_LEN_LEX_ORD`), and `HashableWitness` dictionaries.
-- **Explicit Typeclass Witnesses (`typeclasses.py`)**:
-  - `DIFF_RESULT_SEMIGROUP` & `DIFF_RESULT_MONOID`: Associatively combine `DiffResult` values via sorted deduplicated set union across symbol-change tuples and rectangular-band `(old_lhs, new_rhs)` composition across `metadata_changed` transitions, with `DiffResult()` as left/right identity.
-  - `COMPLIANCE_REPORT_MONOID`, `SNIPPET_REPORT_MONOID`, & `CODE_BLOCK_RESULT_MONOID`: Fold per-module, per-line, and per-snippet verification results via `INT_SUM_MONOID`, `BOOL_ALL_MONOID`, and `tuple_monoid()`.
-  - `GHOST_REF_CANONICAL_HASH` & `GHOST_REF_CONSOLIDATION_SEMIGROUP`: Consolidate structurally equivalent `GhostRef` aliases without mutating input models.
+- **Total Outcomes (`Result[SnapshotDomainError, A]` & `Validation[NonEmpty[SnapshotDomainError], A]`)**: Core SDK functions (`extract_snapshot`, `extract_snapshot_isolated`, `write_snapshot`, `load_json_data`, `fetch_url`, `hydrate_ghost_ref`, `validate_snapshot_envelope`, `generate_stubs`, `resolve_snapshot_path`) return explicit `Ok` / `Err` outcomes. Batch and proof operations (`extract_all_snapshots`, `hydrate_ghost_refs`, `prove_envelope_valid`, `upgrade_to_hydrated`, `upgrade_to_deterministic`, `upgrade_to_compliance_certified`, `certify_snapshot_pipeline`, `audit_module_sources`) accumulate *all* diagnostics into `NonEmpty[SnapshotDomainError]` via applicative `Validation`.
+- **Validated `NewType` Identifiers (`identifiers.py`)**: `FrameworkId`, `SnapshotVersion`, `ApiPath`, `SymbolPath`, `CategoryName`, and `Sha256Hex` wrap validated strings via total `Result[IdentifierValidationFault, T]` `parse_*` smart constructors paired with explicit `Eq`, `Ord` (including `API_PATH_LEN_LEX_ORD`), and `HashableWitness` dictionaries.
+- **Explicit Typeclass Witnesses & Canonical Compliance/Grounding (`typeclasses.py`, `compliance/`, `grounding/`)**:
+  - `DIFF_RESULT_SEMIGROUP` & `DIFF_RESULT_MONOID`: Associatively combine `DiffResult` values via sorted deduplicated set union and rectangular-band `(old_lhs, new_rhs)` metadata transitions.
+  - `COMPLIANCE_REPORT_MONOID` (backed by `ml_switcheroo_ir.compliance.FILE_COMPLIANCE_MONOID`), `SNIPPET_REPORT_MONOID`, & `CODE_BLOCK_RESULT_MONOID`: Power pure filesystem-optional `audit_module_sources(sources, snapshot)`.
+  - `ground_proven_graph(proven_graph, snapshot)`: Grounds `ProvenGraph[AcyclicSortedPhase]` against `ProvenSnapshot[EnvelopeAndHydratedPhase]` into `Validation[NonEmpty[GroundingDiagnostic], ProvenGraph[GroundedPhase]]`.
   - `SNAPSHOT_ENVELOPE_JSON_CODEC`, `GHOST_REF_JSON_CODEC`, `DIFF_CHANGELOG_PRETTY`, `STUB_MODULE_PRETTY`, & `make_namespace_align_endo`: Explicit `JsonCodec`, `Pretty`, and `Endo[str]` witnesses.
-- **Proof-Carrying Phantom Phases (`proofs.py`)**: `ProvenSnapshot[PhaseT]` tracks static verification invariants across `EnvelopeValidPhase` (`prove_envelope_valid`), `HydratedRefsPhase` (`prove_hydrated_refs`), `DeterminismVerifiedPhase` (`prove_determinism_verified`), and `ComplianceVerifiedPhase` (`prove_compliance_verified`), deep-cloning the underlying `SnapshotEnvelope` at minting time.
+- **Covariant Cumulative `ProvenSnapshot[_SnapshotPhaseT_co]` Phases (`proofs.py`)**: `ProvenSnapshot` is covariant in `_SnapshotPhaseT_co` across cumulative intersection phases `EnvelopeValidPhase` -> `EnvelopeAndHydratedPhase` -> `DeterministicSnapshotPhase` -> `FullyCertifiedSnapshotPhase`, so downstream consumers accepting `ProvenSnapshot[EnvelopeAndHydratedPhase]` statically accept `DeterministicSnapshotPhase` and `FullyCertifiedSnapshotPhase`.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import typing
 
+import typing_extensions
 from ml_switcheroo_ir.schema.ghost import (
     ExtendedGhostParam,
     ExtendedGhostRef,
@@ -13,28 +14,45 @@ from ml_switcheroo_ir.schema.ghost import (
 )
 
 from ml_ecosystem_snapshots.models import JsonValue
+from ml_ecosystem_snapshots.proofs import EnvelopeAndHydratedPhase, ProvenSnapshot
 
 _LOGGER = logging.getLogger(__name__)
 
 if typing.TYPE_CHECKING:
     from ml_ecosystem_snapshots.serialization.repository import SnapshotRepository
 
+PromptRefsInput: typing_extensions.TypeAlias = "ProvenSnapshot[EnvelopeAndHydratedPhase] | typing.Sequence[GhostRef]"
 
-def export_llm_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
-    """Export GhostRef sequence into a compact, typed format optimized for LLM prompting.
+
+def _coerce_prompt_refs(refs: PromptRefsInput) -> typing.Sequence[GhostRef]:
+    """Extract a `GhostRef` sequence from a `ProvenSnapshot[EnvelopeAndHydratedPhase]` or sequence.
+
+    Args:
+        refs: Hydrated `ProvenSnapshot` witness or sequence of `GhostRef` instances.
+
+    Returns:
+        Sequence of `GhostRef` entries.
+    """
+    if isinstance(refs, ProvenSnapshot):
+        return refs.all_refs()
+    return refs
+
+
+def export_llm_prompt_context(refs: PromptRefsInput) -> str:
+    """Export GhostRef sequence or `ProvenSnapshot` into a compact format for LLM prompting.
 
     Formats functions, operands, attributes, and constraints into concise markdown
     specifications designed to prevent LLM hallucinations during code generation.
 
     Args:
-        refs: Sequence of GhostRef items to format.
+        refs: `ProvenSnapshot[EnvelopeAndHydratedPhase]` or sequence of `GhostRef` items.
 
     Returns:
         A Markdown-formatted string with compact signatures and parameter constraints.
     """
     blocks: list[str] = []
 
-    for ref in refs:
+    for ref in _coerce_prompt_refs(refs):
         params_str_list: list[str] = []
         param_details: list[str] = []
 
@@ -159,19 +177,19 @@ def _format_single_sass_ref(ref: GhostRef) -> str:
     return "\n".join(lines)
 
 
-def export_sass_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
+def export_sass_prompt_context(refs: PromptRefsInput) -> str:
     """Export SASS instruction specifications as canonical assembly prompt templates.
 
     Formats GPU instructions into real SASS assembly syntax templates rather than
     synthetic Python signatures, specifying valid register files, modifiers, and SM architectures.
 
     Args:
-        refs: Sequence of SASS GhostRef items to format.
+        refs: `ProvenSnapshot[EnvelopeAndHydratedPhase]` or sequence of SASS `GhostRef` items.
 
     Returns:
         Markdown string formatted with assembly syntax templates and register constraints.
     """
-    blocks = [_format_single_sass_ref(ref) for ref in refs]
+    blocks = [_format_single_sass_ref(ref) for ref in _coerce_prompt_refs(refs)]
     return "\n\n".join(blocks) + "\n"
 
 
@@ -256,19 +274,19 @@ def _format_single_mlir_ref(ref: GhostRef) -> str:
     return "\n".join(lines)
 
 
-def export_mlir_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
+def export_mlir_prompt_context(refs: PromptRefsInput) -> str:
     """Export MLIR / StableHLO operations as canonical SSA IR prompt templates.
 
     Formats compiler operations into true MLIR syntax templates, distinguishing
     runtime SSA operands from compile-time attributes, regions, and multi-result signatures.
 
     Args:
-        refs: Sequence of MLIR or StableHLO GhostRef items to format.
+        refs: `ProvenSnapshot[EnvelopeAndHydratedPhase]` or sequence of MLIR/StableHLO `GhostRef` items.
 
     Returns:
         Markdown string formatted with canonical MLIR operation specifications.
     """
-    blocks = [_format_single_mlir_ref(ref) for ref in refs]
+    blocks = [_format_single_mlir_ref(ref) for ref in _coerce_prompt_refs(refs)]
     return "\n\n".join(blocks) + "\n"
 
 
@@ -383,7 +401,7 @@ def _build_scoped_index_lines(
 
 
 def export_scoped_prompt_context(
-    framework: str,
+    framework: str | ProvenSnapshot[EnvelopeAndHydratedPhase],
     module_prefix: str | None = None,
     max_symbols: int = 50,
     repository: SnapshotRepository | None = None,
@@ -394,7 +412,7 @@ def export_scoped_prompt_context(
     operations and detailed parameter constraints for up to max_symbols matching APIs.
 
     Args:
-        framework: Name of the framework (e.g. 'torch', 'stablehlo', 'nvidia_sass').
+        framework: Framework name or `ProvenSnapshot[EnvelopeAndHydratedPhase]` witness.
         module_prefix: Optional namespace filter (e.g. 'torch.nn.functional', 'arith').
         max_symbols: Maximum number of detailed symbols to include (default: 50).
         repository: Optional `SnapshotRepository` instance for snapshot lookup.
@@ -409,23 +427,37 @@ def export_scoped_prompt_context(
         resolve_repository_snapshot,
     )
 
-    snap = resolve_repository_snapshot(framework, repository=repository)
-    matching_items = _collect_matching_scoped_items(snap.get("categories", {}), module_prefix)
-    total_matching = len(matching_items)
+    if isinstance(framework, ProvenSnapshot):
+        fw_name = str(framework.target)
+        all_proven_refs = [
+            ref
+            for ref in framework.all_refs()
+            if not module_prefix
+            or ref.api_path.startswith(module_prefix)
+            or ref.api_path.startswith(f"{module_prefix}.")
+        ]
+        matching_items = [ref.model_dump() for ref in all_proven_refs]
+        total_matching = len(matching_items)
+        hydrated_refs: list[GhostRef] = list(all_proven_refs[:max_symbols])
+    else:
+        fw_name = framework
+        snap = resolve_repository_snapshot(fw_name, repository=repository)
+        matching_items = _collect_matching_scoped_items(snap.get("categories", {}), module_prefix)
+        total_matching = len(matching_items)
 
-    hydrated_refs: list[GhostRef] = []
-    for item in matching_items[:max_symbols]:
-        hyd_res = GhostInspector.hydrate(item)
-        if isinstance(hyd_res, Ok):
-            hydrated_refs.append(hyd_res.value)
-        else:
-            _LOGGER.debug("Skipping unhydratable prompt item: %s", hyd_res.error)
+        hydrated_refs = []
+        for item in matching_items[:max_symbols]:
+            hyd_res = GhostInspector.hydrate(item)
+            if isinstance(hyd_res, Ok):
+                hydrated_refs.append(hyd_res.value)
+            else:
+                _LOGGER.debug("Skipping unhydratable prompt item: %s", hyd_res.error)
 
-    index_lines = _build_scoped_index_lines(framework, matching_items)
+    index_lines = _build_scoped_index_lines(fw_name, matching_items)
 
-    if framework in ("nvidia_sass", "amd_rdna"):
+    if fw_name in ("nvidia_sass", "amd_rdna"):
         details = export_sass_prompt_context(hydrated_refs)
-    elif framework in ("mlir", "stablehlo"):
+    elif fw_name in ("mlir", "stablehlo"):
         details = export_mlir_prompt_context(hydrated_refs)
     else:
         details = export_llm_prompt_context(hydrated_refs)
@@ -440,17 +472,17 @@ def export_scoped_prompt_context(
     return "\n\n".join(result_parts).strip() + "\n"
 
 
-def export_rdna_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
+def export_rdna_prompt_context(refs: PromptRefsInput) -> str:
     """Export AMD RDNA / CDNA instruction specifications as canonical assembly prompt templates.
 
     Args:
-        refs: Sequence of AMD RDNA GhostRef items to format.
+        refs: `ProvenSnapshot[EnvelopeAndHydratedPhase]` or sequence of AMD RDNA `GhostRef` items.
 
     Returns:
         Markdown string formatted with RDNA assembly syntax and architecture constraints.
     """
     blocks: list[str] = []
-    for ref in refs:
+    for ref in _coerce_prompt_refs(refs):
         encoding = "VOP"
         archs: list[str] = []
         for tag in ref.environment_tags or []:
@@ -474,17 +506,17 @@ def export_rdna_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-def export_ptx_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
+def export_ptx_prompt_context(refs: PromptRefsInput) -> str:
     """Export NVIDIA PTX instruction specifications as canonical assembly prompt templates.
 
     Args:
-        refs: Sequence of PTX GhostRef items to format.
+        refs: `ProvenSnapshot[EnvelopeAndHydratedPhase]` or sequence of PTX `GhostRef` items.
 
     Returns:
         Markdown string formatted with PTX assembly syntax and SM requirements.
     """
     blocks: list[str] = []
-    for ref in refs:
+    for ref in _coerce_prompt_refs(refs):
         min_sm = "sm_50"
         supp_types: list[str] = []
         for tag in ref.environment_tags or []:
@@ -508,11 +540,11 @@ def export_ptx_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-def export_stablehlo_prompt_context(refs: typing.Sequence[GhostRef]) -> str:
+def export_stablehlo_prompt_context(refs: PromptRefsInput) -> str:
     """Export StableHLO operations as canonical MLIR dialect SSA prompt templates.
 
     Args:
-        refs: Sequence of StableHLO GhostRef items to format.
+        refs: `ProvenSnapshot[EnvelopeAndHydratedPhase]` or sequence of StableHLO `GhostRef` items.
 
     Returns:
         Markdown string formatted with canonical StableHLO operation templates.
@@ -531,6 +563,7 @@ to_stablehlo_prompt = export_stablehlo_prompt_context
 
 __all__ = [
     "COMMON_HALLUCINATION_GUARDS",
+    "PromptRefsInput",
     "export_llm_prompt_context",
     "export_mlir_prompt_context",
     "export_ptx_prompt_context",

@@ -89,7 +89,7 @@ def test_parse_requirement_line_and_collect_wheel_specs(tmp_path: Path) -> None:
     req_b = tmp_path / "req_b.txt"
     ir_line = (
         "ml-switcheroo-ir @ https://github.com/SamuelMarks/ml-switcheroo-ir/"
-        "releases/download/v0.0.8/ml_switcheroo_ir-0.0.8-py3-none-any.whl"
+        "releases/download/v0.0.9/ml_switcheroo_ir-0.0.9-py3-none-any.whl"
     )
     req_a.write_text(_NL.join(["pydantic>=2.0.0", ir_line, cdd_line, ""]), encoding="utf-8")
     req_b.write_text(_NL.join([ir_line, "rich", ""]), encoding="utf-8")
@@ -101,9 +101,20 @@ def test_parse_requirement_line_and_collect_wheel_specs(tmp_path: Path) -> None:
 
 
 def test_repo_requirements_contain_expected_github_release_wheels() -> None:
-    """Verify repository `requirements.txt` and `requirements-gen.txt` parse cleanly."""
+    """Verify repository requirement files parse cleanly and pin ml-switcheroo-ir v0.0.9."""
     root = Path(__file__).resolve().parent.parent
-    specs = collect_wheel_specs([root / "requirements.txt", root / "requirements-gen.txt"])
+    req_files = (
+        root / "requirements.txt",
+        root / "requirements-gen.txt",
+        root / "requirements-host.txt",
+        root / "requirements-linux-x64.txt",
+        root / "test-requirements.txt",
+    )
+    for req_file in req_files:
+        single_specs = {s.package_name: s for s in collect_wheel_specs([req_file])}
+        assert "ml-switcheroo-ir" in single_specs
+        assert single_specs["ml-switcheroo-ir"].tag == "v0.0.9"
+    specs = collect_wheel_specs(req_files)
     names = {spec.package_name for spec in specs}
     assert "ml-switcheroo-ir" in names
     assert "cdd" in names
@@ -328,13 +339,13 @@ def test_download_wheel_spec_authenticated_unauthenticated_and_corrupt(tmp_path:
     spec = GitHubReleaseWheelSpec(
         package_name="ml-switcheroo-ir",
         browser_url=(
-            "https://github.com/SamuelMarks/ml-switcheroo-ir/releases/download/v0.0.8/"
-            "ml_switcheroo_ir-0.0.8-py3-none-any.whl"
+            "https://github.com/SamuelMarks/ml-switcheroo-ir/releases/download/v0.0.9/"
+            "ml_switcheroo_ir-0.0.9-py3-none-any.whl"
         ),
         owner="SamuelMarks",
         repo="ml-switcheroo-ir",
-        tag="v0.0.8",
-        asset_name="ml_switcheroo_ir-0.0.8-py3-none-any.whl",
+        tag="v0.0.9",
+        asset_name="ml_switcheroo_ir-0.0.9-py3-none-any.whl",
     )
     valid_whl = _make_valid_wheel_bytes()
     seen_urls: list[tuple[str, str | None, str | None]] = []
@@ -357,11 +368,11 @@ def test_download_wheel_spec_authenticated_unauthenticated_and_corrupt(tmp_path:
                 request.get_header("Authorization"),
             )
         )
-        if request.full_url.endswith("/releases/tags/v0.0.8"):
+        if request.full_url.endswith("/releases/tags/v0.0.9"):
             body = {
                 "assets": [
                     {
-                        "name": "ml_switcheroo_ir-0.0.8-py3-none-any.whl",
+                        "name": "ml_switcheroo_ir-0.0.9-py3-none-any.whl",
                         "url": "https://api.github.com/repos/SamuelMarks/ml-switcheroo-ir/releases/assets/99",
                     }
                 ]
@@ -374,7 +385,7 @@ def test_download_wheel_spec_authenticated_unauthenticated_and_corrupt(tmp_path:
     assert auth_wheel.override_line.startswith("ml-switcheroo-ir @ file://")
     assert seen_urls == [
         (
-            "https://api.github.com/repos/SamuelMarks/ml-switcheroo-ir/releases/tags/v0.0.8",
+            "https://api.github.com/repos/SamuelMarks/ml-switcheroo-ir/releases/tags/v0.0.9",
             "application/vnd.github+json",
             "Bearer ghs_test",
         ),

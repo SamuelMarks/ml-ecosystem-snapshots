@@ -94,7 +94,7 @@ def test_collect_api_inspection_exception_handled() -> None:
 
 def test_extract_snapshot_array_api() -> None:
     """Verify full snapshot extraction for array_api target."""
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
     snap = raise_on_err(extract_snapshot("array_api")).to_wire_dict()
     assert snap.get("target") == "array_api"

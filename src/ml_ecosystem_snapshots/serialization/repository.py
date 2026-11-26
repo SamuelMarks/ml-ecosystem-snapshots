@@ -13,7 +13,8 @@ import pydantic
 import typing_extensions
 from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Result
 
-from ml_ecosystem_snapshots.exceptions import SnapshotError, SnapshotNotFoundError
+from ml_ecosystem_snapshots.errors import SnapshotDomainError, SnapshotNotFoundFault
+from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.models import JsonValue, WireSerializableProtocol
 from ml_ecosystem_snapshots.network_env import (
     get_custom_snapshots_paths,
@@ -75,7 +76,7 @@ class ResolvedSnapshot(pydantic.BaseModel):
 
 
 ExtractedSnapshotPayload: typing_extensions.TypeAlias = (
-    "Result[SnapshotError, WireSerializableProtocol | dict[str, JsonValue]]"
+    "Result[SnapshotDomainError, WireSerializableProtocol | dict[str, JsonValue]]"
     " | WireSerializableProtocol"
     " | dict[str, JsonValue]"
 )
@@ -229,14 +230,14 @@ def _load_bundled_snapshot(
 
 def _unwrap_extracted_snapshot_dict(
     raw_extracted: ExtractedSnapshotPayload,
-) -> Result[SnapshotError, dict[str, JsonValue]]:
-    """Normalize an `ExtractedSnapshotPayload` into `Result[SnapshotError, dict[str, JsonValue]]`.
+) -> Result[SnapshotDomainError, dict[str, JsonValue]]:
+    """Normalize an `ExtractedSnapshotPayload` into `Result[SnapshotDomainError, dict[str, JsonValue]]`.
 
     Args:
         raw_extracted: Result, `WireSerializableProtocol`, or dictionary from an extractor hook.
 
     Returns:
-        `Ok(dict)` or `Err(SnapshotError)`.
+        `Ok(dict)` or `Err(SnapshotDomainError)`.
     """
     if isinstance(raw_extracted, Err):
         return raw_extracted
@@ -472,8 +473,8 @@ class SnapshotRepository:
         framework: str,
         version: str | None = None,
         prefer_bundled: bool | None = None,
-    ) -> Result[SnapshotNotFoundError, ResolvedSnapshot]:
-        """Resolve a framework snapshot totally into `Result[SnapshotNotFoundError, ResolvedSnapshot]`.
+    ) -> Result[SnapshotNotFoundFault, ResolvedSnapshot]:
+        """Resolve a framework snapshot totally into `Result[SnapshotNotFoundFault, ResolvedSnapshot]`.
 
         Args:
             framework: Framework name.
@@ -481,12 +482,18 @@ class SnapshotRepository:
             prefer_bundled: Optional flag to prefer bundled snapshots.
 
         Returns:
-            `Ok(ResolvedSnapshot)` when categories are non-empty, else `Err(SnapshotNotFoundError)`.
+            `Ok(ResolvedSnapshot)` when categories are non-empty, else `Err(SnapshotNotFoundFault)`.
         """
         snap = self.get(framework=framework, version=version, prefer_bundled=prefer_bundled)
         raw_cats = snap.get("categories")
         if not isinstance(raw_cats, dict) or not raw_cats:
-            return Err(SnapshotNotFoundError(f"Snapshot not found or empty for framework {framework!r}."))
+            return Err(
+                SnapshotNotFoundFault(
+                    target=framework,
+                    version=version,
+                    searched_paths=get_custom_snapshots_paths(),
+                )
+            )
         raw_src = str(snap.get("_snapshot_source") or SnapshotSource.BUNDLED_PACKAGE.value)
         src = {m.value: m for m in SnapshotSource}.get(raw_src, SnapshotSource.BUNDLED_PACKAGE)
         ver = str(snap.get("version") or version or "unknown")

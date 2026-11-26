@@ -12,7 +12,7 @@ import pytest
 from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Result
 
 import scripts.generate_all_snapshots as generate_all_snapshots
-from ml_ecosystem_snapshots.exceptions import SnapshotError
+from ml_ecosystem_snapshots.errors import SnapshotDomainError, SnapshotEnvelopeFault
 from ml_ecosystem_snapshots.models import JsonValue
 
 
@@ -50,7 +50,7 @@ def test_main_success(
         """
         makedirs_calls.append((path, exist_ok))
 
-    def fake_extract(fw: str) -> Result[SnapshotError, dict[str, JsonValue]]:
+    def fake_extract(fw: str) -> Result[SnapshotDomainError, dict[str, JsonValue]]:
         """Record extract_snapshot invocation.
 
         Args:
@@ -62,7 +62,7 @@ def test_main_success(
         extract_calls.append(fw)
         return Ok({"mock": "data"})
 
-    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> Result[SnapshotError, str]:
+    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> Result[SnapshotDomainError, str]:
         """Record write_snapshot invocation.
 
         Args:
@@ -121,7 +121,7 @@ def test_main_failure(
             exist_ok: Whether existing directory is allowed.
         """
 
-    def fake_extract(fw: str) -> Result[SnapshotError, dict[str, JsonValue]]:
+    def fake_extract(fw: str) -> Result[SnapshotDomainError, dict[str, JsonValue]]:
         """Fail via Err, write Err, or raised RuntimeError depending on fw.
 
         Args:
@@ -137,10 +137,10 @@ def test_main_failure(
         if len(extract_calls) == 1:
             raise RuntimeError("Mock exception")
         if len(extract_calls) == 2:
-            return Err(SnapshotError("Mock extract Err"))
+            return Err(SnapshotEnvelopeFault(reason="Mock extract Err"))
         return Ok({"data": 1})
 
-    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> Result[SnapshotError, str]:
+    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> Result[SnapshotDomainError, str]:
         """Return Err on write to exercise write failure branch.
 
         Args:
@@ -149,11 +149,11 @@ def test_main_failure(
             out_dir: Output directory.
 
         Returns:
-            `Err(SnapshotError)`.
+            `Err(SnapshotDomainError)`.
         """
         del data, out_dir
         write_calls.append(fw)
-        return Err(SnapshotError("Mock write Err"))
+        return Err(SnapshotEnvelopeFault(reason="Mock write Err"))
 
     monkeypatch.setattr(sys, "argv", ["generate_all_snapshots.py", "torch", "jax", "flax"])
     monkeypatch.setattr(os, "makedirs", fake_makedirs)
@@ -168,8 +168,8 @@ def test_main_failure(
 
     captured = capsys.readouterr()
     assert "  -> Failed: Mock exception" in captured.out
-    assert "  -> Failed: Mock extract Err" in captured.out
-    assert "  -> Failed: Mock write Err" in captured.out
+    assert "Mock extract Err" in captured.out
+    assert "Mock write Err" in captured.out
 
 
 def test_sys_path_insert() -> None:
@@ -204,7 +204,7 @@ def test_main_custom_args_and_isolated_success(
             exist_ok: Whether existing directory is allowed.
         """
 
-    def fake_extract_iso(fw: str) -> Result[SnapshotError, dict[str, JsonValue]]:
+    def fake_extract_iso(fw: str) -> Result[SnapshotDomainError, dict[str, JsonValue]]:
         """Record isolated extraction call.
 
         Args:
@@ -216,7 +216,7 @@ def test_main_custom_args_and_isolated_success(
         iso_calls.append(fw)
         return Ok({"custom": "snap"})
 
-    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> Result[SnapshotError, str]:
+    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> Result[SnapshotDomainError, str]:
         """Record write call.
 
         Args:
@@ -263,7 +263,7 @@ def test_main_isolated_fallback(
             exist_ok: Whether existing directory is allowed.
         """
 
-    def fake_extract_iso(fw: str) -> Result[SnapshotError, dict[str, JsonValue]]:
+    def fake_extract_iso(fw: str) -> Result[SnapshotDomainError, dict[str, JsonValue]]:
         """Return Err to trigger fallback.
 
         Args:
@@ -273,9 +273,9 @@ def test_main_isolated_fallback(
             `Err(SnapshotError)`.
         """
         iso_calls.append(fw)
-        return Err(SnapshotError("iso failed"))
+        return Err(SnapshotEnvelopeFault(reason="iso failed"))
 
-    def fake_extract(fw: str) -> Result[SnapshotError, dict[str, JsonValue]]:
+    def fake_extract(fw: str) -> Result[SnapshotDomainError, dict[str, JsonValue]]:
         """Return fallback snapshot payload.
 
         Args:
@@ -287,7 +287,7 @@ def test_main_isolated_fallback(
         extract_calls.append(fw)
         return Ok({"fallback": "data"})
 
-    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> Result[SnapshotError, str]:
+    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> Result[SnapshotDomainError, str]:
         """Record write call.
 
         Args:
@@ -329,7 +329,7 @@ def test_generate_all_snapshots_main_entrypoint(
     extract_calls: list[str] = []
     write_calls: list[str] = []
 
-    def fake_extract(fw: str) -> Result[SnapshotError, dict[str, JsonValue]]:
+    def fake_extract(fw: str) -> Result[SnapshotDomainError, dict[str, JsonValue]]:
         """Record extract_snapshot call from __main__.
 
         Args:
@@ -341,7 +341,7 @@ def test_generate_all_snapshots_main_entrypoint(
         extract_calls.append(fw)
         return Ok({"categories": {}})
 
-    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> Result[SnapshotError, str]:
+    def fake_write(fw: str, data: dict[str, JsonValue], out_dir: str) -> Result[SnapshotDomainError, str]:
         """Record write_snapshot call from __main__.
 
         Args:

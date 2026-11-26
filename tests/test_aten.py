@@ -116,7 +116,7 @@ def test_extract_snapshot_aten(mock_torch_module: types.ModuleType) -> None:
     Args:
         mock_torch_module: Scoped `torch` module fixture.
     """
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
     assert mock_torch_module is not None
     snap = raise_on_err(extract_snapshot("aten")).to_wire_dict()

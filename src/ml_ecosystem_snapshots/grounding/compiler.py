@@ -28,13 +28,17 @@ from ml_ecosystem_snapshots.grounding.domain_ops import (
     validate_webgl_op,
     validate_wgsl_op,
 )
-from ml_ecosystem_snapshots.grounding.engine import GroundingEngine
+from ml_ecosystem_snapshots.grounding.engine import (
+    GroundingEngineInput,
+    coerce_grounding_engine,
+)
 from ml_ecosystem_snapshots.grounding.models import (
     DiagnosticSeverity,
     GroundingReport,
     IrCheckResult,
 )
 from ml_ecosystem_snapshots.models import JsonValue
+from ml_ecosystem_snapshots.proofs import EnvelopeAndHydratedPhase, ProvenSnapshot
 
 extract_mlir_operands_and_attrs = _extract_mlir_operands_and_attrs
 extract_tensor_rank = _extract_tensor_rank
@@ -265,7 +269,7 @@ def _validate_dialect_operation(
 
 def verify_mlir_op(
     op_name: str,
-    snap: typing.Mapping[str, JsonValue],
+    snap: ProvenSnapshot[EnvelopeAndHydratedPhase] | typing.Mapping[str, JsonValue],
     operands_count: int | None = None,
     attributes: list[str] | None = None,
     operand_types: list[str] | None = None,
@@ -273,11 +277,11 @@ def verify_mlir_op(
     structured_attributes: typing.Mapping[str, JsonValue] | None = None,
     regions: typing.Mapping[str, JsonValue] | None = None,
 ) -> IrCheckResult:
-    """Verify an MLIR or StableHLO operation against a resolved dialect snapshot dictionary.
+    """Verify an MLIR or StableHLO operation against a `ProvenSnapshot` or dialect snapshot dictionary.
 
     Args:
         op_name: Qualified operation name (e.g. arith.addf or stablehlo.dot_general).
-        snap: Resolved dialect snapshot dictionary.
+        snap: Resolved `ProvenSnapshot[EnvelopeAndHydratedPhase]` or dialect snapshot dictionary.
         operands_count: Optional expected number of SSA operands.
         attributes: Optional list of attribute names to verify.
         operand_types: Optional list of SSA operand type strings.
@@ -289,7 +293,8 @@ def verify_mlir_op(
         Structured `IrCheckResult` report.
     """
     target_op = op_name.strip()
-    inst = _find_mlir_op_record(dict(snap), target_op)
+    raw_snap = snap.to_wire_dict() if isinstance(snap, ProvenSnapshot) else dict(snap)
+    inst = _find_mlir_op_record(raw_snap, target_op)
     if not inst:
         return IrCheckResult(
             is_valid=False,
@@ -320,7 +325,7 @@ def validate_stablehlo_op(
     op_name: str,
     operand_types: list[str],
     attributes: typing.Mapping[str, JsonValue],
-    engine: GroundingEngine | None = None,
+    engine: GroundingEngineInput = None,
     result_types: list[str] | None = None,
     regions: typing.Mapping[str, JsonValue] | None = None,
 ) -> GroundingReport:
@@ -330,14 +335,14 @@ def validate_stablehlo_op(
         op_name: Operation name (e.g., stablehlo.dot_general, dot_general, stablehlo.add).
         operand_types: Types of SSA input operands.
         attributes: Dictionary of operation attributes.
-        engine: Optional `GroundingEngine` instance.
+        engine: Optional `GroundingEngine` or `ProvenSnapshot[EnvelopeAndHydratedPhase]`.
         result_types: Optional list of SSA result type strings.
         regions: Optional dictionary of regions mapping region name to block_arguments and yield_types.
 
     Returns:
         `GroundingReport` containing diagnostic results and grounding status.
     """
-    eng = engine or GroundingEngine()
+    eng = coerce_grounding_engine(engine)
     full_op_name = op_name if op_name.startswith("stablehlo.") else f"stablehlo.{op_name}"
     report = GroundingReport(is_grounded=True, target="stablehlo", symbol=full_op_name)
 
@@ -371,7 +376,7 @@ def validate_mlir_op(
     op_name: str,
     operand_count: int,
     attributes: typing.Mapping[str, JsonValue],
-    engine: GroundingEngine | None = None,
+    engine: GroundingEngineInput = None,
     operand_types: list[str] | None = None,
     result_types: list[str] | None = None,
 ) -> GroundingReport:
@@ -382,14 +387,14 @@ def validate_mlir_op(
         op_name: The operation name or mnemonic (e.g., addf, arith.addf, matmul).
         operand_count: Number of SSA value operands passed to the operation.
         attributes: Dictionary of buildable MLIR attributes.
-        engine: Optional `GroundingEngine` instance.
+        engine: Optional `GroundingEngine` or `ProvenSnapshot[EnvelopeAndHydratedPhase]`.
         operand_types: Optional list of SSA operand type strings.
         result_types: Optional list of SSA result type strings.
 
     Returns:
         `GroundingReport` containing diagnostic results and grounding status.
     """
-    eng = engine or GroundingEngine()
+    eng = coerce_grounding_engine(engine)
     full_path = op_name if op_name.startswith(f"{dialect}.") else f"{dialect}.{op_name}"
     report = GroundingReport(is_grounded=True, target="mlir", symbol=full_path)
 

@@ -376,14 +376,16 @@ def test_index_snapshot_file_payload_formats(tmp_path: Path) -> None:
         json.dump(empty_snap, f)
     assert index_snapshot_file(json_empty_path, conn) == 0
 
-    # 7. Test non-dict non-list JSON payload raises SnapshotSchemaError
-    from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
+    # 7. Test non-dict non-list JSON payload raises SnapshotError(SnapshotEnvelopeFault)
+    from ml_ecosystem_snapshots.errors import SnapshotEnvelopeFault
+    from ml_ecosystem_snapshots.exceptions import SnapshotError
 
     json_scalar_path = str(tmp_path / "scalar_v1.0.0.json")
     with open(json_scalar_path, "w", encoding="utf-8") as f:
         json.dump("scalar_string_payload", f)
-    with pytest.raises(SnapshotSchemaError, match="must be a JSON object or array"):
+    with pytest.raises(SnapshotError, match="must be a JSON object or array") as exc_info:
         index_snapshot_file(json_scalar_path, conn)
+    assert isinstance(exc_info.value.domain_error, SnapshotEnvelopeFault)
 
 
 def test_ensure_index_and_search_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -79,7 +79,7 @@ class ComplianceMismatchEntry(pydantic.BaseModel):
 
 
 class ComplianceScoreReport(pydantic.BaseModel):
-    """Immutable compliance report returned by `score_compliance`."""
+    """Immutable compliance report returned by `score_compliance` and `audit_module_sources`."""
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
@@ -90,6 +90,14 @@ class ComplianceScoreReport(pydantic.BaseModel):
     mismatched: tuple[ComplianceMismatchEntry, ...] = ()
     opaque_signatures: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+    found_ir: bool = False
+    ir_score: tuple[int, int] = (0, 5)
+    found_fw: bool = False
+    fw_score: tuple[int, int] = (0, 4)
+    implemented_ops: tuple[str, ...] = ()
+
+
+ComplianceReport: typing_extensions.TypeAlias = ComplianceScoreReport
 
 
 class SnippetComplianceReport(pydantic.BaseModel):
@@ -107,6 +115,7 @@ class SnippetComplianceReport(pydantic.BaseModel):
 
 __all__ = [
     "ComplianceMismatchEntry",
+    "ComplianceReport",
     "ComplianceScoreReport",
     "NamespaceAlignmentRule",
     "ParamSignatureTuple",

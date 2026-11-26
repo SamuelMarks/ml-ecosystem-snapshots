@@ -270,7 +270,7 @@ def test_ghost_inspector_aten_none(mocker: pytest_mock.MockerFixture) -> None:
     """
     from ml_switcheroo_ir.typeclasses.outcome import Err
 
-    from ml_ecosystem_snapshots.exceptions import CExtensionSignatureError
+    from ml_ecosystem_snapshots.errors import CExtensionParseFault
 
     mocker.patch("inspect.signature", side_effect=TypeError("no python signature"))
     mocker.patch(
@@ -279,7 +279,7 @@ def test_ghost_inspector_aten_none(mocker: pytest_mock.MockerFixture) -> None:
     )
     mocker.patch(
         "ml_ecosystem_snapshots.introspection.inspector.extract_c_extension_signature",
-        return_value=Err(CExtensionSignatureError("none")),
+        return_value=Err(CExtensionParseFault(signature_text="", offset=None, reason="none")),
     )
 
     def dummy_torch_fn() -> None:
@@ -309,7 +309,7 @@ def test_ghost_inspector_hydrate_variations() -> None:
             ExtendedGhostParam(name="y", kind=ParameterKind.POSITIONAL_ONLY),
         ],
     }
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
     hydrated = raise_on_err(GhostInspector.hydrate(data))
     assert len(hydrated.params) == 2
@@ -396,8 +396,7 @@ def test_ghostref_from_obj_griffe_import_error(monkeypatch: pytest.MonkeyPatch) 
 
 def test_extended_ghost_ref_dict_with_non_string_default() -> None:
     """Verify `GhostInspector.hydrate` coerces non-string numeric defaults into canonical strings."""
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
-
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
     from ml_ecosystem_snapshots.models import JsonValue
 
     data: dict[str, JsonValue] = {

@@ -61,7 +61,7 @@ from ml_switcheroo_ir.schema.ghost import (
 from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Result, value_or
 from ml_switcheroo_ir.types import JsonScalar as ScalarValue
 
-from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
+from ml_ecosystem_snapshots.errors import SnapshotEnvelopeFault
 
 JsonValue: typing_extensions.TypeAlias = pydantic.JsonValue
 
@@ -202,7 +202,7 @@ class TableGenRecordModel(pydantic.BaseModel):
 def ensure_json_dict(
     value: JsonValue,
     context: str = "JSON object",
-) -> Result[SnapshotSchemaError, dict[str, JsonValue]]:
+) -> Result[SnapshotEnvelopeFault, dict[str, JsonValue]]:
     """Validate totally at runtime that `value` is a JSON dictionary.
 
     Args:
@@ -210,17 +210,17 @@ def ensure_json_dict(
         context: Human-readable context included in error diagnostics.
 
     Returns:
-        `Ok(dict)` if `value` is a `dict`, else `Err(SnapshotSchemaError)`.
+        `Ok(dict)` if `value` is a `dict`, else `Err(SnapshotEnvelopeFault)`.
     """
     if not isinstance(value, dict):
-        return Err(SnapshotSchemaError(f"Expected {context} to be a dict, got {value!r}."))
+        return Err(SnapshotEnvelopeFault(reason=f"Expected {context} to be a dict, got {value!r}."))
     return Ok(value)
 
 
 def ensure_json_list(
     value: JsonValue,
     context: str = "JSON array",
-) -> Result[SnapshotSchemaError, tuple[JsonValue, ...]]:
+) -> Result[SnapshotEnvelopeFault, tuple[JsonValue, ...]]:
     """Validate totally at runtime that `value` is a JSON array, returning an immutable `tuple`.
 
     Args:
@@ -228,10 +228,10 @@ def ensure_json_list(
         context: Human-readable context included in error diagnostics.
 
     Returns:
-        `Ok(tuple)` if `value` is a `list`, else `Err(SnapshotSchemaError)`.
+        `Ok(tuple)` if `value` is a `list`, else `Err(SnapshotEnvelopeFault)`.
     """
     if not isinstance(value, list):
-        return Err(SnapshotSchemaError(f"Expected {context} to be a list, got {value!r}."))
+        return Err(SnapshotEnvelopeFault(reason=f"Expected {context} to be a list, got {value!r}."))
     return Ok(tuple(value))
 
 
@@ -241,7 +241,7 @@ _PresentT = typing.TypeVar("_PresentT")
 def ensure_present(
     value: _PresentT | None,
     context: str = "required value",
-) -> Result[SnapshotSchemaError, _PresentT]:
+) -> Result[SnapshotEnvelopeFault, _PresentT]:
     """Validate totally at runtime that `value` is not `None`.
 
     Args:
@@ -249,10 +249,10 @@ def ensure_present(
         context: Human-readable context included in error diagnostics.
 
     Returns:
-        `Ok(value)` if non-`None`, else `Err(SnapshotSchemaError)`.
+        `Ok(value)` if non-`None`, else `Err(SnapshotEnvelopeFault)`.
     """
     if value is None:
-        return Err(SnapshotSchemaError(f"Expected {context} to be non-None."))
+        return Err(SnapshotEnvelopeFault(reason=f"Expected {context} to be non-None."))
     return Ok(value)
 
 

@@ -531,7 +531,7 @@ def test_handle_mcp_message_dtypes_and_ranks() -> None:
                 },
             },
         }
-        from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+        from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
         resp = handle_mcp_message(msg)
         assert resp.result is not None

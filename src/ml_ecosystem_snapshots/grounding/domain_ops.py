@@ -16,7 +16,10 @@ from ml_ecosystem_snapshots.grounding._domain_configs import (
     DomainOpRecord,
     build_domain_op_tool_schemas,
 )
-from ml_ecosystem_snapshots.grounding.engine import GroundingEngine
+from ml_ecosystem_snapshots.grounding.engine import (
+    GroundingEngineInput,
+    coerce_grounding_engine,
+)
 from ml_ecosystem_snapshots.grounding.models import (
     DiagnosticSeverity,
     DomainOpCheckResult,
@@ -260,9 +263,9 @@ def verify_domain_op_generic(
     attributes: list[str] | None = None,
     domain: str | None = None,
     address_space: str | None = None,
-    engine: GroundingEngine | None = None,
+    engine: GroundingEngineInput = None,
 ) -> DomainOpCheckResult:
-    """Validate a domain operation against an injected `GroundingEngine` (honoring `snapshots_dir`) or canonical specs.
+    """Validate a domain operation against a `GroundingEngine`, `ProvenSnapshot`, or canonical specs.
 
     Args:
         config: Declarative `DomainOpCheckConfig` instance.
@@ -271,7 +274,7 @@ def verify_domain_op_generic(
         attributes: Optional list of attribute or keyword parameter names to verify.
         domain: Optional operator domain (used by ONNX).
         address_space: Optional memory address space (used by Apple Metal).
-        engine: Optional `GroundingEngine` instance queried first when provided.
+        engine: Optional `GroundingEngine` or `ProvenSnapshot[EnvelopeAndHydratedPhase]`.
 
     Returns:
         `DomainOpCheckResult` validation report model.
@@ -282,14 +285,19 @@ def verify_domain_op_generic(
     matched_addr: str | None = None
     found = False
 
-    if engine is not None and engine.snapshots_dir is not None:
+    resolved_engine = coerce_grounding_engine(engine) if engine is not None else None
+    if resolved_engine is not None:
         target_key = config.tool_name.replace("check_", "").replace("_op", "").replace("_instruction", "")
         target_map = {"wasm": "wasm_simd", "cpp": "cpp_runtime", "flash_attention": "flash_attention"}
         fw_key = target_map.get(target_key, target_key)
-        eng_ref = engine.get_symbol(fw_key, clean_name)
-        if eng_ref is not None:
-            exp_inputs, exp_attrs, matched_addr = _extract_engine_ref_signature(config, eng_ref)
-            found = True
+        if resolved_engine.snapshots_dir is not None or resolved_engine.has_proven_target(fw_key):
+            eng_ref = resolved_engine.get_symbol(fw_key, clean_name)
+            if eng_ref is not None:
+                exp_inputs, exp_attrs, matched_addr = _extract_engine_ref_signature(config, eng_ref)
+                found = True
+            elif resolved_engine.has_proven_target(fw_key):
+                not_found_msg = f"Unknown {config.unknown_label}: '{op_name}'"
+                return DomainOpCheckResult(is_valid=False, op_exists=False, errors=(not_found_msg,))
 
     if not found:
         ops = config.loader_fn()
@@ -329,7 +337,7 @@ def _domain_result_to_grounding_report(
     unrecognized_label: str,
     missing_field: str = "operation",
     err_field: str = "operation",
-    engine: GroundingEngine | None = None,
+    engine: GroundingEngineInput = None,
 ) -> GroundingReport:
     """Convert a `DomainOpCheckResult` into a `GroundingReport` with Levenshtein suggestions.
 
@@ -340,12 +348,12 @@ def _domain_result_to_grounding_report(
         unrecognized_label: Label used in missing-symbol diagnostics.
         missing_field: Diagnostic field for missing symbols.
         err_field: Diagnostic field for validation errors.
-        engine: Optional `GroundingEngine` instance.
+        engine: Optional `GroundingEngine` or `ProvenSnapshot[EnvelopeAndHydratedPhase]`.
 
     Returns:
         Populated `GroundingReport`.
     """
-    eng = engine or GroundingEngine()
+    eng = coerce_grounding_engine(engine)
     report = GroundingReport(is_grounded=True, target=target_framework, symbol=symbol_name)
     op_exists = res.op_exists if isinstance(res, DomainOpCheckResult) else bool(res.get("op_exists"))
     if not op_exists:
@@ -370,7 +378,7 @@ def check_domain_op(
     attributes: list[str] | None = None,
     domain: str | None = None,
     address_space: str | None = None,
-    engine: GroundingEngine | None = None,
+    engine: GroundingEngineInput = None,
 ) -> DomainOpCheckResult:
     """Verify a domain operation by `DOMAIN_OP_CONFIGS` key.
 
@@ -381,7 +389,7 @@ def check_domain_op(
         attributes: Optional list of attributes or keyword arguments.
         domain: Optional ONNX operator domain.
         address_space: Optional Metal address space.
-        engine: Optional `GroundingEngine` instance.
+        engine: Optional `GroundingEngine` or `ProvenSnapshot[EnvelopeAndHydratedPhase]`.
 
     Returns:
         `DomainOpCheckResult` validation report model.
@@ -401,7 +409,7 @@ def validate_wgsl_op(
     op_name: str,
     operands_count: int | None = None,
     attributes: list[str] | None = None,
-    engine: GroundingEngine | None = None,
+    engine: GroundingEngineInput = None,
 ) -> GroundingReport:
     """Verify a WebGPU WGSL builtin function or memory barrier against ground truth.
 
@@ -409,7 +417,7 @@ def validate_wgsl_op(
         op_name: WGSL operation name.
         operands_count: Optional number of passed arguments.
         attributes: Optional list of operation attributes.
-        engine: Optional `GroundingEngine` instance.
+        engine: Optional `GroundingEngine` or `ProvenSnapshot[EnvelopeAndHydratedPhase]`.
 
     Returns:
         `GroundingReport` containing diagnostic results.
@@ -422,7 +430,7 @@ def validate_onnx_op(
     op_name: str,
     inputs_count: int | None = None,
     attributes: list[str] | None = None,
-    engine: GroundingEngine | None = None,
+    engine: GroundingEngineInput = None,
 ) -> GroundingReport:
     """Verify an ONNX operator specification against the standard schema.
 
@@ -430,7 +438,7 @@ def validate_onnx_op(
         op_name: ONNX operator name.
         inputs_count: Optional number of passed inputs.
         attributes: Optional list of attributes.
-        engine: Optional `GroundingEngine` instance.
+        engine: Optional `GroundingEngine` or `ProvenSnapshot[EnvelopeAndHydratedPhase]`.
 
     Returns:
         `GroundingReport` containing diagnostic results.
@@ -444,7 +452,7 @@ def validate_metal_op(
     address_space: str | None = None,
     inputs_count: int | None = None,
     attributes: list[str] | None = None,
-    engine: GroundingEngine | None = None,
+    engine: GroundingEngineInput = None,
 ) -> GroundingReport:
     """Verify an Apple Metal Shading Language compute builtin against specifications.
 
@@ -453,7 +461,7 @@ def validate_metal_op(
         address_space: Optional expected address space.
         inputs_count: Optional number of passed arguments.
         attributes: Optional list of attributes.
-        engine: Optional `GroundingEngine` instance.
+        engine: Optional `GroundingEngine` or `ProvenSnapshot[EnvelopeAndHydratedPhase]`.
 
     Returns:
         `GroundingReport` containing diagnostic results.
@@ -468,7 +476,7 @@ def validate_wasm_op(
     mnemonic: str,
     operands_count: int | None = None,
     attributes: list[str] | None = None,
-    engine: GroundingEngine | None = None,
+    engine: GroundingEngineInput = None,
 ) -> GroundingReport:
     """Verify a W3C WebAssembly SIMD opcode mnemonic against standard specifications.
 
@@ -476,7 +484,7 @@ def validate_wasm_op(
         mnemonic: WASM opcode mnemonic.
         operands_count: Optional number of passed operands.
         attributes: Optional list of attributes.
-        engine: Optional `GroundingEngine` instance.
+        engine: Optional `GroundingEngine` or `ProvenSnapshot[EnvelopeAndHydratedPhase]`.
 
     Returns:
         `GroundingReport` containing diagnostic results.
@@ -497,7 +505,7 @@ def validate_webgl_op(
     op_name: str,
     inputs_count: int | None = None,
     attributes: list[str] | None = None,
-    engine: GroundingEngine | None = None,
+    engine: GroundingEngineInput = None,
 ) -> GroundingReport:
     """Verify a WebGL 2.0 / GLSL ES 3.00 shader builtin against standard specifications.
 
@@ -505,7 +513,7 @@ def validate_webgl_op(
         op_name: GLSL builtin function name.
         inputs_count: Optional number of passed arguments.
         attributes: Optional list of attributes.
-        engine: Optional `GroundingEngine` instance.
+        engine: Optional `GroundingEngine` or `ProvenSnapshot[EnvelopeAndHydratedPhase]`.
 
     Returns:
         `GroundingReport` containing diagnostic results.
@@ -519,7 +527,7 @@ def validate_domain_op(
     op_name: str,
     inputs_count: int | None = None,
     attributes: list[str] | None = None,
-    engine: GroundingEngine | None = None,
+    engine: GroundingEngineInput = None,
 ) -> GroundingReport:
     """Verify any registered domain operation (`cpp`, `array_api`, `scipy`, `torchvision`, etc.) via `GroundingEngine`.
 
@@ -528,7 +536,7 @@ def validate_domain_op(
         op_name: Operation name.
         inputs_count: Optional count of positional inputs.
         attributes: Optional list of attributes or keyword arguments.
-        engine: Optional `GroundingEngine` instance.
+        engine: Optional `GroundingEngine` or `ProvenSnapshot[EnvelopeAndHydratedPhase]`.
 
     Returns:
         `GroundingReport` containing diagnostic results.
@@ -546,15 +554,15 @@ class SimpleDomainValidateFn(typing.Protocol):
         op_name: str,
         inputs_count: int | None = None,
         attributes: list[str] | None = None,
-        engine: GroundingEngine | None = None,
+        engine: GroundingEngineInput = None,
     ) -> GroundingReport:
-        """Validate a domain operation against `GroundingEngine` or canonical specs.
+        """Validate a domain operation against `GroundingEngine`, `ProvenSnapshot`, or canonical specs.
 
         Args:
             op_name: Operation name.
             inputs_count: Optional count of positional inputs.
             attributes: Optional list of attributes or keyword arguments.
-            engine: Optional `GroundingEngine` instance.
+            engine: Optional `GroundingEngine` or `ProvenSnapshot[EnvelopeAndHydratedPhase]`.
 
         Returns:
             `GroundingReport` containing diagnostic results.
@@ -576,7 +584,7 @@ def _make_domain_validator(domain_key: str) -> SimpleDomainValidateFn:
         op_name: str,
         inputs_count: int | None = None,
         attributes: list[str] | None = None,
-        engine: GroundingEngine | None = None,
+        engine: GroundingEngineInput = None,
     ) -> GroundingReport:
         """Validate a domain operation via `validate_domain_op`.
 
@@ -584,7 +592,7 @@ def _make_domain_validator(domain_key: str) -> SimpleDomainValidateFn:
             op_name: Operation name.
             inputs_count: Optional count of positional inputs.
             attributes: Optional list of attributes or keyword arguments.
-            engine: Optional `GroundingEngine` instance.
+            engine: Optional `GroundingEngine` or `ProvenSnapshot[EnvelopeAndHydratedPhase]`.
 
         Returns:
             `GroundingReport` containing diagnostic results.

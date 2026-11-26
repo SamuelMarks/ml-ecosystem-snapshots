@@ -5,6 +5,7 @@ from __future__ import annotations
 from ml_switcheroo_ir.typeclasses.algebra import Ordering
 from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
 
+from ml_ecosystem_snapshots.errors import IdentifierValidationFault, format_snapshot_error
 from ml_ecosystem_snapshots.identifiers import (
     API_PATH_EQ,
     API_PATH_HASH,
@@ -16,17 +17,27 @@ from ml_ecosystem_snapshots.identifiers import (
     FRAMEWORK_ID_EQ,
     FRAMEWORK_ID_HASH,
     FRAMEWORK_ID_ORD,
+    NON_NEGATIVE_INT_EQ,
+    NON_NEGATIVE_INT_HASH,
+    NON_NEGATIVE_INT_ORD,
+    POSITIVE_INT_EQ,
+    POSITIVE_INT_HASH,
+    POSITIVE_INT_ORD,
     SHA256_HEX_EQ,
     SHA256_HEX_HASH,
     SHA256_HEX_ORD,
     SNAPSHOT_VERSION_EQ,
     SNAPSHOT_VERSION_HASH,
     SNAPSHOT_VERSION_ORD,
+    SYMBOL_PATH_EQ,
+    SYMBOL_PATH_HASH,
+    SYMBOL_PATH_ORD,
     ApiPath,
     CategoryName,
     FrameworkId,
     Sha256Hex,
     SnapshotVersion,
+    SymbolPath,
     compute_sha256_hex,
     is_non_bool_int,
     parse_api_path,
@@ -38,6 +49,7 @@ from ml_ecosystem_snapshots.identifiers import (
     parse_positive_int,
     parse_sha256_hex,
     parse_snapshot_version,
+    parse_symbol_path,
 )
 
 
@@ -46,27 +58,38 @@ def test_parse_framework_id_ok_and_err() -> None:
     ok_res = parse_framework_id("  ML-Switcheroo-IR  ")
     assert ok_res == Ok(FrameworkId("ml_switcheroo_ir"))
 
-    assert isinstance(parse_framework_id("   "), Err)
+    empty_res = parse_framework_id("   ")
+    assert isinstance(empty_res, Err)
+    assert isinstance(empty_res.error, IdentifierValidationFault)
+
     invalid_res = parse_framework_id("torch/vision!")
     assert isinstance(invalid_res, Err)
-    assert "Invalid FrameworkId" in invalid_res.error
+    assert invalid_res.error.field == "FrameworkId"
+    assert "Invalid FrameworkId" in format_snapshot_error(invalid_res.error)
 
 
 def test_parse_snapshot_version_ok_and_err() -> None:
     """Verify parse_snapshot_version trims valid tags and rejects empty or path-traversal strings."""
-    assert parse_snapshot_version("  0.0.8+cu121 ") == Ok(SnapshotVersion("0.0.8+cu121"))
+    assert parse_snapshot_version("  0.0.9+cu121 ") == Ok(SnapshotVersion("0.0.9+cu121"))
     assert isinstance(parse_snapshot_version(""), Err)
     assert isinstance(parse_snapshot_version("../1.0.0"), Err)
     assert isinstance(parse_snapshot_version(f"1.0.0{chr(92)}evil"), Err)
 
 
-def test_parse_api_path_and_category_name() -> None:
-    """Verify parse_api_path and parse_category_name smart constructors."""
+def test_parse_api_path_symbol_path_and_category_name() -> None:
+    """Verify parse_api_path, parse_symbol_path, and parse_category_name smart constructors."""
     assert parse_api_path("  torch.nn.functional.relu ") == Ok(ApiPath("torch.nn.functional.relu"))
     assert isinstance(parse_api_path("   "), Err)
+    assert isinstance(parse_api_path("torch.nn relu"), Err)
+
+    assert parse_symbol_path("  torch.nn.Linear ") == Ok(SymbolPath("torch.nn.Linear"))
+    assert isinstance(parse_symbol_path("  "), Err)
+    assert isinstance(parse_symbol_path("123.invalid"), Err)
+    assert isinstance(parse_symbol_path("torch..Linear"), Err)
 
     assert parse_category_name(" neural ") == Ok(CategoryName("neural"))
     assert isinstance(parse_category_name(""), Err)
+    assert isinstance(parse_category_name("bad/category!"), Err)
 
 
 def test_parse_and_compute_sha256_hex() -> None:
@@ -82,11 +105,23 @@ def test_parse_and_compute_sha256_hex() -> None:
 
 
 def test_upstream_reexported_identifiers() -> None:
-    """Verify upstream ml_switcheroo_ir identifier re-exports operate cleanly."""
+    """Verify upstream ml_switcheroo_ir identifier re-exports and numeric witnesses."""
     assert is_non_bool_int(3) is True
     assert is_non_bool_int(True) is False
-    assert isinstance(parse_non_negative_int(0), Ok)
-    assert isinstance(parse_positive_int(1), Ok)
+    nn0 = parse_non_negative_int(0)
+    nn2 = parse_non_negative_int(2)
+    assert isinstance(nn0, Ok) and isinstance(nn2, Ok)
+    assert NON_NEGATIVE_INT_EQ.eq(nn0.value, nn0.value)
+    assert NON_NEGATIVE_INT_ORD.lt(nn0.value, nn2.value)
+    assert NON_NEGATIVE_INT_HASH.hash_value(nn2.value) == NON_NEGATIVE_INT_HASH.hash_value(nn2.value)
+
+    p1 = parse_positive_int(1)
+    p3 = parse_positive_int(3)
+    assert isinstance(p1, Ok) and isinstance(p3, Ok)
+    assert POSITIVE_INT_EQ.eq(p1.value, p1.value)
+    assert POSITIVE_INT_ORD.lt(p1.value, p3.value)
+    assert POSITIVE_INT_HASH.hash_value(p1.value) == POSITIVE_INT_HASH.hash_value(p1.value)
+
     assert isinstance(parse_dialect_domain("stablehlo"), Ok)
     assert isinstance(parse_op_name("add"), Ok)
 
@@ -103,21 +138,26 @@ def test_identifier_eq_ord_and_hash_laws() -> None:
     assert FRAMEWORK_ID_ORD.compare(fw_a, fw_c) == Ordering.LT
     assert FRAMEWORK_ID_HASH.hash_value(fw_a) == FRAMEWORK_ID_HASH.hash_value(FrameworkId("aten"))
 
-    ver_a = SnapshotVersion("0.0.7")
-    ver_b = SnapshotVersion("0.0.8")
-    assert SNAPSHOT_VERSION_EQ.eq(ver_a, SnapshotVersion("0.0.7"))
+    ver_a = SnapshotVersion("0.0.8")
+    ver_b = SnapshotVersion("0.0.9")
+    assert SNAPSHOT_VERSION_EQ.eq(ver_a, SnapshotVersion("0.0.8"))
     assert SNAPSHOT_VERSION_ORD.lt(ver_a, ver_b)
-    assert SNAPSHOT_VERSION_HASH.hash_value(ver_a) == SNAPSHOT_VERSION_HASH.hash_value(SnapshotVersion("0.0.7"))
+    assert SNAPSHOT_VERSION_HASH.hash_value(ver_a) == SNAPSHOT_VERSION_HASH.hash_value(SnapshotVersion("0.0.8"))
 
     path_short = ApiPath("torch.add")
     path_long = ApiPath("torch._VF.add")
     path_mid = ApiPath("torch.abs")
     assert API_PATH_EQ.eq(path_short, ApiPath("torch.add"))
     assert API_PATH_ORD.gt(path_short, path_long)
-    # Under length-then-lexicographic order, shorter canonical path wins!
     assert API_PATH_LEN_LEX_ORD.lt(path_short, path_long)
     assert API_PATH_LEN_LEX_ORD.gt(path_short, path_mid)
     assert API_PATH_HASH.hash_value(path_short) == API_PATH_HASH.hash_value(ApiPath("torch.add"))
+
+    sym_a = SymbolPath("jax.lax.add")
+    sym_b = SymbolPath("torch.nn.Linear")
+    assert SYMBOL_PATH_EQ.eq(sym_a, SymbolPath("jax.lax.add"))
+    assert SYMBOL_PATH_ORD.lt(sym_a, sym_b)
+    assert SYMBOL_PATH_HASH.hash_value(sym_a) == SYMBOL_PATH_HASH.hash_value(SymbolPath("jax.lax.add"))
 
     cat_a = CategoryName("array")
     cat_b = CategoryName("neural")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -336,3 +337,39 @@ def test_scrape_sass_missing_input_raises_value_error(monkeypatch: pytest.Monkey
     monkeypatch.delenv("NVIDIA_SASS_INPUT_PATH", raising=False)
     with pytest.raises(ValueError, match="input_path"):
         scrape_nvidia_sass.scrape_sass(input_path=None)
+
+
+def test_scrape_nvidia_sass_main_entrypoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test running `scrape_nvidia_sass` as `__main__` writes the exhaustive catalog JSON.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    import importlib.util
+    import runpy
+    import sys
+
+    input_file = tmp_path / "sass_input.txt"
+    input_file.write_text("/*0000*/ FADD R0, R1, R2;\n", encoding="utf-8")
+    output_file = tmp_path / "sass_out.json"
+
+    spec = importlib.util.find_spec("ml_ecosystem_snapshots.tools.scrape_nvidia_sass")
+    assert spec is not None and spec.origin is not None
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "scrape_nvidia_sass",
+            "--input-path",
+            str(input_file),
+            "--output-path",
+            str(output_file),
+        ],
+    )
+    ns = runpy.run_path(spec.origin, run_name="__main__")
+    assert "main" in ns
+    assert output_file.is_file()

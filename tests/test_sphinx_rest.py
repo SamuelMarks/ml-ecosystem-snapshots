@@ -268,7 +268,7 @@ def test_ghost_inspector_merge_branches(mocker: pytest_mock.MockerFixture) -> No
     assert "ValueError" in (ref.raises or [])
     assert not ref.has_arg("ValueError")
 
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
     # Test hydrate with and without schema_version
     hydrated_with = raise_on_err(

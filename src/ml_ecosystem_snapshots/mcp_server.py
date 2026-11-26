@@ -192,3 +192,6 @@ __all__ = [
     "search_apis",
     "translate_concept_arguments",
 ]
+
+if __name__ == "__main__":
+    run_mcp_server()

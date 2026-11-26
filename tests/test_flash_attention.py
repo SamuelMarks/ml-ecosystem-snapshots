@@ -98,7 +98,7 @@ def test_collect_api_inspection_exception_handled(monkeypatch: pytest.MonkeyPatc
 
 def test_extract_snapshot_flash_attention() -> None:
     """Verify full snapshot extraction for flash_attention target."""
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
     snap = raise_on_err(extract_snapshot("flash_attention")).to_wire_dict()
     assert snap.get("target") == "flash_attention"

@@ -152,7 +152,7 @@ def test_introspection_and_serialization_subpackages() -> None:
     preload_griffe_cache(frameworks=[])
     assert GhostInspector is not None
 
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
     raw: dict[str, JsonValue] = {
         "name": "op",

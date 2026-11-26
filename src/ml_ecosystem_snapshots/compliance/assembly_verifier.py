@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 import typing
 
+from ml_switcheroo_ir.typeclasses.algebra import Monoid
+
 from ml_ecosystem_snapshots.compliance.models import SnippetComplianceReport
 from ml_ecosystem_snapshots.grounding.compiler import verify_mlir_op
 from ml_ecosystem_snapshots.grounding.domain_ops import check_domain_op
@@ -14,7 +16,18 @@ from ml_ecosystem_snapshots.grounding.hardware import (
 )
 from ml_ecosystem_snapshots.models import JsonValue
 from ml_ecosystem_snapshots.serialization.repository import load_or_extract_snapshot
-from ml_ecosystem_snapshots.typeclasses import SNIPPET_REPORT_MONOID
+
+
+def _snippet_monoid() -> Monoid[SnippetComplianceReport]:
+    """Return the canonical `SNIPPET_REPORT_MONOID` instance lazily to avoid import cycles.
+
+    Returns:
+        `Monoid[SnippetComplianceReport]` witness.
+    """
+    from ml_ecosystem_snapshots.typeclasses import SNIPPET_REPORT_MONOID
+
+    return SNIPPET_REPORT_MONOID
+
 
 _MLIR_OP_RE: typing.Final[re.Pattern[str]] = re.compile(
     r"(?:%\w+\s*=\s*)?([a-zA-Z0-9_]+\.[a-zA-Z0-9_]+)\s*(?:\(([^)]*)\))?"
@@ -59,15 +72,15 @@ def _check_mlir_line(line: str) -> SnippetComplianceReport:
     """
     cleaned = line.strip()
     if not cleaned or cleaned.startswith("//"):
-        return SNIPPET_REPORT_MONOID.empty()
+        return _snippet_monoid().empty()
 
     match = _MLIR_OP_RE.search(cleaned)
     if not match:
-        return SNIPPET_REPORT_MONOID.empty()
+        return _snippet_monoid().empty()
 
     op_name = match.group(1)
     if op_name in ("builtin.module", "func.func"):
-        return SNIPPET_REPORT_MONOID.empty()
+        return _snippet_monoid().empty()
 
     args_str = match.group(2)
     operands_count = len([a for a in args_str.split(",") if a.strip()]) if args_str is not None else None
@@ -100,7 +113,7 @@ def check_mlir_text_compliance(mlir_text: str) -> SnippetComplianceReport:
     Returns:
         Monoid-aggregated `SnippetComplianceReport`.
     """
-    return SNIPPET_REPORT_MONOID.mconcat(_check_mlir_line(line) for line in mlir_text.splitlines())
+    return _snippet_monoid().mconcat(_check_mlir_line(line) for line in mlir_text.splitlines())
 
 
 def _check_wgsl_line(line: str) -> SnippetComplianceReport:
@@ -114,7 +127,7 @@ def _check_wgsl_line(line: str) -> SnippetComplianceReport:
     """
     cleaned = line.strip()
     if not cleaned or cleaned.startswith("//"):
-        return SNIPPET_REPORT_MONOID.empty()
+        return _snippet_monoid().empty()
 
     line_reports: list[SnippetComplianceReport] = []
     for match in _WGSL_CALL_RE.finditer(cleaned):
@@ -136,7 +149,7 @@ def _check_wgsl_line(line: str) -> SnippetComplianceReport:
                         errors=res.errors,
                     )
                 )
-    return SNIPPET_REPORT_MONOID.mconcat(line_reports)
+    return _snippet_monoid().mconcat(line_reports)
 
 
 def check_wgsl_shader_compliance(shader_text: str) -> SnippetComplianceReport:
@@ -148,7 +161,7 @@ def check_wgsl_shader_compliance(shader_text: str) -> SnippetComplianceReport:
     Returns:
         Monoid-aggregated `SnippetComplianceReport`.
     """
-    return SNIPPET_REPORT_MONOID.mconcat(_check_wgsl_line(line) for line in shader_text.splitlines())
+    return _snippet_monoid().mconcat(_check_wgsl_line(line) for line in shader_text.splitlines())
 
 
 def _check_sass_line(
@@ -168,11 +181,11 @@ def _check_sass_line(
     """
     cleaned = re.sub(r"/\*.*?\*/", "", line).strip()
     if not cleaned or cleaned.startswith("//") or cleaned.startswith("#"):
-        return SNIPPET_REPORT_MONOID.empty()
+        return _snippet_monoid().empty()
 
     matched = _SASS_LINE_RE.match(cleaned)
     if not matched:
-        return SNIPPET_REPORT_MONOID.empty()
+        return _snippet_monoid().empty()
 
     base_mnemonic = matched.group(1)
     mods_raw = matched.group(2)
@@ -212,7 +225,7 @@ def check_sass_assembly_compliance(assembly_text: str, sm_arch: str | None = Non
         Monoid-aggregated `SnippetComplianceReport`.
     """
     snap = load_or_extract_snapshot("nvidia_sass")
-    return SNIPPET_REPORT_MONOID.mconcat(_check_sass_line(line, snap, sm_arch) for line in assembly_text.splitlines())
+    return _snippet_monoid().mconcat(_check_sass_line(line, snap, sm_arch) for line in assembly_text.splitlines())
 
 
 def _check_rdna_line(
@@ -232,11 +245,11 @@ def _check_rdna_line(
     """
     cleaned = re.sub(r"//.*", "", line).strip()
     if not cleaned or cleaned.startswith(";") or cleaned.startswith("#"):
-        return SNIPPET_REPORT_MONOID.empty()
+        return _snippet_monoid().empty()
 
     matched = _RDNA_LINE_RE.match(cleaned)
     if not matched:
-        return SNIPPET_REPORT_MONOID.empty()
+        return _snippet_monoid().empty()
 
     mnemonic = matched.group(1)
     operands_raw = matched.group(2)
@@ -268,7 +281,7 @@ def check_rdna_assembly_compliance(assembly_text: str, gfx_arch: str | None = No
         Monoid-aggregated `SnippetComplianceReport`.
     """
     snap = load_or_extract_snapshot("amd_rdna")
-    return SNIPPET_REPORT_MONOID.mconcat(_check_rdna_line(line, snap, gfx_arch) for line in assembly_text.splitlines())
+    return _snippet_monoid().mconcat(_check_rdna_line(line, snap, gfx_arch) for line in assembly_text.splitlines())
 
 
 __all__ = [

@@ -19,15 +19,23 @@ from ml_switcheroo_ir.schema.ghost import (
     GhostRef,
     SemanticTier,
 )
+from ml_switcheroo_ir.typeclasses.algebra import NonEmpty
 from ml_switcheroo_ir.typeclasses.outcome import (
     Err,
     Invalid,
+    Ok,
     Result,
-    Valid,
     Validation,
+    from_error_sequence,
 )
 
-from ml_ecosystem_snapshots.exceptions import SnapshotError, SnapshotNotFoundError
+from ml_ecosystem_snapshots.errors import (
+    IntrospectionFault,
+    SnapshotDomainError,
+    SnapshotEnvelopeFault,
+    SnapshotNotFoundFault,
+)
+from ml_ecosystem_snapshots.exceptions import SnapshotError
 from ml_ecosystem_snapshots.models import (
     SCHEMA_VERSION,
     JsonValue,
@@ -236,7 +244,7 @@ def _collect_framework_categories(
 def extract_snapshot(
     framework_name: str,
     include_nonpublic: bool = False,
-) -> Result[SnapshotError, ProvenSnapshot[EnvelopeValidPhase]]:
+) -> Result[SnapshotDomainError, ProvenSnapshot[EnvelopeValidPhase]]:
     """Extract and prove an envelope-valid snapshot for `framework_name` totally into `Result`.
 
     Args:
@@ -244,19 +252,25 @@ def extract_snapshot(
         include_nonpublic: Whether to include non-public APIs.
 
     Returns:
-        `Ok(ProvenSnapshot[EnvelopeValidPhase])` on success, `Err(SnapshotNotFoundError)`
-        if unknown or uninstalled, or `Err(SnapshotError)` if empty or schema-invalid.
+        `Ok(ProvenSnapshot[EnvelopeValidPhase])` on success, `Err(SnapshotNotFoundFault)`
+        if unknown or uninstalled, or `Err(SnapshotDomainError)` if empty or schema-invalid.
     """
     if framework_name not in FRAMEWORK_COLLECTORS:
-        return Err(SnapshotNotFoundError(f"Unknown framework collector: {framework_name!r}."))
+        return Err(SnapshotNotFoundFault(target=framework_name, version=None, searched_paths=()))
 
     version = get_pkg_version(framework_name)
     if version == "unknown":
-        return Err(SnapshotNotFoundError(f"Framework {framework_name!r} is not installed (version='unknown')."))
+        return Err(SnapshotNotFoundFault(target=framework_name, version="unknown", searched_paths=()))
 
     categories_map = _collect_framework_categories(framework_name, include_nonpublic)
     if not categories_map:
-        return Err(SnapshotError(f"No API symbols collected for framework {framework_name!r}."))
+        return Err(
+            IntrospectionFault(
+                module_path=framework_name,
+                symbol_name=None,
+                reason=f"No API symbols collected for framework {framework_name!r}.",
+            )
+        )
 
     raw_envelope: dict[str, JsonValue] = {
         "schema_version": SCHEMA_VERSION,
@@ -269,14 +283,17 @@ def extract_snapshot(
             raw_envelope[k] = list(v) if isinstance(v, list) else v
     raw_envelope["categories"] = {cat_name: list(cat_items) for cat_name, cat_items in categories_map.items()}
     validated_envelope = SnapshotEnvelope.model_validate(raw_envelope)
-    return prove_envelope_valid(validated_envelope)
+    proven_val = prove_envelope_valid(validated_envelope)
+    if isinstance(proven_val, Invalid):
+        return Err(proven_val.errors.head)
+    return Ok(proven_val.value)
 
 
 def extract_snapshot_isolated(
     framework: str,
     include_nonpublic: bool = False,
     timeout: int = 300,
-) -> Result[SnapshotError, ProvenSnapshot[EnvelopeValidPhase]]:
+) -> Result[SnapshotDomainError, ProvenSnapshot[EnvelopeValidPhase]]:
     """Extract a framework snapshot in an isolated child subprocess totally into `Result`.
 
     Args:
@@ -285,7 +302,7 @@ def extract_snapshot_isolated(
         timeout: Subprocess timeout in seconds.
 
     Returns:
-        `Ok(ProvenSnapshot[EnvelopeValidPhase])` on success, else `Err(SnapshotError)`.
+        `Ok(ProvenSnapshot[EnvelopeValidPhase])` on success, else `Err(SnapshotDomainError)`.
     """
     env = os.environ.copy()
     existing_pypath = env.get("PYTHONPATH", "")
@@ -314,17 +331,30 @@ def extract_snapshot_isolated(
         )
         if proc.returncode != 0 or not proc.stdout.strip():
             return Err(
-                SnapshotError(f"Isolated extraction returned empty/non-zero for {framework!r} (rc={proc.returncode}).")
+                IntrospectionFault(
+                    module_path=framework,
+                    symbol_name=None,
+                    reason=f"Isolated extraction returned empty/non-zero for {framework!r} (rc={proc.returncode}).",
+                )
             )
         parsed_res = ensure_json_dict(json.loads(proc.stdout), "isolated snapshot")
         if isinstance(parsed_res, Err):
             return parsed_res
         if not parsed_res.value:
-            return Err(SnapshotError(f"Isolated extraction returned empty dict for {framework!r}."))
-        return prove_envelope_valid(parsed_res.value)
+            return Err(SnapshotEnvelopeFault(reason=f"Isolated extraction returned empty dict for {framework!r}."))
+        proven_val = prove_envelope_valid(parsed_res.value)
+        if isinstance(proven_val, Invalid):
+            return Err(proven_val.errors.head)
+        return Ok(proven_val.value)
     except (OSError, subprocess.SubprocessError, ValueError, TypeError, SnapshotError) as exc:
         _LOGGER.warning("Subprocess extraction failed for %s: %s", framework, exc)
-        return Err(SnapshotError(f"Subprocess extraction failed for {framework!r}: {exc}"))
+        return Err(
+            IntrospectionFault(
+                module_path=framework,
+                symbol_name=None,
+                reason=f"Subprocess extraction failed for {framework!r}: {exc}",
+            )
+        )
 
 
 def extract_all_snapshots(
@@ -333,11 +363,11 @@ def extract_all_snapshots(
     output_dir: str | None = None,
     frameworks: typing.Sequence[str] | None = None,
     compress: str | CompressionFormat | None = None,
-) -> Validation[tuple[SnapshotError, ...], dict[str, ProvenSnapshot[EnvelopeValidPhase]]]:
-    """Extract snapshots across frameworks, accumulating errors via `Validation`.
+) -> Validation[NonEmpty[SnapshotDomainError], dict[str, ProvenSnapshot[EnvelopeValidPhase]]]:
+    """Extract snapshots across frameworks, accumulating errors into `NonEmpty`.
 
     When `frameworks` is explicitly provided, every extraction or write failure is
-    accumulated into `Invalid(tuple[SnapshotError, ...])`. When `frameworks` is
+    accumulated into `Invalid(NonEmpty[SnapshotDomainError])`. When `frameworks` is
     `None`, uninstalled optional frameworks are skipped while any `output_dir` write
     failure is accumulated into `Invalid`.
 
@@ -349,12 +379,13 @@ def extract_all_snapshots(
         compress: Optional compression format when `output_dir` is set.
 
     Returns:
-        `Valid(dict[framework, ProvenSnapshot[EnvelopeValidPhase]])` or `Invalid(errors)`.
+        `Valid(dict[framework, ProvenSnapshot[EnvelopeValidPhase]])` or
+        `Invalid(NonEmpty[SnapshotDomainError])`.
     """
     strict_targets = frameworks is not None
     targets = tuple(frameworks) if frameworks is not None else tuple(FRAMEWORK_COLLECTORS.keys())
     results: dict[str, ProvenSnapshot[EnvelopeValidPhase]] = {}
-    errors: list[SnapshotError] = []
+    errors: list[SnapshotDomainError] = []
 
     for fw in targets:
         res = (
@@ -376,9 +407,7 @@ def extract_all_snapshots(
             else:
                 results[fw] = proven
 
-    if errors:
-        return Invalid(tuple(errors))
-    return Valid(results)
+    return from_error_sequence(errors, results)
 
 
 __all__ = [

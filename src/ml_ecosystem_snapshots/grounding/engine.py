@@ -5,9 +5,24 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import typing
 
-from ml_switcheroo_ir.typeclasses.outcome import Ok
+import typing_extensions
+from ml_switcheroo_ir.graph import LogicalGraph, LogicalNode
+from ml_switcheroo_ir.proofs import AcyclicSortedPhase, GroundedPhase, ProvenGraph
+from ml_switcheroo_ir.typeclasses.algebra import NonEmpty
+from ml_switcheroo_ir.typeclasses.outcome import (
+    Ok,
+    Validation,
+    from_error_sequence,
+)
+from ml_switcheroo_ir.types import TensorSpec
 from ml_switcheroo_ir.validation.core import compute_levenshtein
+from ml_switcheroo_ir.validation.grounding import (
+    DiagnosticSeverity,
+    GroundingDiagnostic,
+    GroundingReport,
+)
 
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.models import (
@@ -16,9 +31,16 @@ from ml_ecosystem_snapshots.models import (
     SnapshotEnvelope,
 )
 from ml_ecosystem_snapshots.network_env import load_json_data
+from ml_ecosystem_snapshots.proofs import EnvelopeAndHydratedPhase, ProvenSnapshot
 from ml_ecosystem_snapshots.serialization.repository import SnapshotRepository
 
 _LOGGER = logging.getLogger(__name__)
+
+GroundingEngineInput: typing_extensions.TypeAlias = "GroundingEngine | ProvenSnapshot[EnvelopeAndHydratedPhase] | None"
+
+_SYNTHETIC_GRAPH_OPS: typing.Final[frozenset[str]] = frozenset(
+    {"Input", "Output", "Placeholder", "Constant", "Parameter"}
+)
 
 
 def _extract_raw_items(
@@ -83,6 +105,7 @@ class GroundingEngine:
         self._lock = threading.RLock()
         self._target_cache: dict[str, dict[str, ExtendedGhostRef]] = {}
         self._short_name_cache: dict[str, dict[str, ExtendedGhostRef]] = {}
+        self._proven_targets: set[str] = set()
 
     @property
     def snapshots_dir(self) -> str | None:
@@ -92,6 +115,71 @@ class GroundingEngine:
             Custom snapshots directory path or `None`.
         """
         return self._snapshots_dir
+
+    def has_proven_target(self, target: str) -> bool:
+        """Return `True` when `target` was registered from a `ProvenSnapshot`.
+
+        Args:
+            target: Framework, dialect, or ISA identifier.
+
+        Returns:
+            `True` if `register_proven_snapshot` populated `target`.
+        """
+        norm_target = target.lower().replace("-", "_")
+        with self._lock:
+            return norm_target in self._proven_targets
+
+    def register_proven_snapshot(
+        self,
+        snapshot: ProvenSnapshot[EnvelopeAndHydratedPhase],
+    ) -> dict[str, ExtendedGhostRef]:
+        """Index a hydrated `ProvenSnapshot` into memory without disk I/O or re-hydration.
+
+        Args:
+            snapshot: `ProvenSnapshot[EnvelopeAndHydratedPhase]` (or covariant subtype).
+
+        Returns:
+            Populated symbol lookup dictionary for `snapshot.target`.
+        """
+        norm_target = str(snapshot.target).lower().replace("-", "_")
+        with self._lock:
+            index_map: dict[str, ExtendedGhostRef] = {}
+            short_map: dict[str, ExtendedGhostRef] = {}
+            for ref in snapshot.all_refs():
+                if ref.api_path:
+                    index_map[ref.api_path] = ref
+                if ref.name:
+                    short_map.setdefault(ref.name.lower(), ref)
+                    if not ref.api_path:
+                        index_map[ref.name] = ref
+                mnemonic: JsonValue = (ref.model_extra or {}).get("mnemonic")
+                if mnemonic:
+                    index_map[str(mnemonic)] = ref
+                    short_map.setdefault(str(mnemonic).lower(), ref)
+                for alias in ref.aliases or ():
+                    index_map[alias] = ref
+                    short_map.setdefault(alias.split(".")[-1].lower(), ref)
+            self._target_cache[norm_target] = index_map
+            self._short_name_cache[norm_target] = short_map
+            self._proven_targets.add(norm_target)
+            return index_map
+
+    @classmethod
+    def from_proven_snapshot(
+        cls,
+        snapshot: ProvenSnapshot[EnvelopeAndHydratedPhase],
+    ) -> GroundingEngine:
+        """Construct an in-memory `GroundingEngine` pre-populated from `snapshot`.
+
+        Args:
+            snapshot: `ProvenSnapshot[EnvelopeAndHydratedPhase]` (or covariant subtype).
+
+        Returns:
+            Ready-to-query `GroundingEngine` instance.
+        """
+        eng = cls()
+        eng.register_proven_snapshot(snapshot)
+        return eng
 
     def get_loaded_targets(self) -> list[str]:
         """Retrieve the names of all currently loaded targets.
@@ -343,7 +431,218 @@ class GroundingEngine:
         return [m[1] for m in matches[:top_k]]
 
 
+def coerce_grounding_engine(engine: GroundingEngineInput) -> GroundingEngine:
+    """Normalize a `GroundingEngineInput` into a concrete `GroundingEngine`.
+
+    Args:
+        engine: `GroundingEngine`, `ProvenSnapshot[EnvelopeAndHydratedPhase]`, or `None`.
+
+    Returns:
+        Concrete `GroundingEngine` instance.
+    """
+    if isinstance(engine, GroundingEngine):
+        return engine
+    if isinstance(engine, ProvenSnapshot):
+        return GroundingEngine.from_proven_snapshot(engine)
+    return GroundingEngine()
+
+
+def _collect_graph_value_specs(graph: LogicalGraph) -> dict[str, TensorSpec]:
+    """Build a mapping from value/node identifiers to known `TensorSpec`s in `graph`.
+
+    Args:
+        graph: `LogicalGraph` under grounding inspection.
+
+    Returns:
+        Dictionary mapping SSA value or node IDs to `TensorSpec`.
+    """
+    specs: dict[str, TensorSpec] = dict(graph.input_specs)
+    for nid, node in graph.nodes.items():
+        if node.output_specs:
+            specs.setdefault(nid, node.output_specs[0])
+            for idx, out_name in enumerate(node.outputs):
+                if idx < len(node.output_specs):
+                    specs[out_name] = node.output_specs[idx]
+    return specs
+
+
+def _ground_single_node(
+    node: LogicalNode,
+    graph: LogicalGraph,
+    value_specs: typing.Mapping[str, TensorSpec],
+    target_fw: str,
+    eng: GroundingEngine,
+) -> list[GroundingDiagnostic]:
+    """Validate a single `LogicalNode` against `eng` and return any `ERROR` diagnostics.
+
+    Args:
+        node: `LogicalNode` to verify.
+        graph: Enclosing `LogicalGraph`.
+        value_specs: Known `TensorSpec` map for `graph`.
+        target_fw: Normalized target framework/dialect identifier.
+        eng: Pre-populated `GroundingEngine`.
+
+    Returns:
+        List of `GroundingDiagnostic` entries with `severity == DiagnosticSeverity.ERROR`.
+    """
+    from ml_ecosystem_snapshots.grounding.compiler import validate_mlir_op, validate_stablehlo_op
+    from ml_ecosystem_snapshots.grounding.domain_ops import DOMAIN_OP_CONFIGS, validate_domain_op
+    from ml_ecosystem_snapshots.grounding.dtypes import (
+        coerce_ir_attribute_to_json,
+        extract_tensor_spec_metadata,
+    )
+    from ml_ecosystem_snapshots.grounding.python_fw import validate_python_call
+
+    if node.op_type in _SYNTHETIC_GRAPH_OPS and eng.get_symbol(target_fw, node.op_type) is None:
+        return []
+
+    incoming_sources: list[str] = list(node.inputs)
+    operand_count = len(incoming_sources)
+
+    arg_dtypes: list[str] = []
+    arg_ranks: list[int | str] = []
+    arg_shapes: list[typing.Sequence[int | str]] = []
+    ssa_operand_types: list[str] = []
+    has_all_specs = bool(incoming_sources)
+    for src_key in incoming_sources:
+        spec = value_specs.get(src_key)
+        if spec is None:
+            has_all_specs = False
+            ssa_operand_types.append("tensor<*xf32>")
+        else:
+            dt_name, rk_val, sh_tup = extract_tensor_spec_metadata(spec)
+            arg_dtypes.append(dt_name)
+            arg_ranks.append(rk_val)
+            arg_shapes.append(sh_tup)
+            dim_tokens = ["?" if not isinstance(d, int) or d < 0 else str(d) for d in sh_tup]
+            ssa_prefix = "x".join(dim_tokens) + "x" if dim_tokens else ""
+            ssa_operand_types.append(f"tensor<{ssa_prefix}{dt_name}>")
+
+    json_attrs: dict[str, JsonValue] = {str(k): coerce_ir_attribute_to_json(v) for k, v in node.attributes.items()}
+
+    domain_alias_map = {
+        "wasm_simd": "wasm",
+        "cpp_runtime": "cpp",
+        "flash_attn": "flash_attention",
+    }
+    mapped_dom = domain_alias_map.get(target_fw, target_fw)
+
+    report: GroundingReport
+    if target_fw == "stablehlo":
+        report = validate_stablehlo_op(
+            op_name=node.op_type,
+            operand_types=ssa_operand_types,
+            attributes=json_attrs,
+            engine=eng,
+        )
+    elif target_fw == "mlir":
+        dialect_part = (
+            node.op_type.split(".")[0]
+            if "." in node.op_type
+            else (node.domain if node.domain and node.domain != "ai.onnx" else "builtin")
+        )
+        report = validate_mlir_op(
+            dialect=dialect_part,
+            op_name=node.op_type,
+            operand_count=operand_count,
+            attributes=json_attrs,
+            engine=eng,
+            operand_types=ssa_operand_types if incoming_sources else None,
+        )
+    elif mapped_dom in DOMAIN_OP_CONFIGS:
+        report = validate_domain_op(
+            mapped_dom,
+            node.op_type,
+            inputs_count=operand_count if incoming_sources else None,
+            attributes=list(json_attrs.keys()) if json_attrs else None,
+            engine=eng,
+        )
+    else:
+        call_sym = (
+            node.op_type
+            if "." in node.op_type or eng.get_symbol(target_fw, node.op_type) is not None
+            else f"{target_fw}.{node.op_type}"
+        )
+        pos_placeholders: list[JsonValue] = [None] * operand_count
+        report = validate_python_call(
+            framework=target_fw,
+            api_path=call_sym,
+            args=pos_placeholders,
+            kwargs=json_attrs,
+            engine=eng,
+            arg_dtypes=arg_dtypes if has_all_specs and arg_dtypes else None,
+            arg_ranks=arg_ranks if has_all_specs and arg_ranks else None,
+            arg_shapes=arg_shapes if has_all_specs and arg_shapes else None,
+        )
+
+    out_diags: list[GroundingDiagnostic] = []
+    for diag in report.diagnostics:
+        if isinstance(diag, GroundingDiagnostic) and diag.severity == DiagnosticSeverity.ERROR:
+            out_diags.append(diag.model_copy(update={"node_id": node.id}))
+    return out_diags
+
+
+def _collect_subgraph_diagnostics(
+    graph: LogicalGraph,
+    ordered_ids: typing.Sequence[str],
+    target_fw: str,
+    eng: GroundingEngine,
+) -> list[GroundingDiagnostic]:
+    """Recursively ground `graph` nodes in `ordered_ids` order plus nested subgraphs.
+
+    Args:
+        graph: `LogicalGraph` to verify.
+        ordered_ids: Deterministic node ID order for `graph`.
+        target_fw: Normalized target framework/dialect identifier.
+        eng: Pre-populated `GroundingEngine`.
+
+    Returns:
+        Accumulated `ERROR`-severity `GroundingDiagnostic` list.
+    """
+    diags: list[GroundingDiagnostic] = []
+    value_specs = _collect_graph_value_specs(graph)
+    for nid in ordered_ids:
+        node = graph.nodes[nid]
+        diags.extend(_ground_single_node(node, graph, value_specs, target_fw, eng))
+        for _sub_key, sub_graph in sorted(node.subgraphs.items(), key=lambda kv: kv[0]):
+            if isinstance(sub_graph, LogicalGraph):
+                sub_ids = (
+                    [n.id for n in sub_graph.sorted_nodes] if sub_graph.sorted_nodes else list(sub_graph.nodes.keys())
+                )
+                diags.extend(_collect_subgraph_diagnostics(sub_graph, sub_ids, target_fw, eng))
+    return diags
+
+
+def ground_proven_graph(
+    proven_graph: ProvenGraph[AcyclicSortedPhase],
+    snapshot: ProvenSnapshot[EnvelopeAndHydratedPhase],
+) -> Validation[NonEmpty[GroundingDiagnostic], ProvenGraph[GroundedPhase]]:
+    """Ground every operation in `proven_graph` against `snapshot`, accumulating all diagnostics.
+
+    Args:
+        proven_graph: Acyclic topologically sorted `ProvenGraph[AcyclicSortedPhase]` (or covariant subtype).
+        snapshot: Hydrated `ProvenSnapshot[EnvelopeAndHydratedPhase]` (or covariant subtype).
+
+    Returns:
+        `Valid(ProvenGraph[GroundedPhase])` when all operations are grounded, or
+        `Invalid(NonEmpty[GroundingDiagnostic])` accumulating every error diagnostic.
+    """
+    eng = GroundingEngine.from_proven_snapshot(snapshot)
+    target_fw = str(snapshot.target).lower().replace("-", "_")
+    thawed = proven_graph.thaw()
+    ordered_ids = [str(nid) for nid in proven_graph.ordered_node_ids]
+    error_diags = _collect_subgraph_diagnostics(thawed, ordered_ids, target_fw, eng)
+    grounded_witness: ProvenGraph[GroundedPhase] = ProvenGraph(
+        frozen_graph=proven_graph.frozen_graph,
+        ordered_node_ids=proven_graph.ordered_node_ids,
+    )
+    return from_error_sequence(error_diags, grounded_witness)
+
+
 __all__ = [
     "GroundingEngine",
+    "GroundingEngineInput",
+    "coerce_grounding_engine",
     "compute_levenshtein",
+    "ground_proven_graph",
 ]

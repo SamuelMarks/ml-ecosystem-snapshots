@@ -438,13 +438,13 @@ FRAMEWORK_PROVENANCE_METADATA: dict[str, ProvenanceMetadata] = {
     ),
     # Live module version fallbacks
     "ir": ProvenanceMetadata(
-        upstream_version="0.0.8",
+        upstream_version="0.0.9",
         resolution_mode="live_module",
         live_module="ml_switcheroo_ir",
         dist_name="ml-switcheroo-ir",
     ),
     "ml_switcheroo_ir": ProvenanceMetadata(
-        upstream_version="0.0.8",
+        upstream_version="0.0.9",
         resolution_mode="live_module",
         live_module="ml_switcheroo_ir",
         dist_name="ml-switcheroo-ir",

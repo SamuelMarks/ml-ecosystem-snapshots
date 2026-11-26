@@ -8,7 +8,7 @@ import typing
 
 from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Result
 
-from ml_ecosystem_snapshots.exceptions import SnapshotNotFoundError
+from ml_ecosystem_snapshots.errors import SnapshotNotFoundFault
 from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
 
 
@@ -83,14 +83,14 @@ def _search_candidate_dirs(
     return None
 
 
-def resolve_snapshot_path(path: str) -> Result[SnapshotNotFoundError, str]:
-    """Resolve a snapshot path totally into `Result[SnapshotNotFoundError, str]`.
+def resolve_snapshot_path(path: str) -> Result[SnapshotNotFoundFault, str]:
+    """Resolve a snapshot path totally into `Result[SnapshotNotFoundFault, str]`.
 
     Args:
         path: File path, filename, or framework prefix to resolve.
 
     Returns:
-        `Ok(resolved_path)` if found, else `Err(SnapshotNotFoundError)`.
+        `Ok(resolved_path)` if found, else `Err(SnapshotNotFoundFault)`.
     """
     if os.path.exists(path):
         return Ok(path)
@@ -103,7 +103,7 @@ def resolve_snapshot_path(path: str) -> Result[SnapshotNotFoundError, str]:
     if found is not None:
         return Ok(found)
 
-    return Err(SnapshotNotFoundError(f"Snapshot file not found: {path}"))
+    return Err(SnapshotNotFoundFault(target=path, version=None, searched_paths=candidate_dirs))
 
 
 __all__ = ["resolve_snapshot_path"]

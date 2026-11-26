@@ -406,7 +406,7 @@ def test_all_new_snapshots_exist_and_nonempty(tmp_path: Path) -> None:
                 and not f.endswith(("_ops.json", "_exhaustive.json"))
             ]
         if not matching:
-            from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+            from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
             proven = raise_on_err(extract_snapshot(prefix))
             written_path = raise_on_err(write_snapshot(prefix, proven, str(tmp_path)))
@@ -448,6 +448,11 @@ def test_no_mock_introspection_or_type_ignores_in_src() -> None:
         with open(fpath, encoding="utf-8") as fp:
             content = fp.read()
         for token in banned_tokens:
+            if token == "@dataclass" and fpath.replace(chr(92), "/").endswith("/errors.py"):
+                assert "@dataclass(frozen=True)" in content
+                stripped_frozen = content.replace("@dataclass(frozen=True)", "")
+                assert "@dataclass" not in stripped_frozen, f"Non-frozen @dataclass found in production module {fpath}"
+                continue
             assert token not in content, f"Banned token '{token}' found in production module {fpath}"
         assert ": object" not in content and "-> object" not in content, (
             f"Banned 'object' type annotation found in production module {fpath}"
@@ -622,3 +627,86 @@ def test_zero_private_imports_and_unscoped_sys_modules_in_tests() -> None:
             tree = ast.parse(fp.read(), filename=fpath)
         for node in ast.walk(tree):
             _check_test_ast_node_hygiene(node, fpath)
+
+
+def _is_typealias_annotation(annotation: ast.expr) -> bool:
+    """Return whether `annotation` denotes `TypeAlias` or `<mod>.TypeAlias`.
+
+    Args:
+        annotation: AST annotation expression on an annotated assignment.
+
+    Returns:
+        True if `annotation` references `TypeAlias`.
+    """
+    return (isinstance(annotation, ast.Name) and annotation.id == "TypeAlias") or (
+        isinstance(annotation, ast.Attribute) and annotation.attr == "TypeAlias"
+    )
+
+
+def _has_bitor_expr(expr: ast.expr) -> bool:
+    """Return whether `expr` contains an unquoted runtime `|` (`ast.BitOr`) binary operation.
+
+    Args:
+        expr: Value expression of an annotated assignment.
+
+    Returns:
+        True if any child node in `expr` is an `ast.BinOp` with `ast.BitOr`.
+    """
+    return any(isinstance(sub, ast.BinOp) and isinstance(sub.op, ast.BitOr) for sub in ast.walk(expr))
+
+
+def _collect_runtime_typealias_bitor(stmts: list[ast.stmt], fpath: str) -> list[str]:
+    """Collect runtime `TypeAlias` assignments using unquoted PEP 604 `|` unions outside `TYPE_CHECKING`.
+
+    Args:
+        stmts: Statement list for the current non-`TYPE_CHECKING` lexical block.
+        fpath: Path of the Python source file being inspected.
+
+    Returns:
+        List of `filepath:lineno` violation strings.
+    """
+    violations: list[str] = []
+    for stmt in stmts:
+        if isinstance(stmt, ast.If):
+            is_tc = (isinstance(stmt.test, ast.Name) and stmt.test.id == "TYPE_CHECKING") or (
+                isinstance(stmt.test, ast.Attribute) and stmt.test.attr == "TYPE_CHECKING"
+            )
+            if not is_tc:
+                violations.extend(_collect_runtime_typealias_bitor(stmt.body, fpath))
+            violations.extend(_collect_runtime_typealias_bitor(stmt.orelse, fpath))
+        elif isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            violations.extend(_collect_runtime_typealias_bitor(stmt.body, fpath))
+        elif (
+            isinstance(stmt, ast.AnnAssign)
+            and stmt.value is not None
+            and _is_typealias_annotation(stmt.annotation)
+            and _has_bitor_expr(stmt.value)
+        ):
+            violations.append(f"{fpath}:{stmt.lineno}")
+    return violations
+
+
+def test_zero_unquoted_runtime_typealias_unions() -> None:
+    """Verify zero runtime `TypeAlias` assignments use unquoted PEP 604 `|` unions outside `TYPE_CHECKING`."""
+    import glob
+
+    synthetic = ast.parse(
+        "Bad: typing_extensions.TypeAlias = int | str\n"
+        "Good: typing_extensions.TypeAlias = 'int | str'\n"
+        "if TYPE_CHECKING:\n"
+        "    Guarded: TypeAlias = int | str\n",
+        filename="synthetic.py",
+    )
+    assert _collect_runtime_typealias_bitor(synthetic.body, "synthetic.py") == ["synthetic.py:1"]
+
+    all_py_files = sorted(
+        glob.glob("src/**/*.py", recursive=True)
+        + glob.glob("scripts/**/*.py", recursive=True)
+        + glob.glob("tests/**/*.py", recursive=True)
+    )
+    all_violations: list[str] = []
+    for fpath in all_py_files:
+        with open(fpath, encoding="utf-8") as fp:
+            tree = ast.parse(fp.read(), filename=fpath)
+        all_violations.extend(_collect_runtime_typealias_bitor(tree.body, fpath))
+    assert all_violations == []

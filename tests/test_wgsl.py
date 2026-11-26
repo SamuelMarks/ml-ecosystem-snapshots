@@ -66,7 +66,7 @@ def test_wgsl_op_properties_and_roles() -> None:
 
 def test_extract_snapshot_wgsl_envelope() -> None:
     """Test end-to-end WGSL snapshot extraction and envelope validation."""
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
     snap = raise_on_err(extract_snapshot("wgsl")).to_wire_dict()
     assert snap.get("version") == "draft-2024"

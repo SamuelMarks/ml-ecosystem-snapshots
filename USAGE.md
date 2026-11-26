@@ -93,11 +93,12 @@ python -m ml_ecosystem_snapshots.tools.build_stablehlo_snapshot
 ## 2. Offline Snapshots & Cache Management
 
 `ml-ecosystem-snapshots` resolves snapshot references across a multi-tier search cascade:
-1. Exact file paths (`./snapshots/torch_v2.4.0.json`)
+1. Exact file paths or `.json` suffix (`./snapshots/torch_v2.4.0.json`)
 2. Custom paths defined in `$ML_SNAPSHOTS_PATH`
-3. Local user cache directory (`~/.cache/ml_ecosystem_snapshots/snapshots/`)
+3. Package-bundled offline snapshots (`src/ml_ecosystem_snapshots/snapshots/` and `frameworks/`)
 4. Project root `snapshots/`
-5. Package-bundled offline snapshots (`src/ml_ecosystem_snapshots/snapshots/` and `frameworks/`)
+5. Local user cache directory (`~/.cache/ml_ecosystem_snapshots/snapshots/`)
+6. Current working directory `snapshots/`
 
 ### Listing Available Snapshots
 
@@ -165,7 +166,7 @@ ml_ecosystem_snapshots check \
 
 **Example Output:**
 ```text
-Extracting target APIs from /Users/samuel/repos/ml-switcheroo/src/ml_switcheroo/frameworks/jax.py...
+Extracting target APIs from ['~/repos/ml-switcheroo/src/ml_switcheroo/frameworks/jax.py']...
 Scoring compliance...
 
 --- Compliance Report ---
@@ -178,8 +179,8 @@ Missing APIs (2):
 
 |   | Framework | Namespace | Symbol | FQN | Signature | Docstring |
 |---|---|---|---|---|---|---|
-| [ ] | jax | jax.numpy | fft | jax.numpy.fft | module | Fast Fourier Transform module. |
-| [ ] | jax | jax.numpy | linalg | jax.numpy.linalg | module | Linear algebra module. |
+| [ ] | jax | jax.numpy | fft | jax.numpy.fft | `module` | Fast Fourier Transform module. |
+| [ ] | jax | jax.numpy | linalg | jax.numpy.linalg | `module` | Linear algebra module. |
 ```
 
 ### Checking an Entire Package Tree
@@ -227,19 +228,17 @@ ml_ecosystem_snapshots diff ./snapshots/jax_v0.4.30.json ./snapshots/jax_v0.4.31
 
 **Example Output:**
 ```markdown
-# API Changelog
+# Changelog Report
 
-## Added (2)
-- `jax.numpy.trapezoid`
+## Added
 - `jax.experimental.shard_map`
+- `jax.numpy.trapezoid`
 
-## Removed (0)
+## Breaking Signature Changes
+- `jax.numpy.pad`
 
-## Breaking Signature Changes (1)
-- `jax.numpy.pad`: Added required positional parameter `pad_width` without default.
-
-## Non-Breaking Signature Changes (3)
-- `jax.numpy.mean`: Added optional keyword argument `where`.
+## Non-Breaking Signature Changes
+- `jax.numpy.mean`
 ```
 
 ---
@@ -645,9 +644,9 @@ ml_ecosystem_snapshots mcp
 
 ---
 
-## 9. Pure Functional SDK: Outcomes, Typeclasses & Phantom Proofs
+## 9. Pure Functional SDK: Closed Error ADTs, `NonEmpty` Validation & Cumulative `ProvenSnapshot`
 
-All core extraction, serialization, hydration, stub generation, and shape/dtype verification APIs return total `Result[E, A]` (`Ok` / `Err`) or error-accumulating `Validation[E, A]` (`Valid` / `Invalid`) values and operate on deeply immutable frozen Pydantic models.
+All core extraction, serialization, hydration, compliance, grounding, and stub generation APIs return total `Result[SnapshotDomainError, A]` (`Ok` / `Err`) or `NonEmpty`-error-accumulating `Validation[NonEmpty[SnapshotDomainError], A]` (`Valid` / `Invalid`) values and operate on deeply immutable models.
 
 ```python
 from ml_ecosystem_snapshots import (
@@ -657,13 +656,14 @@ from ml_ecosystem_snapshots import (
     Invalid,
     Ok,
     Valid,
+    audit_module_sources,
     extract_snapshot,
-    prove_determinism_verified,
-    prove_hydrated_refs,
+    upgrade_to_deterministic,
+    upgrade_to_hydrated,
 )
 from ml_ecosystem_snapshots.serialization import hydrate_ghost_refs
 
-# 1. Total extraction + JSON Codec round-trip
+# 1. Total extraction (ir_v0.0.9.json) + JSON Codec round-trip
 res = extract_snapshot("ir")
 if isinstance(res, Ok):
     proven_env = res.value
@@ -671,13 +671,16 @@ if isinstance(res, Ok):
     decoded = SNAPSHOT_ENVELOPE_JSON_CODEC.decode(encoded)
     assert isinstance(decoded, Ok)
 
-    # 2. Mint HydratedRefsPhase and DeterminismVerifiedPhase proofs
-    hydrated = prove_hydrated_refs(proven_env)
+    # 2. Cumulative covariant ProvenSnapshot upgrades
+    hydrated = upgrade_to_hydrated(proven_env)
     if isinstance(hydrated, Valid):
-        det = prove_determinism_verified(hydrated.value)
+        det = upgrade_to_deterministic(hydrated.value)
         assert isinstance(det, Valid)
+        # DeterministicSnapshotPhase covariantly satisfies EnvelopeAndHydratedPhase!
+        audit = audit_module_sources({"my_ir/__init__.py": "x = 1\n"}, det.value)
+        assert isinstance(audit, Valid)
 
-# 3. Multi-error applicative Validation across malformed GhostRef payloads
+# 3. NonEmpty applicative Validation across malformed GhostRef payloads
 batch_val = hydrate_ghost_refs(["not_a_dict", {"schema_version": "9.9.9"}])
 if isinstance(batch_val, Invalid):
     print(f"Accumulated {len(batch_val.errors)} schema errors without short-circuiting.")

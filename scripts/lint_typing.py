@@ -455,11 +455,12 @@ def _check_comments(source: str, filepath: str) -> list[str]:
     tokens = tokenize.generate_tokens(io.StringIO(source).readline)
     for tok_type, tok_str, (lineno, col), _, _ in tokens:
         if tok_type == tokenize.COMMENT:
-            if "type:" in tok_str and "ignore" in tok_str:
+            lower_tok = tok_str.lower()
+            if "type:" in lower_tok and "ignore" in lower_tok:
                 errors.append(f"{filepath}:{lineno}:{col}: banned type-ignore comment")
-            if "noqa" in tok_str:
+            if "noqa" in lower_tok:
                 errors.append(f"{filepath}:{lineno}:{col}: banned noqa suppression comment")
-            if "pragma:" in tok_str and "no cover" in tok_str:
+            if "pragma:" in lower_tok and "no cover" in lower_tok:
                 errors.append(f"{filepath}:{lineno}:{col}: banned pragma: no cover comment")
     return errors
 

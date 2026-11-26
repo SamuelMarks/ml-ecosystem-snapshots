@@ -53,20 +53,21 @@ def _resolve_stablehlo_content(
 
     from ml_switcheroo_ir.typeclasses.outcome import Ok
 
-    from ml_ecosystem_snapshots.exceptions import OfflineModeNetworkError
+    from ml_ecosystem_snapshots.errors import OfflineNetworkFault
+    from ml_ecosystem_snapshots.exceptions import SnapshotError
     from ml_ecosystem_snapshots.network_env import fetch_url
 
     td_res = fetch_url(TABLEGEN_URL, timeout=10)
     if isinstance(td_res, Ok):
         return td_res.value
-    if isinstance(td_res.error, OfflineModeNetworkError):
-        raise td_res.error
+    if isinstance(td_res.error, OfflineNetworkFault) and td_res.error.operation == "offline_blocked":
+        raise SnapshotError(td_res.error)
 
     spec_res = fetch_url(SPEC_URL)
     if isinstance(spec_res, Ok):
         return spec_res.value
-    if isinstance(spec_res.error, OfflineModeNetworkError):
-        raise spec_res.error
+    if isinstance(spec_res.error, OfflineNetworkFault) and spec_res.error.operation == "offline_blocked":
+        raise SnapshotError(spec_res.error)
     raise RuntimeError("Failed to fetch StableHLO sources")
 
 

@@ -43,12 +43,17 @@ from ml_ecosystem_snapshots.grounding.domain_ops import (
 )
 from ml_ecosystem_snapshots.grounding.dtypes import (
     DTYPE_CANONICAL_ALIASES,
+    coerce_ir_attribute_to_json,
+    extract_tensor_spec_metadata,
     matches_rank_constraint,
     normalize_dtype_name,
 )
 from ml_ecosystem_snapshots.grounding.engine import (
     GroundingEngine,
+    GroundingEngineInput,
+    coerce_grounding_engine,
     compute_levenshtein,
+    ground_proven_graph,
 )
 from ml_ecosystem_snapshots.grounding.hardware import (
     validate_ptx_instruction,
@@ -94,13 +99,18 @@ __all__ = [
     "DomainOpCheckResult",
     "GroundingDiagnostic",
     "GroundingEngine",
+    "GroundingEngineInput",
     "GroundingReport",
     "HallucinationCheckResult",
     "IrCheckResult",
     "IsaCheckResult",
     "check_domain_op",
+    "coerce_grounding_engine",
+    "coerce_ir_attribute_to_json",
     "compute_levenshtein",
     "explain_python_anti_pattern",
+    "extract_tensor_spec_metadata",
+    "ground_proven_graph",
     "load_concept_map",
     "lookup_api_signature_in_snapshot",
     "matches_rank_constraint",

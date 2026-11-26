@@ -66,7 +66,7 @@ def test_collect_api_rccl_discovered() -> None:
 
 def test_extract_snapshot_nccl() -> None:
     """Verify full snapshot extraction for nccl target."""
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
     snap = raise_on_err(extract_snapshot("nccl")).to_wire_dict()
     assert snap.get("target") == "nccl"

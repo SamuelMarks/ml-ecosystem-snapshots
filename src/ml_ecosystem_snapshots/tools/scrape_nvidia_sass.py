@@ -784,3 +784,7 @@ def main(argv: list[str] | None = None) -> None:
         expand_catalog=expand,
         cuda_version=args.cuda_version,
     )
+
+
+if __name__ == "__main__":
+    main()

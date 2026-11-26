@@ -10,11 +10,18 @@ import sys
 import typing
 
 from ml_switcheroo_ir.schema.ghost import GhostRef
-from ml_switcheroo_ir.typeclasses.outcome import raise_on_err, value_or
+from ml_switcheroo_ir.typeclasses.outcome import Valid, value_or
 
 from ml_ecosystem_snapshots.compliance.models import NamespaceAlignmentRule
+from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary
 from ml_ecosystem_snapshots.introspection.runtime_boundary import get_member_dict
 from ml_ecosystem_snapshots.models import JsonValue, json_dict_or_empty, json_tuple_or_empty
+from ml_ecosystem_snapshots.proofs import (
+    EnvelopeAndHydratedPhase,
+    ProvenSnapshot,
+    prove_envelope_valid,
+    upgrade_to_hydrated,
+)
 
 ZERO_ECOSYSTEM_ALIGNMENT_RULE = NamespaceAlignmentRule(
     prefix_map=(
@@ -249,7 +256,7 @@ def cmd_check(args: argparse.Namespace) -> None:
     alignment_rule = resolve_alignment_preset(preset_name, str(args.target_prefix))
 
     print(f"Extracting target APIs from {args.target_path}...")
-    target_refs = raise_on_err(
+    target_refs = raise_snapshot_boundary(
         extract_target_refs(
             args.target_path,
             args.target_prefix,
@@ -258,8 +265,18 @@ def cmd_check(args: argparse.Namespace) -> None:
         )
     )
 
+    proven_ref: ProvenSnapshot[EnvelopeAndHydratedPhase] | dict[str, JsonValue] = (
+        dict(reference_snapshot) if isinstance(reference_snapshot, dict) else {}
+    )
+    if isinstance(reference_snapshot, dict):
+        env_val = prove_envelope_valid(reference_snapshot)
+        if isinstance(env_val, Valid):
+            hyd_val = upgrade_to_hydrated(env_val.value)
+            if isinstance(hyd_val, Valid):
+                proven_ref = hyd_val.value
+
     print("Scoring compliance...")
-    results = score_compliance(reference_snapshot, target_refs)
+    results = score_compliance(proven_ref, target_refs)
 
     score = results.score_percentage
     print("\n--- Compliance Report ---")

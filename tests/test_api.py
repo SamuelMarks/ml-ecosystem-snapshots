@@ -31,7 +31,11 @@ from ml_ecosystem_snapshots.api import (
     validate_snapshot_envelope,
     write_snapshot,
 )
-from ml_ecosystem_snapshots.exceptions import SnapshotError, SnapshotSchemaError
+from ml_ecosystem_snapshots.errors import SnapshotEnvelopeFault, SnapshotNotFoundFault
+from ml_ecosystem_snapshots.exceptions import (
+    raise_snapshot_boundary,
+    raise_validation_boundary,
+)
 from ml_ecosystem_snapshots.frameworks._base import CollectorDomain, DomainCollectorAdapter
 from ml_ecosystem_snapshots.introspection.runtime_boundary import LivePythonTarget, get_member_dict
 from ml_ecosystem_snapshots.models import JsonValue, ensure_json_dict, ensure_json_list
@@ -94,7 +98,7 @@ def test_extract_snapshot_and_extract_all(monkeypatch: pytest.MonkeyPatch) -> No
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    from ml_switcheroo_ir.typeclasses.outcome import Err, Invalid, Ok, Valid, raise_on_err
+    from ml_switcheroo_ir.typeclasses.outcome import Err, Invalid, Ok, Valid
 
     from ml_ecosystem_snapshots.proofs import prove_envelope_valid
 
@@ -127,21 +131,25 @@ def test_extract_snapshot_and_extract_all(monkeypatch: pytest.MonkeyPatch) -> No
         return []
 
     monkeypatch.setitem(FRAMEWORK_COLLECTORS, "torch", fake_collect)
-    proven_torch = raise_on_err(extract_snapshot("torch"))
+    proven_torch = raise_snapshot_boundary(extract_snapshot("torch"))
     res = proven_torch.to_wire_dict()
     assert res["version"] == "1.0.0"
-    categories = raise_on_err(ensure_json_dict(res["categories"]))
-    loss_items = raise_on_err(ensure_json_list(categories["loss"]))
+    categories = raise_snapshot_boundary(ensure_json_dict(res["categories"]))
+    loss_items = raise_snapshot_boundary(ensure_json_list(categories["loss"]))
     assert len(loss_items) == 1
-    assert raise_on_err(ensure_json_dict(loss_items[0]))["name"] == "MSELoss"
+    assert raise_snapshot_boundary(ensure_json_dict(loss_items[0]))["name"] == "MSELoss"
 
     monkeypatch.setitem(FRAMEWORK_COLLECTORS, "torch", lambda _cat, _inc=False: [])
     assert isinstance(extract_snapshot("torch"), Err)
 
-    sample_proven = raise_on_err(prove_envelope_valid({"target": "torch", "version": "1.0.0", "categories": {}}))
+    sample_proven = raise_validation_boundary(
+        prove_envelope_valid({"target": "torch", "version": "1.0.0", "categories": {}})
+    )
     monkeypatch.setattr(
         "ml_ecosystem_snapshots.api.extract_snapshot",
-        lambda fw, include_nonpublic=False: Ok(sample_proven) if fw == "torch" else Err(SnapshotError("skip")),
+        lambda fw, include_nonpublic=False: (
+            Ok(sample_proven) if fw == "torch" else Err(SnapshotNotFoundFault(target=fw))
+        ),
     )
     res_all = extract_all_snapshots()
     assert isinstance(res_all, Valid)
@@ -154,7 +162,7 @@ def test_extract_snapshot_and_extract_all(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setattr(
         "ml_ecosystem_snapshots.api.extract_snapshot",
-        lambda _fw, include_nonpublic=False: Err(SnapshotError("empty")),
+        lambda fw, include_nonpublic=False: Err(SnapshotNotFoundFault(target=fw)),
     )
     res_none = extract_all_snapshots()
     assert isinstance(res_none, Valid)
@@ -355,7 +363,7 @@ def test_get_pkg_version_keras_griffe_and_ir_fallbacks(
     fake_package_builder.build_module("ml_switcheroo_ir", version="0.0.9")
     assert get_pkg_version("ir") == "0.0.9"
     fake_package_builder.block_imports("ml_switcheroo_ir")
-    fake_package_builder.set_metadata_versions({"ml_switcheroo_ir": "0.0.8"})
+    fake_package_builder.set_metadata_versions({"ml-switcheroo-ir": "0.0.8"})
     assert get_pkg_version("ml_switcheroo_ir") == "0.0.8"
 
 
@@ -455,10 +463,12 @@ def test_get_pkg_version_live_modules_and_exhaustive_json_files(
 
 def test_validate_snapshot_envelope_and_provenance_metadata() -> None:
     """Verify `validate_snapshot_envelope`, hardware/DSL provenance metadata, and domain collector fallbacks."""
-    from ml_switcheroo_ir.typeclasses.outcome import Err, raise_on_err
+    from ml_switcheroo_ir.typeclasses.outcome import Err
+
+    raise_on_err = raise_snapshot_boundary
 
     bad_env1 = validate_snapshot_envelope("not a dict")
-    assert isinstance(bad_env1, Err) and isinstance(bad_env1.error, SnapshotSchemaError)
+    assert isinstance(bad_env1, Err) and isinstance(bad_env1.error, SnapshotEnvelopeFault)
 
     env_default = raise_on_err(validate_snapshot_envelope({"target": "torch", "version": "2.2.0", "categories": {}}))
     assert env_default.target == "torch"
@@ -537,7 +547,9 @@ def test_extract_snapshot_isolated_and_package_init(monkeypatch: pytest.MonkeyPa
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Valid, raise_on_err
+    from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Valid
+
+    raise_on_err = raise_snapshot_boundary
 
     from ml_ecosystem_snapshots.proofs import prove_envelope_valid
 
@@ -586,11 +598,13 @@ def test_extract_snapshot_isolated_and_package_init(monkeypatch: pytest.MonkeyPa
     with monkeypatch.context() as mp:
         mp.setenv("PYTHONPATH", "/custom/test/path")
         mp.setattr("subprocess.run", _capture_subproc)
-        iso_proven = raise_on_err(extract_snapshot_isolated("html_dsl"))
+        iso_proven = raise_snapshot_boundary(extract_snapshot_isolated("html_dsl"))
         assert str(iso_proven.target) == "html_dsl"
         assert "/custom/test/path" in captured_envs[0]["PYTHONPATH"]
 
-    sample_html = raise_on_err(prove_envelope_valid({"target": "html_dsl", "version": "0.0.2", "categories": {}}))
+    sample_html = raise_validation_boundary(
+        prove_envelope_valid({"target": "html_dsl", "version": "0.0.2", "categories": {}})
+    )
     with monkeypatch.context() as mp:
         mp.setattr(
             "ml_ecosystem_snapshots.api.FRAMEWORK_COLLECTORS",
@@ -605,7 +619,7 @@ def test_extract_snapshot_isolated_and_package_init(monkeypatch: pytest.MonkeyPa
 
     # Package __version__ and __init__ ImportError fallback
     pkg_ver = str(get_member_dict(ml_ecosystem_snapshots).get("__version__", ""))
-    assert pkg_ver == "0.0.8"
+    assert pkg_ver == "0.0.9"
     assert pkg_ver == ProjectMetadata(".", PluginManager()).version
 
     with monkeypatch.context() as mp:
@@ -646,7 +660,9 @@ def test_write_snapshot_compression_and_streaming(
         tmp_path: Pytest temporary directory fixture.
         fake_package_builder: Typed fake-package builder fixture.
     """
-    from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, raise_on_err
+    from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
+
+    raise_on_err = raise_snapshot_boundary
 
     special_path = raise_on_err(
         write_snapshot(

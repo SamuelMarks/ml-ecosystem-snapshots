@@ -12,6 +12,12 @@ from __future__ import annotations
 import json
 import typing
 
+from ml_switcheroo_ir.compliance import (
+    FILE_COMPLIANCE_MONOID as FILE_COMPLIANCE_MONOID,
+)
+from ml_switcheroo_ir.compliance import (
+    FileComplianceResult as FileComplianceResult,
+)
 from ml_switcheroo_ir.schema.ghost import (
     ExtendedGhostParam,
     ExtendedGhostRef,
@@ -67,6 +73,9 @@ from ml_switcheroo_ir.typeclasses import (
     Monoid as Monoid,
 )
 from ml_switcheroo_ir.typeclasses import (
+    NonEmpty as NonEmpty,
+)
+from ml_switcheroo_ir.typeclasses import (
     Ok as Ok,
 )
 from ml_switcheroo_ir.typeclasses import (
@@ -100,6 +109,9 @@ from ml_switcheroo_ir.typeclasses import (
     ap_validation as ap_validation,
 )
 from ml_switcheroo_ir.typeclasses import (
+    collect_unit_validations_ne as collect_unit_validations_ne,
+)
+from ml_switcheroo_ir.typeclasses import (
     endo_monoid as endo_monoid,
 )
 from ml_switcheroo_ir.typeclasses import (
@@ -109,7 +121,13 @@ from ml_switcheroo_ir.typeclasses import (
     fold_validation as fold_validation,
 )
 from ml_switcheroo_ir.typeclasses import (
+    from_error_sequence as from_error_sequence,
+)
+from ml_switcheroo_ir.typeclasses import (
     frozenset_union_monoid as frozenset_union_monoid,
+)
+from ml_switcheroo_ir.typeclasses import (
+    invalid_one as invalid_one,
 )
 from ml_switcheroo_ir.typeclasses import (
     map_err as map_err,
@@ -119,6 +137,24 @@ from ml_switcheroo_ir.typeclasses import (
 )
 from ml_switcheroo_ir.typeclasses import (
     map_validation as map_validation,
+)
+from ml_switcheroo_ir.typeclasses import (
+    map_validation_err as map_validation_err,
+)
+from ml_switcheroo_ir.typeclasses import (
+    nonempty_eq as nonempty_eq,
+)
+from ml_switcheroo_ir.typeclasses import (
+    nonempty_hash as nonempty_hash,
+)
+from ml_switcheroo_ir.typeclasses import (
+    nonempty_ord as nonempty_ord,
+)
+from ml_switcheroo_ir.typeclasses import (
+    nonempty_pretty as nonempty_pretty,
+)
+from ml_switcheroo_ir.typeclasses import (
+    nonempty_semigroup as nonempty_semigroup,
 )
 from ml_switcheroo_ir.typeclasses import (
     partition_results as partition_results,
@@ -136,10 +172,19 @@ from ml_switcheroo_ir.typeclasses import (
     traverse_validation as traverse_validation,
 )
 from ml_switcheroo_ir.typeclasses import (
+    traverse_validation_ne as traverse_validation_ne,
+)
+from ml_switcheroo_ir.typeclasses import (
     tuple_monoid as tuple_monoid,
 )
 from ml_switcheroo_ir.typeclasses import (
+    validation_ne_to_tuple as validation_ne_to_tuple,
+)
+from ml_switcheroo_ir.typeclasses import (
     validation_to_result as validation_to_result,
+)
+from ml_switcheroo_ir.typeclasses import (
+    validation_tuple_to_ne as validation_tuple_to_ne,
 )
 from ml_switcheroo_ir.typeclasses import (
     value_or as value_or,
@@ -153,6 +198,7 @@ from ml_ecosystem_snapshots.compliance.models import (
     SnippetComplianceReport,
 )
 from ml_ecosystem_snapshots.diff import DiffResult, generate_changelog
+from ml_ecosystem_snapshots.errors import format_snapshot_error
 from ml_ecosystem_snapshots.grounding.models import CodeBlockCheckResult, CodeBlockFinding
 from ml_ecosystem_snapshots.identifiers import API_PATH_LEN_LEX_ORD, ApiPath
 from ml_ecosystem_snapshots.introspection.sanitize import (
@@ -250,6 +296,22 @@ def _combine_compliance_reports(
     opaque = _STR_TUPLE_MONOID.combine(lhs.opaque_signatures, rhs.opaque_signatures)
     warnings = _STR_TUPLE_MONOID.combine(lhs.warnings, rhs.warnings)
     score = round((len(matched) / total) * 100.0, 2) if total > 0 else 0.0
+    combined_ir_fw = FILE_COMPLIANCE_MONOID.combine(
+        FileComplianceResult(
+            is_ir=lhs.found_ir,
+            is_fw=lhs.found_fw,
+            implemented_ops=set(lhs.implemented_ops),
+            ir_score=lhs.ir_score,
+            fw_score=lhs.fw_score,
+        ),
+        FileComplianceResult(
+            is_ir=rhs.found_ir,
+            is_fw=rhs.found_fw,
+            implemented_ops=set(rhs.implemented_ops),
+            ir_score=rhs.ir_score,
+            fw_score=rhs.fw_score,
+        ),
+    )
     return ComplianceScoreReport(
         score_percentage=score,
         total_endpoints=total,
@@ -258,6 +320,11 @@ def _combine_compliance_reports(
         mismatched=mismatched,
         opaque_signatures=opaque,
         warnings=warnings,
+        found_ir=combined_ir_fw.is_ir,
+        ir_score=combined_ir_fw.ir_score,
+        found_fw=combined_ir_fw.is_fw,
+        fw_score=combined_ir_fw.fw_score,
+        implemented_ops=tuple(sorted(combined_ir_fw.implemented_ops)),
     )
 
 
@@ -516,7 +583,7 @@ def _decode_envelope_json(raw: IrJsonValue) -> Result[CodecError, SnapshotEnvelo
             path=(),
             expected="SnapshotEnvelope(v2.0.0)",
             actual_description="invalid_envelope",
-            message=str(err),
+            message=format_snapshot_error(err),
         ),
     )
 
@@ -564,7 +631,7 @@ def _decode_ghost_ref_json(raw: IrJsonValue) -> Result[CodecError, ExtendedGhost
             path=(),
             expected="ExtendedGhostRef(v2.0.0)",
             actual_description="invalid_ghost_ref",
-            message=str(err),
+            message=format_snapshot_error(err),
         ),
     )
 
@@ -588,7 +655,7 @@ def _render_envelope_stubs(env: SnapshotEnvelope) -> str:
     """
     res = render_stub_modules(env)
     if isinstance(res, Err):
-        return f"# stub error: {res.error}"
+        return f"# stub error: {format_snapshot_error(res.error)}"
     return (_NL * 2).join(f"# module: {mod_name}{_NL}{src.rstrip()}" for mod_name, src in res.value)
 
 
@@ -701,6 +768,8 @@ __all__ = [
     "EndoRewrite",
     "Eq",
     "Err",
+    "FILE_COMPLIANCE_MONOID",
+    "FileComplianceResult",
     "GHOST_REF_CANONICAL_EQ",
     "GHOST_REF_CANONICAL_HASH",
     "GHOST_REF_CONSOLIDATION_SEMIGROUP",
@@ -710,6 +779,7 @@ __all__ = [
     "Invalid",
     "JsonCodec",
     "Monoid",
+    "NonEmpty",
     "Ok",
     "Ord",
     "Ordering",
@@ -726,21 +796,33 @@ __all__ = [
     "Validation",
     "and_then",
     "ap_validation",
+    "collect_unit_validations_ne",
     "endo_monoid",
     "fold_result",
     "fold_validation",
+    "from_error_sequence",
     "frozenset_union_monoid",
     "ghost_ref_canonical_key",
+    "invalid_one",
     "make_namespace_align_endo",
     "map_err",
     "map_result",
     "map_validation",
+    "map_validation_err",
+    "nonempty_eq",
+    "nonempty_hash",
+    "nonempty_ord",
+    "nonempty_pretty",
+    "nonempty_semigroup",
     "partition_results",
     "raise_on_err",
     "result_to_validation",
     "traverse_result",
     "traverse_validation",
+    "traverse_validation_ne",
     "tuple_monoid",
+    "validation_ne_to_tuple",
     "validation_to_result",
+    "validation_tuple_to_ne",
     "value_or",
 ]

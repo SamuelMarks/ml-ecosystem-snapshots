@@ -19,9 +19,9 @@ import tempfile
 import typing
 
 import pydantic
-from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
 
-from .exceptions import SnapshotError, SnapshotSchemaError
+from .errors import SnapshotEnvelopeFault
+from .exceptions import SnapshotError, raise_snapshot_boundary
 from .models import JsonValue, ensure_json_dict
 from .network_env import get_custom_snapshots_paths
 
@@ -290,7 +290,7 @@ def _load_snapshot_json_payload(
         Parsed JSON dictionary or list payload.
 
     Raises:
-        SnapshotSchemaError: If the file cannot be parsed or is not a JSON object or array.
+        SnapshotError: If the file cannot be parsed or is not a JSON object or array.
     """
     try:
         if json_path.endswith(".gz"):
@@ -300,13 +300,17 @@ def _load_snapshot_json_payload(
             with open(json_path, encoding="utf-8") as f:
                 data = json.load(f)
     except (json.JSONDecodeError, OSError, EOFError) as exc:
-        raise SnapshotSchemaError(f"Invalid snapshot JSON payload in '{json_path}': {exc}") from exc
+        raise SnapshotError(
+            SnapshotEnvelopeFault(reason=f"Invalid snapshot JSON payload in '{json_path}': {exc}")
+        ) from exc
 
     if not isinstance(data, (dict, list)):
         type_repr = repr(type(data))
         type_label = type_repr[8:-2] if type_repr.startswith("<class '") and type_repr.endswith("'>") else type_repr
-        raise SnapshotSchemaError(
-            f"Snapshot payload in '{json_path}' must be a JSON object or array, got {type_label}."
+        raise SnapshotError(
+            SnapshotEnvelopeFault(
+                reason=f"Snapshot payload in '{json_path}' must be a JSON object or array, got {type_label}."
+            )
         )
 
     return data
@@ -424,7 +428,7 @@ def index_snapshot_file(json_path: str, conn: sqlite3.Connection) -> int:
         Number of symbols indexed.
 
     Raises:
-        SnapshotSchemaError: If the snapshot JSON file cannot be parsed or is not a valid object or array.
+        SnapshotError: If the snapshot JSON file cannot be parsed or is not a valid object or array.
     """
     if not os.path.isfile(json_path):
         return 0
@@ -551,7 +555,7 @@ def search_index(
         for r in rows:
             try:
                 raw_parsed: JsonValue = json.loads(r["json_data"])
-                parsed = raise_on_err(ensure_json_dict(raw_parsed))
+                parsed = raise_snapshot_boundary(ensure_json_dict(raw_parsed))
                 results.append(IndexedSymbolRecord.from_raw_dict(parsed, framework=str(r["framework"] or "")))
             except (json.JSONDecodeError, ValueError, TypeError, LookupError, sqlite3.Error, SnapshotError) as exc:
                 _LOGGER.debug("Skipping malformed indexed symbol row: %s", exc)
@@ -598,7 +602,7 @@ def lookup_symbol(
         row = cur.fetchone()
         if row:
             raw_sym: JsonValue = json.loads(row["json_data"])
-            parsed_sym = raise_on_err(ensure_json_dict(raw_sym))
+            parsed_sym = raise_snapshot_boundary(ensure_json_dict(raw_sym))
             return IndexedSymbolRecord.from_raw_dict(parsed_sym, framework=str(row["framework"] or clean_fw))
         return None
 

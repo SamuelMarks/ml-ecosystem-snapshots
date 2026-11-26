@@ -1,5 +1,5 @@
 pydantic>=2.0.0
-ml-switcheroo-ir @ https://github.com/SamuelMarks/ml-switcheroo-ir/releases/download/v0.0.8/ml_switcheroo_ir-0.0.8-py3-none-any.whl
+ml-switcheroo-ir @ https://github.com/SamuelMarks/ml-switcheroo-ir/releases/download/v0.0.9/ml_switcheroo_ir-0.0.9-py3-none-any.whl
 griffe @ git+https://github.com/SamuelMarks/griffe.git@rest
 cdd @ https://github.com/offscale/cdd-python/releases/download/v0.0.99rc46/cdd-0.0.99rc46-py3-none-any.whl
 rich

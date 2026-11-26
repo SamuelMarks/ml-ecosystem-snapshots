@@ -9,7 +9,7 @@ from unittest.mock import patch
 from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
 
 from ml_ecosystem_snapshots.cli import resolve_snapshot_path
-from ml_ecosystem_snapshots.exceptions import SnapshotNotFoundError
+from ml_ecosystem_snapshots.errors import SnapshotNotFoundFault
 
 
 def test_resolve_snapshot_path_existing_file(tmp_path: Path) -> None:
@@ -70,7 +70,7 @@ def test_resolve_snapshot_path_not_found(tmp_path: Path) -> None:
     with patch("ml_ecosystem_snapshots.cli.__file__", "/tmp/does_not_exist/cli.py"):
         resolved = resolve_snapshot_path("missing_framework")
         assert isinstance(resolved, Err)
-        assert isinstance(resolved.error, SnapshotNotFoundError)
+        assert isinstance(resolved.error, SnapshotNotFoundFault)
 
 
 def test_resolve_multiple_matches(tmp_path: Path) -> None:
@@ -114,7 +114,7 @@ def test_resolve_no_matches_in_existing_dir(tmp_path: Path) -> None:
     ):
         res = resolve_snapshot_path("nonexistent_framework")
         assert isinstance(res, Err)
-        assert isinstance(res.error, SnapshotNotFoundError)
+        assert isinstance(res.error, SnapshotNotFoundFault)
 
 
 def test_resolve_snapshot_path_from_pkg_snapshots(tmp_path: Path) -> None:

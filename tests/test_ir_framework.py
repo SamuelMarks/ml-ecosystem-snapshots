@@ -8,13 +8,13 @@ import typing
 import ml_switcheroo_ir as ir
 import pytest
 from ml_switcheroo_ir.schema.ghost import GhostRef, SemanticTier, SnapshotEnvelope
-from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
 
 from ml_ecosystem_snapshots.api import (
     extract_snapshot,
     get_pkg_version,
     validate_snapshot_envelope,
 )
+from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 from ml_ecosystem_snapshots.frameworks.ir import (
     IR_EXPORTED_SYMBOLS,
     collect_api,
@@ -28,17 +28,17 @@ from ml_ecosystem_snapshots.introspection.runtime_boundary import (
 
 
 def test_collect_api_categories() -> None:
-    """Test collect_api returns all expected IR v0.0.8 symbols in strict 1-to-1 parity."""
+    """Test collect_api returns all expected IR v0.0.9 symbols in strict 1-to-1 parity."""
     ir_members = get_member_dict(ir)
     raw_all = ir_members.get("__all__")
     assert isinstance(raw_all, list)
     expected_public = {str(sym) for sym in raw_all if not str(sym).startswith("_")}
     assert set(IR_EXPORTED_SYMBOLS) == expected_public
-    assert len(IR_EXPORTED_SYMBOLS) == 153
+    assert len(IR_EXPORTED_SYMBOLS) == 214
 
     for tier in (SemanticTier.ARRAY_API, SemanticTier.NEURAL, SemanticTier.UTIL):
         refs: list[GhostRef] = collect_api(tier)
-        assert len(refs) == 153
+        assert len(refs) == 214
         names = {ref.name for ref in refs}
         assert names == expected_public
 
@@ -123,12 +123,74 @@ def test_ir_symbol_signatures_and_annotations() -> None:
     assert "graph" in topo_params
     assert topo_params["strict"].default == "False"
 
-    # Verify v0.0.8 Haskell-style typeclasses, identifiers, and proof witnesses
-    for cls_sym in ("Ok", "Err", "Valid", "Invalid", "Eq", "Ord", "Semigroup", "Monoid", "Codec", "ProvenGraph"):
+    # Verify v0.0.9 Haskell-style typeclasses, NonEmpty, closed ADTs, frozen graphs, and proof witnesses
+    for cls_sym in (
+        "Ok",
+        "Err",
+        "Valid",
+        "Invalid",
+        "NonEmpty",
+        "Eq",
+        "Ord",
+        "Semigroup",
+        "Monoid",
+        "Codec",
+        "ProvenGraph",
+        "FrozenLogicalNode",
+        "FrozenLogicalEdge",
+        "FrozenLogicalGraph",
+        "AcyclicAndSchemaPhase",
+        "AcyclicSchemaShardingPhase",
+        "FullyVerifiedPhase",
+        "AcyclicGraphPass",
+        "ShapeInferenceRuleRegistry",
+        "IdentifierParseError",
+        "GraphCycleDiagnosticError",
+        "SchemaValidationBatchError",
+        "ShardingValidationBatchError",
+        "GroundingAuditBatchError",
+        "TranslationIsoError",
+        "IrCodecDecodeError",
+        "ShapeUnificationError",
+        "IrBoundaryException",
+    ):
         assert ref_by_name[cls_sym].kind == "class"
-        assert len(ref_by_name[cls_sym].params) >= 1
 
-    for alias_or_const in ("Result", "Validation", "NodeId", "NonBoolInt", "ALL_DIALECT_CATALOG_WITNESSES"):
+    for fn_sym in (
+        "nonempty_semigroup",
+        "nonempty_eq",
+        "nonempty_ord",
+        "nonempty_hash",
+        "invalid_one",
+        "from_error_sequence",
+        "traverse_validation_ne",
+        "collect_unit_validations_ne",
+        "freeze_graph",
+        "thaw_graph",
+        "upgrade_to_schema_valid",
+        "upgrade_to_sharding_valid",
+        "upgrade_to_fully_verified",
+        "prove_fully_verified",
+        "fold_logical_graph",
+        "rewrite_logical_graph_bottom_up",
+    ):
+        assert ref_by_name[fn_sym].kind == "function"
+        assert len(ref_by_name[fn_sym].params) >= 1
+
+    for alias_or_const in (
+        "Result",
+        "Validation",
+        "IrDomainError",
+        "NodeId",
+        "NonBoolInt",
+        "ALL_DIALECT_CATALOG_WITNESSES",
+        "IR_DOMAIN_ERROR_EQ",
+        "IR_DOMAIN_ERROR_PRETTY",
+        "FROZEN_LOGICAL_GRAPH_EQ",
+        "FROZEN_LOGICAL_GRAPH_HASH",
+        "LOGICAL_NODE_EQ",
+        "LOGICAL_GRAPH_PRETTY",
+    ):
         assert ref_by_name[alias_or_const].kind == "class"
         assert ref_by_name[alias_or_const].params == []
 
@@ -151,8 +213,8 @@ def test_extract_summary_doc_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     assert [p.name for p in unannotated_ref.params] == ["alpha"]
 
 
-def test_ir_v008_aliases_and_structural_protocols() -> None:
-    """Verify IRGraph, IRNode, and all structural protocols resolve and validate in the v0.0.8 IR snapshot."""
+def test_ir_v009_aliases_and_structural_protocols() -> None:
+    """Verify IRGraph, IRNode, and all structural protocols resolve and validate in the v0.0.9 IR snapshot."""
     protocol_names = (
         "DTypeLikeProtocol",
         "DeviceLikeProtocol",
@@ -178,12 +240,12 @@ def test_ir_v008_aliases_and_structural_protocols() -> None:
         assert ref.docstring is not None and len(ref.docstring) > 0
 
     snap = raise_on_err(extract_snapshot("ir")).to_wire_dict()
-    assert snap.get("version") == "0.0.8"
+    assert snap.get("version") == "0.0.9"
     env = raise_on_err(validate_snapshot_envelope(snap))
     assert isinstance(env, SnapshotEnvelope)
-    assert env.version == "0.0.8"
+    assert env.version == "0.0.9"
     neural_names = {entry["name"] if isinstance(entry, dict) else entry.name for entry in env.categories["neural"]}
-    for sym in ("IRGraph", "IRNode", "ProvenGraph", "Result", "Validation", *protocol_names):
+    for sym in ("IRGraph", "IRNode", "ProvenGraph", "Result", "Validation", "NonEmpty", *protocol_names):
         assert sym in neural_names
 
 
@@ -191,7 +253,7 @@ def test_ir_live_signature_reflection_parity() -> None:
     """Verify every callable GhostRef in frameworks/ir.py matches live ml_switcheroo_ir signatures."""
     refs = collect_api(SemanticTier.NEURAL)
     ir_members = get_member_dict(ir)
-    non_sig = {"DType", "DiagnosticSeverity", "Ordering", "CyclicGraphError"}
+    non_sig = {"DType", "DiagnosticSeverity", "IdentifierKind", "Ordering", "CyclicGraphError"}
     for ref in refs:
         assert ref.name in ir_members, f"Missing symbol {ref.name} in ml_switcheroo_ir"
         obj = ir_members[ref.name]
@@ -217,7 +279,7 @@ def test_ir_live_signature_reflection_parity() -> None:
 def test_extract_snapshot_ir_envelope() -> None:
     """Test end-to-end extraction and validation of the IR snapshot envelope."""
     snap = raise_on_err(extract_snapshot("ir")).to_wire_dict()
-    assert snap.get("version") == "0.0.8"
+    assert snap.get("version") == "0.0.9"
     assert "categories" in snap
     categories = snap["categories"]
     assert isinstance(categories, dict)
@@ -232,7 +294,7 @@ def test_extract_snapshot_ir_envelope() -> None:
 def test_get_pkg_version_ir() -> None:
     """Test get_pkg_version resolving 'ir' and 'ml_switcheroo_ir' versions."""
     ver_ir = get_pkg_version("ir")
-    assert ver_ir == "0.0.8"
+    assert ver_ir == "0.0.9"
 
     ver_sw = get_pkg_version("ml_switcheroo_ir")
     assert ver_sw == ver_ir
@@ -266,4 +328,4 @@ def test_ir_version_resolution_fallback(monkeypatch: pytest.MonkeyPatch) -> None
         raise RuntimeError("metadata missing")
 
     monkeypatch.setattr(importlib.metadata, "version", raise_meta_err)
-    assert get_pkg_version("ir") == "0.0.8"
+    assert get_pkg_version("ir") == "0.0.9"

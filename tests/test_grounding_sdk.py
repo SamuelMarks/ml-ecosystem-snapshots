@@ -698,23 +698,23 @@ def test_grounding_engine_tie_break_and_hydrate_failure(tmp_path: Path, monkeypa
     # Test hydrate exception handling
     from ml_switcheroo_ir.typeclasses.outcome import Err, Result
 
-    from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
+    from ml_ecosystem_snapshots.errors import SnapshotEnvelopeFault
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
     from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
     orig_hydrate = GhostInspector.hydrate
 
-    def bad_hydrate(d: dict[str, JsonValue]) -> Result[SnapshotSchemaError, ExtendedGhostRef]:
+    def bad_hydrate(d: dict[str, JsonValue]) -> Result[SnapshotEnvelopeFault, ExtendedGhostRef]:
         """Simulate failure during GhostInspector.hydrate.
 
         Args:
             d: Dictionary to hydrate.
 
         Returns:
-            `Err(SnapshotSchemaError)` when `name == 'fail'`, else `orig_hydrate(d)`.
+            `Err(SnapshotEnvelopeFault)` when `name == 'fail'`, else `orig_hydrate(d)`.
         """
         if d.get("name") == "fail":
-            return Err(SnapshotSchemaError("simulated hydrate failure"))
+            return Err(SnapshotEnvelopeFault(reason="simulated hydrate failure"))
         return orig_hydrate(d)
 
     monkeypatch.setattr(GhostInspector, "hydrate", bad_hydrate)
@@ -804,23 +804,23 @@ def test_grounding_engine_collector_fallback(tmp_path: Path, monkeypatch: pytest
 
     from ml_switcheroo_ir.typeclasses.outcome import Err, Result
 
-    from ml_ecosystem_snapshots.exceptions import SnapshotSchemaError
+    from ml_ecosystem_snapshots.errors import SnapshotEnvelopeFault
     from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
     from ml_ecosystem_snapshots.models import ExtendedGhostRef
 
     orig_hydrate = GhostInspector.hydrate
 
-    def bad_hydrate(d: dict[str, JsonValue]) -> Result[SnapshotSchemaError, ExtendedGhostRef]:
+    def bad_hydrate(d: dict[str, JsonValue]) -> Result[SnapshotEnvelopeFault, ExtendedGhostRef]:
         """Simulate total hydrate Err for item named fail.
 
         Args:
             d: Dictionary to hydrate.
 
         Returns:
-            `Err(SnapshotSchemaError)` when `name == 'fail'`, else `orig_hydrate(d)`.
+            `Err(SnapshotEnvelopeFault)` when `name == 'fail'`, else `orig_hydrate(d)`.
         """
         if d.get("name") == "fail":
-            return Err(SnapshotSchemaError("simulated error"))
+            return Err(SnapshotEnvelopeFault(reason="simulated error"))
         return orig_hydrate(d)
 
     monkeypatch.setattr(GhostInspector, "hydrate", bad_hydrate)
@@ -1447,3 +1447,281 @@ def test_domain_validators_honor_engine_snapshots_dir_and_variadic_mlir(tmp_path
     # Variadic MLIR operation in GroundingEngine (`has_varargs=True`)
     var_ok = validate_mlir_op("arith", "variadic_sum", operand_count=3, attributes={}, engine=eng)
     assert var_ok.is_grounded
+
+
+def test_ground_proven_graph_across_python_mlir_stablehlo_domain_and_subgraphs() -> None:
+    """Verify `ground_proven_graph` across Python, StableHLO, MLIR, ONNX, subgraphs, and `NonEmpty` errors."""
+    from ml_switcheroo_ir.graph import LogicalEdge, LogicalGraph, LogicalNode
+    from ml_switcheroo_ir.proofs import prove_acyclic_sorted
+    from ml_switcheroo_ir.schema.ghost import (
+        ExtendedGhostParam,
+        ExtendedGhostRef,
+        ParameterKind,
+        SnapshotEnvelope,
+    )
+    from ml_switcheroo_ir.shapes.ast import SymVar
+    from ml_switcheroo_ir.typeclasses.outcome import Invalid, Ok, Valid
+    from ml_switcheroo_ir.types import DType, TensorShape, TensorSpec
+
+    from ml_ecosystem_snapshots.grounding import (
+        GroundingEngine,
+        coerce_ir_attribute_to_json,
+        extract_tensor_spec_metadata,
+        ground_proven_graph,
+        verify_python_call,
+    )
+    from ml_ecosystem_snapshots.proofs import prove_envelope_valid, upgrade_to_hydrated
+
+    # 1. TensorSpec & AttributeValue coercion branches
+    sym_spec = TensorSpec(shape=(2, SymVar("N")), dtype=DType.float32)
+    dt_str, rk_val, sh_tup = extract_tensor_spec_metadata(sym_spec)
+    assert dt_str == "float32" and rk_val == 2 and sh_tup == (2, "N")
+    assert coerce_ir_attribute_to_json(None) is None
+    assert coerce_ir_attribute_to_json(b"hello") == "hello"
+    assert coerce_ir_attribute_to_json(DType.int64) == "int64"
+    assert coerce_ir_attribute_to_json(sym_spec) == {"dtype": "float32", "shape": [2, "N"]}
+    assert coerce_ir_attribute_to_json({"a": [1, DType.float16]}) == {"a": [1, "float16"]}
+    assert coerce_ir_attribute_to_json(SymVar("B")) is not None
+
+    # 2. Python framework ProvenSnapshot + nested subgraph + multi-error accumulation
+    torch_env = SnapshotEnvelope(
+        target="torch",
+        version="2.4.0",
+        categories={
+            "neural": [
+                ExtendedGhostRef(
+                    name="add",
+                    api_path="torch.add",
+                    kind="function",
+                    aliases=["torch.tensor_add"],
+                    params=[
+                        ExtendedGhostParam(
+                            name="input",
+                            kind=ParameterKind.POSITIONAL_OR_KEYWORD,
+                            allowed_dtypes=["float32"],
+                            rank_constraint="2",
+                        ),
+                        ExtendedGhostParam(
+                            name="other",
+                            kind=ParameterKind.POSITIONAL_OR_KEYWORD,
+                            allowed_dtypes=["float32"],
+                            rank_constraint="2",
+                        ),
+                        ExtendedGhostParam(
+                            name="alpha",
+                            kind=ParameterKind.KEYWORD_ONLY,
+                            default="1",
+                        ),
+                    ],
+                ),
+                ExtendedGhostRef(
+                    name="",
+                    api_path="torch.path_only_op",
+                    kind="function",
+                    params=[],
+                ),
+                ExtendedGhostRef.model_validate(
+                    {"name": "mnem_only", "api_path": "", "kind": "function", "mnemonic": "MNEM_OP"}
+                ),
+            ]
+        },
+    )
+    t_env_val = prove_envelope_valid(torch_env)
+    assert isinstance(t_env_val, Valid)
+    t_hyd_val = upgrade_to_hydrated(t_env_val.value)
+    assert isinstance(t_hyd_val, Valid)
+    torch_snap = t_hyd_val.value
+
+    eng = GroundingEngine.from_proven_snapshot(torch_snap)
+    assert eng.has_proven_target("torch")
+    assert verify_python_call("torch", "torch.add", torch_snap, args_count=2).is_hallucinated is False
+    assert verify_python_call("torch", "torch.missing_op", torch_snap).is_hallucinated is True
+
+    sub_ok = LogicalGraph(
+        name="body",
+        nodes=[LogicalNode(id="s1", op_type="add", domain="torch", inputs=["x", "y"])],
+        input_specs={
+            "x": TensorSpec(shape=TensorShape([4, 4]), dtype=DType.float32),
+            "y": TensorSpec(shape=TensorShape([4, 4]), dtype=DType.float32),
+        },
+    )
+    sub_sorted = LogicalGraph(
+        name="body_sorted",
+        nodes=[LogicalNode(id="s2", op_type="torch.tensor_add", domain="torch", inputs=["x", "y"])],
+        sorted_nodes=[LogicalNode(id="s2", op_type="torch.tensor_add", domain="torch", inputs=["x", "y"])],
+        input_specs={
+            "x": TensorSpec(shape=TensorShape([4, 4]), dtype=DType.float32),
+            "y": TensorSpec(shape=TensorShape([4, 4]), dtype=DType.float32),
+        },
+    )
+    valid_graph = LogicalGraph(
+        name="valid_torch",
+        nodes=[
+            LogicalNode(
+                id="in0",
+                op_type="Input",
+                outputs=["v0"],
+                output_specs=[TensorSpec(shape=TensorShape([4, 4]), dtype=DType.float32)],
+            ),
+            LogicalNode(
+                id="n_add",
+                op_type="torch.add",
+                domain="torch",
+                inputs=["v0", "in0"],
+                attributes={"alpha": 2},
+                subgraphs={"a": sub_ok, "b": sub_sorted, "meta": 1},
+            ),
+        ],
+        edges=[LogicalEdge(source="in0", target="n_add")],
+    )
+    pg_ok = prove_acyclic_sorted(valid_graph)
+    assert isinstance(pg_ok, Ok)
+    g_res = ground_proven_graph(pg_ok.value, torch_snap)
+    assert isinstance(g_res, Valid)
+
+    # Multi-error graph (two hallucinated ops accumulate into NonEmpty of length 2, plus unspec'd edge input)
+    bad_graph = LogicalGraph(
+        name="bad_torch",
+        nodes=[
+            LogicalNode(id="in0", op_type="Input"),
+            LogicalNode(id="bad1", op_type="torch.fake_one", domain="torch"),
+            LogicalNode(id="bad2", op_type="fake_two", domain="torch"),
+        ],
+        edges=[
+            LogicalEdge(source="in0", target="bad1"),
+            LogicalEdge(source="bad1", target="bad2"),
+        ],
+    )
+    pg_bad = prove_acyclic_sorted(bad_graph)
+    assert isinstance(pg_bad, Ok)
+    g_bad = ground_proven_graph(pg_bad.value, torch_snap)
+    assert isinstance(g_bad, Invalid)
+    assert len(g_bad.errors) == 2
+    assert {d.node_id for d in g_bad.errors.to_tuple()} == {"bad1", "bad2"}
+
+
+def test_ground_proven_graph_across_stablehlo_mlir_and_onnx() -> None:
+    """Verify `ground_proven_graph` across StableHLO, MLIR, and ONNX `ProvenSnapshot` targets."""
+    from ml_switcheroo_ir.graph import LogicalEdge, LogicalGraph, LogicalNode
+    from ml_switcheroo_ir.proofs import prove_acyclic_sorted
+    from ml_switcheroo_ir.schema.ghost import (
+        ExtendedGhostParam,
+        ExtendedGhostRef,
+        GhostOperationRef,
+        ParameterKind,
+        SnapshotEnvelope,
+    )
+    from ml_switcheroo_ir.shapes.ast import SymVar
+    from ml_switcheroo_ir.typeclasses.outcome import Ok, Valid
+    from ml_switcheroo_ir.types import DType, TensorSpec
+
+    from ml_ecosystem_snapshots.grounding import (
+        ground_proven_graph,
+        validate_onnx_op,
+        verify_mlir_op,
+    )
+    from ml_ecosystem_snapshots.proofs import prove_envelope_valid, upgrade_to_hydrated
+
+    shlo_env = SnapshotEnvelope(
+        target="stablehlo",
+        version="1.9.0",
+        categories={
+            "operations": [
+                GhostOperationRef(
+                    name="add",
+                    api_path="stablehlo.add",
+                    kind="function",
+                    params=[
+                        ExtendedGhostParam(name="lhs", kind=ParameterKind.POSITIONAL_ONLY),
+                        ExtendedGhostParam(name="rhs", kind=ParameterKind.POSITIONAL_ONLY),
+                    ],
+                )
+            ]
+        },
+    )
+    shlo_val = prove_envelope_valid(shlo_env)
+    assert isinstance(shlo_val, Valid)
+    shlo_hyd = upgrade_to_hydrated(shlo_val.value)
+    assert isinstance(shlo_hyd, Valid)
+    assert verify_mlir_op("stablehlo.add", shlo_hyd.value, operands_count=2).is_valid
+    shlo_graph = LogicalGraph(
+        name="shlo_g",
+        nodes=[
+            LogicalNode(id="a", op_type="Input"),
+            LogicalNode(id="b", op_type="Input"),
+            LogicalNode(id="op", op_type="stablehlo.add", domain="stablehlo"),
+        ],
+        edges=[LogicalEdge(source="a", target="op"), LogicalEdge(source="b", target="op")],
+        input_specs={
+            "a": TensorSpec(shape=(2, SymVar("M")), dtype=DType.float32),
+            "b": TensorSpec(shape=(2, SymVar("M")), dtype=DType.float32),
+        },
+    )
+    shlo_pg = prove_acyclic_sorted(shlo_graph)
+    assert isinstance(shlo_pg, Ok)
+    assert isinstance(ground_proven_graph(shlo_pg.value, shlo_hyd.value), Valid)
+
+    mlir_env = SnapshotEnvelope(
+        target="mlir",
+        version="19.0",
+        categories={
+            "operations": [
+                GhostOperationRef(
+                    name="addf",
+                    api_path="arith.addf",
+                    kind="function",
+                    params=[
+                        ExtendedGhostParam(name="lhs", kind=ParameterKind.POSITIONAL_ONLY),
+                        ExtendedGhostParam(name="rhs", kind=ParameterKind.POSITIONAL_ONLY),
+                    ],
+                )
+            ]
+        },
+    )
+    mlir_val = prove_envelope_valid(mlir_env)
+    assert isinstance(mlir_val, Valid)
+    mlir_hyd = upgrade_to_hydrated(mlir_val.value)
+    assert isinstance(mlir_hyd, Valid)
+    mlir_graph = LogicalGraph(
+        name="mlir_g",
+        nodes=[
+            LogicalNode(id="a", op_type="Input"),
+            LogicalNode(id="b", op_type="Input"),
+            LogicalNode(id="op", op_type="arith.addf", domain="arith"),
+        ],
+        edges=[LogicalEdge(source="a", target="op"), LogicalEdge(source="b", target="op")],
+    )
+    mlir_pg = prove_acyclic_sorted(mlir_graph)
+    assert isinstance(mlir_pg, Ok)
+    assert isinstance(ground_proven_graph(mlir_pg.value, mlir_hyd.value), Valid)
+
+    onnx_env = SnapshotEnvelope(
+        target="onnx",
+        version="1.16",
+        categories={
+            "operations": [
+                ExtendedGhostRef(
+                    name="Relu",
+                    api_path="onnx.Relu",
+                    kind="function",
+                    params=[ExtendedGhostParam(name="X", kind=ParameterKind.POSITIONAL_ONLY)],
+                )
+            ]
+        },
+    )
+    onnx_val = prove_envelope_valid(onnx_env)
+    assert isinstance(onnx_val, Valid)
+    onnx_hyd = upgrade_to_hydrated(onnx_val.value)
+    assert isinstance(onnx_hyd, Valid)
+    assert validate_onnx_op("Relu", inputs_count=1, engine=onnx_hyd.value).is_grounded
+    assert validate_onnx_op("MissingOnnxOp", engine=onnx_hyd.value).has_errors
+    onnx_graph = LogicalGraph(
+        name="onnx_g",
+        nodes=[
+            LogicalNode(id="x", op_type="Input"),
+            LogicalNode(id="r", op_type="Relu", domain="ai.onnx", inputs=["x"]),
+        ],
+    )
+    onnx_pg = prove_acyclic_sorted(onnx_graph)
+    assert isinstance(onnx_pg, Ok)
+    assert isinstance(ground_proven_graph(onnx_pg.value, onnx_hyd.value), Valid)

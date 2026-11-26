@@ -64,7 +64,7 @@ Machine Learning frameworks frequently utilize heavy GPU-bound libraries, comple
 | **LaTeX DSL** | *Built-in* | Standard LaTeX mathematical environments and formatting macros |
 | **MaxText** | [github.com/google/maxtext](https://github.com/google/maxtext) | Performant and highly scalable JAX LLM implementation |
 | **Metal (MSL)** | *Built-in* | Apple Metal Shading Language math, atomic, SIMD-group, and matrix intrinsics |
-| **ML-Switcheroo IR** | *Built-in* | Universal `LogicalGraph`/`IRGraph`, `LogicalNode`/`IRNode`, `TensorSpec`, Tier-1 `@runtime_checkable` protocols, algebraic `typeclasses` (`Result`, `Validation`, `Monoid`, `Codec`, `Pretty`, `Endo`), `ProvenGraph` phantom proofs, and compiler IR APIs (v0.0.8, 153 symbols) |
+| **ML-Switcheroo IR** | *Built-in* | Universal `LogicalGraph`/`IRGraph`, `LogicalNode`/`IRNode`, `FrozenLogicalGraph`, `TensorSpec`, `@runtime_checkable` protocols, algebraic `typeclasses` (`Result`, `Validation`, `NonEmpty`, `Monoid`, `Codec`, `Pretty`, `Endo`), `IrDomainError`, `ProvenGraph` cumulative phantom proofs, and compiler IR APIs (v0.0.9, 214 symbols) |
 | **MLIR** | [mlir.llvm.org](https://mlir.llvm.org/) | Core MLIR dialects (`arith`, `math`, `tensor`, `linalg`, `scf`, `gpu`, etc.) via TableGen |
 | **MLX** | [ml-explore.github.io/mlx](https://ml-explore.github.io/mlx/) | Array framework optimized for Apple Silicon |
 | **NCCL** | [developer.nvidia.com/nccl](https://developer.nvidia.com/nccl) | NVIDIA Collective Communications Library primitives (`all_reduce`, `all_gather`, etc.) |
@@ -181,8 +181,10 @@ ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format pro
 ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format cpp_header --out-dir ./include/
 ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format typescript --out-dir ./ts/
 
-# Export compact, typed LLM prompt context with hallucination guards
+# Export compact, typed LLM or hardware/compiler prompt contexts with hallucination guards
+# (llm_prompt, scoped_prompt, sass_prompt, ptx_prompt, rdna_prompt, mlir_prompt, stablehlo_prompt)
 ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format llm_prompt --out-dir ./prompts/
+ml_ecosystem_snapshots export --input ./snapshots/torch_v2.4.0.json --format scoped_prompt --out-dir ./prompts/
 ```
 
 ### 6. Hardware ISA, Compiler Dialect & Domain Verification
@@ -317,13 +319,13 @@ from ml_ecosystem_snapshots import (
     Ok,
     Valid,
     extract_snapshot,
-    prove_determinism_verified,
-    prove_hydrated_refs,
+    upgrade_to_deterministic,
+    upgrade_to_hydrated,
     write_snapshot,
 )
 from ml_ecosystem_snapshots.diff import diff_snapshots, generate_changelog
 
-# Total extraction returning Result[SnapshotError, ProvenSnapshot[EnvelopeValidPhase]]
+# Total extraction returning Result[SnapshotDomainError, ProvenSnapshot[EnvelopeValidPhase]]
 snap_res = extract_snapshot("ir")
 
 if isinstance(snap_res, Ok):
@@ -331,10 +333,10 @@ if isinstance(snap_res, Ok):
     print(f"Captured {proven_env.target} v{proven_env.version}")
     write_snapshot("ir", proven_env, output_dir="./snapshots")
 
-    # Promote through applicative Validation proof phases
-    hydrated_val = prove_hydrated_refs(proven_env)
+    # Promote through cumulative covariant Validation proof phases
+    hydrated_val = upgrade_to_hydrated(proven_env)
     if isinstance(hydrated_val, Valid):
-        det_val = prove_determinism_verified(hydrated_val.value)
+        det_val = upgrade_to_deterministic(hydrated_val.value)
         print("Determinism verified:", isinstance(det_val, Valid))
 
 # Compose sequential snapshot diffs via DIFF_RESULT_MONOID
@@ -410,10 +412,13 @@ pip install -r requirements.txt -r test-requirements.txt
 pip install -e .
 
 # Run test suite and verification gates (100% line, branch, function, typing & docstring coverage)
-pytest --cov=src/ml_ecosystem_snapshots --cov=scripts --cov-branch --cov-fail-under=100
-python3 scripts/check_function_coverage.py
+ruff check .
+python3 -m mypy --config-file pyproject.toml
 python3 scripts/lint_typing.py
 python3 scripts/lint_docstrings.py
+interrogate -vv -f 100 -M -i -c pyproject.toml src scripts tests
+pytest --cov=src/ml_ecosystem_snapshots --cov=scripts --cov-branch --cov-fail-under=100
+python3 scripts/check_function_coverage.py
 ```
 
 ---

@@ -126,7 +126,7 @@ def test_collect_api_inspection_exception_handled() -> None:
 
 def test_extract_snapshot_safetensors() -> None:
     """Verify full snapshot extraction for safetensors target."""
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
     snap = raise_on_err(extract_snapshot("safetensors")).to_wire_dict()
     assert snap.get("target") == "safetensors"

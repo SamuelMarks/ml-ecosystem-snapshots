@@ -1,7 +1,7 @@
 """C-extension, PyBind11, and ATen docstring signature extraction utilities.
 
 Models extracted C-extension signatures as deeply immutable frozen Pydantic models
-and exposes total `Result[CExtensionSignatureError, ...]` parsers.
+and exposes total `Result[CExtensionParseFault, ...]` parsers.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import pydantic
 import typing_extensions
 from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Result
 
-from ml_ecosystem_snapshots.exceptions import CExtensionSignatureError
+from ml_ecosystem_snapshots.errors import CExtensionParseFault
 from ml_ecosystem_snapshots.introspection.runtime_boundary import (
     LivePythonTarget,
     StaticGriffeNode,
@@ -211,14 +211,14 @@ def normalize_c_sig_args(args_str: str) -> str:
     return ", ".join(transformed)
 
 
-def parse_c_sig_ast_arguments(args_str: str) -> Result[CExtensionSignatureError, ast.arguments]:
+def parse_c_sig_ast_arguments(args_str: str) -> Result[CExtensionParseFault, ast.arguments]:
     """Parse raw C-extension parameter text into an `ast.arguments` node without raising.
 
     Args:
         args_str: Raw parameter list string inside signature parentheses.
 
     Returns:
-        `Ok(ast.arguments)` on success, or `Err(CExtensionSignatureError)` if invalid.
+        `Ok(ast.arguments)` on success, or `Err(CExtensionParseFault)` if invalid.
     """
     dummy_code = f"def dummy_func({args_str}): pass"
     try:
@@ -231,7 +231,11 @@ def parse_c_sig_ast_arguments(args_str: str) -> Result[CExtensionSignatureError,
             return Ok([node.args for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)][0])
         except SyntaxError as exc:
             return Err(
-                CExtensionSignatureError(f"Failed to parse C-extension parameter signature: '{args_str}': {exc}")
+                CExtensionParseFault(
+                    signature_text=args_str,
+                    offset=exc.offset,
+                    reason=f"Failed to parse C-extension parameter signature: '{args_str}': {exc}",
+                )
             )
 
 
@@ -332,21 +336,27 @@ def _extract_params_from_ast_args(args: ast.arguments) -> tuple[ParsedParamTuple
 
 def parse_c_extension_sig_str(
     sig_line: str,
-) -> Result[CExtensionSignatureError, ParsedCSignatureLine]:
+) -> Result[CExtensionParseFault, ParsedCSignatureLine]:
     """Parse a single signature line into a `ParsedCSignatureLine` wrapped in `Result`.
 
     Args:
         sig_line: A single signature line (e.g. `'add(input, other) -> Tensor'`).
 
     Returns:
-        `Ok(ParsedCSignatureLine)` if valid, else `Err(CExtensionSignatureError)`.
+        `Ok(ParsedCSignatureLine)` if valid, else `Err(CExtensionParseFault)`.
     """
     clean_line = sig_line.strip()
     clean_line = re.sub(r"^(?:\d+[\.\)]\s*)?(?:aten::|c10::|torch\.)", "", clean_line)
     pattern = r"^(?:\d+[\.\)]\s*)?([a-zA-Z0-9_]+)\((.*)\)(?:\s*->\s*(.*))?$"
     matched = re.match(pattern, clean_line)
     if not matched:
-        return Err(CExtensionSignatureError(f"Line does not match C-extension signature syntax: {sig_line!r}"))
+        return Err(
+            CExtensionParseFault(
+                signature_text=sig_line,
+                offset=0,
+                reason=f"Line does not match C-extension signature syntax: {sig_line!r}",
+            )
+        )
 
     func_name = matched.group(1)
     args_str = matched.group(2)
@@ -430,7 +440,7 @@ def _fallback_target_signature(
 def extract_c_extension_signature(
     target: LivePythonTarget | StaticGriffeNode,
     target_name: str = "",
-) -> Result[CExtensionSignatureError, CExtensionSignature]:
+) -> Result[CExtensionParseFault, CExtensionSignature]:
     """Extract signature parameters from C-extension / PyBind11 docstrings into a `Result`.
 
     Args:
@@ -439,11 +449,17 @@ def extract_c_extension_signature(
 
     Returns:
         `Ok(CExtensionSignature)` with `.params`, `.returns_type`, and `.overloads`
-        populated, or `Err(CExtensionSignatureError)` if no docstring signature exists.
+        populated, or `Err(CExtensionParseFault)` if no docstring signature exists.
     """
     docstring = get_member_dict(target).get("__doc__")
     if not docstring or not isinstance(docstring, str) or not docstring.strip():
-        return Err(CExtensionSignatureError(f"Target {target_name!r} has no inspectable docstring."))
+        return Err(
+            CExtensionParseFault(
+                signature_text="",
+                offset=None,
+                reason=f"Target {target_name!r} has no inspectable docstring.",
+            )
+        )
 
     lines = tuple(docstring.strip().splitlines())
     has_numbered = any(re.match(r"^\s*\d+[\.\)]", line) for line in lines)
@@ -453,7 +469,13 @@ def extract_c_extension_signature(
         parsed_sigs = _fallback_target_signature(lines, target_name)
 
     if not parsed_sigs:
-        return Err(CExtensionSignatureError(f"No C-extension signature found in docstring for {target_name!r}."))
+        return Err(
+            CExtensionParseFault(
+                signature_text=docstring,
+                offset=None,
+                reason=f"No C-extension signature found in docstring for {target_name!r}.",
+            )
+        )
 
     if (
         len(parsed_sigs) > 1

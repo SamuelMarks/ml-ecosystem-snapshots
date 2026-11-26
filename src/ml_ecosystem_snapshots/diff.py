@@ -18,6 +18,9 @@ from ml_ecosystem_snapshots.models import (
     json_tuple_or_empty,
 )
 
+if typing.TYPE_CHECKING:
+    from ml_ecosystem_snapshots.proofs import EnvelopeAndHydratedPhase, ProvenSnapshot
+
 _NL: typing.Final[str] = chr(10)
 
 
@@ -62,7 +65,8 @@ class DiffResult(pydantic.BaseModel):
 
 
 DiffableSnapshotInput: typing_extensions.TypeAlias = (
-    "SnapshotEnvelope"
+    "ProvenSnapshot[EnvelopeAndHydratedPhase]"
+    " | SnapshotEnvelope"
     " | WireSerializableProtocol"
     " | typing.Mapping[str, JsonValue]"
     " | typing.Sequence[typing.Mapping[str, JsonValue]]"

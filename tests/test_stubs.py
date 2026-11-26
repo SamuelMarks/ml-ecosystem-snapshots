@@ -494,3 +494,66 @@ def test_generate_stubs_class_methods(tmp_path: Path) -> None:
     assert "    def dim(self) -> int: ..." in content
     assert "class StandaloneClass:" in content
     assert "    def method(self, x: float) -> float: ..." in content
+
+
+def test_generate_stubs_posonly_and_kwonly_separators(tmp_path: Path) -> None:
+    """Verify `.pyi` stub formatting preserves `/` and `*` parameter kind separators.
+
+    Args:
+        tmp_path: Temporary directory path fixture.
+    """
+    from ml_switcheroo_ir.typeclasses.outcome import Ok, Valid
+
+    from ml_ecosystem_snapshots import (
+        extract_snapshot,
+        upgrade_to_deterministic,
+        upgrade_to_hydrated,
+    )
+
+    snap: dict[str, JsonValue] = {
+        "categories": {
+            "ops": [
+                {
+                    "api_path": "sep_fw.api.only_pos",
+                    "kind": "function",
+                    "params": [{"name": "x", "annotation": "int", "kind": "POSITIONAL_ONLY"}],
+                    "returns_type": "int",
+                },
+                {
+                    "api_path": "sep_fw.api.pos_then_kw",
+                    "kind": "function",
+                    "params": [
+                        {"name": "x", "annotation": "int", "kind": "POSITIONAL_ONLY"},
+                        {"name": "y", "annotation": "int", "default": "1", "kind": "POSITIONAL_OR_KEYWORD"},
+                        {"name": "flag", "annotation": "bool", "kind": "KEYWORD_ONLY"},
+                    ],
+                    "returns_type": "bool",
+                },
+                {
+                    "api_path": "sep_fw.api.vararg_then_kw",
+                    "kind": "function",
+                    "params": [
+                        {"name": "args", "kind": "VAR_POSITIONAL"},
+                        {"name": "strict", "annotation": "bool", "kind": "KEYWORD_ONLY"},
+                    ],
+                    "returns_type": "None",
+                },
+            ]
+        }
+    }
+
+    out_dir = tmp_path / "sep_stubs"
+    gen_res = generate_stubs(snap, str(out_dir))
+    assert isinstance(gen_res, Ok)
+
+    api_pyi = (out_dir / "sep_fw" / "api" / "__init__.pyi").read_text(encoding="utf-8")
+    assert "def only_pos(x: int, /) -> int: ..." in api_pyi
+    assert "def pos_then_kw(x: int, /, y: int = 1, *, flag: bool) -> bool: ..." in api_pyi
+    assert "def vararg_then_kw(*args, strict: bool) -> None: ..." in api_pyi
+
+    ir_res = extract_snapshot("ir")
+    assert isinstance(ir_res, Ok)
+    hyd_val = upgrade_to_hydrated(ir_res.value)
+    assert isinstance(hyd_val, Valid)
+    det_val = upgrade_to_deterministic(hyd_val.value)
+    assert isinstance(det_val, Valid)

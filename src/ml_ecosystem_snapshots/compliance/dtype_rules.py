@@ -7,6 +7,7 @@ import typing
 
 from ml_switcheroo_ir.identifiers import NonBoolInt, PositiveInt
 from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Result
+from ml_switcheroo_ir.types import normalize_dtype as _ir_normalize_dtype
 
 DTYPE_BITWIDTHS: dict[str, int] = {
     "float64": 64,
@@ -248,6 +249,25 @@ def estimate_tensor_memory_bytes(
     return Ok(total_bits / 8.0)
 
 
+def canonicalize_ir_dtype_name(dtype_name: str) -> str:
+    """Normalize `dtype_name` via Tier-0 `ml_switcheroo_ir.types.normalize_dtype` with alias fallback.
+
+    Args:
+        dtype_name: Raw framework or dialect data type string.
+
+    Returns:
+        Canonical lowercase dtype string.
+    """
+    from ml_ecosystem_snapshots.grounding.dtypes import normalize_dtype_name
+
+    fallback = normalize_dtype_name(dtype_name)
+    try:
+        ir_dt = _ir_normalize_dtype(fallback)
+        return str(ir_dt.value).lower()
+    except ValueError:
+        return fallback
+
+
 def validate_dtype_for_op(op_name: str, dtype_name: str) -> Result[str, str]:
     """Validate totally that a data type is legally applicable to a mathematical operator.
 
@@ -258,10 +278,8 @@ def validate_dtype_for_op(op_name: str, dtype_name: str) -> Result[str, str]:
     Returns:
         `Ok(normalized_dtype)` if compatible, else `Err(error_message)`.
     """
-    from ml_ecosystem_snapshots.grounding.dtypes import normalize_dtype_name
-
     clean_op = op_name.split(".")[-1].lower()
-    clean_dt = normalize_dtype_name(dtype_name)
+    clean_dt = canonicalize_ir_dtype_name(dtype_name)
 
     transcendental_ops = {
         "sin",
@@ -298,6 +316,7 @@ def validate_dtype_for_op(op_name: str, dtype_name: str) -> Result[str, str]:
 
 __all__ = [
     "DTYPE_BITWIDTHS",
+    "canonicalize_ir_dtype_name",
     "estimate_tensor_memory_bytes",
     "get_dtype_bitwidth",
     "validate_broadcast_shapes",

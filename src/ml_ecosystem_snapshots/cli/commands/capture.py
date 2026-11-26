@@ -96,7 +96,10 @@ def cmd_capture(args: argparse.Namespace) -> None:
             print(f"Warning: The following frameworks are unsupported and will be skipped: {', '.join(unsupported)}")
 
     import typing_extensions
-    from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
+    from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, Valid
+
+    from ml_ecosystem_snapshots.errors import format_snapshot_error
+    from ml_ecosystem_snapshots.proofs import EnvelopeAndHydratedPhase, ProvenSnapshot, upgrade_to_hydrated
 
     with Progress() as progress:
         task = progress.add_task("[cyan]Scanning frameworks...", total=len(target_fws))
@@ -104,11 +107,15 @@ def cmd_capture(args: argparse.Namespace) -> None:
             progress.update(task, description=f"[cyan]Scanning {fw}...")
             snap_res = extract_snapshot(fw, include_nonpublic=args.include_nonpublic)
             if isinstance(snap_res, Ok):
-                write_res = write_snapshot(fw, snap_res.value, args.out_dir)
+                hyd_val = upgrade_to_hydrated(snap_res.value)
+                payload: ProvenSnapshot[EnvelopeAndHydratedPhase] | dict[str, pydantic.JsonValue] = (
+                    hyd_val.value if isinstance(hyd_val, Valid) else snap_res.value.to_wire_dict()
+                )
+                write_res = write_snapshot(fw, payload, args.out_dir)
                 if isinstance(write_res, Ok):
                     progress.console.print(f"[green]Saved snapshot to {write_res.value}[/green]")
                 elif isinstance(write_res, Err):
-                    progress.console.print(f"[red]Failed to save {fw}: {write_res.error}[/red]")
+                    progress.console.print(f"[red]Failed to save {fw}: {format_snapshot_error(write_res.error)}[/red]")
                 else:
                     typing_extensions.assert_never(write_res)
             elif isinstance(snap_res, Err):

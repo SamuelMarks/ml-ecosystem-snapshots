@@ -467,8 +467,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--requirements",
         nargs="+",
-        default=["requirements.txt", "requirements-gen.txt"],
-        help="Requirement files to scan for GitHub Release .whl URLs.",
+        default=[
+            "requirements.txt",
+            "requirements-gen.txt",
+            "requirements-host.txt",
+            "requirements-linux-x64.txt",
+            "test-requirements.txt",
+        ],
+        help="PEP 508 requirement files to scan for GitHub Release wheel URLs.",
     )
     parser.add_argument(
         "--dest-dir",

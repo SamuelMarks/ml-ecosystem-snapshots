@@ -356,7 +356,7 @@ def test_extract_snapshot_chex(monkeypatch: pytest.MonkeyPatch) -> None:
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
     monkeypatch.setenv("ML_SNAPSHOTS_OFFLINE", "1")
     snap = raise_on_err(extract_snapshot("chex")).to_wire_dict()

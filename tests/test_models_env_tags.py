@@ -117,8 +117,7 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
     assert p.model_extra is not None
     assert p.model_extra["custom_ir_tag"] == "llvm_lowered"
 
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
-
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
     from ml_ecosystem_snapshots.models import JsonValue
 
     ref_data: dict[str, JsonValue] = {
@@ -186,8 +185,7 @@ def test_polymorphic_ref_models_and_extra_allow() -> None:
 
 def test_raw_dumps_hydration_synthesis() -> None:
     """Test GhostInspector.hydrate synthesis on raw ISA and MLIR dictionary dumps."""
-    from ml_switcheroo_ir.typeclasses.outcome import raise_on_err
-
+    from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
     from ml_ecosystem_snapshots.models import JsonValue
 
     # 3. Raw dumps hydration synthesis

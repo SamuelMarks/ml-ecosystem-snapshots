@@ -8,10 +8,40 @@ import os
 import typing
 
 from ml_switcheroo_ir.schema.ghost import GhostRef
-from ml_switcheroo_ir.typeclasses.outcome import and_then, raise_on_err, value_or
+from ml_switcheroo_ir.typeclasses.outcome import Valid, and_then, value_or
 
+from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary
+from ml_ecosystem_snapshots.exporters.prompts import PromptRefsInput
 from ml_ecosystem_snapshots.introspection.inspector import GhostInspector
 from ml_ecosystem_snapshots.models import JsonValue, ensure_json_dict, ensure_json_list
+from ml_ecosystem_snapshots.proofs import (
+    EnvelopeAndHydratedPhase,
+    ProvenSnapshot,
+    prove_envelope_valid,
+    upgrade_to_hydrated,
+)
+
+
+def promote_hydrated_snapshot(
+    snap: ProvenSnapshot[EnvelopeAndHydratedPhase] | JsonValue,
+) -> ProvenSnapshot[EnvelopeAndHydratedPhase] | None:
+    """Promote a snapshot payload to `ProvenSnapshot[EnvelopeAndHydratedPhase]` when valid.
+
+    Args:
+        snap: Candidate `ProvenSnapshot` or decoded JSON value.
+
+    Returns:
+        `ProvenSnapshot[EnvelopeAndHydratedPhase]` when valid, else `None`.
+    """
+    if isinstance(snap, ProvenSnapshot):
+        return snap
+    if isinstance(snap, dict):
+        env_val = prove_envelope_valid(snap)
+        if isinstance(env_val, Valid):
+            hyd_val = upgrade_to_hydrated(env_val.value)
+            if isinstance(hyd_val, Valid):
+                return hyd_val.value
+    return None
 
 
 def cmd_stubs(args: argparse.Namespace) -> None:
@@ -22,34 +52,40 @@ def cmd_stubs(args: argparse.Namespace) -> None:
     """
     from ml_ecosystem_snapshots.cli.resolver import resolve_snapshot_path
     from ml_ecosystem_snapshots.network_env import load_json_data
-    from ml_ecosystem_snapshots.stubs import generate_stubs
+    from ml_ecosystem_snapshots.stubs import StubSnapshotInput, generate_stubs
 
     path = value_or(resolve_snapshot_path(args.input), args.input)
-    snap = raise_on_err(and_then(load_json_data(path), lambda d: ensure_json_dict(d, "snapshot")))
-    raise_on_err(generate_stubs(snap, args.out_dir, include_nonpublic=args.include_nonpublic))
+    raw_snap = raise_snapshot_boundary(and_then(load_json_data(path), lambda d: ensure_json_dict(d, "snapshot")))
+    promoted = promote_hydrated_snapshot(raw_snap)
+    stub_input: StubSnapshotInput = promoted if promoted is not None else raw_snap
+    raise_snapshot_boundary(generate_stubs(stub_input, args.out_dir, include_nonpublic=args.include_nonpublic))
     print(f"Stubs generated in {args.out_dir}")
 
 
-def _hydrate_snapshot_refs(snap: JsonValue) -> list[GhostRef]:
-    """Hydrate a loaded snapshot JSON list or dictionary into `GhostRef` instances.
+def hydrate_snapshot_refs(
+    snap: ProvenSnapshot[EnvelopeAndHydratedPhase] | JsonValue,
+) -> list[GhostRef]:
+    """Hydrate a `ProvenSnapshot` or snapshot JSON list/dict into `GhostRef` instances.
 
     Args:
-        snap: Loaded JSON snapshot payload (`list` or `dict`).
+        snap: Hydrated `ProvenSnapshot` or loaded JSON snapshot payload (`list` or `dict`).
 
     Returns:
         List of hydrated `GhostRef` objects.
     """
+    if isinstance(snap, ProvenSnapshot):
+        return list(snap.all_refs())
     refs: list[GhostRef] = []
     if isinstance(snap, list):
         for item in snap:
-            item_dict = raise_on_err(ensure_json_dict(item, "snapshot item"))
-            refs.append(raise_on_err(GhostInspector.hydrate(item_dict)))
+            item_dict = raise_snapshot_boundary(ensure_json_dict(item, "snapshot item"))
+            refs.append(raise_snapshot_boundary(GhostInspector.hydrate(item_dict)))
     elif isinstance(snap, dict):
-        cats = raise_on_err(ensure_json_dict(snap.get("categories", {}), "snapshot categories"))
+        cats = raise_snapshot_boundary(ensure_json_dict(snap.get("categories", {}), "snapshot categories"))
         for _cat, items in cats.items():
-            for item in raise_on_err(ensure_json_list(items, "category items")):
-                item_dict = raise_on_err(ensure_json_dict(item, "snapshot item"))
-                refs.append(raise_on_err(GhostInspector.hydrate(item_dict)))
+            for item in raise_snapshot_boundary(ensure_json_list(items, "category items")):
+                item_dict = raise_snapshot_boundary(ensure_json_dict(item, "snapshot item"))
+                refs.append(raise_snapshot_boundary(GhostInspector.hydrate(item_dict)))
     return refs
 
 
@@ -58,6 +94,7 @@ def _export_prompt_format(
     out_dir: str,
     refs: list[GhostRef],
     snap: JsonValue,
+    proven: ProvenSnapshot[EnvelopeAndHydratedPhase] | None = None,
 ) -> bool:
     """Export prompt context formats if `fmt` matches a prompt format identifier.
 
@@ -66,6 +103,7 @@ def _export_prompt_format(
         out_dir: Destination directory path.
         refs: Hydrated `GhostRef` list.
         snap: Raw loaded snapshot JSON payload.
+        proven: Optional promoted `ProvenSnapshot[EnvelopeAndHydratedPhase]` witness.
 
     Returns:
         True if `fmt` was handled as a prompt format, False otherwise.
@@ -80,7 +118,7 @@ def _export_prompt_format(
         export_stablehlo_prompt_context,
     )
 
-    prompt_dispatch: dict[str, tuple[typing.Callable[[typing.Sequence[GhostRef]], str], str, str]] = {
+    prompt_dispatch: dict[str, tuple[typing.Callable[[PromptRefsInput], str], str, str]] = {
         "llm_prompt": (export_llm_prompt_context, "llm_context.md", "LLM"),
         "sass_prompt": (export_sass_prompt_context, "sass_context.md", "SASS"),
         "mlir_prompt": (export_mlir_prompt_context, "mlir_context.md", "MLIR"),
@@ -90,7 +128,8 @@ def _export_prompt_format(
     }
     if fmt in prompt_dispatch:
         fn, filename, label = prompt_dispatch[fmt]
-        content = fn(refs)
+        prompt_source: PromptRefsInput = proven if proven is not None else refs
+        content = fn(prompt_source)
         out_path = os.path.join(out_dir, filename)
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(content)
@@ -168,12 +207,13 @@ def cmd_export(args: argparse.Namespace) -> None:
     from ml_ecosystem_snapshots.network_env import load_json_data
 
     path = value_or(resolve_snapshot_path(args.input), args.input)
-    snap: JsonValue = raise_on_err(load_json_data(path))
+    snap: JsonValue = raise_snapshot_boundary(load_json_data(path))
+    proven = promote_hydrated_snapshot(snap)
 
-    refs = _hydrate_snapshot_refs(snap)
+    refs = hydrate_snapshot_refs(proven if proven is not None else snap)
     os.makedirs(args.out_dir, exist_ok=True)
 
-    if _export_prompt_format(args.format, args.out_dir, refs, snap):
+    if _export_prompt_format(args.format, args.out_dir, refs, snap, proven=proven):
         return
     if _export_per_ref_code(args.format, args.out_dir, refs):
         return
@@ -209,4 +249,9 @@ def cmd_export(args: argparse.Namespace) -> None:
         raise ValueError(f"Unknown format: {args.format}")
 
 
-__all__ = ["cmd_export", "cmd_stubs"]
+__all__ = [
+    "cmd_export",
+    "cmd_stubs",
+    "hydrate_snapshot_refs",
+    "promote_hydrated_snapshot",
+]

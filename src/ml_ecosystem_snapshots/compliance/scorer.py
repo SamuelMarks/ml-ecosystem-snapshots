@@ -1,20 +1,40 @@
-"""Pure snapshot vs. target compliance scoring engine."""
+"""Pure snapshot vs. target compliance scoring and in-memory source audit engine."""
 
 from __future__ import annotations
 
 import typing
 
+from ml_switcheroo_ir.compliance import (
+    FILE_COMPLIANCE_MONOID,
+    FileComplianceResult,
+)
 from ml_switcheroo_ir.schema.ghost import (
     GhostParam,
     GhostPythonRef,
     GhostRef,
 )
+from ml_switcheroo_ir.typeclasses.algebra import NonEmpty
+from ml_switcheroo_ir.typeclasses.outcome import (
+    Invalid,
+    Ok,
+    Valid,
+    Validation,
+    invalid_one,
+    traverse_validation_ne,
+)
 
+from ml_ecosystem_snapshots.compliance.ast_extractor import (
+    extract_refs_from_source,
+    normalize_source_module_name,
+)
 from ml_ecosystem_snapshots.compliance.models import (
     ComplianceMismatchEntry,
+    ComplianceReport,
     ComplianceScoreReport,
+    NamespaceAlignmentRule,
     ParamSignatureTuple,
 )
+from ml_ecosystem_snapshots.errors import SnapshotDomainError
 from ml_ecosystem_snapshots.models import (
     JsonValue,
     SnapshotEnvelope,
@@ -23,9 +43,38 @@ from ml_ecosystem_snapshots.models import (
     json_tuple_or_empty,
 )
 
+if typing.TYPE_CHECKING:
+    from ml_ecosystem_snapshots.proofs import EnvelopeAndHydratedPhase, ProvenSnapshot
+
+
+def _index_refs_to_maps(
+    refs: typing.Iterable[GhostRef],
+) -> tuple[dict[str, GhostRef], dict[str, str]]:
+    """Index `GhostRef` items into `(canonical_map, alias_map)`.
+
+    Args:
+        refs: Iterable of `GhostRef` items.
+
+    Returns:
+        Tuple `(canonical_map, alias_to_canonical_map)`.
+    """
+    canonical_map: dict[str, GhostRef] = {}
+    alias_map: dict[str, str] = {}
+    for ref in refs:
+        if ref.api_path:
+            canonical_map[ref.api_path] = ref
+            for alias in ref.aliases or ():
+                alias_map[alias] = ref.api_path
+    return canonical_map, alias_map
+
 
 def _build_reference_map(
-    reference_snapshot: SnapshotEnvelope | WireSerializableProtocol | typing.Mapping[str, JsonValue],
+    reference_snapshot: (
+        ProvenSnapshot[EnvelopeAndHydratedPhase]
+        | SnapshotEnvelope
+        | WireSerializableProtocol
+        | typing.Mapping[str, JsonValue]
+    ),
 ) -> tuple[dict[str, GhostRef], dict[str, str]]:
     """Build pure lookup maps from canonical/alias API paths to `GhostRef` and canonical path.
 
@@ -35,8 +84,11 @@ def _build_reference_map(
     Returns:
         Tuple `(canonical_map, alias_to_canonical_map)`.
     """
-    canonical_map: dict[str, GhostRef] = {}
-    alias_map: dict[str, str] = {}
+    from ml_ecosystem_snapshots.proofs import ProvenSnapshot as _RuntimeProvenSnapshot
+
+    if isinstance(reference_snapshot, _RuntimeProvenSnapshot) and reference_snapshot.hydrated_categories:
+        return _index_refs_to_maps(reference_snapshot.all_refs())
+
     if isinstance(reference_snapshot, SnapshotEnvelope):
         raw_snap: typing.Mapping[str, JsonValue] = reference_snapshot.model_dump()
     elif isinstance(reference_snapshot, WireSerializableProtocol):
@@ -44,16 +96,13 @@ def _build_reference_map(
     else:
         raw_snap = reference_snapshot
 
+    parsed_refs: list[GhostRef] = []
     cats_obj = json_dict_or_empty(raw_snap.get("categories", {}))
     for _cat, raw_items in cats_obj.items():
         for item in json_tuple_or_empty(raw_items):
-            if not isinstance(item, dict) or not item.get("api_path"):
-                continue
-            ref = GhostRef.model_validate(item)
-            canonical_map[ref.api_path] = ref
-            for alias in ref.aliases or ():
-                alias_map[alias] = ref.api_path
-    return canonical_map, alias_map
+            if isinstance(item, dict) and item.get("api_path"):
+                parsed_refs.append(GhostRef.model_validate(item))
+    return _index_refs_to_maps(parsed_refs)
 
 
 def _sig_tuple(p: GhostParam) -> ParamSignatureTuple:
@@ -147,7 +196,12 @@ def _are_signatures_compatible(
 
 
 def score_compliance(
-    reference_snapshot: SnapshotEnvelope | WireSerializableProtocol | typing.Mapping[str, JsonValue],
+    reference_snapshot: (
+        ProvenSnapshot[EnvelopeAndHydratedPhase]
+        | SnapshotEnvelope
+        | WireSerializableProtocol
+        | typing.Mapping[str, JsonValue]
+    ),
     target_refs: typing.Sequence[GhostRef],
     strict_c_extensions: bool = False,
 ) -> ComplianceScoreReport:
@@ -231,10 +285,124 @@ def score_compliance(
     )
 
 
+def _infer_target_prefix_from_sources(
+    sources: typing.Mapping[str, str],
+    fallback_target: str,
+) -> str:
+    """Infer the root Python package prefix from `sources` keys when `target_prefix` is unset.
+
+    Args:
+        sources: Mapping of module names or virtual file paths to source strings.
+        fallback_target: Reference snapshot target identifier fallback.
+
+    Returns:
+        Derived top-level package prefix string.
+    """
+    for mod_key in sorted(sources.keys()):
+        norm = normalize_source_module_name(mod_key)
+        top = norm.split(".")[0]
+        if top and top != "module":
+            return top
+    return fallback_target
+
+
+def audit_module_sources(
+    sources: typing.Mapping[str, str],
+    snapshot: ProvenSnapshot[EnvelopeAndHydratedPhase],
+    *,
+    target_prefix: str = "",
+    alignment_rule: NamespaceAlignmentRule | None = None,
+    strict_c_extensions: bool = False,
+) -> Validation[NonEmpty[SnapshotDomainError], ComplianceReport]:
+    """Purely audit in-memory Python `sources` against `snapshot` with `FILE_COMPLIANCE_MONOID`.
+
+    Performs zero filesystem I/O, accumulates every syntax/introspection fault across
+    `sources` into `NonEmpty[SnapshotDomainError]`, folds IR/FrameworkAdapter/dialect
+    metadata via `ml_switcheroo_ir.compliance.FILE_COMPLIANCE_MONOID`, and scores API
+    signature parity against `snapshot`.
+
+    Args:
+        sources: Mapping of module names or virtual paths to raw Python source strings.
+        snapshot: Reference `ProvenSnapshot[EnvelopeAndHydratedPhase]` (or covariant subtype).
+        target_prefix: Optional target package prefix (auto-inferred from `sources` if empty).
+        alignment_rule: Optional `NamespaceAlignmentRule` (auto-resolves `zero_*` preset if `None`).
+        strict_c_extensions: Whether opaque C-extension signatures fail signature checks.
+
+    Returns:
+        `Valid(ComplianceReport)` on clean AST extraction across all `sources`,
+        else `Invalid(NonEmpty[SnapshotDomainError])`.
+    """
+    from ml_ecosystem_snapshots.cli.commands.verify_compliance import resolve_alignment_preset
+
+    ref_prefix = str(snapshot.target)
+    derived_prefix = (
+        target_prefix.strip() if target_prefix.strip() else _infer_target_prefix_from_sources(sources, ref_prefix)
+    )
+    effective_rule = alignment_rule if alignment_rule is not None else resolve_alignment_preset(None, derived_prefix)
+
+    sorted_entries = sorted(sources.items(), key=lambda kv: kv[0])
+
+    def _audit_one(
+        entry: tuple[str, str],
+    ) -> Validation[NonEmpty[SnapshotDomainError], tuple[tuple[GhostRef, ...], FileComplianceResult]]:
+        """Validate and extract a single `(module_key, source)` pair.
+
+        Args:
+            entry: `(module_key, source_code)` pair.
+
+        Returns:
+            `Valid((refs, file_compliance))` or `Invalid(NonEmpty[SnapshotDomainError])`.
+        """
+        mod_key, src_code = entry
+        res = extract_refs_from_source(
+            mod_key,
+            src_code,
+            derived_prefix,
+            ref_prefix,
+            alignment_rule=effective_rule,
+        )
+        if isinstance(res, Ok):
+            return Valid(res.value)
+        return invalid_one(res.error)
+
+    extracted_val = traverse_validation_ne(sorted_entries, _audit_one)
+    if isinstance(extracted_val, Invalid):
+        return Invalid(extracted_val.errors)
+
+    dedup_refs: list[GhostRef] = []
+    seen_paths: set[str] = set()
+    file_results: list[FileComplianceResult] = []
+    for mod_refs, file_comp in extracted_val.value:
+        file_results.append(file_comp)
+        for ref in mod_refs:
+            if ref.api_path not in seen_paths:
+                seen_paths.add(ref.api_path)
+                dedup_refs.append(ref)
+
+    merged_ir_fw = FILE_COMPLIANCE_MONOID.mconcat(file_results)
+    scored = score_compliance(
+        snapshot,
+        dedup_refs,
+        strict_c_extensions=strict_c_extensions,
+    )
+    return Valid(
+        scored.model_copy(
+            update={
+                "found_ir": merged_ir_fw.is_ir,
+                "ir_score": merged_ir_fw.ir_score,
+                "found_fw": merged_ir_fw.is_fw,
+                "fw_score": merged_ir_fw.fw_score,
+                "implemented_ops": tuple(sorted(merged_ir_fw.implemented_ops)),
+            }
+        )
+    )
+
+
 __all__ = [
     "_annotations_compatible",
     "_are_signatures_compatible",
     "_is_opaque_varargs_only",
     "_sig_tuple",
+    "audit_module_sources",
     "score_compliance",
 ]

@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 import pytest_mock
-from ml_switcheroo_ir.typeclasses.outcome import Err, Ok, raise_on_err
+from ml_switcheroo_ir.typeclasses.outcome import Err, Ok
+
+from ml_ecosystem_snapshots.exceptions import raise_snapshot_boundary as raise_on_err
 
 
 def test_align_namespace_exact_mapping() -> None:

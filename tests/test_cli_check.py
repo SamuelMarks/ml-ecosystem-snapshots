@@ -89,12 +89,11 @@ def test_cmd_check(
         ),
     )
 
-    import json
-
     from ml_ecosystem_snapshots.cli.commands.verify_compliance import (
         CLI_ALIGNMENT_PRESETS,
         ZERO_ECOSYSTEM_ALIGNMENT_RULE,
     )
+    from ml_ecosystem_snapshots.proofs import ProvenSnapshot
 
     cmd_check(args)
 
@@ -104,7 +103,9 @@ def test_cmd_check(
         "r_pref",
         alignment_rule=CLI_ALIGNMENT_PRESETS["default"],
     )
-    mock_score.assert_called_once_with(json.loads(MOCK_JSON), ("mock_ref",))
+    assert mock_score.call_count == 1
+    assert isinstance(mock_score.call_args.args[0], ProvenSnapshot)
+    assert mock_score.call_args.args[1] == ("mock_ref",)
 
     args_zero = argparse.Namespace(
         snapshot_json=str(snap_file),
